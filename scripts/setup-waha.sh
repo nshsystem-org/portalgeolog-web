@@ -6,7 +6,8 @@
 set -euo pipefail
 
 INSTALL_DIR="/opt/waha"
-WAHA_API_KEY="0780221322130780aB2026"
+# WAHA_API_KEY deve ser passada como variável de ambiente ou definida manualmente
+WAHA_API_KEY=${WAHA_API_KEY:-"DEFINA_SUA_CHAVE_AQUI"}
 SESSION_NAME="geolog"
 DOMAIN="wppconnect.portalgeolog.com.br"
 

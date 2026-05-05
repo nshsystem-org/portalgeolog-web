@@ -1,5 +1,0 @@
-#!/bin/bash
-# Habilidade fastmode
-echo "Ativando modo rápido (stepfun-ai/step-3.5-flash)..."
-# Configura o Claude Code para usar o modelo mais rápido
-echo "Modo rápido ativado com sucesso!"

@@ -1,5 +1,0 @@
-#!/bin/bash
-# Habilidade smartmode
-echo "Ativando modo inteligente (qwen/qwen3-coder-480b-a35b-instruct)..."
-# Configura o Claude Code para usar o modelo mais inteligente
-echo "Modo inteligente ativado com sucesso!"

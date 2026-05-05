@@ -14,10 +14,10 @@ npx wrangler pages project env add portalgeolog-web production NEXT_PUBLIC_SUPAB
 
 # Secrets (variáveis privadas)
 echo "3. SUPABASE_SERVICE_ROLE_KEY"
-echo "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6cGdmYXB2andxdGpjbHJpaXN6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ2OTMzOSwiZXhwIjoyMDkwMDQ1MzM5fQ.uzUbzhVFfyJxMYk2SpVoa38AsDy9KsN5eEp-MMncJ8Y" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+echo "Coloque a chave aqui: " && read -s SERVICE_ROLE && echo $SERVICE_ROLE | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 
 echo "4. RESEND_API_KEY"
-echo "re_SmsP3Qyv_6NqVfF8Wq1jLQRu8aMbZqSXS" | npx wrangler secret put RESEND_API_KEY
+echo "Coloque a chave aqui: " && read -s RESEND_KEY && echo $RESEND_KEY | npx wrangler secret put RESEND_API_KEY
 
 echo "Variáveis configuradas com sucesso!"
 echo "Execute 'npx wrangler pages project env list portalgeolog-web' para verificar"
