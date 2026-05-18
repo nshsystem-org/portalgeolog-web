@@ -124,7 +124,7 @@ export default function TermsOfService() {
               5. Limitação de Responsabilidade
             </h2>
             <p className="text-slate-600 leading-relaxed">
-              O Portal Geolog é fornecido "como está" e "conforme disponível".
+              O Portal Geolog é fornecido &quot;como está&quot; e &quot;conforme disponível&quot;.
               Não garantimos que o serviço será ininterrupto, seguro ou livre de
               erros. A Transportadora Geolog não será responsável por danos
               diretos, indiretos, incidentais ou consequentes decorrentes do uso

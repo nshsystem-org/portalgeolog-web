@@ -72,7 +72,8 @@ export default function DashboardLayout({
   // Forçar dropdown aberto durante explicação
   useEffect(() => {
     if (announcementStep === "explanation") {
-      setShowEmployees(true);
+      // Usar setTimeout para evitar setState síncrono no effect
+      setTimeout(() => setShowEmployees(true), 0);
     }
   }, [announcementStep]);
 

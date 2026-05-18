@@ -240,24 +240,34 @@ Ao executar comandos no terminal para o usuário, você deve injetar a variável
 - **Como corrigir:** Execute `echo "SEU_TOKEN" | GH_CONFIG_DIR=~/.gh-config1 gh auth login --with-token` para re-vincular o perfil ao token correto.
 - **Verificação:** Sempre valide com `GH_CONFIG_DIR=~/.gh-config1 gh api user --jq .login` antes de realizar operações de escrita (push/create repo).
 
-## 🚀 5. Deploy & Infraestrutura (Cloudflare Pages)
+## 🚀 5. Deploy & Infraestrutura (Cloudflare Workers)
 
 ### Cloudflare CLI (Wrangler)
 
 - **Autenticação:** Configure via `wrangler login` ou use `CLOUDFLARE_API_TOKEN`.
-- **Controle de Deploy:** Agentes NUNCA devem realizar deploys (seja para `test` ou `main`) sem a solicitação explícita do usuário no chat.
 - **REGRA DE OURO:** Só faça deploy quando o usuário pedir explicitamente no chat. Nunca inicie um deploy por conta própria.
-- **Comandos Principais:**
-  - `wrangler pages project create portalgeolog-web` (cria projeto no Cloudflare).
-  - `wrangler pages deploy cloudflare-output` (deploy manual).
-  - `wrangler pages project env add portalgeolog-web production <KEY> <VALUE>` (adiciona variáveis).
-  - `wrangler secret put <KEY>` (configura secrets).
 
-### Build para Cloudflare
+### Deploy Manual (Fluxo Obrigatório)
 
-- **Comando:** `npx @cloudflare/next-on-pages@1`
-- **Output:** `cloudflare-output`
-- **Runtime:** Edge Runtime (Cloudflare Workers)
+Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir este fluxo exato:
+
+1. **Verificar Build Interno:** Executar `npm run build` e garantir que não há erros
+2. **Verificar ESLint:** Executar `npm run lint` e garantir que não há erros
+3. **Validar e Atualizar Secrets:**
+   - Listar secrets do Worker: `wrangler secret list --config wrangler.workers.toml`
+   - Testar cada secret obrigatório usando o client do Supabase (para `SUPABASE_SERVICE_ROLE_KEY`) ou curl simples (para outros)
+   - Se algum secret falhar na validação, re-enviar automaticamente do `.env.production`:
+     - `SUPABASE_SERVICE_ROLE_KEY` - testar com query simples ao Supabase
+     - `RESEND_API_KEY` - validar formato
+     - `META_WHATSAPP_ACCESS_TOKEN` - validar formato
+     - `META_PHONE_NUMBER_ID` - validar formato
+     - `META_BUSINESS_ACCOUNT_ID` - validar formato
+   - Usar script Python ou Node.js para automatizar o re-envio via `echo "valor" | wrangler secret put NOME --config wrangler.workers.toml`
+4. **Deploy Direto:** Executar `wrangler deploy --config wrangler.workers.toml`
+
+**IMPORTANTE:** NUNCA executar `npx @cloudflare/next-on-pages@1` nem buildar via Cloudflare Pages. Use sempre o build interno do Next.js e faça o deploy direto para Workers.
+
+**Secrets Obrigatórios:** O sistema requer 5 secrets configurados. Se algum estiver faltando ou inválido, o agente deve re-enviar automaticamente do `.env.production` antes do deploy.
 
 ### Links de Referência
 
@@ -296,4 +306,3 @@ O agente possui acesso aos seguintes MCP servers para operações diretas:
 ### Regra Obrigatória
 
 **Antes de sugerir qualquer solução envolvendo Supabase ou Cloudflare, o agente DEVE primeiro consultar os MCPs disponíveis.** Não faça suposições sobre schema ou configuração.
-

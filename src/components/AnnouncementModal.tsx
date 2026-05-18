@@ -16,12 +16,14 @@ export default function AnnouncementModal({ onOpenEmployeesDropdown, employeesBu
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<"intro" | "explanation">("intro");
   const [modalPosition, setModalPosition] = useState({ top: 0, left: 0 });
+  const [buttonPosition, setButtonPosition] = useState<{ right: number } | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const hasSeen = localStorage.getItem(STORAGE_KEY);
     if (!hasSeen) {
-      setIsOpen(true);
+      // Usar setTimeout para evitar setState síncrono no effect
+      setTimeout(() => setIsOpen(true), 0);
     }
   }, []);
 
@@ -36,6 +38,7 @@ export default function AnnouncementModal({ onOpenEmployeesDropdown, employeesBu
   useEffect(() => {
     if (step === "explanation" && employeesButtonRef?.current) {
       const buttonRect = employeesButtonRef.current.getBoundingClientRect();
+      setButtonPosition({ right: buttonRect.right });
       const dropdownWidth = 380;
       const modalWidth = 320;
       const gap = 16;
@@ -166,12 +169,12 @@ export default function AnnouncementModal({ onOpenEmployeesDropdown, employeesBu
           ) : (
             <>
               {/* Spotlight: escurece tudo exceto o dropdown */}
-              {employeesButtonRef?.current && (
+              {buttonPosition && (
                 <div
                   className="fixed z-[9991] pointer-events-none"
                   style={{
                     top: modalPosition.top,
-                    left: Math.max(0, employeesButtonRef.current.getBoundingClientRect().right - 380),
+                    left: Math.max(0, buttonPosition.right - 380),
                     width: 380,
                     height: 480,
                     boxShadow: "0 0 0 9999px rgba(0,0,0,0.7)",

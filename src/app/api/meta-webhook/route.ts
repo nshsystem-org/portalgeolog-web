@@ -871,7 +871,7 @@ export async function POST(request: Request) {
         .insert({
           source: "meta-webhook",
           payload: body,
-        } as any);
+        } as never);
     } catch (logErr) {
       console.error("[meta-webhook] Erro ao salvar log:", logErr);
     }

@@ -44,7 +44,7 @@ export default function PrivacyPolicy() {
               1. Introdução
             </h2>
             <p className="text-slate-600 leading-relaxed">
-              A Transportadora Geolog ("nós", "nosso") respeita sua privacidade
+              A Transportadora Geolog (&quot;nós&quot;, &quot;nosso&quot;) respeita sua privacidade
               e está comprometida em proteger seus dados pessoais. Esta política
               de privacidade descreve como coletamos, usamos e protegemos suas
               informações quando você utiliza o Portal Geolog.
