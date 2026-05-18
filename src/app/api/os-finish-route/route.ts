@@ -21,6 +21,7 @@ type OSFinishRow = {
   veiculo_id: string | null;
   driver_km_initial: number | null;
   route_started_km: number | null;
+  route_finished_at: string | null;
   driver_operation_cycles: OperationalCycle[] | null;
   current_driver_cycle_index: number | null;
 };
@@ -97,7 +98,7 @@ export async function GET(request: Request) {
     const { data: osRaw, error: findError } = await getAdmin()
       .from("ordens_servico")
       .select(
-        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_km_initial, route_started_km, driver_operation_cycles, current_driver_cycle_index",
+        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_km_initial, route_started_km, route_finished_at, driver_operation_cycles, current_driver_cycle_index",
       )
       .eq("id", osId)
       .single();
@@ -111,17 +112,23 @@ export async function GET(request: Request) {
     }
 
     const cycle = resolveCycle(os, requestedCycleIndex);
-    const alreadyFinished = Boolean(cycle && cycle.state === "completed");
+    // Correção de inconsistência: ciclo pode estar "completed" no JSON mas
+    // route_finished_at nulo (dados legados não atualizados). Permitir refinalizar.
+    const alreadyFinished = Boolean(
+      cycle && cycle.state === "completed" && os.route_finished_at,
+    );
+    const canFinish = Boolean(
+      cycle &&
+      (cycle.state === "awaiting_finish" ||
+        cycle.state === "awaiting_km_finish" ||
+        (cycle.state === "completed" && !os.route_finished_at)),
+    );
 
     return NextResponse.json({
       success: true,
       os,
       alreadyFinished,
-      canFinish: Boolean(
-        cycle &&
-        (cycle.state === "awaiting_finish" ||
-          cycle.state === "awaiting_km_finish"),
-      ),
+      canFinish,
       cycle,
       cycleTitle: cycle
         ? getOperationalCycleBannerTitle(cycle)
@@ -176,7 +183,7 @@ export async function POST(request: Request) {
     const { data: osRaw, error: findError } = await getAdmin()
       .from("ordens_servico")
       .select(
-        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_km_initial, route_started_km, driver_operation_cycles, current_driver_cycle_index",
+        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_km_initial, route_started_km, route_finished_at, driver_operation_cycles, current_driver_cycle_index",
       )
       .eq("id", osId)
       .single();
@@ -202,7 +209,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (cycle.state === "completed") {
+    if (cycle.state === "completed" && os.route_finished_at) {
       return NextResponse.json({
         success: true,
         alreadyFinished: true,
@@ -212,7 +219,8 @@ export async function POST(request: Request) {
 
     if (
       cycle.state !== "awaiting_finish" &&
-      cycle.state !== "awaiting_km_finish"
+      cycle.state !== "awaiting_km_finish" &&
+      !(cycle.state === "completed" && !os.route_finished_at)
     ) {
       return NextResponse.json(
         { success: false, error: "A viagem ainda não foi iniciada." },
@@ -285,15 +293,6 @@ export async function POST(request: Request) {
     } catch (logErr) {
       console.error("[os-finish-route] Erro ao registrar log:", logErr);
     }
-
-    // Removido: Envio de histórico para grupo WhatsApp (API Meta não suporta grupos)
-    // if (!nextCycle) {
-    //   try {
-    //     await sendAdminOSHistoryToGroup(osId, 'concluida', process.env.WAHA_SESSION || 'default');
-    //   } catch (historyError) {
-    //     console.error('Erro ao enviar histórico de conclusão para o grupo:', historyError);
-    //   }
-    // }
 
     // Envio de próximo ciclo para motorista
     if (nextCycle && os.motorista) {

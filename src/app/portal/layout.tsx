@@ -2,8 +2,9 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useState, cloneElement, ReactElement } from "react";
+import { useEffect, useState, useRef, cloneElement, ReactElement } from "react";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useUserPresence } from "@/hooks/useUserPresence";
 import {
   Truck,
   LogOut,
@@ -26,6 +27,7 @@ import {
   Handshake,
 } from "lucide-react";
 import Link from "next/link";
+import AnnouncementModal from "@/components/AnnouncementModal";
 
 export default function DashboardLayout({
   children,
@@ -36,6 +38,10 @@ export default function DashboardLayout({
   const { unreadCount, notifications, dismiss, dismissAll, realtimeConnected } =
     useNotifications();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showEmployees, setShowEmployees] = useState(false);
+  const [announcementStep, setAnnouncementStep] = useState<"intro" | "explanation" | "closed">("closed");
+  const employeesButtonRef = useRef<HTMLButtonElement>(null);
+  const { users: presenceUsers, onlineCount, loading: presenceLoading, getTimeAgo: getPresenceTimeAgo } = useUserPresence();
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
@@ -48,14 +54,40 @@ export default function DashboardLayout({
 
   useEffect(() => {
     const handleClickOutside = () => {
+      if (announcementStep === "explanation") {
+        return; // Bloqueia cliques fora durante explicação
+      }
       if (showNotifications) {
         setShowNotifications(false);
+      }
+      if (showEmployees) {
+        setShowEmployees(false);
       }
     };
 
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
-  }, [showNotifications]);
+  }, [showNotifications, showEmployees, announcementStep]);
+
+  // Forçar dropdown aberto durante explicação
+  useEffect(() => {
+    if (announcementStep === "explanation") {
+      setShowEmployees(true);
+    }
+  }, [announcementStep]);
+
+  // Escutar evento do toast para abrir dropdown de notificações
+  useEffect(() => {
+    const handleOpenDropdown = () => {
+      setShowNotifications(true);
+    };
+    window.addEventListener("open-notifications-dropdown", handleOpenDropdown);
+    return () =>
+      window.removeEventListener(
+        "open-notifications-dropdown",
+        handleOpenDropdown,
+      );
+  }, []);
 
   if (loading || !user) {
     return (
@@ -244,6 +276,118 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-6">
+            {/* Funcionários Online */}
+            <div className="relative">
+              <button
+                ref={employeesButtonRef}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowEmployees(!showEmployees);
+                }}
+                className="p-3 text-slate-400 hover:bg-slate-100 hover:text-[var(--color-geolog-blue)] rounded-xl relative transition-all border border-slate-100 cursor-pointer"
+                title={`Funcionários online: ${onlineCount}`}
+              >
+                <Users size={20} />
+                {onlineCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 text-white text-xs font-black rounded-full flex items-center justify-center border-2 border-white">
+                    {onlineCount > 9 ? "9+" : onlineCount}
+                  </span>
+                )}
+                <div
+                  className={`absolute bottom-1 right-1 w-2 h-2 rounded-full border border-white ${presenceLoading ? "bg-yellow-500 animate-pulse" : "bg-green-500"}`}
+                />
+              </button>
+
+              {showEmployees && (
+                <div className="absolute right-0 mt-2 w-[380px] bg-white border border-slate-200 rounded-2xl shadow-2xl z-[9999] overflow-hidden">
+                  <div className="p-4 border-b border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-black text-slate-800">
+                        Funcionários
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500" />
+                        <span className="text-xs text-slate-500 font-bold">
+                          {onlineCount} online
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="max-h-[400px] overflow-y-auto">
+                    {presenceLoading ? (
+                      <div className="p-8 text-center text-slate-400">
+                        <Users size={32} className="mx-auto mb-2 opacity-50 animate-pulse" />
+                        <p className="text-sm">Carregando...</p>
+                      </div>
+                    ) : presenceUsers.length === 0 ? (
+                      <div className="p-8 text-center text-slate-400">
+                        <Users size={32} className="mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">Nenhum funcionário encontrado</p>
+                      </div>
+                    ) : (
+                      presenceUsers.map((u) => (
+                        <div
+                          key={u.id}
+                          className="flex items-center gap-3 p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                        >
+                          <div className="relative flex-shrink-0">
+                            {u.avatar_url ? (
+                              <img
+                                src={u.avatar_url}
+                                alt={u.nome}
+                                className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                              />
+                            ) : (
+                              <span className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xs font-black flex items-center justify-center border border-slate-200">
+                                {u.nome.charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                            <span
+                              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${u.is_online ? "bg-green-500" : "bg-slate-300"}`}
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-800 truncate">
+                              {u.nome}
+                            </p>
+                            <p className="text-xs text-slate-500 capitalize">
+                              {u.categoria}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            {u.is_online ? (
+                              <span className="text-[10px] font-black uppercase tracking-wider text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                                Online
+                              </span>
+                            ) : (
+                              <div className="text-right">
+                                <span className="text-[10px] font-bold text-slate-400 block">
+                                  {u.last_seen_at
+                                    ? getPresenceTimeAgo(u.last_seen_at)
+                                    : "Nunca ativo"}
+                                </span>
+                                {u.last_seen_at && (
+                                  <span className="text-[11px] text-slate-400 block">
+                                    {new Date(u.last_seen_at).toLocaleString("pt-BR", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      year: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="relative">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
@@ -420,6 +564,18 @@ export default function DashboardLayout({
                                       <span className="text-xs text-slate-300">
                                         •
                                       </span>
+                                      {notification.created_by_avatar_url ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={notification.created_by_avatar_url}
+                                          alt={notification.created_by_name}
+                                          className="w-6 h-6 rounded-full object-cover border border-slate-200"
+                                        />
+                                      ) : (
+                                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center">
+                                          {notification.created_by_name.charAt(0).toUpperCase()}
+                                        </span>
+                                      )}
                                       <p className="text-xs text-slate-500 font-medium">
                                         {notification.created_by_name}
                                       </p>
@@ -479,6 +635,18 @@ export default function DashboardLayout({
 
         {/* Content */}
         <main className="flex-1 px-12 py-10 w-full">{children}</main>
+
+        {/* Announcement Modal */}
+        <AnnouncementModal
+          onOpenEmployeesDropdown={() => setShowEmployees(true)}
+          employeesButtonRef={employeesButtonRef}
+          onStepChange={setAnnouncementStep}
+        />
+
+        {/* Overlay de bloqueio durante explicação */}
+        {announcementStep === "explanation" && (
+          <div className="fixed inset-0 z-[9995]" onClick={(e) => e.stopPropagation()} />
+        )}
       </div>
     </div>
   );

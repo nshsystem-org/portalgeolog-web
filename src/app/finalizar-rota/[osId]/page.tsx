@@ -4,8 +4,56 @@ export const runtime = "edge";
 
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { CheckCircle2, AlertCircle, Loader2, Flag, Gauge } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Flag,
+  Gauge,
+  MessageCircle,
+} from "lucide-react";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
+
+function SuccessScreen({
+  title,
+  message,
+  subMessage,
+}: {
+  title: string;
+  message: string;
+  subMessage: string;
+}) {
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        window.close();
+      } catch {
+        // Navegador pode bloquear; usuário usa o botão
+      }
+    }, 2500);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <>
+      <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+        <Flag size={32} className="text-green-600" />
+      </div>
+      <h1 className="text-xl font-black text-slate-900 uppercase tracking-wider">
+        {title}
+      </h1>
+      <p className="text-sm font-semibold text-slate-500">{message}</p>
+      <p className="text-xs font-medium text-slate-400 pt-2">{subMessage}</p>
+      <a
+        href="https://wa.me/"
+        className="inline-flex items-center gap-2 mt-4 bg-green-600 text-white font-black text-sm uppercase tracking-widest py-3 px-6 rounded-2xl shadow-lg shadow-green-600/20 hover:scale-[1.02] active:scale-95 transition-all"
+      >
+        <MessageCircle size={18} />
+        Voltar ao WhatsApp
+      </a>
+    </>
+  );
+}
 
 interface PreviewData {
   os: {
@@ -178,18 +226,11 @@ export default function FinalizarRotaPage() {
         )}
 
         {status === "success" && (
-          <>
-            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
-              <Flag size={32} className="text-green-600" />
-            </div>
-            <h1 className="text-xl font-black text-slate-900 uppercase tracking-wider">
-              Rota Finalizada
-            </h1>
-            <p className="text-sm font-semibold text-slate-500">{message}</p>
-            <p className="text-xs font-medium text-slate-400 pt-2">
-              O sistema foi atualizado. Obrigado!
-            </p>
-          </>
+          <SuccessScreen
+            title="Rota Finalizada"
+            message={message}
+            subMessage="O sistema foi atualizado. Obrigado!"
+          />
         )}
 
         {status === "already" && (

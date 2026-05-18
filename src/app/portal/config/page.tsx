@@ -37,8 +37,6 @@ import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import StandardModal from "@/components/StandardModal";
 import { AvatarUploader } from "@/components/ui/AvatarUploader";
 import { useData } from "@/context/DataContext";
-// Removido: WahaConnectionsPanel (substituído por Meta API oficial)
-
 type TabType = "acesso" | "perfil" | "historico" | "financeiro";
 
 export default function ConfigPage() {

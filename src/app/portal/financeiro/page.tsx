@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarRange,
   DollarSign,
@@ -13,14 +13,21 @@ import { useData } from "@/context/DataContext";
 import { useAuth } from "@/context/AuthContext";
 import { DataTable } from "@/components/ui/DataTable";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
-import { fetchOSFinancePage } from "@/lib/supabase/queries";
+import { fetchOSFinancePage, fetchOSFinanceStats } from "@/lib/supabase/queries";
 
 export default function MedicaoFinanceiraPage() {
-  const { osList, clientes, updateOSStatus, impostoPercentual } = useData();
+  const { clientes, updateOSStatus, impostoPercentual } = useData();
   const { user } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().slice(0, 7),
   ); // YYYY-MM
+  const [stats, setStats] = useState({
+    totalOS: 0,
+    totalBruto: 0,
+    totalCusto: 0,
+    totalImposto: 0,
+    totalLucro: 0,
+  });
 
   const financeTable = useServerPaginatedTable(
     useCallback(
@@ -40,37 +47,22 @@ export default function MedicaoFinanceiraPage() {
     }).format(value);
   };
 
-  // Stats usam osList do DataContext (lightweight) para calcular totais do mês
-  const filteredData = useMemo(() => {
-    return osList.filter((item) => {
-      const matchMonth = item.data.startsWith(selectedMonth);
-      const clienteNome =
-        clientes.find((c) => c.id === item.clienteId)?.nome || "";
-      const matchSearch =
-        financeTable.searchTerm === "" ||
-        item.os.includes(financeTable.searchTerm) ||
-        clienteNome
-          .toLowerCase()
-          .includes(financeTable.searchTerm.toLowerCase()) ||
-        item.motorista
-          .toLowerCase()
-          .includes(financeTable.searchTerm.toLowerCase());
-      return matchMonth && matchSearch;
-    });
-  }, [osList, selectedMonth, financeTable.searchTerm, clientes]);
-
-  const totals = useMemo(() => {
-    return filteredData.reduce(
-      (acc, current) => {
-        acc.bruto += current.valorBruto ?? 0;
-        acc.custo += current.custo ?? 0;
-        acc.imposto += current.imposto ?? 0;
-        acc.lucro += current.lucro ?? 0;
-        return acc;
-      },
-      { bruto: 0, custo: 0, imposto: 0, lucro: 0 },
-    );
-  }, [filteredData]);
+  // Stats via RPC server-side
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await fetchOSFinanceStats(selectedMonth);
+        if (!cancelled) setStats(data);
+      } catch (err) {
+        console.error("Erro ao carregar stats financeiros:", err);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMonth]);
 
   const handleDarBaixa = (id: string) => {
     updateOSStatus(id, { financeiro: "Faturado" });
@@ -116,22 +108,22 @@ export default function MedicaoFinanceiraPage() {
       <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
         <FinanceStatCard
           label="Total faturamento mensal"
-          value={formatCurrency(totals.bruto)}
-          subValue={`Impostos retidos: ${formatCurrency(totals.imposto)}`}
+          value={formatCurrency(stats.totalBruto)}
+          subValue={`Impostos retidos: ${formatCurrency(stats.totalImposto)}`}
           icon={<DollarSign className="text-blue-600" size={28} />}
           color="blue"
         />
         <FinanceStatCard
           label="Repasse a motoristas"
-          value={formatCurrency(totals.custo)}
-          subValue={`${filteredData.length} ordens de serviço executadas`}
+          value={formatCurrency(stats.totalCusto)}
+          subValue={`${stats.totalOS} ordens de serviço executadas`}
           icon={<AlertCircle className="text-orange-600" size={28} />}
           color="orange"
         />
         <FinanceStatCard
           label="Lucro líquido disponível"
-          value={formatCurrency(totals.lucro)}
-          subValue={`Margem operacional de ${((totals.lucro / (totals.bruto || 1)) * 100).toFixed(1)}%`}
+          value={formatCurrency(stats.totalLucro)}
+          subValue={`Margem operacional de ${((stats.totalLucro / (stats.totalBruto || 1)) * 100).toFixed(1)}%`}
           icon={<TrendingUp className="text-emerald-600" size={28} />}
           color="emerald"
         />

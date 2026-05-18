@@ -34,7 +34,7 @@ async function createAuthClient() {
           return cookieStore.getAll();
         },
         setAll() {
-          // No-op in route handlers; middleware keeps the session fresh.
+          // No-op em rotas API; o middleware mantém a sessão atualizada
         },
       },
     },
@@ -80,7 +80,55 @@ export async function GET() {
 
     if (error) throw error;
 
-    return NextResponse.json(data ?? []);
+    const notifications = data ?? [];
+
+    // Buscar nomes e avatares atuais dos autores para evitar dados desatualizados
+    const uniqueCreatorIds = [
+      ...new Set(
+        notifications
+          .map((n) => n.created_by)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+
+    let currentNames: Record<string, string> = {};
+    let currentAvatars: Record<string, string | null> = {};
+    if (uniqueCreatorIds.length > 0) {
+      const { data: usersData } = await adminClient
+        .from("user_roles")
+        .select("id, nome, avatar_url")
+        .in("id", uniqueCreatorIds);
+
+      currentNames = (usersData ?? []).reduce(
+        (acc, u) => {
+          if (u.id && u.nome) acc[u.id] = u.nome;
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
+
+      currentAvatars = (usersData ?? []).reduce(
+        (acc, u) => {
+          if (u.id) acc[u.id] = u.avatar_url ?? null;
+          return acc;
+        },
+        {} as Record<string, string | null>,
+      );
+    }
+
+    const enriched = notifications.map((n) => ({
+      ...n,
+      created_by_name:
+        n.created_by && currentNames[n.created_by]
+          ? currentNames[n.created_by]
+          : n.created_by_name,
+      created_by_avatar_url:
+        n.created_by && currentAvatars[n.created_by] !== undefined
+          ? currentAvatars[n.created_by]
+          : n.created_by_avatar_url,
+    }));
+
+    return NextResponse.json(enriched);
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Erro desconhecido";
@@ -116,16 +164,19 @@ export async function POST(request: Request) {
 
     const adminClient = createAdminClient();
 
-    // Buscar nome do usuário se não estiver no metadata
+    // Buscar nome e avatar do usuário se não estiver no metadata
     let authorName = user.user_metadata?.nome || user.user_metadata?.full_name;
-    if (!authorName) {
-      const { data: profile } = await adminClient
-        .from("user_roles")
-        .select("nome")
-        .eq("id", user.id)
-        .single();
-      if (profile?.nome) authorName = profile.nome;
-    }
+    let authorAvatar: string | null = null;
+
+    const { data: profile } = await adminClient
+      .from("user_roles")
+      .select("nome, avatar_url")
+      .eq("id", user.id)
+      .single();
+
+    if (profile?.nome) authorName = profile.nome;
+    if (profile?.avatar_url) authorAvatar = profile.avatar_url;
+
     if (!authorName) authorName = user.email?.split("@")[0] || "Sistema";
 
     const { error } = await adminClient.from("app_notifications").insert({
@@ -137,6 +188,7 @@ export async function POST(request: Request) {
       empresa_id: null,
       created_by: user.id,
       created_by_name: authorName,
+      created_by_avatar_url: authorAvatar,
     });
 
     if (error) {

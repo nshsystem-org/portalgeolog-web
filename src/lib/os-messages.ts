@@ -3,7 +3,6 @@
  * Usado para formatação de mensagens (WhatsApp, email, SMS, etc.).
  *
  * Nota: As mensagens são enviadas via Meta API oficial (WhatsApp Business).
- * WAHA/WPPConnect foram removidos em 2026.
  */
 
 export interface ItineraryStop {
@@ -160,7 +159,7 @@ export function getOperationalCycleTitle(
   cycle: Pick<OperationalCycle, "kind" | "ordinal">,
 ): string {
   const prefix = cycle.kind === "return" ? "Retorno" : "Itinerário";
-  return `${numeroParaOrdinal(cycle.ordinal)} ${prefix}`;
+  return `${numeroParaOrdinal(cycle.ordinal)} - ${prefix}`;
 }
 
 export function getOperationalCycleBannerTitle(
@@ -522,9 +521,7 @@ export interface PassengerDetailsMessageData {
 export function buildPassengerDetailsMessage(
   data: PassengerDetailsMessageData,
 ): string {
-  const osLine = data.osNumber
-    ? `🆔 *OS:* ${data.osNumber.toUpperCase()}\n`
-    : "";
+  // OS number omitido para não poluir a mensagem
   const tipoCapitalizado = data.veiculoTipo
     ? data.veiculoTipo.charAt(0).toUpperCase() + data.veiculoTipo.slice(1)
     : "Não informado";
@@ -538,13 +535,12 @@ export function buildPassengerDetailsMessage(
   const itineraryText = formatItineraryGroups(data.itineraries);
 
   return (
-    `📋 *Protocolo:* ${data.protocolo}\n` +
-    `${osLine}` +
+    `📋 *Protocolo:* ${data.protocolo}\n\n` +
     `*Fornecedor:* ${data.fornecedor || "Geolog Transporte Executivo"}\n` +
     `*Empresa:* ${data.empresa}\n` +
     `*Solicitante:* ${data.solicitante || "Não informado"}\n\n` +
     `────────────────\n` +
-    `👨‍✈️ *Motorista:* ${data.motorista}\n` +
+    `👨‍✈️ *Motorista:* ${data.motorista}\n\n` +
     `*Contato:* ${data.motoristaTelefone || "Não informado"}\n` +
     `*Veículo:* ${tipoCapitalizado}\n` +
     `*Marca/Modelo:* ${data.veiculoMarcaModelo || "Não informado"}\n` +
@@ -552,7 +548,6 @@ export function buildPassengerDetailsMessage(
     `────────────────\n` +
     `👥 *Passageiro(s):*\n\n` +
     `${paxText}\n\n` +
-    `────────────────\n` +
     `${itineraryText}\n` +
     `_Portal Geolog_`
   );

@@ -1,12 +1,15 @@
 /**
  * Webhook da Meta (WhatsApp Business API)
  *
- * Recebe notificações quando o motorista clica nos botões CTA do template.
+ * Recebe notificações de interações do motorista via WhatsApp:
+ * - Clique em botão CTA do template "appointment_scheduling" (Detalhes do Serviço)
+ * - Flow completado do template "inicio_viagem_motorista" (KM inicial)
+ * - Flow completado do template "finalizar_viagem_motoristas" (KM final)
  *
  * Fluxo:
  * 1. Meta envia GET com hub.verify_token para validação do webhook
- * 2. Meta envia POST quando o usuário clica em um botão do template
- * 3. Extraímos o payload (os_id, ação) e processamos o aceite/recusa
+ * 2. Meta envia POST quando o usuário interage com templates/flows
+ * 3. Extraímos o payload e processamos aceite, início ou finalização da OS
  *
  * Configuração no Meta Business Manager:
  * - Callback URL: https://portalgeolog.com.br/api/meta-webhook
@@ -14,14 +17,34 @@
  */
 
 import { NextResponse } from "next/server";
+import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 import { createClient } from "@supabase/supabase-js";
 import { processDriverAccept } from "@/lib/driver-accept";
-import { sendWhatsAppMessage } from "@/lib/meta";
+import { sendWhatsAppMessage, sendWhatsAppTemplate } from "@/lib/meta";
 import {
   buildPassengerDetailsMessage,
+  getOperationalCycleTitle,
+  normalizeOperationalCycles,
+  deriveCyclesOperationalStatus,
   type ItineraryGroup,
   type ItineraryStop,
+  type OperationalCycleState,
 } from "@/lib/os-messages";
+
+// Cache simples para deduplicação de mensagens (Wamids)
+// Em Cloudflare Workers, variáveis globais podem persistir entre requisições no mesmo isolate.
+const processedMessages = new Set<string>();
+const CACHE_LIMIT = 500;
+
+function isDuplicateMessage(messageId: string): boolean {
+  if (processedMessages.has(messageId)) return true;
+  processedMessages.add(messageId);
+  if (processedMessages.size > CACHE_LIMIT) {
+    const first = processedMessages.values().next().value;
+    if (first) processedMessages.delete(first);
+  }
+  return false;
+}
 
 interface OSRecord {
   id?: string;
@@ -34,7 +57,14 @@ interface OSRecord {
   solicitante?: string | null;
   centro_custo?: string | null;
   veiculo_id?: string | null;
+  driver_id?: string | null;
 }
+
+type OrdensServicoUpdateBuilder = {
+  update(values: Record<string, unknown>): {
+    eq(column: string, value: string): Promise<{ error: Error | null }>;
+  };
+};
 
 interface WaypointRecord {
   id?: string;
@@ -47,30 +77,6 @@ interface WaypointRecord {
 }
 
 export const runtime = "edge";
-
-function parseDriverActionPayload(
-  payload: string,
-): { osId: string; cycleIndex?: number } | null {
-  const [action, osId, cycleIndexRaw] = payload.split("_");
-
-  if (action !== "accept" && action !== "reject") {
-    return null;
-  }
-
-  if (!osId) {
-    return null;
-  }
-
-  const cycleIndex =
-    cycleIndexRaw !== undefined && cycleIndexRaw !== ""
-      ? Number(cycleIndexRaw)
-      : undefined;
-
-  return {
-    osId,
-    ...(Number.isFinite(cycleIndex) ? { cycleIndex } : {}),
-  };
-}
 
 let _supabaseAdmin: ReturnType<typeof createClient> | null = null;
 const getAdmin = () => {
@@ -188,6 +194,23 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         return;
       }
       osId = (driverOS as { id: string }).id;
+
+      // Auto-aceite para motorista solicitando detalhes do serviço
+      try {
+        const result = await processDriverAccept(osId, undefined, true);
+        if (result.success && !result.alreadyAccepted) {
+          console.log(
+            "[meta-webhook] OS auto-aceita via detalhes do serviço:",
+            osId,
+          );
+        }
+      } catch (acceptErr) {
+        console.error(
+          "[meta-webhook] Erro ao auto-aceitar via detalhes:",
+          acceptErr,
+        );
+      }
+
       console.log(
         "[meta-webhook] OS encontrada via driver_template_message_id:",
         osId,
@@ -201,7 +224,7 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         getAdmin()
           .from("ordens_servico")
           .select(
-            "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id",
+            "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id, driver_id, driver_operation_cycles",
           )
           .eq("id", osId)
           .maybeSingle()
@@ -235,16 +258,28 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
     );
     let paxRows: Record<string, unknown>[] = [];
     if (waypointIds.length > 0) {
-      const { data: paxData } = await getAdmin()
-        .from("os_waypoint_passengers")
-        .select("passageiro_id, waypoint_id")
-        .in("waypoint_id", waypointIds);
-      paxRows = (paxData || []) as Record<string, unknown>[];
+      paxRows = await fetchInChunks<Record<string, unknown>>(
+        getAdmin(),
+        "os_waypoint_passengers",
+        "waypoint_id",
+        waypointIds,
+        "passageiro_id, waypoint_id",
+      );
     }
 
     let driverPhone = "Não informado";
     const osRecord = osData as OSRecord | null;
-    if (osRecord?.motorista) {
+    if (osRecord?.driver_id) {
+      const { data: driverRow } = await getAdmin()
+        .from("drivers")
+        .select("phone")
+        .eq("id", osRecord.driver_id)
+        .maybeSingle();
+      if (driverRow) {
+        driverPhone = String((driverRow as { phone?: string }).phone || "Não informado");
+      }
+    }
+    if (driverPhone === "Não informado" && osRecord?.motorista) {
       const normalized = osRecord.motorista
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
@@ -383,8 +418,388 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
       "[meta-webhook] Mensagem de detalhes enviada com sucesso para",
       phone,
     );
+
+    // Envia template flow "inicio_viagem_motorista" para o motorista
+    // O template contem header (titulo do ciclo), body (nome do motorista)
+    // e um botao de flow "INICIAR VIAGEM" onde o motorista digita o KM inicial
+    try {
+      const rawCycles = (osRecord as Record<string, unknown> | null)
+        ?.driver_operation_cycles;
+      const cycles = normalizeOperationalCycles(rawCycles);
+      const pendingCycle = cycles.find(
+        (c) => c.state !== "completed" && c.state !== "cancelled",
+      );
+      const targetCycle = pendingCycle || cycles[0];
+
+      if (targetCycle) {
+        if (driverPhone === "Não informado") {
+          console.warn(
+            "[meta-webhook] Template flow inicio_viagem_motorista não enviado: driverPhone não informado",
+          );
+        }
+      }
+
+      if (targetCycle && driverPhone !== "Não informado") {
+        const cycleTitle = getOperationalCycleTitle(targetCycle);
+        const motoristaName = String(osRecord?.motorista || "Motorista");
+
+        const templateComponents = [
+          {
+            type: "header",
+            parameters: [{ type: "text", text: cycleTitle }],
+          },
+          {
+            type: "body",
+            parameters: [{ type: "text", text: motoristaName }],
+          },
+          {
+            type: "button",
+            sub_type: "flow",
+            index: 0,
+            parameters: [],
+          },
+        ];
+
+        const templateResult = await sendWhatsAppTemplate(
+          driverPhone,
+          "inicio_viagem_motorista",
+          "pt_BR",
+          templateComponents,
+        );
+
+        if (templateResult.success && templateResult.messageId) {
+          await getAdmin()
+            .from("ordens_servico")
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            .update({ driver_flow_start_message_id: templateResult.messageId })
+            .eq("id", osId);
+          console.log(
+            "[meta-webhook] Template flow inicio_viagem_motorista enviado para",
+            driverPhone,
+            "cycle:",
+            cycleTitle,
+            "msgId:",
+            templateResult.messageId,
+          );
+        } else {
+          console.warn(
+            "[meta-webhook] Falha ao enviar template flow inicio_viagem_motorista:",
+            templateResult.error,
+          );
+        }
+      }
+    } catch (templateErr) {
+      console.error(
+        "[meta-webhook] Erro ao enviar template flow inicio_viagem_motorista:",
+        templateErr,
+      );
+    }
   } catch (err) {
     console.error("[meta-webhook] Erro ao enviar detalhes:", err);
+  }
+}
+
+/**
+ * Processa um flow completado pelo motorista (KM inicial ou KM final).
+ * O response_json vem em base64 dentro do evento interactive.nfm do webhook da Meta.
+ */
+async function handleFlowCompleted(
+  phone: string,
+  contextId: string,
+  responseJson: string,
+) {
+  try {
+    let data: Record<string, unknown>;
+    try {
+      const decoded = atob(responseJson);
+      data = JSON.parse(decoded);
+      console.log("[meta-webhook] Flow response decoded (base64):", data);
+    } catch {
+      data = JSON.parse(responseJson);
+      console.log("[meta-webhook] Flow response decoded (raw json):", data);
+    }
+
+    // Extrair o primeiro valor numerico valido (KM)
+    let kmValue: number | null = null;
+    for (const [key, value] of Object.entries(data)) {
+      if (key === "flow_token") continue;
+      const num = Number(value);
+      if (!Number.isNaN(num) && num >= 0) {
+        kmValue = num;
+        break;
+      }
+    }
+
+    if (kmValue === null) {
+      console.warn(
+        "[meta-webhook] Valor de KM nao encontrado no flow:",
+        data,
+      );
+      return;
+    }
+
+    // Buscar OS pelo contextId (messageId do template original)
+    const { data: osData } = await getAdmin()
+      .from("ordens_servico")
+      .select(
+        "id, motorista, driver_operation_cycles, driver_flow_start_message_id, driver_flow_finish_message_id",
+      )
+      .or(
+        `driver_flow_start_message_id.eq.${contextId},driver_flow_finish_message_id.eq.${contextId}`,
+      )
+      .maybeSingle();
+
+    if (!osData) {
+      console.warn(
+        "[meta-webhook] OS nao encontrada para flow contextId:",
+        contextId,
+      );
+      return;
+    }
+
+    const osRecord = osData as Record<string, unknown>;
+    const cycles = normalizeOperationalCycles(osRecord.driver_operation_cycles);
+
+    if (osRecord.driver_flow_start_message_id === contextId) {
+      // Flow de inicio: registra KM inicial, status "Em Rota", envia template de finalizar
+      const pendingCycle = cycles.find(
+        (c) => c.state !== "completed" && c.state !== "cancelled",
+      );
+      const targetCycle = pendingCycle || cycles[0];
+
+      if (targetCycle) {
+        const updatedCycles = cycles.map((cycle) =>
+          cycle.itineraryIndex === targetCycle.itineraryIndex
+            ? {
+                ...cycle,
+                state: "awaiting_finish" as OperationalCycleState,
+                kmInitial: kmValue,
+                startedAt: new Date().toISOString(),
+              }
+            : cycle,
+        );
+
+        const newStatus = deriveCyclesOperationalStatus(updatedCycles);
+
+        const ordensServico = getAdmin().from(
+          "ordens_servico",
+        ) as unknown as OrdensServicoUpdateBuilder;
+        await ordensServico
+          .update({
+            status_operacional: newStatus,
+            driver_operation_cycles: updatedCycles,
+            route_started_at: new Date().toISOString(),
+            route_started_km: kmValue,
+          })
+          .eq("id", osRecord.id as string);
+
+        console.log(
+          "[meta-webhook] KM inicial registrado via flow:",
+          kmValue,
+          "OS:",
+          osRecord.id,
+        );
+
+        // Enviar template flow "finalizar_viagem_motoristas" com KM inicial no body
+        const kmFormatted = kmValue.toLocaleString("pt-BR");
+        const finishComponents = [
+          {
+            type: "body",
+            parameters: [{ type: "text", text: kmFormatted }],
+          },
+          {
+            type: "button",
+            sub_type: "flow",
+            index: 0,
+            parameters: [],
+          },
+        ];
+
+        const finishResult = await sendWhatsAppTemplate(
+          phone,
+          "finalizar_viagem_motoristas",
+          "pt_BR",
+          finishComponents,
+        );
+
+        if (finishResult.success && finishResult.messageId) {
+          const ordensServico2 = getAdmin().from(
+            "ordens_servico",
+          ) as unknown as OrdensServicoUpdateBuilder;
+          await ordensServico2.update({
+            driver_flow_finish_message_id: finishResult.messageId,
+          })
+            .eq("id", osRecord.id as string);
+          console.log(
+            "[meta-webhook] Template flow finalizar_viagem_motoristas enviado para",
+            phone,
+            "msgId:",
+            finishResult.messageId,
+          );
+        } else {
+          console.warn(
+            "[meta-webhook] Falha ao enviar template flow finalizar_viagem_motoristas:",
+            finishResult.error,
+          );
+        }
+      }
+    } else if (osRecord.driver_flow_finish_message_id === contextId) {
+      // Flow de finalizacao: registra KM final, status "Finalizado" ou "Em Rota"
+      const activeCycle = cycles.find(
+        (c) => c.state === "awaiting_finish" || c.state === "awaiting_km_finish",
+      );
+      const targetCycle =
+        activeCycle ||
+        cycles.find((c) => c.state !== "completed" && c.state !== "cancelled") ||
+        cycles[0];
+
+      if (targetCycle) {
+        const kmInicial = targetCycle.kmInitial || 0;
+
+        if (kmValue <= kmInicial) {
+          const erroMsg =
+            `⚠️ *KM Inválido*\n\n` +
+            `O KM final (${kmValue.toLocaleString("pt-BR")}) não pode ser menor ou igual ao KM inicial (${kmInicial.toLocaleString("pt-BR")}).\n\n` +
+            `Por favor, verifique o hodômetro do veículo e tente novamente.`;
+          await sendWhatsAppMessage(phone, erroMsg);
+
+          const kmFormatted = kmInicial.toLocaleString("pt-BR");
+          const retryComponents = [
+            {
+              type: "body",
+              parameters: [{ type: "text", text: kmFormatted }],
+            },
+            {
+              type: "button",
+              sub_type: "flow",
+              index: 0,
+              parameters: [],
+            },
+          ];
+
+          const retryResult = await sendWhatsAppTemplate(
+            phone,
+            "finalizar_viagem_motoristas",
+            "pt_BR",
+            retryComponents,
+          );
+
+          if (!retryResult.success) {
+            console.warn(
+              "[meta-webhook] Falha ao reenviar template flow finalizar_viagem_motoristas:",
+              retryResult.error,
+            );
+          } else {
+            console.log(
+              "[meta-webhook] Template flow finalizar_viagem_motoristas reenviado para",
+              phone,
+              "msgId:",
+              retryResult.messageId,
+            );
+            // Atualizar driver_flow_finish_message_id para o novo messageId
+            // para que o próximo clique do motorista seja encontrado
+            try {
+              const ordensServicoRetry = getAdmin().from(
+                "ordens_servico",
+              ) as unknown as OrdensServicoUpdateBuilder;
+              await ordensServicoRetry
+                .update({
+                  driver_flow_finish_message_id: retryResult.messageId,
+                })
+                .eq("id", osRecord.id as string);
+              console.log(
+                "[meta-webhook] driver_flow_finish_message_id atualizado para novo msgId:",
+                retryResult.messageId,
+              );
+            } catch (updateErr) {
+              console.error(
+                "[meta-webhook] Erro ao atualizar driver_flow_finish_message_id:",
+                updateErr,
+              );
+            }
+          }
+
+          console.warn(
+            "[meta-webhook] KM final invalido:",
+            kmValue,
+            "<= inicial:",
+            kmInicial,
+            "OS:",
+            osRecord.id,
+          );
+          return;
+        }
+
+        const updatedCycles = cycles.map((cycle) =>
+          cycle.itineraryIndex === targetCycle.itineraryIndex
+            ? {
+                ...cycle,
+                state: "completed" as OperationalCycleState,
+                kmFinal: kmValue,
+                finishedAt: new Date().toISOString(),
+              }
+            : cycle,
+        );
+
+        const newStatus = deriveCyclesOperationalStatus(updatedCycles);
+
+        const ordensServico3 = getAdmin().from(
+          "ordens_servico",
+        ) as unknown as OrdensServicoUpdateBuilder;
+        await ordensServico3
+          .update({
+            status_operacional: newStatus,
+            driver_operation_cycles: updatedCycles,
+            route_finished_at: new Date().toISOString(),
+            route_finished_km: kmValue,
+          })
+          .eq("id", osRecord.id as string);
+
+        console.log(
+          "[meta-webhook] KM final registrado via flow:",
+          kmValue,
+          "OS:",
+          osRecord.id,
+          "novo status:",
+          newStatus,
+        );
+
+        // Enviar mensagem de agradecimento ao motorista
+        try {
+          const motoristaName = String(osRecord.motorista || "Motorista");
+          const distancia = kmValue - kmInicial;
+          const agradecimentoMsg =
+            `Obrigado, *${motoristaName}*! 🎉\n\n` +
+            `Sua viagem foi concluída com sucesso. Agradecemos pela dedicação e profissionalismo!\n\n` +
+            `*Resumo da viagem:*\n` +
+            `📍 KM Inicial: ${kmInicial.toLocaleString("pt-BR")}\n` +
+            `🏁 KM Final: ${kmValue.toLocaleString("pt-BR")}\n` +
+            `📏 Distância percorrida: ${distancia > 0 ? distancia.toLocaleString("pt-BR") : "0"} km\n\n` +
+            `A Portal Geolog agradece sua parceria. Tenha um excelente dia e volte sempre! 🚗✨`;
+
+          const msgResult = await sendWhatsAppMessage(phone, agradecimentoMsg);
+          if (msgResult.success) {
+            console.log(
+              "[meta-webhook] Mensagem de agradecimento enviada para",
+              phone,
+            );
+          } else {
+            console.warn(
+              "[meta-webhook] Falha ao enviar mensagem de agradecimento:",
+              msgResult.error,
+            );
+          }
+        } catch (msgErr) {
+          console.error(
+            "[meta-webhook] Erro ao enviar mensagem de agradecimento:",
+            msgErr,
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[meta-webhook] Erro ao processar flow completado:", err);
   }
 }
 
@@ -423,165 +838,211 @@ export async function GET(request: Request) {
 }
 
 /**
- * POST: Recebe notificações de eventos do WhatsApp (ex: botão clicado)
+ * POST: Recebe notificações de eventos do WhatsApp (botões CTA e flows)
+ *
+ * O template "appointment_scheduling" possui o botão CTA "Detalhes do Serviço".
+ * Ao clicar, o motorista recebe:
+ * 1. Auto-aceite da OS (processDriverAccept)
+ * 2. Mensagem completa com detalhes do serviço
+ * 3. Template flow "inicio_viagem_motorista" com botão "INICIAR VIAGEM"
+ *
+ * Quando o motorista completa o flow "inicio_viagem_motorista":
+ * - Registra KM inicial, atualiza status para "Em Rota"
+ * - Envia automaticamente template flow "finalizar_viagem_motoristas"
+ *
+ * Quando o motorista completa o flow "finalizar_viagem_motoristas":
+ * - Registra KM final, atualiza status para "Finalizado"
+ *
+ * Otimização: processamento é fire-and-forget para responder
+ * 200 imediatamente ao Meta e evitar timeout/retry.
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     console.log(
-      "[meta-webhook] POST recebido:",
-      JSON.stringify(body).slice(0, 500),
+      "[meta-webhook] POST body completo:",
+      JSON.stringify(body),
     );
 
-    // Verificar se é uma notificação de mensagem (botão clicado)
+    // Persistir payload para diagnóstico (fire-and-forget)
+    try {
+      await getAdmin()
+        .from("webhook_logs")
+        .insert({
+          source: "meta-webhook",
+          payload: body,
+        } as any);
+    } catch (logErr) {
+      console.error("[meta-webhook] Erro ao salvar log:", logErr);
+    }
+
     const entries = body?.entry || [];
+    const processingTasks: Promise<void>[] = [];
 
     for (const entry of entries) {
       const changes = entry?.changes || [];
 
       for (const change of changes) {
         const value = change?.value;
-
-        // Mensagens recebidas (inclui cliques em botões interativos)
         const messages = value?.messages || [];
 
         for (const message of messages) {
           const msgType = message?.type;
-          const contextId = message?.context?.id; // ID da mensagem original (template)
+          const contextId = message?.context?.id;
           const phone = message?.from;
 
-          // Verificar se é uma resposta interativa (botão clicado)
+          console.log("[meta-webhook] Mensagem recebida:", {
+            msgType,
+            phone,
+            contextId,
+            messageId: message?.id,
+            hasInteractive: !!message?.interactive,
+            hasButton: !!message?.button,
+          });
+
+          // Deduplicação
+          if (message?.id && isDuplicateMessage(message.id)) {
+            console.log("[meta-webhook] Duplicada ignorada:", message.id);
+            continue;
+          }
+
+          // Tratamento de flow completado (interactive.type === "nfm_reply")
           const interactive = message?.interactive;
+          const nfmReply = interactive?.nfm_reply;
+          if (interactive && nfmReply && nfmReply.response_json && contextId && phone) {
+            console.log("[meta-webhook] Flow completado detectado:", {
+              phone,
+              contextId,
+              responseJson: nfmReply.response_json,
+            });
+            processingTasks.push(
+              (async () => {
+                try {
+                  await handleFlowCompleted(
+                    phone,
+                    contextId,
+                    nfmReply.response_json,
+                  );
+                } catch (err) {
+                  console.error(
+                    "[meta-webhook] Erro ao processar flow:",
+                    err,
+                  );
+                }
+              })(),
+            );
+            continue;
+          }
+
+          // Tratamento de botões interativos (interactive)
           if (interactive) {
             const buttonReply = interactive?.button_reply;
-            if (!buttonReply) continue;
-
-            const buttonId = buttonReply?.id;
-            const buttonTitle = buttonReply?.title?.toLowerCase();
-
-            console.log("[meta-webhook] Botão clicado:", {
-              buttonId,
-              buttonTitle,
-              contextId,
-              from: phone,
+            console.log("[meta-webhook] Botão interativo detectado:", {
+              buttonReply,
+              buttonId: buttonReply?.id,
+              buttonTitle: buttonReply?.title,
             });
 
-            // O button_id deve conter o ID da OS e opcionalmente o índice do ciclo
-            // Formato esperado: "accept_{osId}" ou "accept_{osId}_{cycleIndex}"
-            const parsedAction = buttonId
-              ? parseDriverActionPayload(buttonId)
-              : null;
-
-            if (buttonId?.startsWith("accept_") && parsedAction) {
+            if (buttonReply && contextId && phone) {
+              // Qualquer botão interativo com contextId dispara detalhes
               console.log(
-                "[meta-webhook] Processando aceite para OS:",
-                parsedAction.osId,
-                "cycle_index:",
-                parsedAction.cycleIndex,
+                "[meta-webhook] Disparando detalhes via botão interativo:",
+                { phone, contextId, buttonId: buttonReply.id },
               );
-
-              const result = await processDriverAccept(
-                parsedAction.osId,
-                parsedAction.cycleIndex,
+              processingTasks.push(
+                (async () => {
+                  try {
+                    await handlePassengerDetailsRequest(phone, contextId);
+                  } catch (err) {
+                    console.error(
+                      "[meta-webhook] Erro ao processar detalhes:",
+                      err,
+                    );
+                  }
+                })(),
               );
-
-              if (result.success) {
-                console.log(
-                  "[meta-webhook] Aceite processado com sucesso:",
-                  result.message,
-                );
-              } else {
-                console.error(
-                  "[meta-webhook] Erro ao processar aceite:",
-                  result.error,
-                );
-              }
-            } else if (buttonId?.startsWith("reject_")) {
-              const osId = buttonId.split("_")[1];
-              console.log("[meta-webhook] Motorista recusou OS:", osId);
-              // TODO: Implementar lógica de recusa (atualizar status para recusado)
-            } else {
-              // Se for o botão "Detalhes do Serviço"
-              if (phone && contextId) {
-                console.log(
-                  "[meta-webhook] Processando solicitação de detalhes para:",
-                  phone,
-                );
-                await handlePassengerDetailsRequest(phone, contextId);
-              } else {
-                console.warn(
-                  "[meta-webhook] Telefone ou contextId ausente para detalhes:",
-                  { phone, contextId },
-                );
-              }
             }
-          } else if (msgType === "button") {
-            // Quick reply de template: Meta envia type="button" com button.payload e button.text
+            continue;
+          }
+
+          // Tratamento de quick reply de template (message.type === "button")
+          if (msgType === "button") {
             const buttonPayload = String(message?.button?.payload || "");
+            const buttonText = String(message?.button?.text || "").toLowerCase();
             console.log("[meta-webhook] Quick reply de template:", {
               buttonPayload,
-              from: phone,
+              buttonText,
               contextId,
+              phone,
             });
 
-            const parsedPayload = parseDriverActionPayload(buttonPayload);
-
-            if (buttonPayload.startsWith("accept_") && parsedPayload) {
+            if (contextId && phone) {
               console.log(
-                "[meta-webhook] Aceite via quick reply para OS:",
-                parsedPayload.osId,
-                "cycle_index:",
-                parsedPayload.cycleIndex,
+                "[meta-webhook] Disparando detalhes via quick reply:",
+                { phone, contextId, buttonText },
               );
-              const result = await processDriverAccept(
-                parsedPayload.osId,
-                parsedPayload.cycleIndex,
+              processingTasks.push(
+                (async () => {
+                  try {
+                    await handlePassengerDetailsRequest(phone, contextId);
+                  } catch (err) {
+                    console.error(
+                      "[meta-webhook] Erro ao processar detalhes:",
+                      err,
+                    );
+                  }
+                })(),
               );
-              if (result.success) {
-                console.log(
-                  "[meta-webhook] Aceite processado:",
-                  result.message,
-                );
-              } else {
-                console.error(
-                  "[meta-webhook] Erro ao processar aceite:",
-                  result.error,
-                );
-              }
-            } else if (buttonPayload.startsWith("reject_")) {
-              const osId = buttonPayload.split("_")[1];
-              console.log(
-                "[meta-webhook] Motorista recusou OS via quick reply:",
-                osId,
-              );
-              // TODO: Implementar lógica de recusa (atualizar status para recusado)
-            } else if (phone && contextId) {
-              console.log(
-                "[meta-webhook] Detalhes via quick reply de template:",
-                { phone, contextId },
-              );
-              await handlePassengerDetailsRequest(phone, contextId);
             }
-          } else if (msgType === "text" && contextId) {
-            // Fallback: mensagens de texto com context.id também disparam detalhes
-            // (útil para testar via console da Meta com payload padrão "Incoming Message")
+            continue;
+          }
+
+          // Tratamento de texto com contextId (fallback)
+          if (msgType === "text" && contextId && phone) {
             console.log(
-              "[meta-webhook] Mensagem de texto com contextId detectada, tratando como detalhes:",
+              "[meta-webhook] Mensagem de texto com contextId, disparando detalhes:",
               { phone, contextId },
             );
-            if (phone) {
-              await handlePassengerDetailsRequest(phone, contextId);
-            }
+            processingTasks.push(
+              (async () => {
+                try {
+                  await handlePassengerDetailsRequest(phone, contextId);
+                } catch (err) {
+                  console.error(
+                    "[meta-webhook] Erro ao processar detalhes:",
+                    err,
+                  );
+                }
+              })(),
+            );
+            continue;
           }
+
+          console.log("[meta-webhook] Tipo de mensagem não tratado:", {
+            msgType,
+            phone,
+            contextId,
+          });
         }
       }
     }
 
-    // Sempre retornar 200 para o Meta não reenviar
+    // Aguarda todas as tarefas de processamento completarem antes de responder.
+    // No Cloudflare Workers, responder 200 imediatamente com fire-and-forget
+    // faz o isolate ser encerrado antes que as queries ao Supabase terminem.
+    if (processingTasks.length > 0) {
+      console.log(
+        "[meta-webhook] Aguardando",
+        processingTasks.length,
+        "tarefa(s) de processamento...",
+      );
+      await Promise.all(processingTasks);
+      console.log("[meta-webhook] Todas as tarefas concluídas.");
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[meta-webhook] Erro ao processar webhook:", error);
-    // Retornar 200 mesmo em erro para evitar reenvios do Meta
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : "Erro desconhecido",

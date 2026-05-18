@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 import type {
   Cliente,
   CentroCusto,
@@ -59,8 +60,15 @@ const DRIVER_PAGE_SELECT_COLUMNS =
 const VEICULO_PAGE_SELECT_COLUMNS =
   "id, placa, renavam, modelo, marca, ano, cor, tipo, status, created_at";
 
-const sanitizeSearchTerm = (term: string): string =>
-  term.trim().replace(/[%_]/g, "\\$&");
+const MAX_SEARCH_TERM_LENGTH = 100;
+
+const sanitizeSearchTerm = (term: string): string => {
+  const trimmed = term.trim().slice(0, MAX_SEARCH_TERM_LENGTH);
+  return trimmed
+    .replace(/[%_]/g, "\\$&")
+    .replace(/[(),]/g, "")
+    .replace(/:/g, " ");
+};
 
 // Função para criar notificações
 export async function createNotification(
@@ -311,7 +319,9 @@ const mapOSRecord = (
     operationalCycles: normalizeOperationalCycles(o.driver_operation_cycles),
     currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
     createdAt: o.created_at ?? undefined,
-    createdByName: o.created_by_name ?? undefined,
+    createdBy: o.created_by ?? undefined,
+    createdByName: undefined,
+    arquivado: o.arquivado ?? undefined,
   };
 };
 
@@ -788,7 +798,6 @@ const OS_SELECT_COLUMNS = [
   "current_driver_cycle_index",
   "created_at",
   "created_by",
-  "created_by_name",
 ].join(",");
 
 export async function fetchOSList(): Promise<OrderService[]> {
@@ -796,8 +805,7 @@ export async function fetchOSList(): Promise<OrderService[]> {
     .from("ordens_servico")
     .select(OS_SELECT_COLUMNS)
     .eq("arquivado", false)
-    .order("created_at", { ascending: false })
-    .limit(100);
+    .order("created_at", { ascending: false });
 
   if (error) throw error;
 
@@ -819,12 +827,13 @@ export async function fetchOSList(): Promise<OrderService[]> {
     const wpIds = wpRaw.map((w) => w.id);
 
     if (wpIds.length > 0) {
-      const { data: passData } = await getSupabase()
-        .from("os_waypoint_passengers")
-        .select("id, waypoint_id, passageiro_id")
-        .in("waypoint_id", wpIds);
-
-      wpPassRaw = (passData || []) as OSWaypointPassengerRow[];
+      wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
+        getSupabase(),
+        "os_waypoint_passengers",
+        "waypoint_id",
+        wpIds,
+        "id, waypoint_id, passageiro_id",
+      );
     }
   }
 
@@ -856,38 +865,97 @@ export async function fetchOSById(id: string): Promise<OrderService | null> {
   let wpPassRaw: OSWaypointPassengerRow[] = [];
 
   if (wpIds.length > 0) {
-    const { data: passData, error: passError } = await getSupabase()
-      .from("os_waypoint_passengers")
-      .select("id, waypoint_id, passageiro_id")
-      .in("waypoint_id", wpIds);
-
-    if (passError) throw passError;
-    wpPassRaw = (passData || []) as OSWaypointPassengerRow[];
+    wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
+      getSupabase(),
+      "os_waypoint_passengers",
+      "waypoint_id",
+      wpIds,
+      "id, waypoint_id, passageiro_id",
+    );
   }
 
   return mapOSRecord(osRaw as unknown as OSRow, wpRaw, wpPassRaw);
 }
 
+export type OSPageFilters = {
+  osNumber?: string;
+  clienteId?: string;
+  centroCustoId?: string;
+  solicitante?: string;
+  motorista?: string;
+  veiculoId?: string;
+  dataInicio?: string;
+  dataFim?: string;
+  statusOperacional?: string;
+  createdBy?: string;
+  arquivado?: boolean;
+};
+
 export async function fetchOSPage({
   page = 1,
   pageSize = 10,
   searchTerm = "",
-}: PaginationParams = {}): Promise<PaginatedResult<OrderService>> {
+  filters = {},
+}: PaginationParams & { filters?: OSPageFilters } = {}): Promise<
+  PaginatedResult<OrderService>
+> {
   const { from, to } = normalizePagination(page, pageSize);
   const term = searchTerm.trim();
   const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
 
   let query = getSupabase()
     .from("ordens_servico")
-    .select(OS_SELECT_COLUMNS, { count: "exact" })
-    .eq("arquivado", false)
-    .order("created_at", { ascending: false })
-    .range(from, to);
+    .select(OS_SELECT_COLUMNS, { count: "exact" });
+
+  if (filters.arquivado !== undefined) {
+    query = query.eq("arquivado", filters.arquivado);
+  } else {
+    query = query.eq("arquivado", false);
+  }
+
+  query = query.order("created_at", { ascending: false }).range(from, to);
 
   if (likeTerm) {
     query = query.or(
       `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
     );
+  }
+
+  if (filters.osNumber) {
+    query = query.ilike("os_number", `%${sanitizeSearchTerm(filters.osNumber)}%`);
+  }
+  if (filters.clienteId) {
+    query = query.eq("cliente_id", filters.clienteId);
+  }
+  if (filters.centroCustoId) {
+    query = query.eq("centro_custo_id", filters.centroCustoId);
+  }
+  if (filters.solicitante) {
+    query = query.ilike(
+      "solicitante",
+      `%${sanitizeSearchTerm(filters.solicitante)}%`,
+    );
+  }
+  if (filters.motorista) {
+    query = query.ilike(
+      "motorista",
+      `%${sanitizeSearchTerm(filters.motorista)}%`,
+    );
+  }
+  if (filters.veiculoId) {
+    query = query.eq("veiculo_id", filters.veiculoId);
+  }
+  if (filters.dataInicio) {
+    query = query.gte("data", filters.dataInicio);
+  }
+  if (filters.dataFim) {
+    query = query.lte("data", filters.dataFim);
+  }
+  if (filters.statusOperacional) {
+    query = query.eq("status_operacional", filters.statusOperacional);
+  }
+  if (filters.createdBy) {
+    query = query.eq("created_by", filters.createdBy);
   }
 
   const { data: osRaw, error, count } = await query;
@@ -911,12 +979,13 @@ export async function fetchOSPage({
     const wpIds = wpRaw.map((w) => w.id);
 
     if (wpIds.length > 0) {
-      const { data: passData } = await getSupabase()
-        .from("os_waypoint_passengers")
-        .select("id, waypoint_id, passageiro_id")
-        .in("waypoint_id", wpIds);
-
-      wpPassRaw = (passData || []) as OSWaypointPassengerRow[];
+      wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
+        getSupabase(),
+        "os_waypoint_passengers",
+        "waypoint_id",
+        wpIds,
+        "id, waypoint_id, passageiro_id",
+      );
     }
   }
 
@@ -979,6 +1048,7 @@ export async function fetchOSPage({
           o.driver_operation_cycles,
         ),
         currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
+        arquivado: o.arquivado ?? false,
       };
     }),
     totalCount: count ?? typedOrders.length,
@@ -1073,6 +1143,7 @@ type OSInput = Omit<
 export async function insertOS(
   osData: OSInput,
   actorName?: string,
+  actorId?: string | null,
 ): Promise<OrderService> {
   const impostoPercentual = await getImpostoPercentualForDate(osData.data);
   const vBruto = osData.valorBruto ?? 0;
@@ -1110,6 +1181,7 @@ export async function insertOS(
       lucro,
       status_operacional: "Pendente",
       status_financeiro: "Pendente",
+      created_by: actorId || null,
       created_by_name: actorName || null,
     })
     .select("*")
@@ -1210,13 +1282,7 @@ export async function insertOS(
     "create",
     "Dados de cadastro do atendimento",
     actorName || "Sistema",
-  );
-
-  void createNotification(
-    "info",
-    "Nova Ordem de Serviço",
-    `Protocolo #${osRow.protocolo} foi gerado.`,
-    "all",
+    actorId,
   );
 
   return {
@@ -1256,6 +1322,7 @@ export async function updateOSInDB(
   id: string,
   osData: OSInput,
   actorName?: string,
+  actorId?: string | null,
 ): Promise<void> {
   const impostoPercentual = await getImpostoPercentualForDate(osData.data);
   const vBruto = osData.valorBruto ?? 0;
@@ -1320,6 +1387,7 @@ export async function updateOSInDB(
     "update",
     `OS atualizada${osData.os ? ` (nº ${osData.os})` : ""}${osData.motorista ? ` — Motorista: ${osData.motorista}` : ""}`,
     actorName || "Sistema",
+    actorId,
   );
 }
 
@@ -1327,6 +1395,7 @@ export async function updateOSStatusInDB(
   id: string,
   updates: { operacional?: string; financeiro?: string },
   actorName?: string,
+  actorId?: string | null,
 ): Promise<void> {
   const updatePayload: Record<string, string> = {};
   if (updates.operacional)
@@ -1352,6 +1421,7 @@ export async function updateOSStatusInDB(
       "status_change",
       parts.join(" | "),
       actorName || "Sistema",
+      actorId,
     );
   }
 }
@@ -1359,6 +1429,7 @@ export async function updateOSStatusInDB(
 export async function archiveOSFromDB(
   id: string,
   actorName?: string,
+  actorId?: string | null,
 ): Promise<void> {
   const { error } = await getSupabase()
     .from("ordens_servico")
@@ -1367,7 +1438,22 @@ export async function archiveOSFromDB(
 
   if (error) throw error;
 
-  void insertOSLog(id, "archive", "OS arquivada", actorName || "Sistema");
+  void insertOSLog(id, "archive", "OS arquivada", actorName || "Sistema", actorId);
+}
+
+export async function unarchiveOSFromDB(
+  id: string,
+  actorName?: string,
+  actorId?: string | null,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("ordens_servico")
+    .update({ arquivado: false, status_operacional: "Pendente" })
+    .eq("id", id);
+
+  if (error) throw error;
+
+  void insertOSLog(id, "unarchive", "OS reaberta", actorName || "Sistema", actorId);
 }
 
 // ── Centros de Custo ──────────────────────────────────────
@@ -2121,6 +2207,175 @@ export async function insertOSLog(
   if (error) {
     console.error("Erro ao inserir log de OS:", error);
   }
+}
+
+export async function fetchOSCalendarRange({
+  from,
+  to,
+  arquivado,
+}: {
+  from: string;
+  to: string;
+  arquivado?: boolean;
+}): Promise<OrderService[]> {
+  let query = getSupabase()
+    .from("ordens_servico")
+    .select(OS_SELECT_COLUMNS)
+    .gte("data", from)
+    .lte("data", to);
+
+  if (arquivado !== undefined) {
+    query = query.eq("arquivado", arquivado);
+  } else {
+    query = query.eq("arquivado", false);
+  }
+
+  const { data: osRaw, error } = await query.order("data", { ascending: true })
+    .order("hora", { ascending: true });
+
+  if (error) throw error;
+
+  const typedOrders = (osRaw || []) as unknown as OSRow[];
+  const osIds = typedOrders.map((o) => o.id);
+  let wpRaw: OSWaypointRow[] = [];
+  let wpPassRaw: OSWaypointPassengerRow[] = [];
+
+  if (osIds.length > 0) {
+    const { data: wpData } = await getSupabase()
+      .from("os_waypoints")
+      .select(
+        "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
+      )
+      .in("ordem_servico_id", osIds)
+      .order("position");
+
+    wpRaw = (wpData || []) as OSWaypointRow[];
+    const wpIds = wpRaw.map((w) => w.id);
+
+    if (wpIds.length > 0) {
+      wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
+        getSupabase(),
+        "os_waypoint_passengers",
+        "waypoint_id",
+        wpIds,
+        "id, waypoint_id, passageiro_id",
+      );
+    }
+  }
+
+  return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
+}
+
+export type OSStatusCounts = {
+  Pendente: number;
+  Aguardando: number;
+  "Em Rota": number;
+  Finalizado: number;
+  Cancelado: number;
+};
+
+export async function fetchOSStatusCounts(): Promise<OSStatusCounts> {
+  const { data, error } = await getSupabase().rpc("get_os_status_counts");
+  if (error) throw error;
+
+  const counts: OSStatusCounts = {
+    Pendente: 0,
+    Aguardando: 0,
+    "Em Rota": 0,
+    Finalizado: 0,
+    Cancelado: 0,
+  };
+
+  (data || []).forEach((row: { status: string; count: number }) => {
+    if (row.status in counts) {
+      counts[row.status as keyof OSStatusCounts] = Number(row.count);
+    }
+  });
+
+  return counts;
+}
+
+export type OSCalendarEvent = {
+  id: string;
+  protocolo: string;
+  data: string;
+  hora: string | null;
+  statusOperacional: string;
+  clienteId: string | null;
+  motorista: string | null;
+  driverId: string | null;
+  veiculoId: string | null;
+};
+
+export async function fetchOSCalendarEvents({
+  from,
+  to,
+}: {
+  from: string;
+  to: string;
+}): Promise<OSCalendarEvent[]> {
+  const { data, error } = await getSupabase().rpc("get_os_calendar_events", {
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+
+  return (data || []).map((row: Record<string, unknown>) => ({
+    id: row.id as string,
+    protocolo: row.protocolo as string,
+    data: row.data as string,
+    hora: (row.hora as string | null) || null,
+    statusOperacional: row.status_operacional as string,
+    clienteId: row.cliente_id as string | null,
+    motorista: row.motorista as string | null,
+    driverId: row.driver_id as string | null,
+    veiculoId: row.veiculo_id as string | null,
+  }));
+}
+
+export async function checkActiveOSForDriverVehicle(
+  driverId: string,
+  vehicleId: string,
+  excludeOsId?: string | null,
+): Promise<boolean> {
+  const { data, error } = await getSupabase().rpc(
+    "check_active_os_for_driver_vehicle",
+    {
+      p_driver_id: driverId,
+      p_vehicle_id: vehicleId,
+      p_exclude_os_id: excludeOsId || null,
+    },
+  );
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function fetchOSFinanceStats(month: string): Promise<{
+  totalOS: number;
+  totalBruto: number;
+  totalCusto: number;
+  totalImposto: number;
+  totalLucro: number;
+}> {
+  const { data, error } = await getSupabase().rpc("get_os_finance_stats", {
+    p_month: month,
+  });
+  if (error) throw error;
+  const row =
+    (data || [])[0] || {
+      total_os: 0,
+      total_bruto: 0,
+      total_custo: 0,
+      total_imposto: 0,
+      total_lucro: 0,
+    };
+  return {
+    totalOS: Number(row.total_os),
+    totalBruto: Number(row.total_bruto),
+    totalCusto: Number(row.total_custo),
+    totalImposto: Number(row.total_imposto),
+    totalLucro: Number(row.total_lucro),
+  };
 }
 
 export async function fetchOSLogs(osId: string): Promise<OSLog[]> {

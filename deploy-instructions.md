@@ -10,7 +10,7 @@ Após o deploy, o site não funciona porque as variáveis de ambiente não estã
 
 **Arquivos modificados:**
 
-- `vite.config.ts` - Agora injeta todas as variáveis WAHA*, SUPABASE* e NEXT*PUBLIC* no build
+- `vite.config.ts` - Agora injeta todas as variáveis SUPABASE* e NEXT*PUBLIC* no build
 - `worker/index.js` - Melhorado o Proxy para process.env que copia variáveis do Cloudflare env
 - `wrangler.toml` e `wrangler.workers.toml` - Adicionados placeholders para todas as variáveis necessárias
 
@@ -20,11 +20,9 @@ Após o deploy, o site não funciona porque as variáveis de ambiente não estã
 
 ```bash
 # Exportar todas as variáveis necessárias
-export WAHA_API_KEY="sua_chave_aqui"
 export SUPABASE_SERVICE_ROLE_KEY="sua_chave_aqui"
 export WHATSAPP_HOOK_HMAC_KEY="sua_chave_aqui"
 export RESEND_API_KEY="sua_chave_aqui"
-export WAHA_SSH_PASSWORD="sua_senha_aqui"
 
 # Fazer build e deploy
 npm run build
@@ -38,11 +36,9 @@ npx wrangler deploy --config wrangler.workers.toml
 npm run build
 
 # Configurar secrets no Cloudflare
-npx wrangler secret put WAHA_API_KEY
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 npx wrangler secret put WHATSAPP_HOOK_HMAC_KEY
 npx wrangler secret put RESEND_API_KEY
-npx wrangler secret put WAHA_SSH_PASSWORD
 
 # Fazer deploy
 npx wrangler deploy --config wrangler.workers.toml
@@ -52,11 +48,9 @@ npx wrangler deploy --config wrangler.workers.toml
 
 Configure as variáveis de ambiente no seu CI/CD:
 
-- `WAHA_API_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `WHATSAPP_HOOK_HMAC_KEY`
 - `RESEND_API_KEY`
-- `WAHA_SSH_PASSWORD`
 
 ### 3. Verificação
 
@@ -90,19 +84,6 @@ curl http://localhost:3000/api/test-env
 
 - NEXT_PUBLIC_SUPABASE_URL
 - NEXT_PUBLIC_SUPABASE_ANON_KEY
-- NEXT_PUBLIC_WAHA_SESSION
-
-**Servidor (WAHA\_):**
-
-- WAHA_API_URL
-- WAHA_API_KEY
-- WAHA_SESSION
-- WAHA_SSH_HOST
-- WAHA_SSH_PORT
-- WAHA_SSH_USERNAME
-- WAHA_SSH_PASSWORD
-- WAHA_REMOTE_DIR
-
 **Supabase:**
 
 - SUPABASE_SERVICE_ROLE_KEY

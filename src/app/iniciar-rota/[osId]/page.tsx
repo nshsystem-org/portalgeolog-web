@@ -11,8 +11,50 @@ import {
   Navigation,
   Car,
   Gauge,
+  MessageCircle,
 } from "lucide-react";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
+
+function SuccessScreen({
+  title,
+  message,
+  subMessage,
+}: {
+  title: string;
+  message: string;
+  subMessage: string;
+}) {
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        window.close();
+      } catch {
+        // Navegador pode bloquear; usuário usa o botão
+      }
+    }, 2500);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <>
+      <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+        <Navigation size={32} className="text-green-600" />
+      </div>
+      <h1 className="text-xl font-black text-slate-900 uppercase tracking-wider">
+        {title}
+      </h1>
+      <p className="text-sm font-semibold text-slate-500">{message}</p>
+      <p className="text-xs font-medium text-slate-400 pt-2">{subMessage}</p>
+      <a
+        href="https://wa.me/"
+        className="inline-flex items-center gap-2 mt-4 bg-green-600 text-white font-black text-sm uppercase tracking-widest py-3 px-6 rounded-2xl shadow-lg shadow-green-600/20 hover:scale-[1.02] active:scale-95 transition-all"
+      >
+        <MessageCircle size={18} />
+        Voltar ao WhatsApp
+      </a>
+    </>
+  );
+}
 
 interface PreviewData {
   os: {
@@ -64,8 +106,11 @@ export default function IniciarRotaPage() {
           return;
         }
         if (data.alreadyStarted) {
-          setStatus("already");
-          setMessage(data.message || "Rota já iniciada anteriormente.");
+          const itineraryIndex =
+            data.cycle?.itineraryIndex ??
+            (cycleIndex !== null ? Number(cycleIndex) : 0);
+          const finishUrl = `/finalizar-rota/${osId}?cycle_index=${itineraryIndex}`;
+          window.location.replace(finishUrl);
           return;
         }
         setPreview(data);
@@ -210,18 +255,11 @@ export default function IniciarRotaPage() {
         )}
 
         {status === "success" && (
-          <>
-            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
-              <Navigation size={32} className="text-green-600" />
-            </div>
-            <h1 className="text-xl font-black text-slate-900 uppercase tracking-wider">
-              Rota Iniciada
-            </h1>
-            <p className="text-sm font-semibold text-slate-500">{message}</p>
-            <p className="text-xs font-medium text-slate-400 pt-2">
-              O sistema foi atualizado. Bom trabalho!
-            </p>
-          </>
+          <SuccessScreen
+            title="Rota Iniciada"
+            message={message}
+            subMessage="O sistema foi atualizado. Bom trabalho!"
+          />
         )}
 
         {status === "already" && (

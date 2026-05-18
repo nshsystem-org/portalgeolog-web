@@ -15,6 +15,12 @@ type OSRow = {
   driver_operation_cycles: OperationalCycle[] | null;
 };
 
+type OrdensServicoUpdateBuilder = {
+  update(values: Record<string, unknown>): {
+    eq(column: string, value: string): Promise<{ error: Error | null }>;
+  };
+};
+
 let _supabaseAdmin: ReturnType<typeof createClient> | null = null;
 const getAdmin = () => {
   if (!_supabaseAdmin) {
@@ -93,12 +99,12 @@ export async function POST(request: Request) {
         break;
 
       case "revert_to_pending":
-        // Revert accept to pending: reset to awaiting_accept state
+        // Revert accept to pending: reset to pending state
         updatedCycles = updateCycleInList(cycles, cycle_index, {
-          state: "awaiting_accept",
+          state: "pending",
           acceptedAt: undefined,
         });
-        newState = "awaiting_accept";
+        newState = "pending";
         break;
 
       case "revert_to_accept":
@@ -119,8 +125,10 @@ export async function POST(request: Request) {
     }
 
     // Update the database
-    const { error: updateError } = await getAdmin()
-      .from("ordens_servico")
+    const ordensServico = getAdmin().from(
+      "ordens_servico",
+    ) as unknown as OrdensServicoUpdateBuilder;
+    const { error: updateError } = await ordensServico
       .update({ driver_operation_cycles: updatedCycles })
       .eq("id", os_id);
 

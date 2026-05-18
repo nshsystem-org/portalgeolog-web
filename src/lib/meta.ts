@@ -319,27 +319,20 @@ export async function sendWhatsAppPoll(
 }
 
 /**
- * Busca status da sessão (não aplicável à API da Meta)
- * A API da Meta é stateless - não há "sessão" como no WAHA
+ * Busca status da conexão com a Meta API.
+ * A API da Meta é stateless; retorna "aberto" se configurada.
  */
-export async function fetchWahaSessionState(
-  sessionName?: string,
-): Promise<{ state: "open" | "close" | "connecting"; isConnected: boolean }> {
+export async function getMetaConnectionStatus(): Promise<{
+  state: "open" | "close";
+  isConnected: boolean;
+}> {
   const config = getMetaConfig();
 
-  // Se configurado, retorna "aberto"
   if (config) {
-    return {
-      state: "open",
-      isConnected: true,
-    };
+    return { state: "open", isConnected: true };
   }
 
-  // Se não configurado, retorna "fechado"
-  return {
-    state: "close",
-    isConnected: false,
-  };
+  return { state: "close", isConnected: false };
 }
 
 /**

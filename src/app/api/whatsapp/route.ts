@@ -13,7 +13,6 @@ export async function POST(request: Request) {
       templateName,
       templateVariables,
       language,
-      buttons,
     } = body;
 
     if (!phone) {
@@ -36,22 +35,6 @@ export async function POST(request: Request) {
           })),
         },
       ];
-
-      // Adicionar payloads de botão (quick_reply) se fornecidos
-      if (Array.isArray(buttons)) {
-        (buttons as Array<{ type: string; payload: string }>).forEach(
-          (btn, index) => {
-            if (btn.type === "quick_reply") {
-              components.push({
-                type: "button",
-                sub_type: "quick_reply",
-                index: String(index),
-                parameters: [{ type: "payload", payload: btn.payload }],
-              });
-            }
-          },
-        );
-      }
 
       const result = await sendWhatsAppTemplate(
         phone,

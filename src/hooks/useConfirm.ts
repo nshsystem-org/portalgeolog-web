@@ -7,7 +7,7 @@ interface ConfirmOptions {
   message: string;
   confirmText?: string;
   cancelText?: string;
-  type?: "danger" | "warning" | "info";
+  type?: "danger" | "warning" | "info" | "success";
 }
 
 interface ConfirmState extends ConfirmOptions {

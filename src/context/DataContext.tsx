@@ -37,6 +37,7 @@ import {
   updateOSInDB,
   updateOSStatusInDB,
   archiveOSFromDB,
+  unarchiveOSFromDB,
   fetchParceiros,
   insertParceiro,
   updateParceiroInDB,
@@ -44,6 +45,8 @@ import {
   deleteParceiroFromDB,
   getImpostoPercentual,
   setFinancialConfig,
+  fetchOSStatusCounts,
+  type OSStatusCounts,
   type ParceiroServico,
   type NovoParceiroInput,
 } from "@/lib/supabase/queries";
@@ -121,7 +124,9 @@ export interface OrderService {
   operationalCycles?: OperationalCycle[];
   currentDriverCycleIndex?: number;
   createdAt?: string;
+  createdBy?: string;
   createdByName?: string;
+  arquivado?: boolean;
 }
 
 export interface OSStatus {
@@ -262,6 +267,7 @@ interface DataContextType {
   solicitantes: Solicitante[];
   passageiros: Passageiro[];
   osList: OrderService[];
+  osCounts: OSStatusCounts;
   drivers: Driver[];
   parceiros: ParceiroServico[];
   loading: boolean;
@@ -322,6 +328,7 @@ interface DataContextType {
   ) => Promise<void>;
   updateOSStatus: (id: string, updates: Partial<OSStatus>) => Promise<void>;
   deleteOS: (id: string) => Promise<void>;
+  unarchiveOS: (id: string) => Promise<void>;
 
   refreshData: () => Promise<void>;
   getSolicitantesByCliente: (clienteId: string) => Solicitante[];
@@ -337,6 +344,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [solicitantes, setSolicitantes] = useState<Solicitante[]>([]);
   const [passageiros, setPassageiros] = useState<Passageiro[]>([]);
   const [osList, setOsList] = useState<OrderService[]>([]);
+  const [osCounts, setOsCounts] = useState<OSStatusCounts>({
+    Pendente: 0,
+    Aguardando: 0,
+    "Em Rota": 0,
+    Finalizado: 0,
+    Cancelado: 0,
+  });
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [parceiros, setParceiros] = useState<ParceiroServico[]>([]);
   const [loading, setLoading] = useState(true);
@@ -351,7 +365,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const dbFetchSolicitantes = useCallback(async () => fetchSolicitantes(), []);
   const dbFetchPassageiros = useCallback(async () => fetchPassageiros(), []);
   const dbFetchParceiros = useCallback(async () => fetchParceiros(), []);
-  const dbFetchOSList = useCallback(async () => fetchOSList(), []);
   const dbFetchDrivers = useCallback(async () => fetchDrivers(), []);
 
   const upsertOSInState = useCallback((nextOS: OrderService) => {
@@ -408,15 +421,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Fase 2: Dados pesados — carregam em background sem bloquear a UI
       setHeavyLoading(true);
       try {
-        const [passageirosData, parceirosData, osData] = await Promise.all([
+        const [passageirosData, parceirosData, osCountsData] = await Promise.all([
           dbFetchPassageiros(),
           dbFetchParceiros(),
-          dbFetchOSList(),
+          fetchOSStatusCounts(),
         ]);
         setPassageiros(passageirosData);
         setParceiros(parceirosData);
-        setOsList(osData);
-        setLastOSUpdate(Date.now());
+        setOsCounts(osCountsData);
       } catch (heavyErr) {
         console.error("⚠️ Erro ao carregar dados pesados:", heavyErr);
         toast.error(
@@ -434,7 +446,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     dbFetchSolicitantes,
     dbFetchPassageiros,
     dbFetchParceiros,
-    dbFetchOSList,
     dbFetchDrivers,
   ]);
 
@@ -532,11 +543,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
           if (change.eventType === "DELETE") {
             removeOSFromState(osId);
+            debouncedFetch("os-counts", async () => {
+              const counts = await fetchOSStatusCounts();
+              setOsCounts(counts);
+            });
             return;
           }
 
           debouncedFetch(`os-${osId}`, async () => {
             await refreshOSById(osId);
+          });
+          debouncedFetch("os-counts", async () => {
+            const counts = await fetchOSStatusCounts();
+            setOsCounts(counts);
           });
         },
       )
@@ -1152,8 +1171,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setOsList((prev) => [optimistic, ...prev]);
 
     const actorName = profile?.nome || user?.email || "Sistema";
+    const actorId = user?.id || null;
     try {
-      const real = await insertOS(osDataWithNumbers, actorName);
+      const real = await insertOS(osDataWithNumbers, actorName, actorId);
       setOsList((prev) => prev.map((o) => (o.id === tempId ? real : o)));
       return real;
     } catch (err) {
@@ -1172,7 +1192,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     >,
   ): Promise<void> => {
     const currentOS = osList.find((os) => os.id === id);
-    if (!currentOS) return;
 
     const taxa = impostoPercentual / 100;
     const vBruto = osData.valorBruto ?? 0;
@@ -1180,26 +1199,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const imposto = vBruto * taxa;
     const lucro = vBruto - imposto - vCusto;
 
-    setOsList((prev) =>
-      prev.map((os) =>
-        os.id === id
-          ? {
-              ...currentOS,
-              ...osData,
-              valorBruto: vBruto,
-              custo: vCusto,
-              imposto,
-              lucro,
-              status: currentOS.status,
-              protocolo: currentOS.protocolo,
-            }
-          : os,
-      ),
-    );
+    if (currentOS) {
+      setOsList((prev) =>
+        prev.map((os) =>
+          os.id === id
+            ? {
+                ...currentOS,
+                ...osData,
+                valorBruto: vBruto,
+                custo: vCusto,
+                imposto,
+                lucro,
+                status: currentOS.status,
+                protocolo: currentOS.protocolo,
+              }
+            : os,
+        ),
+      );
+    }
 
     const actorName = profile?.nome || user?.email || "Sistema";
+    const actorId = user?.id || null;
     try {
-      await updateOSInDB(id, osData, actorName);
+      await updateOSInDB(id, osData, actorName, actorId);
     } catch (err) {
       console.error("Error updateOSInDB:", err);
       throw err;
@@ -1225,8 +1247,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     );
 
     const actorName = profile?.nome || user?.email || "Sistema";
+    const actorId = user?.id || null;
     try {
-      await updateOSStatusInDB(id, updates, actorName);
+      await updateOSStatusInDB(id, updates, actorName, actorId);
     } catch (err) {
       console.error("Error updateOSStatusInDB:", err);
       throw err;
@@ -1237,10 +1260,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setOsList((prev) => prev.filter((os) => os.id !== id));
 
     const actorName = profile?.nome || user?.email || "Sistema";
+    const actorId = user?.id || null;
     try {
-      await archiveOSFromDB(id, actorName);
+      await archiveOSFromDB(id, actorName, actorId);
     } catch (err) {
       console.error("Error archiveOSFromDB:", err);
+      throw err;
+    }
+  };
+
+  const unarchiveOS = async (id: string): Promise<void> => {
+    setOsList((prev) =>
+      prev.map((os) =>
+        os.id === id
+          ? {
+              ...os,
+              status: { ...os.status, operacional: "Pendente" },
+              arquivado: false,
+            }
+          : os,
+      ),
+    );
+
+    const actorName = profile?.nome || user?.email || "Sistema";
+    const actorId = user?.id || null;
+    try {
+      await unarchiveOSFromDB(id, actorName, actorId);
+    } catch (err) {
+      console.error("Error unarchiveOSFromDB:", err);
       throw err;
     }
   };
@@ -1499,6 +1546,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         solicitantes,
         passageiros,
         osList,
+        osCounts,
         drivers,
         parceiros,
         loading,
@@ -1529,6 +1577,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         updateOS,
         updateOSStatus,
         deleteOS,
+        unarchiveOS,
         refreshData,
         getSolicitantesByCliente,
         getCentrosCustoByCliente,

@@ -593,16 +593,28 @@ export async function POST(request: Request) {
       );
 
       try {
+        const templateComponents: Record<string, unknown>[] = [
+          {
+            type: "body",
+            parameters: [{ type: "text", text: driverName }],
+          },
+        ];
+
+        // Adiciona parâmetro do botão URL se tiver shortSlug
+        if (shortSlug) {
+          templateComponents.push({
+            type: "button",
+            sub_type: "url",
+            index: "0",
+            parameters: [{ type: "text", text: shortSlug }],
+          });
+        }
+
         const templateResult = await sendWhatsAppTemplate(
           cleanPhone,
-          "appointment_scheduling",
+          "nova_viagem_passageiros",
           "pt_BR",
-          [
-            {
-              type: "body",
-              parameters: [{ type: "text", text: driverName }],
-            },
-          ],
+          templateComponents,
         );
 
         if (templateResult.success && templateResult.messageId) {

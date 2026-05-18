@@ -19,8 +19,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Truck,
-  User,
   Loader2,
+  User,
 } from "lucide-react";
 
 interface Cliente {
@@ -32,8 +32,9 @@ interface EventContentProps {
   os: OrderService;
   clientes: Cliente[];
   status: CycleOperationalStatus;
-  itineraryLabel?: string;
   displayDateTime?: string;
+  showArchivedOnly?: boolean;
+  isDayView?: boolean;
 }
 
 interface OSCalendarProps {
@@ -41,6 +42,7 @@ interface OSCalendarProps {
   clientes: Cliente[];
   onEventClick: (osId: string, position?: { x: number; y: number }) => void;
   loading?: boolean;
+  showArchivedOnly?: boolean;
 }
 
 // Cores por status — backgrounds mais saturados para legibilidade no calendário
@@ -78,6 +80,13 @@ const statusColors: Record<
     border: "#e11d48",
     text: "#881337",
     dot: "#be123c",
+  },
+  Arquivado: {
+    bg: "#fee2e2",
+    border: "#f87171",
+    text: "#dc2626",
+    dot: "#ef4444",
+    clockColor: "#ef4444",
   },
 };
 
@@ -135,10 +144,14 @@ const EventContent = ({
   os,
   clientes,
   status,
-  itineraryLabel,
   displayDateTime,
+  showArchivedOnly,
+  isDayView,
 }: EventContentProps) => {
-  const colors = statusColors[status] || statusColors["Pendente"];
+  const colors =
+    showArchivedOnly
+      ? statusColors["Arquivado"]
+      : statusColors[status] || statusColors["Pendente"];
   const clienteNome =
     clientes.find((c) => c.id === os.clienteId)?.nome || "N/A";
   const startTime = displayDateTime
@@ -156,38 +169,65 @@ const EventContent = ({
       style={{
         backgroundColor: colors.bg,
         borderLeft: `4px solid ${colors.dot}`,
-        padding: "5px 20px",
+        padding: isDayView ? "32px 12px 12px 12px" : "28px 6px 5px 6px",
         borderRadius: "12px 8px 8px 12px",
-        fontSize: "11px",
-        lineHeight: "1.2",
+        fontSize: isDayView ? "13px" : "11px",
+        lineHeight: "1.4",
         color: colors.text,
         cursor: "pointer",
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        justifyContent: "center",
-        gap: "2px",
-        overflow: "hidden",
-        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+        gap: isDayView ? "6px" : "2px",
+        overflow: "visible",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+        position: "relative",
+        zIndex: 1,
+        transition: "all 0.2s ease-in-out",
       }}
     >
+      {/* Status no canto superior direito */}
+      {statusColors[os.status.operacional] && (
+        <span
+          style={{
+            position: "absolute",
+            top: "8px",
+            right: "8px",
+            backgroundColor: colors.dot,
+            color: "#ffffff",
+            padding: "3px 8px",
+            borderRadius: "6px",
+            fontSize: isDayView ? "9px" : "7px",
+            fontWeight: 800,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            zIndex: 1,
+          }}
+        >
+          {status}
+        </span>
+      )}
+
       {/* Linha 1: Cliente */}
       <div
         style={{
           fontWeight: 800,
           textTransform: "uppercase",
           color: "#0f172a",
-          whiteSpace: "nowrap",
+          whiteSpace: isDayView ? "normal" : "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
-          fontSize: "11px",
+          fontSize: isDayView ? "13px" : "11px",
           letterSpacing: "0.01em",
+          display: "-webkit-box",
+          WebkitLineClamp: isDayView ? 2 : 1,
+          WebkitBoxOrient: "vertical",
         }}
       >
         {clienteNome}
       </div>
 
-      {/* Linha 2: Solicitante */}
+      {/* Linha 2: Motorista */}
       <div
         style={{
           color: "#475569",
@@ -195,16 +235,38 @@ const EventContent = ({
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
-          fontSize: "9.5px",
+          fontSize: isDayView ? "12px" : "10.5px",
           display: "flex",
           alignItems: "center",
-          gap: "4px",
+          gap: "6px",
+        }}
+      >
+        <User size={isDayView ? 12 : 8} strokeWidth={3} />
+        {(() => {
+          const partes = os.motorista.trim().split(/\s+/);
+          if (partes.length === 1) return partes[0].toUpperCase();
+          return `${partes[0]} ${partes[partes.length - 1]}`.toUpperCase();
+        })()}
+      </div>
+
+      {/* Linha 3: Solicitante */}
+      <div
+        style={{
+          color: "#475569",
+          fontWeight: 600,
+          fontSize: isDayView ? "11px" : "8.5px",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
         }}
       >
         <div
           style={{
-            width: "4px",
-            height: "4px",
+            width: "5px",
+            height: "5px",
             borderRadius: "50%",
             backgroundColor: colors.dot,
           }}
@@ -212,93 +274,30 @@ const EventContent = ({
         {os.solicitante.toUpperCase()}
       </div>
 
-      {/* Ícone de status */}
-      {statusColors[os.status.operacional] && (
-        <div
-          style={{
-            color: "#475569",
-            fontWeight: 600,
-            fontSize: "8.5px",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          <div
-            style={{
-              width: "4px",
-              height: "4px",
-              borderRadius: "50%",
-              backgroundColor: colors.dot,
-            }}
-          />
-          {status}
-        </div>
-      )}
-
-      {/* Linha 4: Horário e Motorista */}
+      {/* Linha 4: Horário */}
       <div
         style={{
-          color: "#475569",
-          fontWeight: 600,
-          fontSize: "8.5px",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          marginTop: "1px",
+          marginTop: "auto",
+          paddingTop: isDayView ? "8px" : "2px",
         }}
       >
-        <div
+        <span
           style={{
-            display: "flex",
+            display: "inline-flex",
             alignItems: "center",
-            gap: "2px",
-            color: colors.clockColor || colors.dot,
+            gap: "6px",
+            backgroundColor: colors.clockColor || colors.dot,
+            color: "#ffffff",
+            padding: isDayView ? "5px 12px" : "3px 8px",
+            borderRadius: "8px",
             fontWeight: 800,
-            fontSize: "9px",
+            fontSize: isDayView ? "12px" : "10px",
+            textTransform: "uppercase",
           }}
         >
-          <Clock size={10} strokeWidth={3} />
+          <Clock size={isDayView ? 16 : 14} strokeWidth={3} />
           {startTime || "--:--"}
-        </div>
-
-        {itineraryLabel && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "2px",
-              color: "#334155",
-              fontWeight: 800,
-              fontSize: "9px",
-            }}
-          >
-            <CalendarDays size={10} strokeWidth={3} />
-            {itineraryLabel.toUpperCase()}
-          </div>
-        )}
-
-        {os.motorista && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "2px",
-              color: "#6366f1",
-              fontWeight: 800,
-              fontSize: "9px",
-            }}
-          >
-            <User size={10} strokeWidth={3} />
-            {os.motorista.split(" ").slice(0, 2).join(" ").toUpperCase()}
-          </div>
-        )}
+        </span>
       </div>
     </div>
   );
@@ -309,6 +308,7 @@ export default function OSCalendar({
   clientes,
   onEventClick,
   loading,
+  showArchivedOnly,
 }: OSCalendarProps) {
   const [currentView, setCurrentView] = useState<
     "dayGridMonth" | "dayGridWeek" | "dayGridDay" | "listWeek"
@@ -479,8 +479,9 @@ export default function OSCalendar({
         os={os}
         clientes={clientes}
         status={eventInfo.event.extendedProps.status}
-        itineraryLabel={eventInfo.event.extendedProps.itineraryLabel}
         displayDateTime={eventInfo.event.extendedProps.displayDateTime}
+        showArchivedOnly={showArchivedOnly}
+        isDayView={currentView === "dayGridDay"}
       />
     );
   };
@@ -591,9 +592,7 @@ export default function OSCalendar({
           height="auto"
           contentHeight="auto"
           aspectRatio={1.8}
-          dayMaxEvents={4}
-          moreLinkContent={(arg) => `+${arg.num} mais`}
-          moreLinkClassNames="text-blue-600 font-bold text-xs hover:text-blue-800"
+          dayMaxEvents={false}
           eventDisplay="block"
           slotEventOverlap={false}
           slotDuration="00:30:00"
@@ -637,10 +636,60 @@ export default function OSCalendar({
           noEventsContent="Nenhuma OS para este período"
           eventMinHeight={100}
         />
-        <style jsx global>{`
+        <style>{`
           /* Estilos para o DayGrid (Mês, Semana, Dia) */
           .fc .fc-daygrid-day-frame {
-            min-height: 50px !important;
+            min-height: 500px !important;
+            overflow-y: auto !important;
+          }
+
+          /* Cor de fundo do dia atual - laranja (exceto no modo Dia) */
+          .fc-day-today {
+            background-color: #fdba74 !important;
+          }
+
+          .fc-dayGridDay-view .fc-day-today,
+          .fc-view-dayGridDay .fc-day-today {
+            background-color: #ffffff !important;
+          }
+
+          /* Remover hover nas células do dia */
+          .fc-daygrid-day:hover {
+            background-color: transparent !important;
+          }
+
+          .fc-day-today:hover {
+            background-color: #fdba74 !important;
+          }
+
+          .fc-dayGridDay-view .fc-day-today:hover,
+          .fc-view-dayGridDay .fc-day-today:hover {
+            background-color: #ffffff !important;
+          }
+
+          /* Remover cor azul de seleção/clique */
+          .fc .fc-highlight {
+            background: transparent !important;
+          }
+
+          .fc-daygrid-day.fc-day-selected {
+            background-color: transparent !important;
+          }
+
+          .fc-day-today.fc-day-selected {
+            background-color: #fdba74 !important;
+          }
+
+          .fc-event-custom:hover {
+            transform: scale(1.15);
+            z-index: 100 !important;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+            overflow: visible !important;
+          }
+
+          /* Garantir que o harness não corte o zoom */
+          .fc-daygrid-event-harness:hover {
+            z-index: 100 !important;
           }
 
           .fc .fc-daygrid-day-events {
@@ -648,6 +697,45 @@ export default function OSCalendar({
             display: flex !important;
             flex-direction: column !important;
             gap: 8px !important;
+            overflow-y: auto !important;
+            max-height: 500px !important;
+          }
+
+          /* Estilo específico para visualização de Dia (fileira de cards) */
+          .fc-dayGridDay-view .fc-daygrid-day-frame,
+          .fc-view-dayGridDay .fc-daygrid-day-frame {
+            min-height: 500px !important;
+            max-height: 72vh !important;
+            overflow-y: auto !important;
+          }
+
+          .fc-dayGridDay-view .fc-daygrid-day-events,
+          .fc-view-dayGridDay .fc-daygrid-day-events {
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 12px !important;
+            align-content: flex-start !important;
+            justify-content: flex-start !important;
+            padding: 16px !important;
+            padding-left: 16px !important;
+            max-height: 72vh !important;
+            overflow-y: auto !important;
+          }
+
+          .fc-dayGridDay-view .fc-daygrid-event-harness,
+          .fc-view-dayGridDay .fc-daygrid-event-harness {
+            flex: 0 0 300px !important;
+            width: 300px !important;
+            max-width: 300px !important;
+          }
+
+          @media (max-width: 768px) {
+            .fc-dayGridDay-view .fc-daygrid-event-harness,
+            .fc-view-dayGridDay .fc-daygrid-event-harness {
+              width: 100% !important;
+              max-width: 100% !important;
+              flex-basis: 100% !important;
+            }
           }
 
           .fc-daygrid-event-harness {
@@ -789,17 +877,19 @@ export default function OSCalendar({
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
             Status:
           </span>
-          {Object.entries(statusColors).map(([status, colors]) => (
-            <div key={status} className="flex items-center gap-1.5">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: colors.dot }}
-              />
-              <span className="text-xs font-semibold text-slate-600">
-                {status}
-              </span>
-            </div>
-          ))}
+          {Object.entries(statusColors)
+            .filter(([status]) => status !== "Cancelado")
+            .map(([status, colors]) => (
+              <div key={status} className="flex items-center gap-1.5">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: colors.dot }}
+                />
+                <span className="text-xs font-semibold text-slate-600">
+                  {status}
+                </span>
+              </div>
+            ))}
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 // Wrapper para Cloudflare Workers — importa o build do vinext
 // e converte a função handler em um objeto Worker com método fetch
 
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     // Injeta variáveis do Cloudflare no process.env para compatibilidade com vinext
     // ANTES de carregar o bundle server (evita capturas top-level de undefined)
@@ -31,3 +31,5 @@ export default {
     return handler(request, ctx);
   },
 };
+
+export default worker;

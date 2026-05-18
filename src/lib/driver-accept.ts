@@ -12,6 +12,7 @@ import {
   type PassengerInfo,
 } from "@/lib/os-messages";
 import { BASE_URL } from "@/lib/constants";
+import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 import { createClient } from "@supabase/supabase-js";
 
 // Tipos locais para o driver accept
@@ -156,11 +157,13 @@ export async function buildPostAcceptMessage(
   );
   let paxRows: Record<string, unknown>[] = [];
   if (waypointIds.length > 0) {
-    const { data: paxData } = await getAdmin()
-      .from("os_waypoint_passengers")
-      .select("passageiro_id, waypoint_id")
-      .in("waypoint_id", waypointIds);
-    paxRows = (paxData || []) as Record<string, unknown>[];
+    paxRows = await fetchInChunks<Record<string, unknown>>(
+      getAdmin(),
+      "os_waypoint_passengers",
+      "waypoint_id",
+      waypointIds,
+      "passageiro_id, waypoint_id",
+    );
   }
 
   const passengerIds = new Set<string>();
@@ -169,10 +172,17 @@ export async function buildPostAcceptMessage(
     if (pid) passengerIds.add(pid);
   });
 
-  const { data: passageirosData } = await getAdmin()
-    .from("passageiros")
-    .select("id, nome_completo, celular")
-    .in("id", Array.from(passengerIds));
+  const passageirosList = Array.from(passengerIds);
+  let passageirosData: Record<string, unknown>[] = [];
+  if (passageirosList.length > 0) {
+    passageirosData = await fetchInChunks<Record<string, unknown>>(
+      getAdmin(),
+      "passageiros",
+      "id",
+      passageirosList,
+      "id, nome_completo, celular",
+    );
+  }
 
   const passageiros: PassengerInfo[] = (passageirosData || []).map(
     (p: Record<string, unknown>) => ({
@@ -296,6 +306,7 @@ export async function buildPostAcceptMessage(
 export async function processDriverAccept(
   osId: string,
   requestedCycleIndex?: number | null,
+  skipNotification = false,
 ): Promise<DriverAcceptResult> {
   const { data: osRaw, error: findError } = await getAdmin()
     .from("ordens_servico")
@@ -365,8 +376,13 @@ export async function processDriverAccept(
 
   // Enviar mensagem de confirmação
   let messageSent = false;
+  if (skipNotification) {
+    console.log("[driver-accept] Notificação omitida (skipNotification=true)");
+  }
   try {
-    if (os.motorista) {
+    if (skipNotification) {
+      // nada a fazer
+    } else if (os.motorista) {
       const motoristaNormalized = normalizeName(String(os.motorista));
 
       const { data: driverCandidates, error: driverError } = await getAdmin()

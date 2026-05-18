@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendWhatsAppMessage } from "@/lib/meta";
+import { sendWhatsAppTemplate } from "@/lib/meta";
 import {
-  buildDriverStartRouteMessage,
   findOperationalCycleByIndex,
   getFirstPendingOperationalCycle,
   getOperationalCycleBannerTitle,
@@ -269,7 +268,7 @@ export async function POST(request: Request) {
       console.error("[os-start-route] Erro ao registrar log:", logErr);
     }
 
-    // Envio de mensagem de início de rota
+    // Envio de template finalizar_rota_motorista
     try {
       if (os.motorista) {
         const { data: driverPhone } = (await getAdmin()
@@ -279,17 +278,44 @@ export async function POST(request: Request) {
           .single()) as { data: { phone: string } | null };
 
         if (driverPhone?.phone) {
-          const finishLink = `https://portalgeolog.com.br/finalizar-rota/${osId}?cycle_index=${cycle.itineraryIndex}`;
-          const message = buildDriverStartRouteMessage({
-            kmInitial,
-            finishLink,
-            cycleTitle: getOperationalCycleBannerTitle(cycle),
-          });
-          await sendWhatsAppMessage(driverPhone.phone, message);
+          const finishUrl = `${osId}?cycle_index=${cycle.itineraryIndex}`;
+          const kmFormatted = kmInitial.toLocaleString("pt-BR");
+
+          const templateComponents = [
+            {
+              type: "body",
+              parameters: [{ type: "text", text: kmFormatted }],
+            },
+            {
+              type: "button",
+              sub_type: "url",
+              index: "0",
+              parameters: [{ type: "text", text: finishUrl }],
+            },
+          ];
+
+          const templateResult = await sendWhatsAppTemplate(
+            driverPhone.phone,
+            "finalizar_rota_motorista",
+            "pt_BR",
+            templateComponents,
+          );
+
+          if (templateResult.success) {
+            console.log(
+              "[os-start-route] Template finalizar_rota_motorista enviado para",
+              driverPhone.phone,
+            );
+          } else {
+            console.warn(
+              "[os-start-route] Falha ao enviar template finalizar_rota_motorista:",
+              templateResult.error,
+            );
+          }
         }
       }
     } catch (notifyErr) {
-      console.error("Erro ao enviar mensagem de início de rota:", notifyErr);
+      console.error("Erro ao enviar template finalizar_rota_motorista:", notifyErr);
     }
 
     return NextResponse.json({

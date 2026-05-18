@@ -12,7 +12,7 @@ interface ConfirmDialogProps {
   message: string;
   confirmText?: string;
   cancelText?: string;
-  type?: "danger" | "warning" | "info";
+  type?: "danger" | "warning" | "info" | "success";
 }
 
 export default function ConfirmDialog({
@@ -40,6 +40,8 @@ export default function ConfirmDialog({
         return "text-yellow-600";
       case "info":
         return "text-blue-600";
+      case "success":
+        return "text-emerald-600";
       default:
         return "text-red-600";
     }
@@ -53,6 +55,8 @@ export default function ConfirmDialog({
         return "bg-yellow-600 hover:bg-yellow-700 text-white";
       case "info":
         return "bg-blue-600 hover:bg-blue-700 text-white";
+      case "success":
+        return "bg-emerald-600 hover:bg-emerald-700 text-white";
       default:
         return "bg-red-600 hover:bg-red-700 text-white";
     }
