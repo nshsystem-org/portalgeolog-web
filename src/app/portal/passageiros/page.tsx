@@ -29,6 +29,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import RequiredAsterisk from "@/components/ui/RequiredAsterisk";
 import { fetchPassageirosPage } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
+import { formatBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
 
 interface NewPassengerForm {
   nomeCompleto: string;
@@ -117,11 +118,7 @@ export default function PassageirosPage() {
     if (isEstrangeiro) {
       return value.replace(/\D/g, "").slice(0, 15);
     }
-    const digits = value.replace(/\D/g, "").slice(0, 11);
-    if (digits.length <= 10) {
-      return digits.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3").trim();
-    }
-    return digits.replace(/(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3").trim();
+    return formatBrazilPhone(value);
   };
 
   const formatUppercase = (value: string) => {
@@ -135,7 +132,7 @@ export default function PassageirosPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    const celularDigits = formData.celular.replace(/\D/g, "");
+    const celularDigits = stripBrazilCountryCode(formData.celular);
     if (isEstrangeiro && celularDigits.length !== 11) {
       toast.error(
         "Celular brasileiro deve conter 11 dígitos (DDD + 9 + número).",
@@ -154,7 +151,7 @@ export default function PassageirosPage() {
       await addPassageiro({
         nomeCompleto: formData.nomeCompleto.trim().toUpperCase(),
         email: formData.email?.trim(),
-        celular: formData.celular.trim(),
+        celular: formatPhone(formData.celular),
         cpf: formData.cpf?.trim(),
         enderecos: formData.enderecos
           .filter(
@@ -205,7 +202,7 @@ export default function PassageirosPage() {
       await updatePassageiro(selectedPassenger.id, {
         nomeCompleto: formData.nomeCompleto.trim().toUpperCase(),
         email: formData.email?.trim(),
-        celular: formData.celular.trim(),
+        celular: formatPhone(formData.celular),
         cpf: formData.cpf?.trim(),
         enderecos: formData.enderecos
           .filter(
@@ -326,7 +323,7 @@ export default function PassageirosPage() {
                   )}
                   <div className="flex items-center gap-2 text-slate-600">
                     <Phone size={14} className="text-blue-500" />
-                    <span className="font-medium">{item.celular}</span>
+                    <span className="font-medium">{formatPhone(item.celular)}</span>
                   </div>
                   {item.cpf && (
                     <div className="flex items-center gap-2 text-slate-600">
@@ -418,7 +415,7 @@ export default function PassageirosPage() {
                 setFormData({
                   nomeCompleto: item.nomeCompleto,
                   email: item.email || "",
-                  celular: item.celular,
+                  celular: formatPhone(item.celular),
                   cpf: item.cpf || "",
                   enderecos: item.enderecos.map((e) => ({
                     rotulo: e.rotulo,
@@ -773,7 +770,7 @@ export default function PassageirosPage() {
                     Celular
                   </label>
                   <p className="text-base font-bold text-slate-800 mt-1">
-                    {selectedPassenger.celular}
+                    {formatPhone(selectedPassenger.celular)}
                   </p>
                 </div>
                 <div>

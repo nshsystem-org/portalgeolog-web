@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
+import { normalizeBrazilPhone } from "@/lib/phone";
 import type {
   Cliente,
   CentroCusto,
@@ -531,12 +532,14 @@ export async function fetchPassageiros(): Promise<Passageiro[]> {
 export async function insertPassageiro(
   input: NovoPassageiroInput,
 ): Promise<Passageiro> {
+  const celular = normalizeBrazilPhone(input.celular);
+
   const { data: passRow, error: passError } = await getSupabase()
     .from("passageiros")
     .insert({
       nome_completo: upperText(input.nomeCompleto),
       email: input.email ? trimText(input.email) : null,
-      celular: trimText(input.celular),
+      celular,
       cpf: input.cpf ? trimText(input.cpf) : null,
       notificar: input.notificar ?? false,
       genero: input.genero || null,
@@ -589,6 +592,8 @@ export async function updatePassageiroInDB(
   id: string,
   input: NovoPassageiroInput,
 ): Promise<Passageiro> {
+  const celular = normalizeBrazilPhone(input.celular);
+
   const enderecosPayload = input.enderecos.map((e) => ({
     rotulo: trimText(e.rotulo) || "Principal",
     endereco_completo: trimText(e.enderecoCompleto),
@@ -601,7 +606,7 @@ export async function updatePassageiroInDB(
       p_passageiro_id: id,
       p_nome_completo: upperText(input.nomeCompleto),
       p_email: input.email ? trimText(input.email) : null,
-      p_celular: trimText(input.celular),
+      p_celular: celular,
       p_cpf: input.cpf ? trimText(input.cpf) : null,
       p_notificar: input.notificar ?? false,
       p_genero: input.genero || null,
@@ -1932,7 +1937,7 @@ export async function insertParceiro(
   const contatosToInsert = input.contatos.map((contato) => ({
     parceiro_id: parceiro.id,
     setor: trimText(contato.setor),
-    celular: trimText(contato.celular),
+    celular: normalizeBrazilPhone(contato.celular),
     email: trimText(contato.email) || null,
     responsavel: trimText(contato.responsavel),
   }));
@@ -1971,7 +1976,7 @@ export async function updateParceiroInDB(
 ): Promise<ParceiroServico> {
   const contatosPayload = input.contatos.map((c) => ({
     setor: trimText(c.setor),
-    celular: trimText(c.celular),
+    celular: normalizeBrazilPhone(c.celular),
     email: trimText(c.email) || null,
     responsavel: trimText(c.responsavel),
   }));

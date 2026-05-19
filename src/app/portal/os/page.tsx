@@ -84,6 +84,11 @@ import OSCalendar from "@/components/OS/OSCalendar";
 import { useConfirm } from "@/hooks/useConfirm";
 import { BASE_URL } from "@/lib/constants";
 import {
+  formatBrazilPhone,
+  normalizeBrazilPhone,
+  stripBrazilCountryCode,
+} from "@/lib/phone";
+import {
   buildOperationalCyclesFromWaypoints,
   getOperationalCycleBannerTitle,
   getCycleDisplayStatus,
@@ -251,12 +256,7 @@ const formatDriverDocument = (
 };
 
 const formatDriverCelular = (value: string): string => {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  return formatBrazilPhone(value);
 };
 
 const validateDriverCPF = (value: string): boolean => {
@@ -281,7 +281,7 @@ const validateDriverCPF = (value: string): boolean => {
 };
 
 const validateDriverCelular = (value: string): boolean => {
-  const digits = value.replace(/\D/g, "");
+  const digits = stripBrazilCountryCode(value);
   if (digits.length !== 11) return false;
   if (digits[2] !== "9") return false;
   if (/^(\d)\1{10}$/.test(digits)) return false;
@@ -1048,7 +1048,7 @@ export default function OSOperationalPage() {
   };
 
   const validateParceiroCelular = (celular: string): boolean => {
-    const celularClean = celular.replace(/\D/g, "");
+    const celularClean = stripBrazilCountryCode(celular);
     if (celularClean.length !== 11) return false;
     if (/(\d)\1{10}/.test(celularClean)) return false;
     const ddd = celularClean.substring(0, 2);
@@ -1085,7 +1085,7 @@ export default function OSOperationalPage() {
       return "Celular do primeiro contato é obrigatório";
     if (!primeiroContato.responsavel.trim())
       return "Responsável do primeiro contato é obrigatório";
-    const celularLimpo = normalizeDigitsValue(primeiroContato.celular);
+    const celularLimpo = stripBrazilCountryCode(primeiroContato.celular);
     if (celularLimpo.length !== 11)
       return "Celular deve ter 11 dígitos completos: (00) 00000-0000";
     if (!validateParceiroCelular(primeiroContato.celular))
@@ -1100,7 +1100,7 @@ export default function OSOperationalPage() {
     const formEmails = new Map<string, number>();
     for (let i = 0; i < quickParceiroForm.contatos.length; i++) {
       const c = quickParceiroForm.contatos[i];
-      const cell = normalizeDigitsValue(c.celular);
+      const cell = normalizeBrazilPhone(c.celular);
       if (cell && formCelulares.has(cell))
         return `Celular ${c.celular} está duplicado entre os contatos deste parceiro.`;
       formCelulares.set(cell, i);
@@ -1111,11 +1111,11 @@ export default function OSOperationalPage() {
     }
 
     for (const contato of quickParceiroForm.contatos) {
-      const cell = normalizeDigitsValue(contato.celular);
+      const cell = normalizeBrazilPhone(contato.celular);
       if (cell) {
         for (const parceiro of parceiros) {
           const found = parceiro.contatos.find(
-            (c) => normalizeDigitsValue(c.celular) === cell,
+            (c) => normalizeBrazilPhone(c.celular) === cell,
           );
           if (found)
             return `Celular ${contato.celular} já está sendo usado no contato "${found.setor}" do parceiro "${parceiro.razaoSocialOuNomeCompleto}".`;
@@ -1150,7 +1150,7 @@ export default function OSOperationalPage() {
         quickParceiroForm.razaoSocialOuNomeCompleto.trim(),
       contatos: quickParceiroForm.contatos.map((contato) => ({
         setor: contato.setor.trim(),
-        celular: contato.celular.trim(),
+        celular: normalizeBrazilPhone(contato.celular),
         email: contato.email?.trim() || "",
         responsavel: contato.responsavel.trim(),
       })),
@@ -1497,9 +1497,10 @@ export default function OSOperationalPage() {
     try {
       const acceptUrl = `${BASE_URL}/a/p`;
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) {
         console.error("[handleNotifyPassengerDirect] Sessão expirada");
         return;
       }
@@ -1515,7 +1516,6 @@ export default function OSOperationalPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           type,
@@ -1562,9 +1562,10 @@ export default function OSOperationalPage() {
     try {
       const acceptUrl = `${BASE_URL}/a/p`;
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) {
         toast.error("Sessão expirada. Por favor, faça login novamente.");
         return;
       }
@@ -1580,7 +1581,6 @@ export default function OSOperationalPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           type,
@@ -1635,10 +1635,7 @@ export default function OSOperationalPage() {
       );
     }
 
-    phone = phone.replace(/\D/g, "");
-    if (phone.length > 0 && phone.length <= 11 && !phone.startsWith("55")) {
-      phone = `55${phone}`;
-    }
+    phone = normalizeBrazilPhone(phone);
 
     if (phone.length < 10) {
       toast.error("Telefone do motorista é inválido ou não cadastrado.");
@@ -1648,10 +1645,11 @@ export default function OSOperationalPage() {
     setNotifyLoadingKey("driver-whatsapp");
     try {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      if (!session) {
+      if (userError || !user) {
         toast.error("Sessão expirada. Por favor, faça login novamente.");
         return;
       }
@@ -1664,7 +1662,6 @@ export default function OSOperationalPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           phone,
@@ -1876,19 +1873,19 @@ export default function OSOperationalPage() {
 
     try {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) return;
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) return;
 
       // Envia mensagem administrativa para contato fixo via API WhatsApp
       const response = await fetch("/api/whatsapp", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
         },
-        // Telefone fixo +5522997599213
-        body: JSON.stringify({ phone: "+5522997599213", message }),
+        // Telefone fixo sem o símbolo + (Meta API espera apenas dígitos)
+        body: JSON.stringify({ phone: "5522997599213", message }),
       });
 
       const result = await response.json();
@@ -3022,7 +3019,7 @@ export default function OSOperationalPage() {
         case "motorista": {
           const name = forceUpperText(quickAddDriverForm.name.trim());
           const cpfDigits = quickAddDriverForm.cpf.replace(/\D/g, "");
-          const celularDigits = quickAddDriverForm.celular.replace(/\D/g, "");
+          const celularDigits = normalizeBrazilPhone(quickAddDriverForm.celular);
 
           if (!name) {
             toast.error("Nome completo é obrigatório.");
@@ -3070,7 +3067,7 @@ export default function OSOperationalPage() {
           );
           const duplicatePhone = drivers.some(
             (driver) =>
-              normalizeDigitsValue(driver.phone || "") === celularDigits,
+              normalizeBrazilPhone(driver.phone || "") === celularDigits,
           );
 
           if (duplicateName) {
@@ -3091,7 +3088,7 @@ export default function OSOperationalPage() {
           const insertData: Record<string, unknown> = {
             name,
             cpf: cpfDigits,
-            phone: celularDigits,
+            phone: normalizeBrazilPhone(quickAddDriverForm.celular),
             vehicle_id: quickAddDriverForm.vehicle_ids[0],
             status: "active",
             vinculo_tipo: quickAddDriverForm.vinculo_tipo,
@@ -3248,7 +3245,7 @@ export default function OSOperationalPage() {
 
     const trimmedNome = quickPassengerForm.nomeCompleto.trim();
     const trimmedEndereco = quickPassengerForm.enderecoCompleto.trim();
-    const phoneDigits = quickPassengerForm.celular.replace(/\D/g, "");
+    const phoneDigits = stripBrazilCountryCode(quickPassengerForm.celular);
 
     setQuickPassengerErrors({});
 
@@ -3286,7 +3283,7 @@ export default function OSOperationalPage() {
     try {
       const novoPassageiro = await addPassageiro({
         nomeCompleto: trimmedNome.toUpperCase(),
-        celular: quickPassengerForm.celular.trim(),
+        celular: normalizeBrazilPhone(quickPassengerForm.celular),
         notificar: quickPassengerForm.notificar === "Sim",
         enderecos,
       });
@@ -3401,7 +3398,18 @@ export default function OSOperationalPage() {
           console.error("Erro ao enviar email administrativo:", err),
         );
         // Enviar mensagem administrativa via WhatsApp para contato fixo
-        void sendAdminGroupMessage(newOSId);
+        // Busca a OS completa do banco antes de enviar
+        void (async () => {
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            const latestOS = await fetchOSById(newOSId.id);
+            if (latestOS) {
+              await sendAdminGroupMessage(latestOS);
+            }
+          } catch (err) {
+            console.error("[AdminGroup] Erro ao buscar OS para envio:", err);
+          }
+        })();
       }
     } catch (error) {
       console.error("Error saving OS:", error);

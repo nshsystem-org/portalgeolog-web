@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendWhatsAppMessage } from "@/lib/meta";
+import {
+  normalizeWhatsAppPhone,
+  sendWhatsAppMessage,
+} from "@/lib/meta";
 import {
   findOperationalCycleByIndex,
   getFirstPendingOperationalCycle,
@@ -311,7 +314,10 @@ export async function POST(request: Request) {
             "O ciclo anterior foi concluído. Clique no link abaixo para aceitar o próximo atendimento:",
             nextLink,
           ].join("\n");
-          await sendWhatsAppMessage(driverPhone.phone, nextMessage);
+          await sendWhatsAppMessage(
+            normalizeWhatsAppPhone(driverPhone.phone),
+            nextMessage,
+          );
         }
       } catch (notifyNextErr) {
         console.error(

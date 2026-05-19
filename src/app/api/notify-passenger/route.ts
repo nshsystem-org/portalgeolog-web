@@ -2,13 +2,8 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
 import { sendWhatsAppTemplate } from "@/lib/meta";
-
-// Placeholders para rate limiting (serão implementados com Meta API)
-const checkRateLimit = () => true;
-const getRateLimitHeaders = () => ({});
-const rateLimitResponse = () => null;
-const unauthorizedResponse = () => null;
-const validateAuth = () => true;
+import { createClient as createSupabaseAuthClient } from "@/lib/supabase/server";
+import { normalizeBrazilPhone } from "@/lib/phone";
 
 export const runtime = "edge";
 
@@ -136,19 +131,18 @@ function createResendClient() {
 
 export async function POST(request: Request) {
   try {
+    const authClient = await createSupabaseAuthClient();
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
+
+    if (userError || !user) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const admin = getAdmin() as any;
-
-    // Rate limiting temporariamente desativado (será implementado com Meta API)
-    // if (!checkRateLimit(request, 10, 60)) {
-    //   return rateLimitResponse(request);
-    // }
-
-    // Auth temporariamente desativado (será implementado com Meta API)
-    // const auth = await validateAuth(request);
-    // if (!auth) {
-    //   return unauthorizedResponse(request);
-    // }
 
     const body = await request.json();
     console.log("[notify-passenger] body:", JSON.stringify(body));
@@ -312,7 +306,6 @@ export async function POST(request: Request) {
     let driverPhone = "Não informado";
     let vehicleLabel = "Não informado";
     let vehiclePlate = "Não informado";
-    let passengerAddress = "Não informado";
     let itinerarySummary = "";
 
     if (osId) {
@@ -398,29 +391,7 @@ export async function POST(request: Request) {
           (vehicleData as { placa?: string | null }).placa || "Não informado";
       }
 
-      const passengerAddresses = (
-        (
-          passengerData as {
-            passageiro_enderecos?: Array<{
-              rotulo?: string | null;
-              endereco_completo?: string | null;
-              referencia?: string | null;
-            }>;
-          } | null
-        )?.passageiro_enderecos || []
-      )
-        .map((address) => {
-          const label = address.rotulo ? `${address.rotulo}: ` : "";
-          const reference = address.referencia
-            ? ` (${address.referencia})`
-            : "";
-          return `${label}${address.endereco_completo || "Não informado"}${reference}`;
-        })
-        .filter(Boolean);
-
-      if (passengerAddresses.length > 0) {
-        passengerAddress = passengerAddresses[0];
-      }
+      void passengerData;
 
       const passengerWaypointIds = new Set<string>();
       if (passageiroId && waypointsData && waypointsData.length > 0) {
@@ -582,10 +553,7 @@ export async function POST(request: Request) {
 
     // Envio de WhatsApp via Meta API usando template aprovado
     if ((type === "whatsapp" || type === "both") && passengerPhone) {
-      let cleanPhone = passengerPhone.replace(/\D/g, "");
-      if (cleanPhone.length <= 11 && !cleanPhone.startsWith("55")) {
-        cleanPhone = `55${cleanPhone}`;
-      }
+      const cleanPhone = normalizeBrazilPhone(passengerPhone);
 
       console.log(
         "[notify-passenger] sending WhatsApp template to",
@@ -633,7 +601,7 @@ export async function POST(request: Request) {
           results.whatsapp = false;
           return NextResponse.json(
             { success: false, error: msg, results, token },
-            { status: 502, headers: getRateLimitHeaders() },
+            { status: 502 },
           );
         }
       } catch (err: unknown) {
@@ -642,7 +610,7 @@ export async function POST(request: Request) {
         results.whatsapp = false;
         return NextResponse.json(
           { success: false, error: msg, results, token },
-          { status: 502, headers: getRateLimitHeaders() },
+          { status: 502 },
         );
       }
     }
@@ -662,7 +630,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       { success: true, results, token },
-      { status: 200, headers: getRateLimitHeaders() },
+      { status: 200 },
     );
   } catch (error: unknown) {
     console.error("🔥 Erro Crítico notify-passenger:", error);
@@ -671,7 +639,7 @@ export async function POST(request: Request) {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       },
-      { status: 500, headers: getRateLimitHeaders() },
+      { status: 500 },
     );
   }
 }

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendWhatsAppTemplate } from "@/lib/meta";
+import {
+  normalizeWhatsAppPhone,
+  sendWhatsAppTemplate,
+} from "@/lib/meta";
 import {
   findOperationalCycleByIndex,
   getFirstPendingOperationalCycle,
@@ -295,7 +298,7 @@ export async function POST(request: Request) {
           ];
 
           const templateResult = await sendWhatsAppTemplate(
-            driverPhone.phone,
+            normalizeWhatsAppPhone(driverPhone.phone),
             "finalizar_rota_motorista",
             "pt_BR",
             templateComponents,
@@ -304,7 +307,7 @@ export async function POST(request: Request) {
           if (templateResult.success) {
             console.log(
               "[os-start-route] Template finalizar_rota_motorista enviado para",
-              driverPhone.phone,
+              normalizeWhatsAppPhone(driverPhone.phone),
             );
           } else {
             console.warn(

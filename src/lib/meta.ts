@@ -10,6 +10,9 @@
  * - https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages
  */
 
+import { normalizeBrazilPhone } from "@/lib/phone";
+import { recordWhatsAppLog } from "@/lib/whatsapp-logs";
+
 export interface MetaConfig {
   accessToken: string;
   phoneNumberId: string;
@@ -20,6 +23,14 @@ export interface MetaMessageResult {
   success: boolean;
   messageId?: string;
   error?: string;
+}
+
+/**
+ * Normaliza telefones para o formato esperado pela Meta.
+ * Remove qualquer máscara e garante o DDI do Brasil quando o número é local.
+ */
+export function normalizeWhatsAppPhone(phone: string): string {
+  return normalizeBrazilPhone(phone);
 }
 
 /**
@@ -73,6 +84,7 @@ export async function sendWhatsAppMessage(
   message: string,
 ): Promise<MetaMessageResult> {
   const config = getMetaConfig();
+  const normalizedPhone = normalizeWhatsAppPhone(phone);
 
   // Se não estiver configurado, retorna erro
   if (!config) {
@@ -90,10 +102,38 @@ export async function sendWhatsAppMessage(
     };
   }
 
+  void recordWhatsAppLog({
+    source: "whatsapp",
+    eventType: "send_message_attempt",
+    payload: {
+      phone,
+      normalizedPhone,
+      messageLength: message.length,
+    },
+  });
+
   console.log("[Meta API] Configurada - enviando mensagem:", {
     phone,
+    normalizedPhone,
     messageLength: message.length,
   });
+
+  if (!normalizedPhone) {
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_message_error",
+      payload: {
+        phone,
+        normalizedPhone,
+        error: "Telefone inválido para envio.",
+      },
+    });
+
+    return {
+      success: false,
+      error: "Telefone inválido para envio.",
+    };
+  }
 
   try {
     const phoneNumberId = config.phoneNumberId;
@@ -107,7 +147,7 @@ export async function sendWhatsAppMessage(
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
-        to: phone,
+        to: normalizedPhone,
         type: "text",
         text: {
           body: message,
@@ -119,6 +159,15 @@ export async function sendWhatsAppMessage(
 
     if (!response.ok) {
       console.error("[Meta API] Erro na resposta:", data);
+      void recordWhatsAppLog({
+        source: "whatsapp",
+        eventType: "send_message_error",
+        payload: {
+          phone,
+          normalizedPhone,
+          response: data,
+        },
+      });
       return {
         success: false,
         error: data.error?.message || "Erro ao enviar mensagem",
@@ -128,12 +177,30 @@ export async function sendWhatsAppMessage(
     console.log("[Meta API] Mensagem enviada com sucesso:", {
       messageId: data.messages?.[0]?.id,
     });
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_message_success",
+      payload: {
+        phone,
+        normalizedPhone,
+        messageId: data.messages?.[0]?.id || null,
+      },
+    });
     return {
       success: true,
       messageId: data.messages?.[0]?.id,
     };
   } catch (error) {
     console.error("[Meta API] Exceção:", error);
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_message_exception",
+      payload: {
+        phone,
+        normalizedPhone,
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+      },
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -170,6 +237,7 @@ export async function sendWhatsAppTemplate(
   components: Array<Record<string, unknown>> = [],
 ): Promise<MetaMessageResult> {
   const config = getMetaConfig();
+  const normalizedPhone = normalizeWhatsAppPhone(phone);
 
   if (!config) {
     console.error(
@@ -186,11 +254,42 @@ export async function sendWhatsAppTemplate(
     };
   }
 
+  void recordWhatsAppLog({
+    source: "whatsapp",
+    eventType: "send_template_attempt",
+    payload: {
+      phone,
+      normalizedPhone,
+      templateName,
+      language,
+      componentsCount: components.length,
+    },
+  });
+
   console.log("[Meta API] Enviando template:", {
     templateName,
     phone,
+    normalizedPhone,
     componentsCount: components.length,
   });
+
+  if (!normalizedPhone) {
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_template_error",
+      payload: {
+        phone,
+        normalizedPhone,
+        templateName,
+        error: "Telefone inválido para envio.",
+      },
+    });
+
+    return {
+      success: false,
+      error: "Telefone inválido para envio.",
+    };
+  }
 
   try {
     const phoneNumberId = config.phoneNumberId;
@@ -204,7 +303,7 @@ export async function sendWhatsAppTemplate(
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
-        to: phone,
+        to: normalizedPhone,
         type: "template",
         template: {
           name: templateName,
@@ -218,6 +317,16 @@ export async function sendWhatsAppTemplate(
 
     if (!response.ok) {
       console.error("[Meta API] Erro no template:", data);
+      void recordWhatsAppLog({
+        source: "whatsapp",
+        eventType: "send_template_error",
+        payload: {
+          phone,
+          normalizedPhone,
+          templateName,
+          response: data,
+        },
+      });
       return {
         success: false,
         error: data.error?.message || "Erro ao enviar template",
@@ -227,12 +336,32 @@ export async function sendWhatsAppTemplate(
     console.log("[Meta API] Template enviado com sucesso:", {
       messageId: data.messages?.[0]?.id,
     });
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_template_success",
+      payload: {
+        phone,
+        normalizedPhone,
+        templateName,
+        messageId: data.messages?.[0]?.id || null,
+      },
+    });
     return {
       success: true,
       messageId: data.messages?.[0]?.id,
     };
   } catch (error) {
     console.error("[Meta API] Exceção:", error);
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_template_exception",
+      payload: {
+        phone,
+        normalizedPhone,
+        templateName,
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+      },
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : "Erro desconhecido",
@@ -246,10 +375,13 @@ export async function sendWhatsAppTemplate(
  * Esta função é um placeholder para futura implementação via workaround.
  */
 export async function sendWhatsAppGroupMessage(
-  groupId: string,
-  message: string,
-  sessionName?: string,
+  _groupId: string,
+  _message: string,
+  _sessionName?: string,
 ): Promise<MetaMessageResult> {
+  void _groupId;
+  void _message;
+  void _sessionName;
   console.warn(
     "[Meta API] Envio para grupos não é suportado pela API oficial.",
   );
@@ -263,8 +395,8 @@ export async function sendWhatsAppGroupMessage(
  * Envia mensagem com lista de opções (requer template aprovado)
  */
 export async function sendWhatsAppList(
-  phone: string,
-  listData: {
+  _phone: string,
+  _listData: {
     header?: string;
     body: string;
     footer?: string;
@@ -277,6 +409,8 @@ export async function sendWhatsAppList(
     };
   },
 ): Promise<MetaMessageResult> {
+  void _phone;
+  void _listData;
   const config = getMetaConfig();
 
   if (!config) {
@@ -298,10 +432,13 @@ export async function sendWhatsAppList(
  * Envia enquete (requer template aprovado)
  */
 export async function sendWhatsAppPoll(
-  phone: string,
-  question: string,
-  options: string[],
+  _phone: string,
+  _question: string,
+  _options: string[],
 ): Promise<MetaMessageResult> {
+  void _phone;
+  void _question;
+  void _options;
   const config = getMetaConfig();
 
   if (!config) {

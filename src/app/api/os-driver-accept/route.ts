@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendWhatsAppMessage } from "@/lib/meta";
+import {
+  normalizeWhatsAppPhone,
+  sendWhatsAppMessage,
+} from "@/lib/meta";
 import { buildPostAcceptMessage } from "@/lib/driver-accept";
 import {
   findOperationalCycleByIndex,
@@ -326,10 +329,10 @@ export async function POST(request: Request) {
 
           console.log(
             "[os-driver-accept] Enviando mensagem completa da OS com link Iniciar Rota:",
-            driverPhone,
+            normalizeWhatsAppPhone(driverPhone),
           );
           const result = await sendWhatsAppMessage(
-            driverPhone,
+            normalizeWhatsAppPhone(driverPhone),
             confirmationMsg,
           );
 

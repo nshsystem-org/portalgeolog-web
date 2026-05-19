@@ -33,6 +33,11 @@ import {
   checkParceiroVinculos,
 } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
+import {
+  formatBrazilPhone,
+  normalizeBrazilPhone,
+  stripBrazilCountryCode,
+} from "@/lib/phone";
 
 const PESSOA_TIPO_OPTIONS = [
   { id: "juridica", nome: "Pessoa jurídica" },
@@ -61,15 +66,7 @@ const formatDocument = (
     .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 };
 
-const formatPhone = (value: string): string => {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-
-  if (digits.length <= 10) {
-    return digits.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3").trim();
-  }
-
-  return digits.replace(/(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3").trim();
-};
+const formatPhone = (value: string): string => formatBrazilPhone(value);
 
 const escapeRegExp = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -177,7 +174,7 @@ export default function ParceriasPage() {
           parceiro.contatos.length > 0
             ? parceiro.contatos.map((contato) => ({
                 setor: contato.setor,
-                celular: contato.celular,
+                celular: formatBrazilPhone(contato.celular),
                 email: contato.email || "",
                 responsavel: contato.responsavel,
               }))
@@ -297,7 +294,7 @@ export default function ParceriasPage() {
     razaoSocialOuNomeCompleto: formData.razaoSocialOuNomeCompleto.trim(),
     contatos: formData.contatos.map((contato) => ({
       setor: contato.setor.trim(),
-      celular: contato.celular.trim(),
+      celular: normalizeBrazilPhone(contato.celular),
       email: contato.email?.trim() || "",
       responsavel: contato.responsavel.trim(),
     })),
@@ -362,7 +359,7 @@ export default function ParceriasPage() {
   };
 
   const validateCelular = (celular: string): boolean => {
-    const celularClean = celular.replace(/\D/g, "");
+    const celularClean = stripBrazilCountryCode(celular);
 
     if (celularClean.length !== 11) return false;
 
@@ -424,7 +421,7 @@ export default function ParceriasPage() {
       return "Responsável do primeiro contato é obrigatório";
     }
 
-    const celularLimpo = normalizeDigits(primeiroContato.celular);
+    const celularLimpo = stripBrazilCountryCode(primeiroContato.celular);
     if (celularLimpo.length !== 11) {
       return "Celular deve ter 11 dígitos completos: (00) 00000-0000";
     }
@@ -444,7 +441,7 @@ export default function ParceriasPage() {
     const formEmails = new Map<string, number>();
     for (let i = 0; i < formData.contatos.length; i++) {
       const c = formData.contatos[i];
-      const cell = normalizeDigits(c.celular);
+      const cell = normalizeBrazilPhone(c.celular);
       if (cell && formCelulares.has(cell)) {
         return `Celular ${c.celular} está duplicado entre os contatos deste parceiro.`;
       }
@@ -459,12 +456,12 @@ export default function ParceriasPage() {
 
     // Verificar celular/email duplicados em outros parceiros
     for (const contato of formData.contatos) {
-      const cell = normalizeDigits(contato.celular);
+      const cell = normalizeBrazilPhone(contato.celular);
       if (cell) {
         for (const parceiro of parceiros) {
           if (parceiro.id === editingParceiro?.id) continue;
           const found = parceiro.contatos.find(
-            (c) => normalizeDigits(c.celular) === cell,
+            (c) => normalizeBrazilPhone(c.celular) === cell,
           );
           if (found) {
             return `Celular ${contato.celular} já está sendo usado no contato "${found.setor}" do parceiro "${parceiro.razaoSocialOuNomeCompleto}".`;
@@ -627,7 +624,7 @@ export default function ParceriasPage() {
                       <div className="flex items-center gap-4 text-xs text-slate-500 font-medium whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
                           <Phone size={12} className="text-blue-500 shrink-0" />{" "}
-                          {highlightText(contato.celular, searchTerm)}
+                          {highlightText(formatPhone(contato.celular), searchTerm)}
                         </span>
                         {contato.email && (
                           <span className="inline-flex items-center gap-1">
@@ -1165,7 +1162,7 @@ export default function ParceriasPage() {
                         </span>
                         <p className="text-sm font-medium text-slate-600 flex items-center gap-1">
                           <Phone size={12} className="text-blue-500" />{" "}
-                          {contato.celular}
+                          {formatPhone(contato.celular)}
                         </p>
                       </div>
                       <div>

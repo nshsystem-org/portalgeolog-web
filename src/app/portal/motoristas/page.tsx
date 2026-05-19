@@ -36,6 +36,7 @@ import {
   type ParceiroServico,
   type NovoParceiroInput,
 } from "@/context/DataContext";
+import { formatBrazilPhone, normalizeBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
 import { fetchDriversPage } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 
@@ -176,13 +177,7 @@ const formatDocumentParceiro = (
     .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 };
 
-const formatPhoneParceiro = (value: string): string => {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-  if (digits.length <= 10) {
-    return digits.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3").trim();
-  }
-  return digits.replace(/(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3").trim();
-};
+const formatPhoneParceiro = (value: string): string => formatBrazilPhone(value);
 
 const validateCPF = (cpf: string): boolean => {
   const cpfClean = cpf.replace(/\D/g, "");
@@ -663,7 +658,7 @@ export default function MotoristasPage() {
     if (!primeiroContato.responsavel.trim()) {
       return "Responsável do primeiro contato é obrigatório";
     }
-    const celularLimpo = primeiroContato.celular.replace(/\D/g, "");
+    const celularLimpo = stripBrazilCountryCode(primeiroContato.celular);
     if (celularLimpo.length !== 11) {
       return "Celular deve ter 11 dígitos completos: (00) 00000-0000";
     }
@@ -695,7 +690,7 @@ export default function MotoristasPage() {
           parceiroQuickForm.razaoSocialOuNomeCompleto.trim(),
         contatos: parceiroQuickForm.contatos.map((c) => ({
           setor: c.setor.trim(),
-          celular: c.celular.trim(),
+          celular: normalizeBrazilPhone(c.celular),
           email: c.email?.trim() || "",
           responsavel: c.responsavel.trim(),
         })),
@@ -739,18 +734,11 @@ export default function MotoristasPage() {
   };
 
   const formatCelular = (value: string): string => {
-    const digits = value.replace(/\D/g, "").slice(0, 11);
-    if (digits.length <= 2) {
-      return digits;
-    }
-    if (digits.length <= 7) {
-      return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-    }
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+    return formatBrazilPhone(value);
   };
 
   const validateCelular = (value: string): boolean => {
-    const digits = value.replace(/\D/g, "");
+    const digits = stripBrazilCountryCode(value);
     if (digits.length !== 11) return false;
     if (digits[2] !== "9") return false;
     if (/^(\d)\1{10}$/.test(digits)) return false;
@@ -857,6 +845,8 @@ export default function MotoristasPage() {
     value.trim().toLowerCase();
   const normalizeDigitsValue = (value: string): string =>
     value.replace(/\D/g, "");
+  const normalizePhoneDigitsValue = (value: string): string =>
+    normalizeBrazilPhone(value);
 
   const hasDuplicateDriver = (
     field: "name" | "cpf" | "phone",
@@ -866,7 +856,9 @@ export default function MotoristasPage() {
     const normalizedValue =
       field === "name"
         ? normalizeTextValue(value)
-        : normalizeDigitsValue(value);
+        : field === "phone"
+          ? normalizePhoneDigitsValue(value)
+          : normalizeDigitsValue(value);
 
     if (!normalizedValue) {
       return false;
@@ -878,7 +870,9 @@ export default function MotoristasPage() {
       const normalizedDriverValue =
         field === "name"
           ? normalizeTextValue(driverValue)
-          : normalizeDigitsValue(driverValue);
+          : field === "phone"
+            ? normalizePhoneDigitsValue(driverValue)
+            : normalizeDigitsValue(driverValue);
       return normalizedDriverValue === normalizedValue;
     });
   };
@@ -1004,7 +998,7 @@ export default function MotoristasPage() {
       const insertData: Record<string, unknown> = {
         name: formData.name.trim(),
         cpf: formData.cpf.replace(/\D/g, "").trim(),
-        phone: formData.celular.replace(/\D/g, "").trim(),
+        phone: normalizeBrazilPhone(formData.celular),
         vehicle_id: formData.vehicle_ids[0],
         status: "active",
         vinculo_tipo: formData.vinculo_tipo,
@@ -1083,7 +1077,7 @@ export default function MotoristasPage() {
     setFormData({
       name: driver.name || "",
       cpf: formatDocumento(driver.cpf || "", "cpf"),
-      celular: driver.phone || "",
+      celular: formatPhoneParceiro(driver.phone || ""),
       vinculo_tipo: driver.vinculo_tipo || "parceiro",
       parceiro_id: driver.parceiro_id || "",
       tipo_documento: "cpf",
@@ -1178,7 +1172,7 @@ export default function MotoristasPage() {
       const updateData: Record<string, unknown> = {
         name: formData.name.trim(),
         cpf: formData.cpf.replace(/\D/g, "").trim(),
-        phone: formData.celular.replace(/\D/g, "").trim(),
+        phone: normalizeBrazilPhone(formData.celular),
         vehicle_id: formData.vehicle_ids[0],
         vinculo_tipo: formData.vinculo_tipo,
         parceiro_id:
@@ -1557,9 +1551,7 @@ export default function MotoristasPage() {
               <div className="flex items-center gap-2 text-slate-700">
                 <Phone size={14} className="text-cyan-500" />
                 <span className="text-base font-bold">
-                  {formatCelular(String(value))
-                    .replace("(", "")
-                    .replace(")", " ")}
+                  {formatCelular(String(value))}
                 </span>
               </div>
             ),

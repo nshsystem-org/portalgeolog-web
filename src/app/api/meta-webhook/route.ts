@@ -20,7 +20,12 @@ import { NextResponse } from "next/server";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 import { createClient } from "@supabase/supabase-js";
 import { processDriverAccept } from "@/lib/driver-accept";
-import { sendWhatsAppMessage, sendWhatsAppTemplate } from "@/lib/meta";
+import {
+  normalizeWhatsAppPhone,
+  sendWhatsAppMessage,
+  sendWhatsAppTemplate,
+} from "@/lib/meta";
+import { recordWhatsAppLog } from "@/lib/whatsapp-logs";
 import {
   buildPassengerDetailsMessage,
   getOperationalCycleTitle,
@@ -276,7 +281,9 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         .eq("id", osRecord.driver_id)
         .maybeSingle();
       if (driverRow) {
-        driverPhone = String((driverRow as { phone?: string }).phone || "Não informado");
+        driverPhone = normalizeWhatsAppPhone(
+          String((driverRow as { phone?: string }).phone || "Não informado"),
+        );
       }
     }
     if (driverPhone === "Não informado" && osRecord?.motorista) {
@@ -301,9 +308,18 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         return n === normalized || n.includes(normalized);
       });
       if (matched)
-        driverPhone = String(
-          (matched as { phone?: string }).phone || driverPhone,
+        driverPhone = normalizeWhatsAppPhone(
+          String((matched as { phone?: string }).phone || driverPhone),
         );
+    }
+    // Se ainda não encontrou o motorista no banco, usa o telefone do webhook
+    // (caso comum quando o motorista está cadastrado sem código do país)
+    if (driverPhone === "Não informado") {
+      driverPhone = normalizeWhatsAppPhone(phone);
+      console.log(
+        "[meta-webhook] Usando telefone do webhook como fallback:",
+        driverPhone,
+      );
     }
 
     let empresa = "Não informado";
@@ -864,17 +880,11 @@ export async function POST(request: Request) {
       JSON.stringify(body),
     );
 
-    // Persistir payload para diagnóstico (fire-and-forget)
-    try {
-      await getAdmin()
-        .from("webhook_logs")
-        .insert({
-          source: "meta-webhook",
-          payload: body,
-        } as never);
-    } catch (logErr) {
-      console.error("[meta-webhook] Erro ao salvar log:", logErr);
-    }
+    await recordWhatsAppLog({
+      source: "meta-webhook",
+      eventType: "webhook_payload",
+      payload: body as Record<string, unknown>,
+    });
 
     const entries = body?.entry || [];
     const processingTasks: Promise<void>[] = [];
@@ -899,10 +909,31 @@ export async function POST(request: Request) {
             hasInteractive: !!message?.interactive,
             hasButton: !!message?.button,
           });
+          void recordWhatsAppLog({
+            source: "meta-webhook",
+            eventType: "message_received",
+            payload: {
+              msgType,
+              phone,
+              contextId,
+              messageId: message?.id,
+              hasInteractive: !!message?.interactive,
+              hasButton: !!message?.button,
+            },
+          });
 
           // Deduplicação
           if (message?.id && isDuplicateMessage(message.id)) {
             console.log("[meta-webhook] Duplicada ignorada:", message.id);
+            void recordWhatsAppLog({
+              source: "meta-webhook",
+              eventType: "message_duplicate_ignored",
+              payload: {
+                messageId: message.id,
+                phone,
+                contextId,
+              },
+            });
             continue;
           }
 
@@ -914,6 +945,15 @@ export async function POST(request: Request) {
               phone,
               contextId,
               responseJson: nfmReply.response_json,
+            });
+            void recordWhatsAppLog({
+              source: "meta-webhook",
+              eventType: "flow_completed_detected",
+              payload: {
+                phone,
+                contextId,
+                responseJson: nfmReply.response_json,
+              },
             });
             processingTasks.push(
               (async () => {
@@ -942,6 +982,16 @@ export async function POST(request: Request) {
               buttonId: buttonReply?.id,
               buttonTitle: buttonReply?.title,
             });
+            void recordWhatsAppLog({
+              source: "meta-webhook",
+              eventType: "button_interactive_detected",
+              payload: {
+                phone,
+                contextId,
+                buttonId: buttonReply?.id || null,
+                buttonTitle: buttonReply?.title || null,
+              },
+            });
 
             if (buttonReply && contextId && phone) {
               // Qualquer botão interativo com contextId dispara detalhes
@@ -949,6 +999,16 @@ export async function POST(request: Request) {
                 "[meta-webhook] Disparando detalhes via botão interativo:",
                 { phone, contextId, buttonId: buttonReply.id },
               );
+              void recordWhatsAppLog({
+                source: "meta-webhook",
+                eventType: "details_requested",
+                payload: {
+                  phone,
+                  contextId,
+                  buttonId: buttonReply.id,
+                  trigger: "interactive_button",
+                },
+              });
               processingTasks.push(
                 (async () => {
                   try {
@@ -975,12 +1035,32 @@ export async function POST(request: Request) {
               contextId,
               phone,
             });
+            void recordWhatsAppLog({
+              source: "meta-webhook",
+              eventType: "quick_reply_detected",
+              payload: {
+                phone,
+                contextId,
+                buttonPayload,
+                buttonText,
+              },
+            });
 
             if (contextId && phone) {
               console.log(
                 "[meta-webhook] Disparando detalhes via quick reply:",
                 { phone, contextId, buttonText },
               );
+              void recordWhatsAppLog({
+                source: "meta-webhook",
+                eventType: "details_requested",
+                payload: {
+                  phone,
+                  contextId,
+                  buttonText,
+                  trigger: "quick_reply",
+                },
+              });
               processingTasks.push(
                 (async () => {
                   try {
@@ -1003,6 +1083,14 @@ export async function POST(request: Request) {
               "[meta-webhook] Mensagem de texto com contextId, disparando detalhes:",
               { phone, contextId },
             );
+            void recordWhatsAppLog({
+              source: "meta-webhook",
+              eventType: "text_context_detected",
+              payload: {
+                phone,
+                contextId,
+              },
+            });
             processingTasks.push(
               (async () => {
                 try {
@@ -1022,6 +1110,15 @@ export async function POST(request: Request) {
             msgType,
             phone,
             contextId,
+          });
+          void recordWhatsAppLog({
+            source: "meta-webhook",
+            eventType: "message_unhandled",
+            payload: {
+              msgType,
+              phone,
+              contextId,
+            },
           });
         }
       }

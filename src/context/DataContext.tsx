@@ -10,12 +10,12 @@ import React, {
   useRef,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeBrazilPhone } from "@/lib/phone";
 import type { OperationalCycle } from "@/lib/os-messages";
 import {
   fetchClientes,
   fetchSolicitantes,
   fetchPassageiros,
-  fetchOSList,
   fetchOSById,
   fetchDrivers,
   insertCliente,
@@ -223,6 +223,9 @@ const normalizeTextValue = (value: string): string =>
 
 const normalizeDigitsValue = (value: string): string =>
   value.replace(/\D/g, "");
+
+const normalizePhoneValue = (value: string): string =>
+  normalizeBrazilPhone(value);
 
 const isUniqueConstraintError = (error: unknown): boolean => {
   if (typeof error !== "object" || error === null) {
@@ -845,7 +848,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   ): Promise<Passageiro> => {
     const cleanNome = passageiro.nomeCompleto.trim().toUpperCase();
     const cleanEmail = passageiro.email?.trim() || "";
-    const cleanCelular = passageiro.celular.trim();
+    const cleanCelular = normalizePhoneValue(passageiro.celular.trim());
     const cleanCpf = passageiro.cpf?.trim() || "";
 
     if (!cleanNome) {
@@ -869,7 +872,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         passageiros,
         cleanCelular,
         (item) => item.celular,
-        normalizeDigitsValue,
+        normalizePhoneValue,
       )
     ) {
       throw new Error("Já existe um passageiro com este celular.");
@@ -932,7 +935,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                   passageiros,
                   cleanCelular,
                   (item) => item.celular,
-                  normalizeDigitsValue,
+                  normalizePhoneValue,
                 )
               ? "Já existe um passageiro com este celular."
               : cleanCpf &&
@@ -960,7 +963,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   ): Promise<Passageiro> => {
     const cleanNome = passageiro.nomeCompleto.trim().toUpperCase();
     const cleanEmail = passageiro.email?.trim() || "";
-    const cleanCelular = passageiro.celular.trim();
+    const cleanCelular = normalizePhoneValue(passageiro.celular.trim());
     const cleanCpf = passageiro.cpf?.trim() || "";
 
     if (!cleanNome) {
@@ -987,7 +990,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         otherPassageiros,
         cleanCelular,
         (item) => item.celular,
-        normalizeDigitsValue,
+        normalizePhoneValue,
       )
     ) {
       throw new Error("Já existe um passageiro com este celular.");
@@ -1051,7 +1054,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                   otherPassageiros,
                   cleanCelular,
                   (item) => item.celular,
-                  normalizeDigitsValue,
+                  normalizePhoneValue,
                 )
               ? "Já existe um passageiro com este celular."
               : cleanCpf &&
@@ -1329,11 +1332,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         contato: { setor: string; responsavel: string };
       }
     | undefined => {
-    const normalizedCell = normalizeDigitsValue(celular);
+    const normalizedCell = normalizePhoneValue(celular);
     for (const parceiro of parceiros) {
       if (parceiro.id === excludeParceiroId) continue;
       const contato = parceiro.contatos.find(
-        (c) => normalizeDigitsValue(c.celular) === normalizedCell,
+        (c) => normalizePhoneValue(c.celular) === normalizedCell,
       );
       if (contato) return { parceiro, contato };
     }
@@ -1375,7 +1378,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     for (const contato of parceiro.contatos) {
-      const cleanCell = normalizeDigitsValue(contato.celular);
+      const cleanCell = normalizePhoneValue(contato.celular);
       if (cleanCell) {
         const existingCell = findParceiroContatoByCelular(contato.celular);
         if (existingCell) {
@@ -1422,7 +1425,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     for (const contato of parceiro.contatos) {
-      const cleanCell = normalizeDigitsValue(contato.celular);
+      const cleanCell = normalizePhoneValue(contato.celular);
       if (cleanCell) {
         const existingCell = findParceiroContatoByCelular(contato.celular, id);
         if (existingCell) {
