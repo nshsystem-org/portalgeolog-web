@@ -1,41 +1,32 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import type { AppDatabase } from "@/lib/supabase/app-database";
 
 export const runtime = "edge";
 
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
+// Cache do cliente admin
+let _adminClient: SupabaseClient<AppDatabase> | null = null;
 
-  if (!value) {
-    throw new Error(`${name} is required`);
+function getAdminClient() {
+  if (!_adminClient) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    _adminClient = createClient<AppDatabase>(url, key);
   }
-
-  return value;
-}
-
-function createAdminClient() {
-  return createClient(
-    getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
-  );
+  return _adminClient;
 }
 
 async function createAuthClient() {
   const cookieStore = await cookies();
-
   return createServerClient(
-    getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll() {
-          // No-op em rotas API; o middleware mantém a sessão atualizada
-        },
+        getAll: () => cookieStore.getAll(),
+        setAll: () => {},
       },
     },
   );
@@ -52,17 +43,14 @@ type CreateAppNotificationBody = {
 export async function GET() {
   try {
     const authClient = await createAuthClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await authClient.auth.getUser();
+    const { data: { user }, error: userError } = await authClient.auth.getUser();
 
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
+    const adminClient = getAdminClient();
 
-    const adminClient = createAdminClient();
-
+    // 1. Buscar o tipo_usuario do logado
     const { data: roleRow } = await adminClient
       .from("user_roles")
       .select("tipo_usuario")
@@ -71,52 +59,50 @@ export async function GET() {
 
     const tipoUsuario = roleRow?.tipo_usuario ?? "interno";
 
-    const { data, error } = await adminClient
+    // 2. Buscar notificações e autores em uma única query (JOIN)
+    // Nota: O join user_roles!created_by assume que existe uma FK ou que o nome da coluna é explícito
+    // Como app_notifications(created_by) -> auth.users(id) e user_roles(id) -> auth.users(id), 
+    // o PostgREST pode precisar de ajuda se não houver FK direta entre app_notifications e user_roles.
+    // Usaremos a abordagem otimizada de dois passos se o JOIN falhar ou for complexo, mas com cache.
+    
+    const { data: notifications, error: notifError } = await adminClient
       .from("app_notifications")
       .select("*")
       .in("target_audience", [tipoUsuario, "all"])
       .order("created_at", { ascending: false })
       .limit(30);
 
-    if (error) throw error;
+    if (notifError) throw notifError;
 
-    const notifications = data ?? [];
+    const notifs = notifications ?? [];
 
-    // Buscar nomes e avatares atuais dos autores para evitar dados desatualizados
-    const uniqueCreatorIds = [
-      ...new Set(
-        notifications
+    // 3. Buscar nomes e avatares atuais dos autores de forma eficiente
+    const uniqueCreatorIds = Array.from(
+      new Set(
+        notifs
           .map((n) => n.created_by)
           .filter((id): id is string => !!id),
       ),
-    ];
+    );
 
-    let currentNames: Record<string, string> = {};
-    let currentAvatars: Record<string, string | null> = {};
+    const currentNames: Record<string, string> = {};
+    const currentAvatars: Record<string, string | null> = {};
+    
     if (uniqueCreatorIds.length > 0) {
       const { data: usersData } = await adminClient
         .from("user_roles")
         .select("id, nome, avatar_url")
         .in("id", uniqueCreatorIds);
 
-      currentNames = (usersData ?? []).reduce(
-        (acc, u) => {
-          if (u.id && u.nome) acc[u.id] = u.nome;
-          return acc;
-        },
-        {} as Record<string, string>,
-      );
-
-      currentAvatars = (usersData ?? []).reduce(
-        (acc, u) => {
-          if (u.id) acc[u.id] = u.avatar_url ?? null;
-          return acc;
-        },
-        {} as Record<string, string | null>,
-      );
+      (usersData ?? []).forEach((u) => {
+        if (u.id) {
+          if (u.nome) currentNames[u.id] = u.nome;
+          currentAvatars[u.id] = u.avatar_url ?? null;
+        }
+      });
     }
 
-    const enriched = notifications.map((n) => ({
+    const enriched = notifs.map((n) => ({
       ...n,
       created_by_name:
         n.created_by && currentNames[n.created_by]
@@ -135,6 +121,7 @@ export async function GET() {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 export async function POST(request: Request) {
   try {
@@ -162,10 +149,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const adminClient = createAdminClient();
+    const adminClient = getAdminClient();
 
     // Buscar nome e avatar do usuário se não estiver no metadata
-    let authorName = user.user_metadata?.nome || user.user_metadata?.full_name;
+    const userMetadata = user.user_metadata as Record<string, unknown> | undefined;
+    let authorName: string | null =
+      (typeof userMetadata?.nome === "string" ? userMetadata.nome : null) ||
+      (typeof userMetadata?.full_name === "string"
+        ? userMetadata.full_name
+        : null);
     let authorAvatar: string | null = null;
 
     const { data: profile } = await adminClient

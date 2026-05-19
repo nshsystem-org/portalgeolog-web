@@ -36,9 +36,9 @@ export function useUserPresence() {
 
   const onlineCount = users.filter((u) => u.is_online).length;
 
-  const fetchUsers = useCallback(async () => {
+  const fetchUsers = useCallback(async (isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       const res = await fetch("/api/presence/users");
       if (!res.ok) {
         const text = await res.text().catch(() => "Erro desconhecido");
@@ -47,17 +47,19 @@ export function useUserPresence() {
       const data = (await res.json()) as PresenceUser[];
       console.log("[Presence] Users fetched:", data.length, "online:", data.filter(u => u.is_online).length);
 
-      // Detectar transições offline -> online para notificar
-      const prevStatus = prevStatusRef.current;
-      data.forEach((u) => {
-        const wasOnline = prevStatus[u.id];
-        if (!wasOnline && u.is_online && knownIdsRef.current.has(u.id) && u.id !== user?.id) {
-          toast.success(`${u.nome} entrou no portal`, {
-            icon: "🟢",
-            duration: 4000,
-          });
-        }
-      });
+      // Detectar transições offline -> online para notificar (apenas no fetch inicial)
+      if (isInitial) {
+        const prevStatus = prevStatusRef.current;
+        data.forEach((u) => {
+          const wasOnline = prevStatus[u.id];
+          if (!wasOnline && u.is_online && knownIdsRef.current.has(u.id) && u.id !== user?.id) {
+            toast.success(`${u.nome} entrou no portal`, {
+              icon: "🟢",
+              duration: 4000,
+            });
+          }
+        });
+      }
 
       // Atualizar estado conhecido
       prevStatusRef.current = data.reduce(
@@ -84,13 +86,12 @@ export function useUserPresence() {
       setError(message);
       console.error("useUserPresence fetch error:", message);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, [user?.id]);
 
   const sendHeartbeat = useCallback(async () => {
     if (!user) {
-      console.log("[Presence] Heartbeat skipped: no user");
       return;
     }
     try {
@@ -98,9 +99,7 @@ export function useUserPresence() {
         method: "POST",
         credentials: "include",
       });
-      if (res.ok) {
-        console.log("[Presence] Heartbeat OK", user.id);
-      } else {
+      if (!res.ok) {
         const text = await res.text().catch(() => "unknown");
         console.error("[Presence] Heartbeat failed:", res.status, text);
       }
@@ -117,7 +116,7 @@ export function useUserPresence() {
       return;
     }
 
-    fetchUsers();
+    fetchUsers(true);
 
     // Heartbeat inicial
     sendHeartbeat();
@@ -143,9 +142,44 @@ export function useUserPresence() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "user_presence" },
-        () => {
-          // Recarrega a lista para manter consistência
-          fetchUsers();
+        (payload) => {
+          // Atualiza o estado local baseado na mudança recebida, evitando um novo fetch total
+          const newRow = payload.new as { user_id: string; status: string; last_seen_at: string };
+          if (!newRow || !newRow.user_id) return;
+
+          setUsers((prev) => {
+            const userIndex = prev.findIndex((u) => u.id === newRow.user_id);
+            if (userIndex === -1) return prev;
+
+            const oldUser = prev[userIndex];
+            const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+            const isOnline =
+              newRow.status === "online" &&
+              new Date(newRow.last_seen_at).getTime() > twoMinutesAgo;
+
+            // Notificar se mudou para online agora
+            if (!oldUser.is_online && isOnline && oldUser.id !== user?.id) {
+              toast.success(`${oldUser.nome} entrou no portal`, {
+                icon: "🟢",
+                duration: 4000,
+              });
+            }
+
+            const updatedUser = {
+              ...oldUser,
+              is_online: isOnline,
+              last_seen_at: newRow.last_seen_at,
+            };
+
+            const nextUsers = [...prev];
+            nextUsers[userIndex] = updatedUser;
+
+            // Re-ordenar (online primeiro)
+            return nextUsers.sort((a, b) => {
+              if (a.is_online === b.is_online) return a.nome.localeCompare(b.nome);
+              return a.is_online ? -1 : 1;
+            });
+          });
         },
       )
       .subscribe();

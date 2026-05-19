@@ -643,9 +643,9 @@ export default function OSCalendar({
             overflow-y: auto !important;
           }
 
-          /* Cor de fundo do dia atual - laranja (exceto no modo Dia) */
-          .fc-day-today {
-            background-color: #fdba74 !important;
+          /* Cor de fundo do dia atual (exceto no modo Dia) */
+          .fc .fc-daygrid-day.fc-day-today {
+            background-color: #ffebd5 !important;
           }
 
           .fc-dayGridDay-view .fc-day-today,
@@ -653,17 +653,21 @@ export default function OSCalendar({
             background-color: #ffffff !important;
           }
 
-          /* Remover hover nas células do dia */
-          .fc-daygrid-day:hover {
+          /* Remover hover padrão nas células normais */
+          .fc .fc-daygrid-day:hover {
             background-color: transparent !important;
           }
 
-          .fc-day-today:hover {
-            background-color: #fdba74 !important;
+          /* Hover/focus do dia atual */
+          .fc .fc-daygrid-day.fc-day-today:hover,
+          .fc .fc-daygrid-day.fc-day-today:focus {
+            background-color: #ffebd5 !important;
           }
 
           .fc-dayGridDay-view .fc-day-today:hover,
-          .fc-view-dayGridDay .fc-day-today:hover {
+          .fc-view-dayGridDay .fc-day-today:hover,
+          .fc-dayGridDay-view .fc-day-today:focus,
+          .fc-view-dayGridDay .fc-day-today:focus {
             background-color: #ffffff !important;
           }
 
@@ -672,12 +676,17 @@ export default function OSCalendar({
             background: transparent !important;
           }
 
-          .fc-daygrid-day.fc-day-selected {
+          .fc .fc-daygrid-day.fc-day-selected {
             background-color: transparent !important;
           }
 
-          .fc-day-today.fc-day-selected {
-            background-color: #fdba74 !important;
+          .fc .fc-daygrid-day.fc-day-today.fc-day-selected {
+            background-color: #ffebd5 !important;
+          }
+
+          .fc-dayGridDay-view .fc-day-today.fc-day-selected,
+          .fc-view-dayGridDay .fc-day-today.fc-day-selected {
+            background-color: #ffffff !important;
           }
 
           .fc-event-custom:hover {

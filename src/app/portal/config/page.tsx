@@ -29,13 +29,13 @@ import {
   CheckCircle,
   DollarSign,
   Percent,
-  Smartphone,
   RefreshCw,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import StandardModal from "@/components/StandardModal";
 import { AvatarUploader } from "@/components/ui/AvatarUploader";
+import { WhatsAppLogsPanel } from "@/components/config/WhatsAppLogsPanel";
 import { useData } from "@/context/DataContext";
 type TabType = "acesso" | "perfil" | "historico" | "financeiro";
 
@@ -753,76 +753,22 @@ export default function ConfigPage() {
             )}
 
             {activeTab === "historico" && (
-              <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 p-10 space-y-10">
-                <div className="sticky top-36 bg-white z-20 pb-6 border-b-2 border-slate-50">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center text-white shadow-lg">
-                        <Clock size={28} />
-                      </div>
-                      <div>
-                        <h2 className="text-2xl font-black text-slate-800">
-                          Linha do Tempo
-                        </h2>
-                        <p className="text-slate-500 font-bold">
-                          Registro de modificações recentes no sistema.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                      {["Todos", "Clientes", "OS", "Acessos"].map((f) => (
-                        <button
-                          key={f}
-                          className="px-5 py-2.5 bg-slate-100 text-slate-500 rounded-xl font-black text-xs hover:bg-slate-200 transition-all cursor-pointer whitespace-nowrap"
-                        >
-                          {f}
-                        </button>
-                      ))}
-                    </div>
+              <div className="bg-slate-50/40 rounded-[2.5rem] p-4 md:p-6 border border-slate-100 shadow-xl shadow-slate-100/60">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center text-white shadow-lg">
+                    <Clock size={28} />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-800">
+                      Histórico de Logs WhatsApp
+                    </h2>
+                    <p className="text-slate-500 font-bold">
+                      Entrada, saída, respostas da Meta e erros do fluxo.
+                    </p>
                   </div>
                 </div>
 
-                <div className="space-y-6 relative before:absolute before:inset-y-0 before:left-6 before:w-1 before:bg-slate-100">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div
-                      key={i}
-                      className="relative pl-14 flex flex-col md:flex-row md:items-center justify-between gap-4 py-4 group"
-                    >
-                      <div className="absolute left-[18px] top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-slate-300 border-4 border-white shadow-sm ring-4 ring-transparent group-hover:ring-blue-50 group-hover:bg-blue-600 transition-all" />
-
-                      <div className="space-y-1">
-                        <div className="font-black text-slate-800 text-base">
-                          {i % 2 === 0
-                            ? "Atualização de Base de Cliente"
-                            : "Nova Ordem de Serviço lançada"}
-                        </div>
-                        <div className="text-sm text-slate-500 font-bold">
-                          O usuário{" "}
-                          <span className="text-blue-600">Thorfinn</span>{" "}
-                          alterou os dados da empresa{" "}
-                          <span className="text-slate-800">Equinor Brasil</span>
-                          .
-                        </div>
-                      </div>
-
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                          26 Mar 2026
-                        </div>
-                        <div className="text-xs font-black text-slate-300">
-                          19:45:0{i}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="pt-4 text-center">
-                    <button className="text-blue-600 font-black text-sm hover:underline cursor-pointer">
-                      Carregar períodos anteriores...
-                    </button>
-                  </div>
-                </div>
+                <WhatsAppLogsPanel />
               </div>
             )}
 

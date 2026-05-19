@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from "@/lib/meta";
+import { createClient as createSupabaseAuthClient } from "@/lib/supabase/server";
 
 export const runtime = "edge";
 
 export async function POST(request: Request) {
   try {
+    const authClient = await createSupabaseAuthClient();
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
+
+    if (userError || !user) {
+      return NextResponse.json(
+        { success: false, error: "Não autenticado." },
+        { status: 401 },
+      );
+    }
+
     const body = await request.json();
     const {
       phone,
