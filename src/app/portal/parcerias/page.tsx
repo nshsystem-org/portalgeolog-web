@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   ParceiroServico,
   NovoParceiroInput,
@@ -17,15 +17,18 @@ import {
   MapPin,
   Phone,
   PlusCircle,
-  Power,
   Trash2,
   Users,
   Plus,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useParceiroValidation } from "@/hooks/useParceiroValidation";
+import { useParceriasTranslation } from "@/hooks/useTranslation";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/ui/PageHeader";
 import {
@@ -36,35 +39,26 @@ import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import {
   formatBrazilPhone,
   normalizeBrazilPhone,
-  stripBrazilCountryCode,
 } from "@/lib/phone";
+import {
+  formatDocument,
+} from "@/lib/document-validator";
 
 const PESSOA_TIPO_OPTIONS = [
   { id: "juridica", nome: "Pessoa jurídica" },
   { id: "fisica", nome: "Pessoa física" },
 ];
 
-const formatDocument = (
-  value: string,
-  pessoaTipo: "fisica" | "juridica",
-): string => {
-  const digits = value
-    .replace(/\D/g, "")
-    .slice(0, pessoaTipo === "juridica" ? 14 : 11);
+const TABLE_PAGE_SIZE = 10;
 
-  if (pessoaTipo === "juridica") {
-    return digits
-      .replace(/(\d{2})(\d)/, "$1.$2")
-      .replace(/(\d{3})(\d)/, "$1.$2")
-      .replace(/(\d{3})(\d)/, "$1/$2")
-      .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
-  }
-
-  return digits
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-};
+// Helper functions para eliminar código duplicado
+const getPessoaTipoLabels = (pessoaTipo: "fisica" | "juridica") => ({
+  razaoSocialLabel: pessoaTipo === "juridica" ? "Razão social" : "Nome completo",
+  documentoLabel: pessoaTipo === "juridica" ? "CNPJ" : "CPF",
+  documentoPlaceholder: pessoaTipo === "juridica" ? "00.000.000/0001-00" : "000.000.000-00",
+  razaoSocialPlaceholder: pessoaTipo === "juridica" ? "Ex: Silva Logística LTDA" : "Ex: João da Silva",
+  pessoaTipoLabel: pessoaTipo === "juridica" ? "Pessoa Jurídica" : "Pessoa Física",
+});
 
 const formatPhone = (value: string): string => formatBrazilPhone(value);
 
@@ -105,7 +99,6 @@ type ParceiroFormContato = {
 type ParceiroFormFilial = {
   rotulo: string;
   enderecoCompleto: string;
-  referencia?: string;
 };
 
 interface ParceiroFormData extends NovoParceiroInput {
@@ -123,7 +116,6 @@ const initialContato = (): ParceiroFormContato => ({
 const initialFilial = (): ParceiroFormFilial => ({
   rotulo: "",
   enderecoCompleto: "",
-  referencia: "",
 });
 
 const initialForm = (): ParceiroFormData => ({
@@ -139,24 +131,58 @@ export default function ParceriasPage() {
     parceiros,
     addParceiro,
     updateParceiro,
-    toggleParceiro,
     deleteParceiro,
+    unarchiveParceiro,
   } = useData();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
+  const { validateForm } = useParceiroValidation(parceiros);
+  const t = useParceriasTranslation("pt-BR");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingParceiro, setEditingParceiro] =
     useState<ParceiroServico | null>(null);
   const [viewingParceiro, setViewingParceiro] =
     useState<ParceiroServico | null>(null);
   const [formData, setFormData] = useState<ParceiroFormData>(initialForm());
-  const parceiroTable = useServerPaginatedTable(fetchParceirosPage, 10);
+  const [showArchivedOnly, setShowArchivedOnly] = useState(false);
+  const [isArchivedFilterLoading, setIsArchivedFilterLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Ref para evitar re-renders desnecessários no refresh da tabela
+  const parceirosLengthRef = useRef(parceiros.length);
+  const prevParceirosLengthRef = useRef(parceiros.length);
+
+  const fetchParceirosPageWithFilters = useCallback(
+    (params: { page: number; pageSize: number; searchTerm: string }) =>
+      fetchParceirosPage({
+        ...params,
+        arquivado: showArchivedOnly,
+      }),
+    [showArchivedOnly],
+  );
+
+  const parceiroTable = useServerPaginatedTable(fetchParceirosPageWithFilters, TABLE_PAGE_SIZE);
   const searchTerm = parceiroTable.searchTerm;
 
-  // Refresh automático da tabela quando dados mudam via realtime
+  // Monitorar loading do filtro de arquivados
   useEffect(() => {
-    void parceiroTable.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parceiros.length]);
+    if (!isArchivedFilterLoading) return;
+
+    if (!parceiroTable.loading) {
+      setIsArchivedFilterLoading(false);
+    }
+  }, [parceiroTable.loading, isArchivedFilterLoading]);
+
+  // Refresh automático da tabela quando dados mudam via realtime
+  // Otimizado com refs para evitar re-renders excessivos
+  useEffect(() => {
+    parceirosLengthRef.current = parceiros.length;
+    
+    // Apenas refresh se o comprimento realmente mudou
+    if (parceirosLengthRef.current !== prevParceirosLengthRef.current) {
+      void parceiroTable.refresh();
+      prevParceirosLengthRef.current = parceirosLengthRef.current;
+    }
+  }, [parceiros.length, parceiroTable]);
 
   const resetForm = () => {
     setEditingParceiro(null);
@@ -184,7 +210,6 @@ export default function ParceriasPage() {
             ? parceiro.filiais.map((filial) => ({
                 rotulo: filial.rotulo,
                 enderecoCompleto: filial.enderecoCompleto,
-                referencia: filial.referencia || "",
               }))
             : [initialFilial()],
       });
@@ -301,219 +326,74 @@ export default function ParceriasPage() {
     filiais: formData.filiais.map((filial) => ({
       rotulo: filial.rotulo.trim(),
       enderecoCompleto: filial.enderecoCompleto.trim(),
-      referencia: filial.referencia?.trim() || "",
     })),
   });
-
-  const validateCPF = (cpf: string): boolean => {
-    const cpfClean = cpf.replace(/\D/g, "");
-    if (cpfClean.length !== 11) return false;
-
-    if (/^(\d)\1{10}$/.test(cpfClean)) return false;
-
-    let sum = 0;
-    for (let i = 0; i < 9; i++) {
-      sum += parseInt(cpfClean.charAt(i)) * (10 - i);
-    }
-    let remainder = (sum * 10) % 11;
-    if (remainder === 10 || remainder === 11) remainder = 0;
-    if (remainder !== parseInt(cpfClean.charAt(9))) return false;
-
-    sum = 0;
-    for (let i = 0; i < 10; i++) {
-      sum += parseInt(cpfClean.charAt(i)) * (11 - i);
-    }
-    remainder = (sum * 10) % 11;
-    if (remainder === 10 || remainder === 11) remainder = 0;
-    if (remainder !== parseInt(cpfClean.charAt(10))) return false;
-
-    return true;
-  };
-
-  const validateCNPJ = (cnpj: string): boolean => {
-    const cnpjClean = cnpj.replace(/\D/g, "");
-    if (cnpjClean.length !== 14) return false;
-
-    if (/^(\d)\1{13}$/.test(cnpjClean)) return false;
-
-    const weightsFirst = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-    const weightsSecond = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-
-    let sum = 0;
-    for (let i = 0; i < 12; i++) {
-      sum += parseInt(cnpjClean.charAt(i)) * weightsFirst[i];
-    }
-    let remainder = sum % 11;
-    const firstDigit = remainder < 2 ? 0 : 11 - remainder;
-    if (firstDigit !== parseInt(cnpjClean.charAt(12))) return false;
-
-    sum = 0;
-    for (let i = 0; i < 13; i++) {
-      sum += parseInt(cnpjClean.charAt(i)) * weightsSecond[i];
-    }
-    remainder = sum % 11;
-    const secondDigit = remainder < 2 ? 0 : 11 - remainder;
-    if (secondDigit !== parseInt(cnpjClean.charAt(13))) return false;
-
-    return true;
-  };
-
-  const validateCelular = (celular: string): boolean => {
-    const celularClean = stripBrazilCountryCode(celular);
-
-    if (celularClean.length !== 11) return false;
-
-    if (/^(\d)\1{10}$/.test(celularClean)) return false;
-
-    const ddd = celularClean.substring(0, 2);
-    if (ddd < "11" || ddd > "99") return false;
-
-    return true;
-  };
-
-  const normalizeDigits = (value: string): string => value.replace(/\D/g, "");
-  const normalizeText = (value: string): string => value.trim().toLowerCase();
-
-  const validateForm = (): string | null => {
-    if (!formData.razaoSocialOuNomeCompleto.trim()) {
-      return "Razão Social/Nome completo é obrigatório";
-    }
-
-    if (!formData.documento.trim()) {
-      return "CNPJ/CPF é obrigatório";
-    }
-
-    const documentoLimpo = normalizeDigits(formData.documento);
-    if (formData.pessoaTipo === "juridica") {
-      if (documentoLimpo.length !== 14) {
-        return "CNPJ deve ter 14 dígitos completos";
-      }
-      if (!validateCNPJ(formData.documento)) {
-        return "CNPJ inválido";
-      }
-    } else {
-      if (documentoLimpo.length !== 11) {
-        return "CPF deve ter 11 dígitos completos";
-      }
-      if (!validateCPF(formData.documento)) {
-        return "CPF inválido";
-      }
-    }
-
-    // Verificar documento duplicado entre outros parceiros
-    const existingDocParceiro = parceiros.find(
-      (p) =>
-        p.id !== editingParceiro?.id &&
-        normalizeDigits(p.documento) === documentoLimpo,
-    );
-    if (existingDocParceiro) {
-      return `CNPJ/CPF já está sendo usado pelo parceiro "${existingDocParceiro.razaoSocialOuNomeCompleto}".`;
-    }
-
-    const primeiroContato = formData.contatos[0];
-    if (!primeiroContato.setor.trim()) {
-      return "Setor do primeiro contato é obrigatório";
-    }
-    if (!primeiroContato.celular.trim()) {
-      return "Celular do primeiro contato é obrigatório";
-    }
-    if (!primeiroContato.responsavel.trim()) {
-      return "Responsável do primeiro contato é obrigatório";
-    }
-
-    const celularLimpo = stripBrazilCountryCode(primeiroContato.celular);
-    if (celularLimpo.length !== 11) {
-      return "Celular deve ter 11 dígitos completos: (00) 00000-0000";
-    }
-    if (!validateCelular(primeiroContato.celular)) {
-      return "Celular inválido";
-    }
-
-    if (primeiroContato.email && primeiroContato.email.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(primeiroContato.email.trim())) {
-        return "E-mail inválido";
-      }
-    }
-
-    // Verificar duplicados entre os próprios contatos do formulário
-    const formCelulares = new Map<string, number>();
-    const formEmails = new Map<string, number>();
-    for (let i = 0; i < formData.contatos.length; i++) {
-      const c = formData.contatos[i];
-      const cell = normalizeBrazilPhone(c.celular);
-      if (cell && formCelulares.has(cell)) {
-        return `Celular ${c.celular} está duplicado entre os contatos deste parceiro.`;
-      }
-      formCelulares.set(cell, i);
-
-      const email = normalizeText(c.email || "");
-      if (email && formEmails.has(email)) {
-        return `E-mail ${c.email} está duplicado entre os contatos deste parceiro.`;
-      }
-      formEmails.set(email, i);
-    }
-
-    // Verificar celular/email duplicados em outros parceiros
-    for (const contato of formData.contatos) {
-      const cell = normalizeBrazilPhone(contato.celular);
-      if (cell) {
-        for (const parceiro of parceiros) {
-          if (parceiro.id === editingParceiro?.id) continue;
-          const found = parceiro.contatos.find(
-            (c) => normalizeBrazilPhone(c.celular) === cell,
-          );
-          if (found) {
-            return `Celular ${contato.celular} já está sendo usado no contato "${found.setor}" do parceiro "${parceiro.razaoSocialOuNomeCompleto}".`;
-          }
-        }
-      }
-      const email = normalizeText(contato.email || "");
-      if (email) {
-        for (const parceiro of parceiros) {
-          if (parceiro.id === editingParceiro?.id) continue;
-          const found = parceiro.contatos.find(
-            (c) => normalizeText(c.email || "") === email,
-          );
-          if (found) {
-            return `E-mail ${contato.email} já está sendo usado no contato "${found.setor}" do parceiro "${parceiro.razaoSocialOuNomeCompleto}".`;
-          }
-        }
-      }
-    }
-
-    return null;
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const validationError = validateForm();
+    const validationError = validateForm(formData, editingParceiro?.id);
     if (validationError) {
-      toast.error(validationError);
+      toast.error(validationError.message);
       return;
     }
 
     const cleanForm = cleanParceiro(formData);
+    setIsSubmitting(true);
 
     try {
       if (editingParceiro) {
         await updateParceiro(editingParceiro.id, cleanForm);
-        toast.success("Parceiro atualizado com sucesso!");
+        toast.success(t?.sucesso?.atualizado ?? "Parceiro atualizado com sucesso!");
       } else {
         await addParceiro(cleanForm);
-        toast.success("Parceiro cadastrado com sucesso!");
+        toast.success(t?.sucesso?.criado ?? "Parceiro cadastrado com sucesso!");
       }
 
       await parceiroTable.refresh();
 
       handleCloseModal();
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível salvar o parceiro.",
-      );
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+      console.error("Erro ao salvar parceiro:", error);
+      
+      // Tratamento específico para diferentes tipos de erro
+      if (errorMessage.includes("duplicate") || errorMessage.includes("já existe")) {
+        toast.error("Já existe um parceiro com esses dados.");
+      } else if (errorMessage.includes("permission") || errorMessage.includes("permissão")) {
+        toast.error("Você não tem permissão para realizar esta ação.");
+      } else if (errorMessage.includes("network") || errorMessage.includes("rede")) {
+        toast.error("Erro de conexão. Verifique sua internet.");
+      } else {
+        toast.error(t?.erros?.salvar ?? "Não foi possível salvar o parceiro.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUnarchive = async (id: string) => {
+    const parceiro = parceiros.find((p) => p.id === id);
+    if (!parceiro) return;
+
+    const confirmed = await confirm({
+      title: "Desarquivar Parceiro",
+      message: `Tem certeza que deseja desarquivar o parceiro "${parceiro.razaoSocialOuNomeCompleto}"? Ele voltará a aparecer na lista principal.`,
+      confirmText: "Sim, desarquivar",
+      cancelText: "Cancelar",
+      type: "success",
+    });
+
+    if (confirmed) {
+      try {
+        await unarchiveParceiro(id);
+        await parceiroTable.refresh();
+        setViewingParceiro(null);
+        toast.success("Parceiro desarquivado com sucesso!");
+      } catch (error) {
+        console.error("Erro ao desarquivar parceiro:", error);
+        toast.error("Não foi possível desarquivar o parceiro.");
+      }
     }
   };
 
@@ -528,7 +408,7 @@ export default function ParceriasPage() {
           (v) => `${v.tabela}: ${v.registros.map((r) => r.nome).join(", ")}`,
         );
         toast.error(
-          `Não é possível excluir este parceiro. Existem vínculos ativos: ${mensagens.join("; ")}`,
+          `Não é possível arquivar este parceiro. Existem vínculos ativos: ${mensagens.join("; ")}`,
         );
         return;
       }
@@ -570,13 +450,29 @@ export default function ParceriasPage() {
           onPageChange: parceiroTable.setPage,
         }}
         actionButton={
-          <button
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 bg-[var(--color-geolog-blue)] text-white px-5 py-3.5 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all text-sm cursor-pointer shadow-lg shadow-blue-900/20 whitespace-nowrap"
-          >
-            <Plus size={18} />
-            Novo Parceiro
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                setIsArchivedFilterLoading(true);
+                setShowArchivedOnly((prev) => !prev);
+              }}
+              className={`flex items-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 ${
+                showArchivedOnly
+                  ? "bg-amber-50 border-amber-200 text-amber-700"
+                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Archive size={16} />
+              {showArchivedOnly ? "Ocultar" : "Arquivados"}
+            </button>
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 bg-[var(--color-geolog-blue)] text-white px-5 py-3.5 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all text-sm cursor-pointer shadow-lg shadow-blue-900/20 whitespace-nowrap"
+            >
+              <Plus size={18} />
+              Novo Parceiro
+            </button>
+          </div>
         }
         columns={[
           {
@@ -608,8 +504,7 @@ export default function ParceriasPage() {
           {
             key: "contatos",
             title: "Contatos",
-            render: (value: unknown, item: ParceiroServico) => {
-              void value;
+            render: (_value: unknown, item: ParceiroServico) => {
 
               return (
                 <div className="text-sm">
@@ -658,8 +553,7 @@ export default function ParceriasPage() {
           {
             key: "filiais",
             title: "Filiais",
-            render: (value: unknown, item: ParceiroServico) => {
-              void value;
+            render: (_value: unknown, item: ParceiroServico) => {
 
               return (
                 <div className="space-y-2">
@@ -696,10 +590,19 @@ export default function ParceriasPage() {
           },
           {
             key: "status",
-            title: "Status",
+            title: showArchivedOnly ? "" : "Status",
             align: "center",
-            render: (value: unknown) => {
-              const status = String(value) as "ativo" | "inativo";
+            render: (_value: unknown, item: ParceiroServico) => {
+              if (showArchivedOnly) {
+                return (
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border bg-red-50/50 border-red-100 text-red-400">
+                    <Archive size={20} />
+                    Arquivado
+                  </span>
+                );
+              }
+
+              const status = item.status;
               return (
                 <span
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.15em] ${
@@ -726,47 +629,30 @@ export default function ParceriasPage() {
                   onClick={() => setViewingParceiro(item)}
                   className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer"
                   title="Visualizar Parceiro"
+                  aria-label={`Visualizar detalhes do parceiro ${item.razaoSocialOuNomeCompleto}`}
                 >
                   <Eye size={18} />
                 </button>
-                <button
-                  onClick={() => handleOpenModal(item)}
-                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
-                  title="Editar Parceiro"
-                >
-                  <Edit2 size={18} />
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      await toggleParceiro(item.id);
-                      toast.success(
-                        `Parceiro ${item.status === "ativo" ? "inativado" : "ativado"} com sucesso!`,
-                      );
-                    } catch {
-                      toast.error("Erro ao alterar status do parceiro.");
-                    }
-                  }}
-                  className={`p-2 rounded-lg transition-all cursor-pointer ${
-                    item.status === "ativo"
-                      ? "text-slate-400 hover:text-orange-500 hover:bg-orange-50"
-                      : "text-slate-400 hover:text-emerald-500 hover:bg-emerald-50"
-                  }`}
-                  title={
-                    item.status === "ativo"
-                      ? "Inativar Parceiro"
-                      : "Ativar Parceiro"
-                  }
-                >
-                  <Power size={18} />
-                </button>
-                <button
-                  onClick={() => handleDelete(item.id)}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
-                  title="Arquivar Parceiro"
-                >
-                  <Trash2 size={18} />
-                </button>
+                {!showArchivedOnly && (
+                  <button
+                    onClick={() => handleOpenModal(item)}
+                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
+                    title="Editar Parceiro"
+                    aria-label={`Editar parceiro ${item.razaoSocialOuNomeCompleto}`}
+                  >
+                    <Edit2 size={18} />
+                  </button>
+                )}
+                {!showArchivedOnly && (
+                  <button
+                    onClick={() => handleDelete(item.id)}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                    title="Arquivar Parceiro"
+                    aria-label={`Arquivar parceiro ${item.razaoSocialOuNomeCompleto}`}
+                  >
+                    <Archive size={18} />
+                  </button>
+                )}
               </div>
             ),
           },
@@ -775,6 +661,18 @@ export default function ParceriasPage() {
         emptyMessage="Nenhum parceiro cadastrado."
         emptyIcon={<Handshake size={48} />}
       />
+
+      {/* Loader do filtro de arquivados */}
+      {isArchivedFilterLoading && (
+        <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 p-16 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4 text-slate-400">
+            <Archive size={48} className="text-blue-500 animate-spin" />
+            <p className="font-bold text-lg text-slate-500">
+              Carregando arquivados...
+            </p>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <StandardModal
@@ -814,9 +712,7 @@ export default function ParceriasPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                    {formData.pessoaTipo === "juridica"
-                      ? "Razão social"
-                      : "Nome completo"}
+                    {getPessoaTipoLabels(formData.pessoaTipo).razaoSocialLabel}
                   </label>
                   <input
                     required
@@ -827,17 +723,13 @@ export default function ParceriasPage() {
                         event.target.value,
                       )
                     }
-                    placeholder={
-                      formData.pessoaTipo === "juridica"
-                        ? "Ex: Silva Logística LTDA"
-                        : "Ex: João da Silva"
-                    }
+                    placeholder={getPessoaTipoLabels(formData.pessoaTipo).razaoSocialPlaceholder}
                     className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm mt-[2px]"
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                    {formData.pessoaTipo === "juridica" ? "CNPJ" : "CPF"}
+                    {getPessoaTipoLabels(formData.pessoaTipo).documentoLabel}
                   </label>
                   <input
                     required
@@ -845,11 +737,7 @@ export default function ParceriasPage() {
                     onChange={(event) =>
                       handleInputChange("documento", event.target.value)
                     }
-                    placeholder={
-                      formData.pessoaTipo === "juridica"
-                        ? "00.000.000/0001-00"
-                        : "000.000.000-00"
-                    }
+                    placeholder={getPessoaTipoLabels(formData.pessoaTipo).documentoPlaceholder}
                     className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />
                 </div>
@@ -873,6 +761,7 @@ export default function ParceriasPage() {
                   type="button"
                   onClick={handleAddContato}
                   className="flex items-center gap-3 px-4 py-3 bg-blue-100 text-blue-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm cursor-pointer"
+                  aria-label="Adicionar novo contato"
                 >
                   <PlusCircle size={14} /> Novo cadastro
                 </button>
@@ -1003,23 +892,23 @@ export default function ParceriasPage() {
                   type="button"
                   onClick={handleAddFilial}
                   className="flex items-center gap-3 px-4 py-3 bg-blue-100 text-blue-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm cursor-pointer"
+                  aria-label="Adicionar nova filial"
                 >
                   <PlusCircle size={14} /> Nova filial
                 </button>
               </div>
 
               <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="hidden md:grid grid-cols-[1.2fr_2fr_1fr_auto] gap-4 bg-slate-50/80 border-b border-slate-200 px-6 py-4 text-[12px] font-black uppercase tracking-widest text-slate-600">
+                <div className="hidden md:grid grid-cols-[1fr_3fr_auto] gap-4 bg-slate-50/80 border-b border-slate-200 px-6 py-4 text-[12px] font-black uppercase tracking-widest text-slate-600">
                   <span>Rótulo</span>
                   <span>Endereço completo</span>
-                  <span>Referência</span>
                   <span className="text-right">Ações</span>
                 </div>
                 <div className="divide-y divide-slate-100 max-h-[40vh] overflow-y-auto custom-scrollbar">
                   {formData.filiais.map((filial, index) => (
                     <div
                       key={index}
-                      className="grid grid-cols-1 md:grid-cols-[1.2fr_2fr_1fr_auto] gap-4 items-start px-6 py-5"
+                      className="grid grid-cols-1 md:grid-cols-[1fr_3fr_auto] gap-4 items-start px-6 py-5"
                     >
                       <div className="space-y-2 md:space-y-1">
                         <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
@@ -1049,23 +938,6 @@ export default function ParceriasPage() {
                             handleFilialChange(
                               index,
                               "enderecoCompleto",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                        />
-                      </div>
-                      <div className="space-y-2 md:space-y-1">
-                        <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                          Referência
-                        </label>
-                        <input
-                          placeholder="Portão azul, bloco B..."
-                          value={filial.referencia || ""}
-                          onChange={(event) =>
-                            handleFilialChange(
-                              index,
-                              "referencia",
                               event.target.value,
                             )
                           }
@@ -1104,9 +976,10 @@ export default function ParceriasPage() {
               </button>
               <button
                 type="submit"
-                className="px-12 py-4 bg-[var(--color-geolog-blue)] text-white font-black rounded-xl shadow-xl shadow-blue-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                disabled={isSubmitting}
+                className="px-12 py-4 bg-[var(--color-geolog-blue)] text-white font-black rounded-xl shadow-xl shadow-blue-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                {editingParceiro ? "Salvar alterações" : "Salvar parceiro"}
+                {isSubmitting ? "Salvando..." : (editingParceiro ? "Salvar alterações" : "Salvar parceiro")}
               </button>
             </div>
           </form>
@@ -1117,11 +990,7 @@ export default function ParceriasPage() {
         <StandardModal
           onClose={() => setViewingParceiro(null)}
           title={viewingParceiro.razaoSocialOuNomeCompleto}
-          subtitle={
-            viewingParceiro.pessoaTipo === "juridica"
-              ? `Pessoa Jurídica · ${viewingParceiro.documento}`
-              : `Pessoa Física · ${viewingParceiro.documento}`
-          }
+          subtitle={`${getPessoaTipoLabels(viewingParceiro.pessoaTipo).pessoaTipoLabel} · ${viewingParceiro.documento}`}
           icon={<Briefcase size={24} />}
           maxWidthClassName="max-w-4xl"
           bodyClassName="p-6 md:p-10 pb-10 space-y-8"
@@ -1210,16 +1079,15 @@ export default function ParceriasPage() {
               </p>
             ) : (
               <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="hidden md:grid grid-cols-[1.2fr_2fr_1fr] gap-4 bg-slate-50/80 border-b border-slate-200 px-6 py-4 text-[12px] font-black uppercase tracking-widest text-slate-600">
+                <div className="hidden md:grid grid-cols-[1fr_3fr] gap-4 bg-slate-50/80 border-b border-slate-200 px-6 py-4 text-[12px] font-black uppercase tracking-widest text-slate-600">
                   <span>Rótulo</span>
                   <span>Endereço completo</span>
-                  <span>Referência</span>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {viewingParceiro.filiais.map((filial) => (
                     <div
                       key={filial.id}
-                      className="grid grid-cols-1 md:grid-cols-[1.2fr_2fr_1fr] gap-4 items-center px-6 py-4"
+                      className="grid grid-cols-1 md:grid-cols-[1fr_3fr] gap-4 items-center px-6 py-4"
                     >
                       <div>
                         <span className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 block mb-1">
@@ -1243,16 +1111,6 @@ export default function ParceriasPage() {
                           )}
                         </p>
                       </div>
-                      <div>
-                        <span className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 block mb-1">
-                          Referência
-                        </span>
-                        <p className="text-sm font-medium text-slate-500">
-                          {filial.referencia || (
-                            <span className="text-slate-300">—</span>
-                          )}
-                        </p>
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -1261,16 +1119,30 @@ export default function ParceriasPage() {
           </section>
 
           <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setViewingParceiro(null);
-                handleOpenModal(viewingParceiro);
-              }}
-              className="px-6 py-3 bg-blue-50 text-blue-700 font-black rounded-xl hover:bg-blue-100 transition-all text-sm uppercase tracking-widest cursor-pointer flex items-center gap-2"
-            >
-              <Edit2 size={14} /> Editar
-            </button>
+            {showArchivedOnly ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (viewingParceiro) {
+                    void handleUnarchive(viewingParceiro.id);
+                  }
+                }}
+                className="px-6 py-3 bg-emerald-50 text-emerald-700 font-black rounded-xl hover:bg-emerald-100 transition-all text-sm uppercase tracking-widest cursor-pointer flex items-center gap-2"
+              >
+                <ArchiveRestore size={14} /> Desarquivar
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setViewingParceiro(null);
+                  handleOpenModal(viewingParceiro);
+                }}
+                className="px-6 py-3 bg-blue-50 text-blue-700 font-black rounded-xl hover:bg-blue-100 transition-all text-sm uppercase tracking-widest cursor-pointer flex items-center gap-2"
+              >
+                <Edit2 size={14} /> Editar
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setViewingParceiro(null)}

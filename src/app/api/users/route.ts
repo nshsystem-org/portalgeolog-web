@@ -12,6 +12,7 @@ type UserRoleRow = {
   tipo_usuario: string | null;
   categoria: string | null;
   empresa_id: string | null;
+  specific_permissions: Record<string, unknown> | null;
 };
 
 function getRequiredEnv(name: string): string {
@@ -76,6 +77,7 @@ export async function GET() {
         tipo_usuario: profile?.tipo_usuario || "interno",
         categoria: profile?.categoria || "operador",
         empresa_id: profile?.empresa_id,
+        specific_permissions: profile?.specific_permissions || {},
         created_at: user.created_at,
       };
     });
@@ -217,14 +219,31 @@ export async function DELETE(request: Request) {
 
     if (!id) throw new Error("ID do usuário é obrigatório");
 
-    // 1. Deletar do Auth (Admin) - Isso remove o usuario do sistema
-    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
-    if (authError) {
-      console.error("Error deleting auth user:", authError);
-      throw authError;
-    }
+    // 1. Limpar referências em ordens_servico para evitar erro de foreign key
+    await supabaseAdmin
+      .from("ordens_servico")
+      .update({ created_by: null })
+      .eq("created_by", id);
 
-    // 2. Deletar da tabela user_roles
+    // 2. Limpar referências em app_notifications
+    await supabaseAdmin
+      .from("app_notifications")
+      .update({ created_by: null })
+      .eq("created_by", id);
+
+    // 3. Limpar referências em veiculos
+    await supabaseAdmin
+      .from("veiculos")
+      .update({ created_by: null })
+      .eq("created_by", id);
+
+    // 4. Deletar notificações pessoais do usuário (notifications tem cascade)
+    await supabaseAdmin.from("notifications").delete().eq("user_id", id);
+
+    // 5. Deletar notificações do sistema para este usuário
+    await supabaseAdmin.from("app_notifications").delete().eq("user_id", id);
+
+    // 6. Deletar da tabela user_roles (tem cascade para user_presence)
     const { error: roleError } = await supabaseAdmin
       .from("user_roles")
       .delete()
@@ -232,10 +251,20 @@ export async function DELETE(request: Request) {
 
     if (roleError) {
       console.error("Error deleting user_role:", roleError);
+      // Não bloqueamos aqui pois o Auth ainda pode ser removido,
+      // mas se falhar por FK, o próximo passo falhará.
+    }
+
+    // 7. Deletar do Auth (Admin) - Isso remove o usuario do sistema
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
+    if (authError) {
+      console.error("Error deleting auth user:", authError);
+      throw authError;
     }
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
+    console.error("Full delete error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

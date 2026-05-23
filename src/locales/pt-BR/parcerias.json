@@ -1,0 +1,118 @@
+{
+  "titulo": "Parceiros de Serviço",
+  "descricao": "Cadastro de parceiros de serviço para vinculação de motoristas e veículos",
+  "pessoa_tipo": {
+    "label": "Tipo de pessoa",
+    "juridica": "Pessoa jurídica",
+    "fisica": "Pessoa física"
+  },
+  "dados_principais": {
+    "razao_social": "Razão social",
+    "nome_completo": "Nome completo",
+    "cnpj": "CNPJ",
+    "cpf": "CPF",
+    "placeholder_razao_social": "Ex: Silva Logística LTDA",
+    "placeholder_nome_completo": "Ex: João da Silva",
+    "placeholder_cnpj": "00.000.000/0001-00",
+    "placeholder_cpf": "000.000.000-00"
+  },
+  "contatos": {
+    "titulo": "Contatos",
+    "setor": "Setor",
+    "celular": "Celular",
+    "email": "E-mail",
+    "responsavel": "Responsável",
+    "placeholder_setor": "Financeiro, Operação, Compras...",
+    "placeholder_celular": "(00) 00000-0000",
+    "placeholder_email": "email@exemplo.com",
+    "placeholder_responsavel": "Nome do responsável",
+    "adicionar": "Adicionar contato",
+    "remover": "Remover contato",
+    "principal": "Principal",
+    "nenhum": "Nenhum contato cadastrado"
+  },
+  "filiais": {
+    "titulo": "Filiais / Endereços",
+    "rotulo": "Rótulo",
+    "endereco_completo": "Endereço completo",
+    "placeholder_rotulo": "Matriz, Filial Centro, Depósito...",
+    "placeholder_endereco": "Rua, número, bairro, cidade - UF",
+    "adicionar": "Adicionar filial",
+    "remover": "Remover filial",
+    "principal": "Principal",
+    "nenhuma": "Nenhuma filial cadastrada"
+  },
+  "tabela": {
+    "nome": "Nome",
+    "tipo": "Tipo",
+    "juridica": "Jurídica",
+    "fisica": "Física",
+    "contatos": "Contatos",
+    "filiais": "Filiais",
+    "status": "Status",
+    "ativo": "Ativo",
+    "inativo": "Inativo",
+    "arquivado": "Arquivado",
+    "acoes": "Ações",
+    "buscar_placeholder": "Buscar por nome, CPF/CNPJ, contato ou cidade...",
+    "vazio": "Nenhum parceiro cadastrado",
+    "filiais_contador": "+{count} filial(is)",
+    "sem_filiais": "Nenhuma filial cadastrada"
+  },
+  "botoes": {
+    "novo": "Novo Parceiro",
+    "editar": "Editar Parceiro",
+    "visualizar": "Visualizar Parceiro",
+    "arquivar": "Arquivar Parceiro",
+    "salvar": "Salvar parceiro",
+    "salvar_alteracoes": "Salvar alterações",
+    "cancelar": "Cancelar",
+    "fechar": "Fechar",
+    "ocultar_arquivados": "Ocultar",
+    "mostrar_arquivados": "Arquivados",
+    "editar_modal": "Editar"
+  },
+  "validacao": {
+    "razao_social_obrigatoria": "Razão Social/Nome completo é obrigatório",
+    "documento_obrigatorio": "CNPJ/CPF é obrigatório",
+    "cnpj_14_digitos": "CNPJ deve ter 14 dígitos completos",
+    "cnpj_invalido": "CNPJ inválido",
+    "cpf_11_digitos": "CPF deve ter 11 dígitos completos",
+    "cpf_invalido": "CPF inválido",
+    "documento_duplicado": "CNPJ/CPF já está sendo usado pelo parceiro \"{parceiro}\"",
+    "setor_obrigatorio": "Setor do primeiro contato é obrigatório",
+    "celular_obrigatorio": "Celular do primeiro contato é obrigatório",
+    "responsavel_obrigatorio": "Responsável do primeiro contato é obrigatório",
+    "celular_11_digitos": "Celular deve ter 11 dígitos completos: (00) 00000-0000",
+    "celular_invalido": "Celular inválido",
+    "email_invalido": "E-mail inválido",
+    "celular_duplicado_form": "Celular {celular} está duplicado entre os contatos deste parceiro",
+    "email_duplicado_form": "E-mail {email} está duplicado entre os contatos deste parceiro",
+    "celular_duplicado_outro": "Celular {celular} já está sendo usado no contato \"{setor}\" do parceiro \"{parceiro}\"",
+    "email_duplicado_outro": "E-mail {email} já está sendo usado no contato \"{setor}\" do parceiro \"{parceiro}\""
+  },
+  "sucesso": {
+    "criado": "Parceiro cadastrado com sucesso!",
+    "atualizado": "Parceiro atualizado com sucesso!",
+    "arquivado": "Parceiro arquivado com sucesso!"
+  },
+  "erros": {
+    "salvar": "Não foi possível salvar o parceiro",
+    "verificar_vinculos": "Não foi possível verificar os vínculos. Tente novamente.",
+    "vinculos_encontrados": "Este parceiro possui vínculos ativos e não pode ser arquivado:"
+  },
+  "confirmacao": {
+    "arquivar_titulo": "Arquivar Parceiro",
+    "arquivar_mensagem": "Tem certeza que deseja arquivar o parceiro \"{parceiro}\"? Ele não aparecerá mais na lista, mas poderá ser recuperado posteriormente.",
+    "arquivar_confirmar": "Sim, arquivar",
+    "arquivar_cancelar": "Cancelar"
+  },
+  "visualizacao": {
+    "pessoa_juridica": "Pessoa Jurídica",
+    "pessoa_fisica": "Pessoa Física",
+    "sem_dados": "—"
+  },
+  "loading": {
+    "arquivados": "Carregando arquivados..."
+  }
+}

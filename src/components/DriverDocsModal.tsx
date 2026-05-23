@@ -10,7 +10,6 @@ import {
   File,
   Trash2,
   Loader2,
-  AlertCircle,
   Download,
   CheckCircle2,
   FolderOpen,

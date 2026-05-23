@@ -4,7 +4,6 @@ import { useState } from "react";
 
 interface CopyableTextProps {
   text: string;
-  label?: string;
   className?: string;
   copiedClassName?: string;
   children?: React.ReactNode;
@@ -12,7 +11,6 @@ interface CopyableTextProps {
 
 export function CopyableText({
   text,
-  label,
   className = "",
   copiedClassName = "",
   children,

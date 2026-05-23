@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { FileText, AlertTriangle, Scale, Users, Ban, Mail } from "lucide-react";
 
 export default function TermsOfService() {
@@ -7,7 +8,7 @@ export default function TermsOfService() {
       {/* Navbar */}
       <nav className="flex justify-between items-center py-6 px-8 max-w-7xl mx-auto border-b border-slate-100">
         <Link href="/" className="flex items-center gap-3">
-          <img src="/logo.png" alt="Geolog Logo" className="h-10 w-auto" />
+          <Image src="/logo.png" alt="Geolog Logo" width={40} height={40} className="h-10 w-auto" />
           <span className="text-2xl font-bold tracking-tight text-[var(--color-geolog-blue)]">
             Portal Geolog
           </span>

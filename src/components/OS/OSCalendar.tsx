@@ -5,7 +5,6 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import listPlugin from "@fullcalendar/list";
 import ptBrLocale from "@fullcalendar/core/locales/pt-br";
 import type { OrderService } from "@/context/DataContext";
 import {
@@ -18,7 +17,6 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Truck,
   Loader2,
   User,
 } from "lucide-react";
@@ -33,6 +31,7 @@ interface EventContentProps {
   clientes: Cliente[];
   status: CycleOperationalStatus;
   displayDateTime?: string;
+  startTime?: string;
   showArchivedOnly?: boolean;
   isDayView?: boolean;
 }
@@ -43,6 +42,7 @@ interface OSCalendarProps {
   onEventClick: (osId: string, position?: { x: number; y: number }) => void;
   loading?: boolean;
   showArchivedOnly?: boolean;
+  onRangeChange?: (from: string, to: string) => void;
 }
 
 // Cores por status — backgrounds mais saturados para legibilidade no calendário
@@ -106,6 +106,7 @@ type CalendarEvent = {
     itineraryLabel?: string;
     itineraryIndex?: number;
     displayDateTime?: string;
+    startTime?: string;
   };
 };
 
@@ -126,9 +127,9 @@ const formatCalendarDateTime = (
 ): string | null => {
   if (!date) return null;
 
-  const normalizedTime = time || "00:00";
-  const [hours, minutes] = normalizedTime.split(":");
-  return `${date}T${hours || "00"}:${minutes || "00"}:00`;
+  const normalizedTime = time || null;
+  const [hours = "00", minutes = "00"] = normalizedTime ? normalizedTime.split(":") : ["00", "00"];
+  return `${date}T${hours}:${minutes}:00`;
 };
 
 const getItineraryLabel = (itineraryIndex: number): string => {
@@ -145,6 +146,7 @@ const EventContent = ({
   clientes,
   status,
   displayDateTime,
+  startTime: propStartTime,
   showArchivedOnly,
   isDayView,
 }: EventContentProps) => {
@@ -154,14 +156,18 @@ const EventContent = ({
       : statusColors[status] || statusColors["Pendente"];
   const clienteNome =
     clientes.find((c) => c.id === os.clienteId)?.nome || "N/A";
-  const startTime = displayDateTime
-    ? new Date(displayDateTime).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : os.hora
-      ? os.hora.slice(0, 5)
-      : "";
+  
+  // Prioridade: propStartTime (string direta), depois formatar displayDateTime, depois os.hora
+  const startTime = propStartTime
+    ? propStartTime.slice(0, 5)
+    : displayDateTime
+      ? new Date(displayDateTime).toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : os.hora
+        ? os.hora.slice(0, 5)
+        : "";
 
   return (
     <div
@@ -309,11 +315,13 @@ export default function OSCalendar({
   onEventClick,
   loading,
   showArchivedOnly,
+  onRangeChange,
 }: OSCalendarProps) {
   const [currentView, setCurrentView] = useState<
-    "dayGridMonth" | "dayGridWeek" | "dayGridDay" | "listWeek"
+    "dayGridMonth" | "dayGridWeek" | "dayGridDay"
   >("dayGridWeek");
   const calendarRef = React.useRef<FullCalendar>(null);
+  const lastRangeRef = React.useRef<{ from: string; to: string } | null>(null);
 
   // Converter OS para eventos do FullCalendar
   const events = useMemo(() => {
@@ -327,6 +335,7 @@ export default function OSCalendar({
           ? deriveCyclesOperationalStatus(os.operationalCycles)
           : os.status.operacional;
       const waypoints = os.rota?.waypoints || [];
+      
       const itineraries =
         waypoints.length > 0
           ? waypoints.reduce<
@@ -347,11 +356,18 @@ export default function OSCalendar({
       const itineraryEntries = Object.entries(itineraries);
 
       if (itineraryEntries.length === 0) {
+        // Se não tiver data ou hora, não criar evento
+        if (!os.data || !os.hora) {
+          return;
+        }
+
         const startDateTime = formatCalendarDateTime(os.data, os.hora);
         if (!startDateTime) return;
 
-        const endHour = (os.hora || "00:00").split(":")[0] || "0";
-        const endDateTime = `${os.data}T${String(Number(endHour) + 1).padStart(2, "0")}:${(os.hora || "00:00").split(":")[1] || "00"}:00`;
+        const timeStr = os.hora;
+        const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
+        const endHour = Number(hours) + 1;
+        const endDateTime = `${os.data}T${String(endHour).padStart(2, "0")}:${minutes}:00`;
         const colors =
           statusColors[effectiveStatus] || statusColors["Pendente"];
 
@@ -369,6 +385,7 @@ export default function OSCalendar({
             clienteNome,
             status: effectiveStatus,
             displayDateTime: startDateTime,
+            startTime: os.hora || undefined,
           },
         });
         return;
@@ -379,12 +396,21 @@ export default function OSCalendar({
         .forEach(([itineraryIndexRaw, itinerary]) => {
           const itineraryIndex = Number(itineraryIndexRaw);
           const firstWaypoint = itinerary.waypoints[0];
+
+          // Só criar evento se tiver data E hora definidos
+          const hasDate = firstWaypoint?.data || os.data;
+          const hasTime = firstWaypoint?.hora || os.hora;
+
+          if (!hasDate || !hasTime) {
+            return;
+          }
+
           const dateStr = parseBrDateToIso(firstWaypoint?.data) || os.data;
-          const timeStr = firstWaypoint?.hora || os.hora || "00:00";
+          const timeStr = firstWaypoint?.hora || os.hora;
           const startDateTime = formatCalendarDateTime(dateStr, timeStr);
           if (!startDateTime) return;
 
-          const [hours = "00", minutes = "00"] = timeStr.split(":");
+          const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
           const endHour = Number(hours) + 1;
           const endDateTime = `${dateStr}T${String(endHour).padStart(2, "0")}:${minutes}:00`;
           const cycle = os.operationalCycles?.find(
@@ -411,6 +437,7 @@ export default function OSCalendar({
               itineraryIndex,
               itineraryLabel: getItineraryLabel(itineraryIndex),
               displayDateTime: startDateTime,
+              startTime: firstWaypoint?.hora || os.hora || undefined,
             },
           });
         });
@@ -438,7 +465,7 @@ export default function OSCalendar({
   }, []);
 
   const changeView = (
-    view: "dayGridMonth" | "dayGridWeek" | "dayGridDay" | "listWeek",
+    view: "dayGridMonth" | "dayGridWeek" | "dayGridDay",
   ) => {
     setCurrentView(view);
     const calendarApi = calendarRef.current?.getApi();
@@ -449,18 +476,49 @@ export default function OSCalendar({
 
   const goToPrev = () => {
     const calendarApi = calendarRef.current?.getApi();
-    if (calendarApi) calendarApi.prev();
+    if (calendarApi) {
+      calendarApi.prev();
+    }
   };
 
   const goToNext = () => {
     const calendarApi = calendarRef.current?.getApi();
-    if (calendarApi) calendarApi.next();
+    if (calendarApi) {
+      calendarApi.next();
+    }
   };
 
-  const goToToday = () => {
-    const calendarApi = calendarRef.current?.getApi();
-    if (calendarApi) calendarApi.today();
-  };
+  const handleDatesSet = useCallback(
+    (dateInfo: { start: Date; end: Date; view: { type: string } }) => {
+      if (!onRangeChange) return;
+      const from = dateInfo.start.toISOString().split("T")[0];
+      const endDate = new Date(dateInfo.end);
+      endDate.setDate(endDate.getDate() - 1);
+      const to = endDate.toISOString().split("T")[0];
+
+      if (lastRangeRef.current && lastRangeRef.current.from === from && lastRangeRef.current.to === to) {
+        return;
+      }
+
+      lastRangeRef.current = { from, to };
+      onRangeChange(from, to);
+    },
+    [onRangeChange],
+  );
+
+  const prevTitle =
+    currentView === "dayGridDay"
+      ? "Dia anterior"
+      : currentView === "dayGridWeek"
+        ? "Semana anterior"
+        : "Mês anterior";
+
+  const nextTitle =
+    currentView === "dayGridDay"
+      ? "Próximo dia"
+      : currentView === "dayGridWeek"
+        ? "Próxima semana"
+        : "Próximo mês";
 
   // Renderizador customizado de eventos
   const renderEventContent = (eventInfo: {
@@ -470,6 +528,7 @@ export default function OSCalendar({
         status: CycleOperationalStatus;
         itineraryLabel?: string;
         displayDateTime?: string;
+        startTime?: string;
       };
     };
   }) => {
@@ -480,6 +539,7 @@ export default function OSCalendar({
         clientes={clientes}
         status={eventInfo.event.extendedProps.status}
         displayDateTime={eventInfo.event.extendedProps.displayDateTime}
+        startTime={eventInfo.event.extendedProps.startTime}
         showArchivedOnly={showArchivedOnly}
         isDayView={currentView === "dayGridDay"}
       />
@@ -515,59 +575,55 @@ export default function OSCalendar({
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden">
       {/* Header do Calendário Customizado */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-4 md:p-6 border-b border-slate-200 bg-slate-50/50">
+      <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 bg-slate-50/50">
+        {/* Navegação - Canto Esquerdo */}
         <div className="flex items-center gap-2">
           <button
             onClick={goToPrev}
             className="p-2 hover:bg-slate-200 rounded-xl transition-colors"
-            title="Mês anterior"
+            title={prevTitle}
           >
             <ChevronLeft size={20} className="text-slate-600" />
           </button>
-          <button
-            onClick={goToToday}
-            className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
-          >
-            Hoje
-          </button>
+        </div>
+
+        {/* Seletor de Visualização - Centralizado */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1.5 shadow-sm">
+            {[
+              { key: "dayGridMonth", label: "Mês", icon: CalendarDays },
+              { key: "dayGridWeek", label: "Semana", icon: CalendarDays },
+              { key: "dayGridDay", label: "Dia", icon: Clock },
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() =>
+                  changeView(
+                    key as "dayGridMonth" | "dayGridWeek" | "dayGridDay",
+                  )
+                }
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-wider transition-all ${
+                  currentView === key
+                    ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Icon size={16} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Navegação - Canto Direito */}
+        <div className="flex items-center gap-2">
           <button
             onClick={goToNext}
             className="p-2 hover:bg-slate-200 rounded-xl transition-colors"
-            title="Próximo mês"
+            title={nextTitle}
           >
             <ChevronRight size={20} className="text-slate-600" />
           </button>
-        </div>
-
-        {/* Seletor de Visualização */}
-        <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-          {[
-            { key: "dayGridMonth", label: "Mês", icon: CalendarDays },
-            { key: "dayGridWeek", label: "Semana", icon: CalendarDays },
-            { key: "dayGridDay", label: "Dia", icon: Clock },
-            { key: "listWeek", label: "Lista", icon: Truck },
-          ].map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() =>
-                changeView(
-                  key as
-                    | "dayGridMonth"
-                    | "dayGridWeek"
-                    | "dayGridDay"
-                    | "listWeek",
-                )
-              }
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
-                currentView === key
-                  ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <Icon size={14} />
-              {label}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -579,7 +635,6 @@ export default function OSCalendar({
             dayGridPlugin,
             timeGridPlugin,
             interactionPlugin,
-            listPlugin,
           ]}
           initialView={currentView}
           locale={ptBrLocale}
@@ -587,6 +642,7 @@ export default function OSCalendar({
           eventClick={handleEventClick}
           selectable={true}
           select={handleDateSelect}
+          datesSet={handleDatesSet}
           headerToolbar={false}
           eventContent={renderEventContent}
           height="auto"
@@ -631,9 +687,7 @@ export default function OSCalendar({
             month: "Mês",
             week: "Semana",
             day: "Dia",
-            list: "Lista",
           }}
-          noEventsContent="Nenhuma OS para este período"
           eventMinHeight={100}
         />
         <style>{`

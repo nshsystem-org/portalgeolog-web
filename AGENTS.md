@@ -247,6 +247,25 @@ Ao executar comandos no terminal para o usuário, você deve injetar a variável
 - **Autenticação:** Configure via `wrangler login` ou use `CLOUDFLARE_API_TOKEN`.
 - **REGRA DE OURO:** Só faça deploy quando o usuário pedir explicitamente no chat. Nunca inicie um deploy por conta própria.
 
+### Sistema de Versionamento Automático
+
+O sistema possui um mecanismo de versionamento que força o auto-reload de todos os usuários conectados após um deploy.
+
+**Como funciona:**
+
+- **Tabela:** `public.app_versions` armazena cada versão deployada (hash + timestamp)
+- **Frontend Hook:** `useAppVersion` monitora a tabela via Supabase Realtime e polling (30s)
+- **Sidebar:** Mostra a versão atual acima do botão de logout
+- **Auto-reload:** Quando detecta nova versão, exibe toast com contagem regressiva (10s) e recarrega
+- **Logs:** Após reload bem-sucedido, grava log em `frontend_error_logs` visível na página Config
+
+**Arquivos envolvidos:**
+
+- Hook: `src/hooks/useAppVersion.ts`
+- Layout: `src/app/portal/layout.tsx` (display da versão)
+- Script: `scripts/publish-app-version.mjs` (publica versão no banco)
+- Migration: `supabase/migrations/20260520000004_app_version_tracking.sql`
+
 ### Deploy Manual (Fluxo Obrigatório)
 
 Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir este fluxo exato:
@@ -264,10 +283,20 @@ Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir
      - `META_BUSINESS_ACCOUNT_ID` - validar formato
    - Usar script Python ou Node.js para automatizar o re-envio via `echo "valor" | wrangler secret put NOME --config wrangler.workers.toml`
 4. **Deploy Direto:** Executar `wrangler deploy --config wrangler.workers.toml`
+5. **Publicar Versão (OBRIGATÓRIO):** Executar `npm run publish:app-version` para:
+   - Inserir nova linha em `app_versions` com hash do commit atual + timestamp
+   - Disparar evento Realtime que força reload em todos os usuários conectados
+   - Gerar log quando usuários recarregarem para nova versão
+
+**Fluxo Alternativo (Comando Único):**
+
+- Use `npm run deploy:workers:versioned` para executar build + deploy + publicação em um único comando
 
 **IMPORTANTE:** NUNCA executar `npx @cloudflare/next-on-pages@1` nem buildar via Cloudflare Pages. Use sempre o build interno do Next.js e faça o deploy direto para Workers.
 
 **Secrets Obrigatórios:** O sistema requer 5 secrets configurados. Se algum estiver faltando ou inválido, o agente deve re-enviar automaticamente do `.env.production` antes do deploy.
+
+**Publicação de Versão:** Sempre que fizer deploy manual, DEVE executar `npm run publish:app-version` (ou usar `deploy:workers:versioned`) para ativar o auto-reload. Sem isso, usuários ficarão na versão antiga até recarregar manualmente.
 
 ### Links de Referência
 

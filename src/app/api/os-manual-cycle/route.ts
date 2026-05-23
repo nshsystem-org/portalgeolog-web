@@ -39,10 +39,44 @@ const updateCycleInList = (
   cycles: OperationalCycle[],
   itineraryIndex: number,
   updates: Partial<OperationalCycle>,
-): OperationalCycle[] =>
-  cycles.map((cycle) =>
-    cycle.itineraryIndex === itineraryIndex ? { ...cycle, ...updates } : cycle,
+): OperationalCycle[] => {
+  console.log(
+    "[updateCycleInList] Atualizando ciclo específico:",
+    "itineraryIndex:",
+    itineraryIndex,
+    "ciclos disponíveis:",
+    cycles.map((c) => ({
+      itineraryIndex: c.itineraryIndex,
+      sequenceOrder: c.sequenceOrder,
+      state: c.state,
+    })),
+    "updates:",
+    updates,
   );
+
+  const updated = cycles.map((cycle) => {
+    if (cycle.itineraryIndex === itineraryIndex) {
+      console.log(
+        "[updateCycleInList] Ciclo encontrado e será atualizado:",
+        cycle.itineraryIndex,
+        cycle.title,
+      );
+      return { ...cycle, ...updates };
+    }
+    return cycle;
+  });
+
+  const affectedCount = updated.filter(
+    (c) => c.itineraryIndex === itineraryIndex,
+  ).length;
+  console.log(
+    "[updateCycleInList] Ciclos afetados:",
+    affectedCount,
+    "deveria ser 1",
+  );
+
+  return updated;
+};
 
 export async function POST(request: Request) {
   try {
@@ -76,14 +110,40 @@ export async function POST(request: Request) {
 
     const os = osRaw as OSRow;
     const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
+    
+    console.log(
+      "[os-manual-cycle] Buscando ciclo para atualizar:",
+      "cycle_index recebido:",
+      cycle_index,
+      "ciclos disponíveis:",
+      cycles.map((c) => ({
+        itineraryIndex: c.itineraryIndex,
+        sequenceOrder: c.sequenceOrder,
+        state: c.state,
+        title: c.title,
+      })),
+    );
+
     const cycle = cycles.find((c) => c.itineraryIndex === cycle_index);
 
     if (!cycle) {
+      console.error(
+        "[os-manual-cycle] Ciclo não encontrado para cycle_index:",
+        cycle_index,
+      );
       return NextResponse.json(
         { success: false, error: "Ciclo não encontrado." },
         { status: 404 },
       );
     }
+
+    console.log(
+      "[os-manual-cycle] Ciclo encontrado:",
+      cycle.itineraryIndex,
+      cycle.title,
+      "estado atual:",
+      cycle.state,
+    );
 
     let updatedCycles: OperationalCycle[] = cycles;
     let newState: OperationalCycleState = cycle.state;
@@ -99,20 +159,26 @@ export async function POST(request: Request) {
         break;
 
       case "revert_to_pending":
-        // Revert accept to pending: reset to pending state
+        // Revert accept to pending: reset to pending state and clear all progress data
         updatedCycles = updateCycleInList(cycles, cycle_index, {
           state: "pending",
           acceptedAt: undefined,
+          startedAt: undefined,
+          finishedAt: undefined,
+          kmInitial: undefined,
+          kmFinal: undefined,
         });
         newState = "pending";
         break;
 
       case "revert_to_accept":
-        // Revert from started to accept: reset to awaiting_start state
+        // Revert from started/finished to accept: reset to awaiting_start state
         updatedCycles = updateCycleInList(cycles, cycle_index, {
           state: "awaiting_start",
           startedAt: undefined,
-          kmInitial: cycle.kmInitial, // Keep initial KM if exists
+          finishedAt: undefined,
+          kmInitial: undefined,
+          kmFinal: undefined,
         });
         newState = "awaiting_start";
         break;
@@ -139,6 +205,39 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+
+    // Validar que apenas o ciclo específico foi modificado
+    const modifiedCycles = updatedCycles.filter(
+      (c) => c.itineraryIndex === cycle_index,
+    );
+    if (modifiedCycles.length !== 1) {
+      console.error(
+        "[os-manual-cycle] ERRO: Mais de um ciclo modificado ou nenhum ciclo modificado:",
+        "esperado: 1",
+        "encontrado:",
+        modifiedCycles.length,
+        "ciclos modificados:",
+        modifiedCycles.map((c) => ({
+          itineraryIndex: c.itineraryIndex,
+          state: c.state,
+        })),
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Erro de integridade: múltiplos ciclos afetados.",
+        },
+        { status: 500 },
+      );
+    }
+
+    console.log(
+      "[os-manual-cycle] Atualização concluída com sucesso:",
+      "ciclo afetado:",
+      modifiedCycles[0].itineraryIndex,
+      "novo estado:",
+      modifiedCycles[0].state,
+    );
 
     return NextResponse.json({
       success: true,

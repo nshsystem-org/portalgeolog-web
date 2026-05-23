@@ -8,6 +8,7 @@ export type AppDatabase = {
           tipo_usuario: "interno" | "gestor" | null;
           categoria: string | null;
           avatar_url: string | null;
+          specific_permissions: Record<string, unknown> | null;
         };
         Insert: {
           id?: string;
@@ -15,6 +16,7 @@ export type AppDatabase = {
           tipo_usuario?: "interno" | "gestor" | null;
           categoria?: string | null;
           avatar_url?: string | null;
+          specific_permissions?: Record<string, unknown> | null;
         };
         Update: {
           id?: string;
@@ -22,6 +24,7 @@ export type AppDatabase = {
           tipo_usuario?: "interno" | "gestor" | null;
           categoria?: string | null;
           avatar_url?: string | null;
+          specific_permissions?: Record<string, unknown> | null;
         };
         Relationships: [];
       };

@@ -1,0 +1,32 @@
+{
+  "widget": {
+    "toggle_button": "Open chat",
+    "close_button": "Close",
+    "minimize_button": "Minimize",
+    "maximize_button": "Maximize",
+    "chat_title": "Chat",
+    "conversations_title": "Conversations",
+    "conversation_title": "Conversation"
+  },
+  "conversation_list": {
+    "no_conversations": "No conversations yet",
+    "unread_messages": "message",
+    "unread_messages_plural": "messages"
+  },
+  "message_list": {
+    "no_messages": "No messages yet. Start chatting!",
+    "today": "Today",
+    "edited": "edited",
+    "visualized": "Seen"
+  },
+  "chat_input": {
+    "placeholder": "Type a message...",
+    "send_button": "Send"
+  },
+  "errors": {
+    "load_conversations": "Error loading conversations",
+    "load_messages": "Error loading messages",
+    "send_message": "Error sending message",
+    "create_conversation": "Error creating conversation"
+  }
+}

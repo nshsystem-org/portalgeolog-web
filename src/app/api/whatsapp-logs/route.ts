@@ -31,7 +31,7 @@ export async function GET() {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    const logs = await fetchWhatsAppLogs(250);
+    const logs = await fetchWhatsAppLogs(100);
     return NextResponse.json(logs);
   } catch (error: unknown) {
     const message =

@@ -33,6 +33,7 @@ export interface DataTableProps<T> {
   compact?: boolean;
   actionButton?: ReactNode;
   headerContent?: ReactNode;
+  maxHeight?: string;
   pagination?: {
     page: number;
     pageSize: number;
@@ -58,6 +59,7 @@ export function DataTable<T extends { id?: string | number }>({
   compact = false,
   actionButton,
   headerContent,
+  maxHeight,
   pagination,
 }: DataTableProps<T>) {
   const filteredData =
@@ -122,8 +124,18 @@ export function DataTable<T extends { id?: string | number }>({
     return "px-6 py-4";
   };
 
+  const rootClassName = maxHeight
+    ? `flex h-full min-h-0 flex-col gap-4 ${className}`
+    : `space-y-4 ${className}`;
+  const containerClassName = maxHeight
+    ? "bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden flex flex-col min-h-0"
+    : "bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden";
+  const scrollClassName = maxHeight
+    ? "overflow-y-auto flex-1 min-h-0 custom-scrollbar"
+    : "";
+
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={rootClassName}>
       {(onSearchChange || actionButton) && (
         <div className="flex gap-3 items-center">
           {onSearchChange && (
@@ -147,7 +159,10 @@ export function DataTable<T extends { id?: string | number }>({
 
       {headerContent && headerContent}
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden">
+      <div
+        className={containerClassName}
+        style={maxHeight ? { maxHeight, minHeight: 0 } : undefined}
+      >
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center gap-4">
             <Loader2 className="animate-spin text-blue-500" size={32} />
@@ -156,58 +171,60 @@ export function DataTable<T extends { id?: string | number }>({
             </p>
           </div>
         ) : (
-          <table className="w-full text-left">
-            {showHeader && (
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-200">
-                  {columns.map((column) => (
-                    <th
-                      key={String(column.key)}
-                      className={`${getPaddingClass()} text-[12px] font-black uppercase tracking-widest text-slate-600 ${getAlignmentClass(column.align)} ${column.className}`}
-                      style={{ width: column.width }}
-                    >
-                      {column.title}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-            )}
-            <tbody className={striped ? "divide-y divide-slate-100" : ""}>
-              {filteredData.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="text-center py-20">
-                    <div className="flex flex-col items-center justify-center gap-4 text-slate-400">
-                      {emptyIcon}
-                      <p className="font-bold italic">{emptyMessage}</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredData.map((item, index) => (
-                  <tr
-                    key={item.id || index}
-                    className={`${hover ? "hover:bg-slate-50/50 transition-colors" : ""} ${striped && index % 2 === 0 ? "bg-white" : ""}`}
-                  >
+          <div className={scrollClassName}>
+            <table className="w-full text-left">
+              {showHeader && (
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-200">
                     {columns.map((column) => (
-                      <td
+                      <th
                         key={String(column.key)}
-                        className={`${getPaddingClass()} ${getAlignmentClass(column.align)} ${column.className}`}
+                        className={`${getPaddingClass()} text-[12px] font-black uppercase tracking-widest text-slate-600 ${getAlignmentClass(column.align)} ${column.className}`}
                         style={{ width: column.width }}
                       >
-                        {column.render
-                          ? column.render(
-                              item[column.key as keyof T],
-                              item,
-                              index,
-                            )
-                          : String(item[column.key as keyof T] ?? "")}
-                      </td>
+                        {column.title}
+                      </th>
                     ))}
                   </tr>
-                ))
+                </thead>
               )}
-            </tbody>
-          </table>
+              <tbody className={striped ? "divide-y divide-slate-100" : ""}>
+                {filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length} className="text-center py-20">
+                      <div className="flex flex-col items-center justify-center gap-4 text-slate-400">
+                        {emptyIcon}
+                        <p className="font-bold italic">{emptyMessage}</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredData.map((item, index) => (
+                    <tr
+                      key={item.id || index}
+                      className={`${hover ? "hover:bg-slate-50/50 transition-colors" : ""} ${striped && index % 2 === 0 ? "bg-white" : ""}`}
+                    >
+                      {columns.map((column) => (
+                        <td
+                          key={String(column.key)}
+                          className={`${getPaddingClass()} ${getAlignmentClass(column.align)} ${column.className}`}
+                          style={{ width: column.width }}
+                        >
+                          {column.render
+                            ? column.render(
+                                item[column.key as keyof T],
+                                item,
+                                index,
+                              )
+                            : String(item[column.key as keyof T] ?? "")}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

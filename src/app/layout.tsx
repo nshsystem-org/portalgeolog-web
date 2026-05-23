@@ -5,6 +5,7 @@ import "./globals.css";
 import { FormValidationLocale } from "../components/FormValidationLocale";
 import { AuthProvider } from "@/context/AuthContext";
 import { DataProvider } from "@/context/DataContext";
+import { TrackingProvider } from "@/components/TrackingProvider";
 import { Toaster } from "sonner";
 
 const sora = Sora({
@@ -44,9 +45,11 @@ export default function RootLayout({
       >
         <AuthProvider>
           <DataProvider>
-            <FormValidationLocale />
-            {children}
-            <Toaster position="top-right" richColors />
+            <TrackingProvider>
+              <FormValidationLocale />
+              {children}
+              <Toaster position="top-right" richColors />
+            </TrackingProvider>
           </DataProvider>
         </AuthProvider>
       </body>

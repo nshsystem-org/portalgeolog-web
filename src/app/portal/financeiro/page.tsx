@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   CalendarRange,
   DollarSign,
@@ -17,7 +17,7 @@ import { fetchOSFinancePage, fetchOSFinanceStats } from "@/lib/supabase/queries"
 
 export default function MedicaoFinanceiraPage() {
   const { clientes, updateOSStatus, impostoPercentual } = useData();
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().slice(0, 7),
   ); // YYYY-MM
@@ -37,8 +37,25 @@ export default function MedicaoFinanceiraPage() {
     10,
   );
 
-  // Simulating Admin check (since real role isn't in AuthContext yet)
-  const isAdmin = user?.email?.includes("admin") || true; // Force true for demo or if admin email is used
+  // Verificar permissões de acesso à página financeira
+  const hasFinanceiroAccess = useCallback((): boolean => {
+    if (!profile) return false;
+
+    // Administradores têm acesso a tudo
+    if (profile.categoria === "administrador") return true;
+
+    // Verificar permissões específicas
+    const specificPermissions = profile.specific_permissions as Record<string, unknown> || {};
+    const financeiroPerms = specificPermissions.financeiro as Record<string, unknown> || {};
+
+    // Se existir bloco de permissões do financeiro, ele passa a ser a fonte de verdade.
+    if (Object.keys(financeiroPerms).length > 0) {
+      return financeiroPerms.page_access === true;
+    }
+
+    // Sem bloco específico, mantém o acesso baseado na categoria.
+    return profile.categoria === "financeiro";
+  }, [profile]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -68,7 +85,7 @@ export default function MedicaoFinanceiraPage() {
     updateOSStatus(id, { financeiro: "Faturado" });
   };
 
-  if (!isAdmin) {
+  if (!hasFinanceiroAccess()) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
         <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center text-red-500">

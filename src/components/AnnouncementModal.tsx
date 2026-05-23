@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { X, Users, Zap, Clock, CheckCircle2, ArrowRight } from "lucide-react";
+import { Users, Zap, Clock, CheckCircle2, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const STORAGE_KEY = "announcement-presence-feature-v1";

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PaginatedResult } from "@/lib/supabase/queries";
+import { logInfo, logErrorEntry } from "@/lib/frontend-logger";
 
 export type ServerPaginatedFetch<T> = (params: {
   page: number;
@@ -11,6 +12,7 @@ export function useServerPaginatedTable<T>(
   fetchPage: ServerPaginatedFetch<T>,
   pageSize = 10,
   enabled = true,
+  tableName = "Tabela",
 ) {
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
@@ -43,10 +45,15 @@ export function useServerPaginatedTable<T>(
           ? err.message
           : "Não foi possível carregar os dados.",
       );
+      logErrorEntry(tableName, "Erro ao carregar dados", err as Error, {
+        page,
+        pageSize,
+        searchTerm,
+      });
     } finally {
       setLoading(false);
     }
-  }, [fetchPage, page, pageSize, searchTerm, enabled]);
+  }, [fetchPage, page, pageSize, searchTerm, enabled, tableName]);
 
   useEffect(() => {
     void loadPage();

@@ -484,11 +484,26 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         );
 
         if (templateResult.success && templateResult.messageId) {
+          // Atualizar messageSentAt no ciclo específico dentro de driver_operation_cycles
+          const updatedCycles = cycles.map((cycle) => {
+            if (cycle.itineraryIndex === targetCycle.itineraryIndex) {
+              return {
+                ...cycle,
+                messageSentAt: new Date().toISOString(),
+                state: "awaiting_accept" as const,
+              };
+            }
+            return cycle;
+          });
+
           await getAdmin()
             .from("ordens_servico")
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
-            .update({ driver_flow_start_message_id: templateResult.messageId })
+            .update({
+              driver_flow_start_message_id: templateResult.messageId,
+              driver_operation_cycles: updatedCycles,
+            })
             .eq("id", osId);
           console.log(
             "[meta-webhook] Template flow inicio_viagem_motorista enviado para",
@@ -497,6 +512,8 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
             cycleTitle,
             "msgId:",
             templateResult.messageId,
+            "messageSentAt atualizado para ciclo:",
+            targetCycle.itineraryIndex,
           );
         } else {
           console.warn(
@@ -513,6 +530,325 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
     }
   } catch (err) {
     console.error("[meta-webhook] Erro ao enviar detalhes:", err);
+  }
+}
+
+async function sendNextCyclePreviewAndStartFlow(
+  osId: string,
+  phone: string,
+  targetCycleIndex: number,
+) {
+  console.log(
+    "[meta-webhook] sendNextCyclePreviewAndStartFlow chamado para OS:",
+    osId,
+    "phone:",
+    phone,
+    "targetCycleIndex:",
+    targetCycleIndex,
+  );
+
+  try {
+    const [{ data: osData }, { data: waypointsData }] = await Promise.all([
+      getAdmin()
+        .from("ordens_servico")
+        .select(
+          "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id, driver_operation_cycles, current_driver_cycle_index",
+        )
+        .eq("id", osId)
+        .maybeSingle(),
+      getAdmin()
+        .from("os_waypoints")
+        .select("id, label, comment, itinerary_index, hora, data, position")
+        .eq("ordem_servico_id", osId)
+        .order("position"),
+    ]);
+
+    const osRecord = osData as Record<string, unknown> | null;
+    if (!osRecord) {
+      console.warn(
+        "[meta-webhook] OS não encontrada ao preparar próximo ciclo:",
+        osId,
+      );
+      return;
+    }
+
+    console.log(
+      "[meta-webhook] OS encontrada, driver_operation_cycles:",
+      osRecord.driver_operation_cycles,
+    );
+
+    const cycles = normalizeOperationalCycles(osRecord.driver_operation_cycles);
+    console.log(
+      "[meta-webhook] Ciclos normalizados:",
+      cycles.map((c) => ({
+        itineraryIndex: c.itineraryIndex,
+        sequenceOrder: c.sequenceOrder,
+        state: c.state,
+        title: c.title,
+      })),
+    );
+
+    const targetCycle = cycles.find(
+      (cycle) => cycle.itineraryIndex === targetCycleIndex,
+    );
+
+    if (!targetCycle) {
+      console.warn(
+        "[meta-webhook] Próximo ciclo não encontrado:",
+        targetCycleIndex,
+        "ciclos disponíveis:",
+        cycles.map((c) => ({
+          itineraryIndex: c.itineraryIndex,
+          sequenceOrder: c.sequenceOrder,
+          state: c.state,
+          title: c.title,
+        })),
+        "OS:",
+        osId,
+      );
+      return;
+    }
+
+    console.log(
+      "[meta-webhook] Ciclo alvo encontrado:",
+      targetCycle.itineraryIndex,
+      targetCycle.title,
+      targetCycle.state,
+    );
+
+    let vehicleData: Record<string, unknown> | null = null;
+    if (osRecord.veiculo_id) {
+      const { data: vehicle } = await getAdmin()
+        .from("veiculos")
+        .select("marca, modelo, placa, tipo")
+        .eq("id", String(osRecord.veiculo_id))
+        .maybeSingle();
+      vehicleData = vehicle as Record<string, unknown> | null;
+    }
+
+    let empresa = "Não informado";
+    if (osRecord.cliente_id) {
+      const { data: cliente } = await getAdmin()
+        .from("clientes")
+        .select("nome")
+        .eq("id", String(osRecord.cliente_id))
+        .maybeSingle();
+      empresa = (cliente as { nome?: string } | null)?.nome || empresa;
+    }
+
+    const cycleWaypoints = (waypointsData || []).filter(
+      (wp: Record<string, unknown>) =>
+        Number(wp.itinerary_index ?? 0) === targetCycleIndex,
+    );
+
+    const waypointIds = cycleWaypoints.map((wp: Record<string, unknown>) =>
+      String(wp.id),
+    );
+
+    let paxRows: Record<string, unknown>[] = [];
+    if (waypointIds.length > 0) {
+      paxRows = await fetchInChunks<Record<string, unknown>>(
+        getAdmin(),
+        "os_waypoint_passengers",
+        "waypoint_id",
+        waypointIds,
+        "passageiro_id, waypoint_id",
+      );
+    }
+
+    const passengerIds = new Set<string>();
+    (paxRows || []).forEach((row: Record<string, unknown>) => {
+      const pid = String(row.passageiro_id || "");
+      if (pid) passengerIds.add(pid);
+    });
+
+    const passageirosList = Array.from(passengerIds);
+    let passageirosData: Record<string, unknown>[] = [];
+    if (passageirosList.length > 0) {
+      passageirosData = await fetchInChunks<Record<string, unknown>>(
+        getAdmin(),
+        "passageiros",
+        "id",
+        passageirosList,
+        "id, nome_completo, celular",
+      );
+    }
+
+    const passageiros = (passageirosData || []).map(
+      (p: Record<string, unknown>) => ({
+        nome: String(p.nome_completo || ""),
+        celular: String(p.celular || ""),
+      }),
+    );
+
+    const itineraryGroups = new Map<
+      number,
+      { firstIndex: number; stops: ItineraryStop[] }
+    >();
+
+    cycleWaypoints.forEach((wp: Record<string, unknown>) => {
+      const idx =
+        typeof wp.itinerary_index === "number" ? wp.itinerary_index : 0;
+
+      if (!itineraryGroups.has(idx)) {
+        itineraryGroups.set(idx, {
+          firstIndex: Number(wp.position ?? 0),
+          stops: [],
+        });
+      }
+
+      const group = itineraryGroups.get(idx);
+      if (!group) return;
+
+      group.stops.push({
+        label: String(wp.label || "Não informado"),
+        comment: wp.comment ? String(wp.comment) : null,
+        isOrigin: false,
+        isDestination: false,
+        isPassengerAddress: false,
+        dateTime:
+          wp.data || wp.hora
+            ? formatDateTime(String(wp.data || null), String(wp.hora || null))
+            : null,
+      });
+
+      if (typeof wp.position === "number" && wp.position < group.firstIndex) {
+        group.firstIndex = wp.position;
+      }
+    });
+
+    const sortedGroups = Array.from(itineraryGroups.entries())
+      .sort((a, b) => a[1].firstIndex - b[1].firstIndex)
+      .map(([index, group]) => {
+        const stops = group.stops;
+
+        if (stops.length > 0) {
+          stops[0].isOrigin = true;
+          stops[stops.length - 1].isDestination = true;
+        }
+
+        const kind = index < 0 ? "return" : "itinerary";
+        const ordinal = kind === "return" ? Math.abs(index) : index + 1;
+        const title =
+          kind === "return"
+            ? `🔄 *${numeroParaOrdinal(ordinal)} Retorno*`
+            : `📍 *${numeroParaOrdinal(ordinal)} Itinerário*`;
+        const firstWp = cycleWaypoints.find(
+          (w: Record<string, unknown>) => w.itinerary_index === index,
+        ) as WaypointRecord | undefined;
+        const dateTime = formatDateTime(
+          String(firstWp?.data || osRecord.data || null),
+          String(firstWp?.hora || osRecord.hora || null),
+        );
+
+        return {
+          index,
+          title: `${title} — ${dateTime}`,
+          dateTime: undefined,
+          stops,
+        } as ItineraryGroup;
+      });
+
+    const introMessage =
+      `🚦 *Você ainda tem mais um ciclo para executar.*\n\n` +
+      `Confira abaixo os detalhes do próximo itinerário/retorno antes de iniciar.\n\n` +
+      buildPassengerDetailsMessage({
+        protocolo: String(osRecord.protocolo || "N/A"),
+        osNumber: osRecord.os_number ? String(osRecord.os_number) : null,
+        fornecedor: "Geolog Transporte Executivo",
+        empresa,
+        solicitante: osRecord.solicitante ? String(osRecord.solicitante) : null,
+        motorista: String(osRecord.motorista || "Não informado"),
+        motoristaTelefone: phone,
+        veiculoTipo:
+          (vehicleData as { tipo?: string | null } | null)?.tipo || null,
+        veiculoMarcaModelo: vehicleData
+          ? `${(vehicleData as { marca?: string | null }).marca || ""} ${(vehicleData as { modelo?: string | null }).modelo || ""}`.trim()
+          : null,
+        veiculoPlaca:
+          (vehicleData as { placa?: string | null } | null)?.placa || null,
+        passageiros,
+        itineraries: sortedGroups,
+      });
+
+    const previewResult = await sendWhatsAppMessage(phone, introMessage);
+    if (!previewResult.success) {
+      console.warn(
+        "[meta-webhook] Falha ao enviar prévia do próximo ciclo:",
+        previewResult.error,
+      );
+    }
+
+    const cycleTitle = getOperationalCycleTitle(targetCycle);
+    const motoristaName = String(osRecord.motorista || "Motorista");
+    const templateComponents = [
+      {
+        type: "header",
+        parameters: [{ type: "text", text: cycleTitle }],
+      },
+      {
+        type: "body",
+        parameters: [{ type: "text", text: motoristaName }],
+      },
+      {
+        type: "button",
+        sub_type: "flow",
+        index: 0,
+        parameters: [],
+      },
+    ];
+
+    const templateResult = await sendWhatsAppTemplate(
+      phone,
+      "inicio_viagem_motorista",
+      "pt_BR",
+      templateComponents,
+    );
+
+    if (templateResult.success && templateResult.messageId) {
+      // Atualizar messageSentAt no ciclo específico dentro de driver_operation_cycles
+      const currentCycles = cycles;
+      const updatedCycles = currentCycles.map((cycle) => {
+        if (cycle.itineraryIndex === targetCycleIndex) {
+          return {
+            ...cycle,
+            messageSentAt: new Date().toISOString(),
+            state: "awaiting_accept" as const,
+          };
+        }
+        return cycle;
+      });
+
+      await getAdmin()
+        .from("ordens_servico")
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        .update({
+          driver_flow_start_message_id: templateResult.messageId,
+          current_driver_cycle_index: targetCycle.sequenceOrder,
+          driver_operation_cycles: updatedCycles,
+        })
+        .eq("id", osId);
+
+      console.log(
+        "[meta-webhook] Próximo ciclo preparado com sucesso:",
+        cycleTitle,
+        "msgId:",
+        templateResult.messageId,
+        "messageSentAt atualizado para ciclo:",
+        targetCycleIndex,
+      );
+    } else {
+      console.warn(
+        "[meta-webhook] Falha ao enviar template flow inicio_viagem_motorista para o próximo ciclo:",
+        templateResult.error,
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[meta-webhook] Erro ao preparar próximo ciclo operacional:",
+      error,
+    );
   }
 }
 
@@ -804,6 +1140,58 @@ async function handleFlowCompleted(
             console.warn(
               "[meta-webhook] Falha ao enviar mensagem de agradecimento:",
               msgResult.error,
+            );
+          }
+
+          console.log(
+            "[meta-webhook] Verificando próximos ciclos. Ciclo atual finalizado:",
+            targetCycle.itineraryIndex,
+            "sequenceOrder:",
+            targetCycle.sequenceOrder,
+            "Todos os ciclos:",
+            cycles.map((c) => ({
+              itineraryIndex: c.itineraryIndex,
+              sequenceOrder: c.sequenceOrder,
+              state: c.state,
+              title: c.title,
+            })),
+          );
+
+          const remainingCycles = cycles
+            .filter(
+              (cycle) =>
+                cycle.sequenceOrder > targetCycle.sequenceOrder &&
+                cycle.state !== "completed" &&
+                cycle.state !== "cancelled",
+            )
+            .sort((a, b) => a.sequenceOrder - b.sequenceOrder);
+
+          console.log(
+            "[meta-webhook] Ciclos restantes após filtro:",
+            remainingCycles.map((c) => ({
+              itineraryIndex: c.itineraryIndex,
+              sequenceOrder: c.sequenceOrder,
+              state: c.state,
+              title: c.title,
+            })),
+          );
+
+          const nextCycle = remainingCycles[0];
+
+          if (nextCycle) {
+            console.log(
+              "[meta-webhook] Próximo ciclo encontrado após finalização:",
+              nextCycle.itineraryIndex,
+              nextCycle.title,
+            );
+            await sendNextCyclePreviewAndStartFlow(
+              String(osRecord.id),
+              phone,
+              nextCycle.itineraryIndex,
+            );
+          } else {
+            console.log(
+              "[meta-webhook] Nenhum próximo ciclo encontrado para enviar prévia.",
             );
           }
         } catch (msgErr) {

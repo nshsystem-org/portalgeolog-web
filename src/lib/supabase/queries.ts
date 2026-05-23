@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 import { normalizeBrazilPhone } from "@/lib/phone";
 import type {
@@ -18,6 +19,7 @@ import {
   normalizeOperationalCycles,
   type OperationalCycle,
 } from "@/lib/os-messages";
+import type { AppDatabase } from "@/lib/supabase/app-database";
 
 let _supabase: ReturnType<typeof createClient> | null = null;
 const getSupabase = () => {
@@ -25,8 +27,45 @@ const getSupabase = () => {
   return _supabase;
 };
 
+let _adminClient: ReturnType<typeof createSupabaseClient<AppDatabase>> | null = null;
+const getAdminClient = () => {
+  if (!_adminClient) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    _adminClient = createSupabaseClient<AppDatabase>(url, key);
+  }
+  return _adminClient;
+};
+
 const trimText = (value?: string): string => value?.trim() ?? "";
 const upperText = (value?: string): string => trimText(value).toUpperCase();
+
+/**
+ * Utilitário para retry de operações assíncronas
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = 2,
+  delay = 1000,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries <= 0) throw error;
+    
+    // Só tenta de novo se for erro de rede (Failed to fetch) ou 5xx
+    const isNetworkError = error instanceof TypeError && error.message === "Failed to fetch";
+    // @ts-expect-error - Supabase error object has status property but TypeScript doesn't recognize it
+    const isServerError = error?.status >= 500;
+    
+    if (isNetworkError || isServerError) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 2);
+    }
+    
+    throw error;
+  }
+}
 
 type PaginationParams = {
   page?: number;
@@ -329,26 +368,28 @@ const mapOSRecord = (
 // ── Clientes ──────────────────────────────────────────────
 
 export async function fetchClientes(): Promise<Cliente[]> {
-  const { data: clientesRaw, error } = await getSupabase()
-    .from("clientes")
-    .select("id, nome, contato, centros_custo(id, nome, cliente_id, arquivado)")
-    .eq("arquivado", false)
-    .order("nome");
+  return withRetry(async () => {
+    const { data: clientesRaw, error } = await getSupabase()
+      .from("clientes")
+      .select("id, nome, contato, centros_custo(id, nome, cliente_id, arquivado)")
+      .eq("arquivado", false)
+      .order("nome");
 
-  if (error) throw error;
+    if (error) throw error;
 
-  return (clientesRaw || []).map((c: Record<string, unknown>) => ({
-    id: String(c.id),
-    nome: String(c.nome),
-    contato: c.contato ? String(c.contato) : undefined,
-    centrosCusto: ((c.centros_custo || []) as Record<string, unknown>[])
-      .filter((cc) => cc.arquivado === false)
-      .map((cc) => ({
-        id: String(cc.id),
-        nome: String(cc.nome),
-        clienteId: String(cc.cliente_id),
-      })),
-  }));
+    return (clientesRaw || []).map((c: Record<string, unknown>) => ({
+      id: String(c.id),
+      nome: String(c.nome),
+      contato: c.contato ? String(c.contato) : undefined,
+      centrosCusto: ((c.centros_custo || []) as Record<string, unknown>[])
+        .filter((cc) => cc.arquivado === false)
+        .map((cc) => ({
+          id: String(cc.id),
+          nome: String(cc.nome),
+          clienteId: String(cc.cliente_id),
+        })),
+    }));
+  });
 }
 
 export async function insertCentroCusto(
@@ -435,19 +476,21 @@ export async function deleteClienteFromDB(id: string): Promise<void> {
 // ── Solicitantes ──────────────────────────────────────────
 
 export async function fetchSolicitantes(): Promise<Solicitante[]> {
-  const { data, error } = await getSupabase()
-    .from("solicitantes")
-    .select("id, nome, cliente_id, centro_custo_id")
-    .eq("arquivado", false)
-    .order("nome");
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("solicitantes")
+      .select("id, nome, cliente_id, centro_custo_id")
+      .eq("arquivado", false)
+      .order("nome");
 
-  if (error) throw error;
-  return ((data || []) as SolicitanteRow[]).map((s) => ({
-    id: s.id,
-    nome: s.nome,
-    clienteId: s.cliente_id,
-    centroCustoId: s.centro_custo_id || undefined,
-  }));
+    if (error) throw error;
+    return ((data || []) as SolicitanteRow[]).map((s) => ({
+      id: s.id,
+      nome: s.nome,
+      clienteId: s.cliente_id,
+      centroCustoId: s.centro_custo_id || undefined,
+    }));
+  });
 }
 
 export async function insertSolicitante(
@@ -502,31 +545,33 @@ export async function deleteSolicitanteFromDB(id: string): Promise<void> {
 // ── Passageiros ───────────────────────────────────────────
 
 export async function fetchPassageiros(): Promise<Passageiro[]> {
-  const { data: passRaw, error } = await getSupabase()
-    .from("passageiros")
-    .select(PASSAGEIRO_SELECT_COLUMNS)
-    .eq("arquivado", false)
-    .order("nome_completo");
+  return withRetry(async () => {
+    const { data: passRaw, error } = await getSupabase()
+      .from("passageiros")
+      .select(PASSAGEIRO_SELECT_COLUMNS)
+      .eq("arquivado", false)
+      .order("nome_completo");
 
-  if (error) throw error;
+    if (error) throw error;
 
-  return (passRaw || []).map((p: Record<string, unknown>) => ({
-    id: String(p.id),
-    nomeCompleto: String(p.nome_completo),
-    email: p.email ? String(p.email) : undefined,
-    celular: p.celular ? String(p.celular) : "",
-    cpf: p.cpf ? String(p.cpf) : undefined,
-    notificar: typeof p.notificar === "boolean" ? p.notificar : undefined,
-    genero: typeof p.genero === "string" ? p.genero : undefined,
-    enderecos: (
-      (p.passageiro_enderecos || []) as Record<string, unknown>[]
-    ).map((e) => ({
-      id: String(e.id),
-      rotulo: String(e.rotulo),
-      enderecoCompleto: String(e.endereco_completo),
-      referencia: e.referencia ? String(e.referencia) : undefined,
-    })),
-  }));
+    return (passRaw || []).map((p: Record<string, unknown>) => ({
+      id: String(p.id),
+      nomeCompleto: String(p.nome_completo),
+      email: p.email ? String(p.email) : undefined,
+      celular: p.celular ? String(p.celular) : "",
+      cpf: p.cpf ? String(p.cpf) : undefined,
+      notificar: typeof p.notificar === "boolean" ? p.notificar : undefined,
+      genero: typeof p.genero === "string" ? p.genero : undefined,
+      enderecos: (
+        (p.passageiro_enderecos || []) as Record<string, unknown>[]
+      ).map((e) => ({
+        id: String(e.id),
+        rotulo: String(e.rotulo),
+        enderecoCompleto: String(e.endereco_completo),
+        referencia: e.referencia ? String(e.referencia) : undefined,
+      })),
+    }));
+  });
 }
 
 export async function insertPassageiro(
@@ -664,59 +709,61 @@ export async function fetchPassageirosPage({
   pageSize = 10,
   searchTerm = "",
 }: PaginationParams = {}): Promise<PaginatedResult<Passageiro>> {
-  const { from, to } = normalizePagination(page, pageSize);
-  const term = searchTerm.trim();
-  const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+  return withRetry(async () => {
+    const { from, to } = normalizePagination(page, pageSize);
+    const term = searchTerm.trim();
+    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
 
-  let query = getSupabase()
-    .from("passageiros")
-    .select(PASSAGEIRO_PAGE_SELECT_COLUMNS, { count: "exact" })
-    .eq("arquivado", false)
-    .order("nome_completo", { ascending: true })
-    .range(from, to);
+    let query = getSupabase()
+      .from("passageiros")
+      .select(PASSAGEIRO_PAGE_SELECT_COLUMNS, { count: "exact" })
+      .eq("arquivado", false)
+      .order("nome_completo", { ascending: true })
+      .range(from, to);
 
-  if (likeTerm) {
-    query = query.or(
-      `nome_completo.ilike.${likeTerm},email.ilike.${likeTerm},celular.ilike.${likeTerm},cpf.ilike.${likeTerm}`,
-    );
-  }
+    if (likeTerm) {
+      query = query.or(
+        `nome_completo.ilike.${likeTerm},email.ilike.${likeTerm},celular.ilike.${likeTerm},cpf.ilike.${likeTerm}`,
+      );
+    }
 
-  const { data: passRaw, error, count } = await query;
-  if (error) throw error;
+    const { data: passRaw, error, count } = await query;
+    if (error) throw error;
 
-  const typedPassengers = (passRaw || []) as PassageiroRow[];
-  const passengerIds = typedPassengers.map((p) => p.id);
+    const typedPassengers = (passRaw || []) as PassageiroRow[];
+    const passengerIds = typedPassengers.map((p) => p.id);
 
-  let endRaw: PassageiroEnderecoRow[] = [];
-  if (passengerIds.length > 0) {
-    const { data: endData } = await getSupabase()
-      .from("passageiro_enderecos")
-      .select("id, passageiro_id, rotulo, endereco_completo, referencia")
-      .in("passageiro_id", passengerIds);
+    let endRaw: PassageiroEnderecoRow[] = [];
+    if (passengerIds.length > 0) {
+      const { data: endData } = await getSupabase()
+        .from("passageiro_enderecos")
+        .select("id, passageiro_id, rotulo, endereco_completo, referencia")
+        .in("passageiro_id", passengerIds);
 
-    endRaw = (endData || []) as PassageiroEnderecoRow[];
-  }
+      endRaw = (endData || []) as PassageiroEnderecoRow[];
+    }
 
-  return {
-    items: typedPassengers.map((p) => ({
-      id: p.id,
-      nomeCompleto: p.nome_completo,
-      email: p.email || undefined,
-      celular: p.celular || "",
-      cpf: p.cpf || undefined,
-      notificar: p.notificar ?? undefined,
-      genero: p.genero ?? undefined,
-      enderecos: endRaw
-        .filter((e) => e.passageiro_id === p.id)
-        .map((e) => ({
-          id: e.id,
-          rotulo: e.rotulo,
-          enderecoCompleto: e.endereco_completo,
-          referencia: e.referencia || undefined,
-        })),
-    })),
-    totalCount: count ?? typedPassengers.length,
-  };
+    return {
+      items: typedPassengers.map((p) => ({
+        id: p.id,
+        nomeCompleto: p.nome_completo,
+        email: p.email || undefined,
+        celular: p.celular || "",
+        cpf: p.cpf || undefined,
+        notificar: p.notificar ?? undefined,
+        genero: p.genero ?? undefined,
+        enderecos: endRaw
+          .filter((e) => e.passageiro_id === p.id)
+          .map((e) => ({
+            id: e.id,
+            rotulo: e.rotulo,
+            enderecoCompleto: e.endereco_completo,
+            referencia: e.referencia || undefined,
+          })),
+      })),
+      totalCount: count ?? typedPassengers.length,
+    };
+  });
 }
 
 // ── Veículos ───────────────────────────────────────────
@@ -806,30 +853,71 @@ const OS_SELECT_COLUMNS = [
 ].join(",");
 
 export async function fetchOSList(): Promise<OrderService[]> {
-  const { data: osRaw, error } = await getSupabase()
-    .from("ordens_servico")
-    .select(OS_SELECT_COLUMNS)
-    .eq("arquivado", false)
-    .order("created_at", { ascending: false });
+  return withRetry(async () => {
+    const { data: osRaw, error } = await getSupabase()
+      .from("ordens_servico")
+      .select(OS_SELECT_COLUMNS)
+      .eq("arquivado", false)
+      .order("created_at", { ascending: false });
 
-  if (error) throw error;
+    if (error) throw error;
 
-  const typedOrders = (osRaw || []) as unknown as OSRow[];
-  const osIds = typedOrders.map((o) => o.id);
-  let wpRaw: OSWaypointRow[] = [];
-  let wpPassRaw: OSWaypointPassengerRow[] = [];
+    const typedOrders = (osRaw || []) as unknown as OSRow[];
+    const osIds = typedOrders.map((o) => o.id);
+    let wpRaw: OSWaypointRow[] = [];
+    let wpPassRaw: OSWaypointPassengerRow[] = [];
 
-  if (osIds.length > 0) {
-    const { data: wpData } = await getSupabase()
+    if (osIds.length > 0) {
+      const { data: wpData } = await getSupabase()
+        .from("os_waypoints")
+        .select(
+          "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
+        )
+        .in("ordem_servico_id", osIds)
+        .order("position");
+
+      wpRaw = (wpData || []) as OSWaypointRow[];
+      const wpIds = wpRaw.map((w) => w.id);
+
+      if (wpIds.length > 0) {
+        wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
+          getSupabase(),
+          "os_waypoint_passengers",
+          "waypoint_id",
+          wpIds,
+          "id, waypoint_id, passageiro_id",
+        );
+      }
+    }
+
+    return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
+  });
+}
+
+export async function fetchOSById(id: string): Promise<OrderService | null> {
+  return withRetry(async () => {
+    const { data: osRaw, error } = await getSupabase()
+      .from("ordens_servico")
+      .select(OS_SELECT_COLUMNS)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!osRaw) return null;
+
+    const { data: wpData, error: wpError } = await getSupabase()
       .from("os_waypoints")
       .select(
         "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
       )
-      .in("ordem_servico_id", osIds)
+      .eq("ordem_servico_id", id)
       .order("position");
 
-    wpRaw = (wpData || []) as OSWaypointRow[];
+    if (wpError) throw wpError;
+
+    const wpRaw = (wpData || []) as unknown as OSWaypointRow[];
     const wpIds = wpRaw.map((w) => w.id);
+    let wpPassRaw: OSWaypointPassengerRow[] = [];
 
     if (wpIds.length > 0) {
       wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
@@ -840,46 +928,49 @@ export async function fetchOSList(): Promise<OrderService[]> {
         "id, waypoint_id, passageiro_id",
       );
     }
-  }
 
-  return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
+    return mapOSRecord(osRaw as unknown as OSRow, wpRaw, wpPassRaw);
+  });
 }
 
-export async function fetchOSById(id: string): Promise<OrderService | null> {
-  const { data: osRaw, error } = await getSupabase()
-    .from("ordens_servico")
-    .select(OS_SELECT_COLUMNS)
-    .eq("id", id)
-    .maybeSingle();
+export async function fetchOSByProtocolo(protocolo: string): Promise<OrderService | null> {
+  return withRetry(async () => {
+    const { data: osRaw, error } = await getSupabase()
+      .from("ordens_servico")
+      .select(OS_SELECT_COLUMNS)
+      .eq("protocolo", protocolo)
+      .maybeSingle();
 
-  if (error) throw error;
-  if (!osRaw) return null;
+    if (error) throw error;
+    if (!osRaw) return null;
 
-  const { data: wpData, error: wpError } = await getSupabase()
-    .from("os_waypoints")
-    .select(
-      "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
-    )
-    .eq("ordem_servico_id", id)
-    .order("position");
+    const osId = (osRaw as unknown as OSRow).id;
+    const { data: wpData, error: wpError } = await getSupabase()
+      .from("os_waypoints")
+      .select(
+        "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
+      )
+      .eq("ordem_servico_id", osId)
+      .order("position");
 
-  if (wpError) throw wpError;
+    if (wpError) throw wpError;
 
-  const wpRaw = (wpData || []) as unknown as OSWaypointRow[];
-  const wpIds = wpRaw.map((w) => w.id);
-  let wpPassRaw: OSWaypointPassengerRow[] = [];
+    const wpRaw = (wpData || []) as unknown as OSWaypointRow[];
+    const wpIds = wpRaw.map((w) => w.id);
+    let wpPassRaw: OSWaypointPassengerRow[] = [];
 
-  if (wpIds.length > 0) {
-    wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
-      getSupabase(),
-      "os_waypoint_passengers",
-      "waypoint_id",
-      wpIds,
-      "id, waypoint_id, passageiro_id",
-    );
-  }
+    if (wpIds.length > 0) {
+      wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
+        getSupabase(),
+        "os_waypoint_passengers",
+        "waypoint_id",
+        wpIds,
+        "id, waypoint_id, passageiro_id",
+      );
+    }
 
-  return mapOSRecord(osRaw as unknown as OSRow, wpRaw, wpPassRaw);
+    return mapOSRecord(osRaw as unknown as OSRow, wpRaw, wpPassRaw);
+  });
 }
 
 export type OSPageFilters = {
@@ -904,160 +995,161 @@ export async function fetchOSPage({
 }: PaginationParams & { filters?: OSPageFilters } = {}): Promise<
   PaginatedResult<OrderService>
 > {
-  const { from, to } = normalizePagination(page, pageSize);
-  const term = searchTerm.trim();
-  const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+  return withRetry(async () => {
+    const { from, to } = normalizePagination(page, pageSize);
+    const term = searchTerm.trim();
+    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
 
-  let query = getSupabase()
-    .from("ordens_servico")
-    .select(OS_SELECT_COLUMNS, { count: "exact" });
+    let query = getSupabase()
+      .from("ordens_servico")
+      .select(OS_SELECT_COLUMNS, { count: "exact" });
 
-  if (filters.arquivado !== undefined) {
-    query = query.eq("arquivado", filters.arquivado);
-  } else {
-    query = query.eq("arquivado", false);
-  }
+    if (filters.arquivado !== undefined) {
+      query = query.eq("arquivado", filters.arquivado);
+    } else {
+      query = query.eq("arquivado", false);
+    }
 
-  query = query.order("created_at", { ascending: false }).range(from, to);
+    query = query.order("created_at", { ascending: false }).range(from, to);
 
-  if (likeTerm) {
-    query = query.or(
-      `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
-    );
-  }
-
-  if (filters.osNumber) {
-    query = query.ilike("os_number", `%${sanitizeSearchTerm(filters.osNumber)}%`);
-  }
-  if (filters.clienteId) {
-    query = query.eq("cliente_id", filters.clienteId);
-  }
-  if (filters.centroCustoId) {
-    query = query.eq("centro_custo_id", filters.centroCustoId);
-  }
-  if (filters.solicitante) {
-    query = query.ilike(
-      "solicitante",
-      `%${sanitizeSearchTerm(filters.solicitante)}%`,
-    );
-  }
-  if (filters.motorista) {
-    query = query.ilike(
-      "motorista",
-      `%${sanitizeSearchTerm(filters.motorista)}%`,
-    );
-  }
-  if (filters.veiculoId) {
-    query = query.eq("veiculo_id", filters.veiculoId);
-  }
-  if (filters.dataInicio) {
-    query = query.gte("data", filters.dataInicio);
-  }
-  if (filters.dataFim) {
-    query = query.lte("data", filters.dataFim);
-  }
-  if (filters.statusOperacional) {
-    query = query.eq("status_operacional", filters.statusOperacional);
-  }
-  if (filters.createdBy) {
-    query = query.eq("created_by", filters.createdBy);
-  }
-
-  const { data: osRaw, error, count } = await query;
-  if (error) throw error;
-
-  const typedOrders = (osRaw || []) as unknown as OSRow[];
-  const osIds = typedOrders.map((o) => o.id);
-  let wpRaw: OSWaypointRow[] = [];
-  let wpPassRaw: OSWaypointPassengerRow[] = [];
-
-  if (osIds.length > 0) {
-    const { data: wpData } = await getSupabase()
-      .from("os_waypoints")
-      .select(
-        "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
-      )
-      .in("ordem_servico_id", osIds)
-      .order("position");
-
-    wpRaw = (wpData || []) as OSWaypointRow[];
-    const wpIds = wpRaw.map((w) => w.id);
-
-    if (wpIds.length > 0) {
-      wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
-        getSupabase(),
-        "os_waypoint_passengers",
-        "waypoint_id",
-        wpIds,
-        "id, waypoint_id, passageiro_id",
+    if (likeTerm) {
+      query = query.or(
+        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
       );
     }
-  }
 
-  return {
-    items: typedOrders.map((o) => {
-      const waypoints: Waypoint[] = wpRaw
-        .filter((w) => w.ordem_servico_id === o.id)
-        .map((w) => ({
-          label: w.label,
-          lat: w.lat,
-          lng: w.lng,
-          comment: w.comment || undefined,
-          itineraryIndex: w.itinerary_index ?? undefined,
-          hora: w.hora ?? undefined,
-          data: w.data ?? undefined,
-          passengers: wpPassRaw
-            .filter((p) => p.waypoint_id === w.id)
-            .map((p) => ({
-              id: p.id,
-              solicitanteId: p.passageiro_id || "",
-              nome: "",
-            })),
-        }));
+    if (filters.osNumber) {
+      query = query.ilike("os_number", `%${sanitizeSearchTerm(filters.osNumber)}%`);
+    }
+    if (filters.clienteId) {
+      query = query.eq("cliente_id", filters.clienteId);
+    }
+    if (filters.centroCustoId) {
+      query = query.eq("centro_custo_id", filters.centroCustoId);
+    }
+    if (filters.solicitante) {
+      query = query.ilike(
+        "solicitante",
+        `%${sanitizeSearchTerm(filters.solicitante)}%`,
+      );
+    }
+    if (filters.motorista) {
+      query = query.ilike(
+        "motorista",
+        `%${sanitizeSearchTerm(filters.motorista)}%`,
+      );
+    }
+    if (filters.veiculoId) {
+      query = query.eq("veiculo_id", filters.veiculoId);
+    }
+    if (filters.dataInicio) {
+      query = query.gte("data", filters.dataInicio);
+    }
+    if (filters.dataFim) {
+      query = query.lte("data", filters.dataFim);
+    }
+    if (filters.statusOperacional) {
+      query = query.eq("status_operacional", filters.statusOperacional);
+    }
+    if (filters.createdBy) {
+      query = query.eq("created_by", filters.createdBy);
+    }
 
-      return {
-        id: o.id,
-        protocolo: o.protocolo || "",
-        os: o.os_number || "",
-        data: o.data || "",
-        hora: o.hora || "",
-        horaExtra: o.hora_extra || "",
-        clienteId: o.cliente_id || "",
-        solicitante: o.solicitante || "",
-        solicitanteId: o.solicitante_id || undefined,
-        centroCustoId: o.centro_custo_id || o.centro_custo || "",
-        motorista: o.motorista || "",
-        driverId: o.driver_id || undefined,
-        veiculoId: o.veiculo_id || undefined,
-        valorBruto: Number(o.valor_bruto),
-        imposto: Number(o.imposto),
-        custo: Number(o.custo),
-        lucro: Number(o.lucro),
-        obsFinanceiras: o.obs_financeiras || "",
-        status: {
-          operacional:
-            o.status_operacional as OrderService["status"]["operacional"],
-          financeiro:
-            o.status_financeiro as OrderService["status"]["financeiro"],
-        },
-        distancia: o.distancia ? Number(o.distancia) : undefined,
-        rota: waypoints.length > 0 ? { waypoints } : undefined,
-        driverMessageSentAt: o.driver_message_sent_at ?? undefined,
-        driverAcceptedAt: o.driver_accepted_at ?? undefined,
-        driverKmInitial: o.driver_km_initial ?? undefined,
-        routeStartedAt: o.route_started_at ?? undefined,
-        routeStartedKm: o.route_started_km ?? undefined,
-        routeFinishedAt: o.route_finished_at ?? undefined,
-        routeFinishedKm: o.route_finished_km ?? undefined,
-        operationalCycles: normalizeOperationalCycles(
-          o.driver_operation_cycles,
-        ),
-        currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
-        arquivado: o.arquivado ?? false,
-      };
-    }),
-    totalCount: count ?? typedOrders.length,
-  };
+    const { data: osRaw, error, count } = await query;
+    if (error) throw error;
+
+    const typedOrders = (osRaw || []) as unknown as OSRow[];
+    const osIds = typedOrders.map((o) => o.id);
+    let wpRaw: OSWaypointRow[] = [];
+    let wpPassRaw: OSWaypointPassengerRow[] = [];
+
+    if (osIds.length > 0) {
+      const { data: wpData } = await getSupabase()
+        .from("os_waypoints")
+        .select(
+          "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
+        )
+        .in("ordem_servico_id", osIds)
+        .order("position");
+
+      wpRaw = (wpData || []) as OSWaypointRow[];
+      const wpIds = wpRaw.map((w) => w.id);
+
+      if (wpIds.length > 0) {
+        wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
+          getSupabase(),
+          "os_waypoint_passengers",
+          "waypoint_id",
+          wpIds,
+          "id, waypoint_id, passageiro_id",
+        );
+      }
+    }
+
+    return {
+      items: typedOrders.map((o) => {
+        const waypoints: Waypoint[] = wpRaw
+          .filter((w) => w.ordem_servico_id === o.id)
+          .map((w) => ({
+            label: w.label,
+            lat: w.lat,
+            lng: w.lng,
+            comment: w.comment || undefined,
+            itineraryIndex: w.itinerary_index ?? undefined,
+            hora: w.hora ?? undefined,
+            data: w.data ?? undefined,
+            passengers: wpPassRaw
+              .filter((p) => p.waypoint_id === w.id)
+              .map((p) => ({
+                id: p.id,
+                solicitanteId: p.passageiro_id || "",
+                nome: "",
+              })),
+          }));
+
+        return {
+          id: o.id,
+          protocolo: o.protocolo || "",
+          os: o.os_number || "",
+          data: o.data || "",
+          hora: o.hora || "",
+          horaExtra: o.hora_extra || "",
+          clienteId: o.cliente_id || "",
+          solicitante: o.solicitante || "",
+          solicitanteId: o.solicitante_id || undefined,
+          centroCustoId: o.centro_custo_id || o.centro_custo || "",
+          motorista: o.motorista || "",
+          driverId: o.driver_id || undefined,
+          veiculoId: o.veiculo_id || undefined,
+          valorBruto: Number(o.valor_bruto),
+          imposto: Number(o.imposto),
+          custo: Number(o.custo),
+          lucro: Number(o.lucro),
+          obsFinanceiras: o.obs_financeiras || "",
+          status: {
+            operacional:
+              o.status_operacional as OrderService["status"]["operacional"],
+            financeiro: o.status_financeiro as OrderService["status"]["financeiro"],
+          },
+          distancia: o.distancia ? Number(o.distancia) : undefined,
+          rota: waypoints.length > 0 ? { waypoints } : undefined,
+          driverMessageSentAt: o.driver_message_sent_at ?? undefined,
+          driverAcceptedAt: o.driver_accepted_at ?? undefined,
+          driverKmInitial: o.driver_km_initial ?? undefined,
+          routeStartedAt: o.route_started_at ?? undefined,
+          routeStartedKm: o.route_started_km ?? undefined,
+          routeFinishedAt: o.route_finished_at ?? undefined,
+          routeFinishedKm: o.route_finished_km ?? undefined,
+          operationalCycles: normalizeOperationalCycles(
+            o.driver_operation_cycles,
+          ),
+          currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
+          arquivado: o.arquivado ?? false,
+        };
+      }),
+      totalCount: count ?? typedOrders.length,
+    };
+  });
 }
 
 export async function fetchOSFinancePage({
@@ -1068,70 +1160,72 @@ export async function fetchOSFinancePage({
 }: PaginationParams & { month?: string } = {}): Promise<
   PaginatedResult<OrderService>
 > {
-  const { from, to } = normalizePagination(page, pageSize);
-  const term = searchTerm.trim();
-  const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+  return withRetry(async () => {
+    const { from, to } = normalizePagination(page, pageSize);
+    const term = searchTerm.trim();
+    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
 
-  let query = getSupabase()
-    .from("ordens_servico")
-    .select(OS_SELECT_COLUMNS, { count: "exact" })
-    .eq("arquivado", false)
-    .order("created_at", { ascending: false })
-    .range(from, to);
+    let query = getSupabase()
+      .from("ordens_servico")
+      .select(OS_SELECT_COLUMNS, { count: "exact" })
+      .eq("arquivado", false)
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
-  if (month) {
-    query = query
-      .gte("data", `${month}-01`)
-      .lt("data", getNextMonthFirstDay(month));
-  }
+    if (month) {
+      query = query
+        .gte("data", `${month}-01`)
+        .lt("data", getNextMonthFirstDay(month));
+    }
 
-  if (likeTerm) {
-    query = query.or(
-      `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
-    );
-  }
+    if (likeTerm) {
+      query = query.or(
+        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
+      );
+    }
 
-  const { data: osRaw, error, count } = await query;
-  if (error) throw error;
+    const { data: osRaw, error, count } = await query;
+    if (error) throw error;
 
-  const typedOrders = (osRaw || []) as unknown as OSRow[];
+    const typedOrders = (osRaw || []) as unknown as OSRow[];
 
-  return {
-    items: typedOrders.map((o) => ({
-      id: o.id,
-      protocolo: o.protocolo || "",
-      os: o.os_number || "",
-      data: o.data || "",
-      hora: o.hora || "",
-      horaExtra: o.hora_extra || "",
-      clienteId: o.cliente_id || "",
-      solicitante: o.solicitante || "",
-      centroCustoId: o.centro_custo || "",
-      motorista: o.motorista || "",
-      veiculoId: o.veiculo_id || undefined,
-      valorBruto: o.valor_bruto !== null ? Number(o.valor_bruto) : null,
-      imposto: o.imposto !== null ? Number(o.imposto) : null,
-      custo: o.custo !== null ? Number(o.custo) : null,
-      lucro: o.lucro !== null ? Number(o.lucro) : null,
-      obsFinanceiras: o.obs_financeiras || "",
-      status: {
-        operacional:
-          o.status_operacional as OrderService["status"]["operacional"],
-        financeiro: o.status_financeiro as OrderService["status"]["financeiro"],
-      },
-      distancia: o.distancia ? Number(o.distancia) : undefined,
-      driverMessageSentAt: o.driver_message_sent_at ?? undefined,
-      driverAcceptedAt: o.driver_accepted_at ?? undefined,
-      driverKmInitial: o.driver_km_initial ?? undefined,
-      routeStartedAt: o.route_started_at ?? undefined,
-      routeStartedKm: o.route_started_km ?? undefined,
-      routeFinishedAt: o.route_finished_at ?? undefined,
-      routeFinishedKm: o.route_finished_km ?? undefined,
-      operationalCycles: normalizeOperationalCycles(o.driver_operation_cycles),
-      currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
-    })),
-    totalCount: count ?? typedOrders.length,
-  };
+    return {
+      items: typedOrders.map((o) => ({
+        id: o.id,
+        protocolo: o.protocolo || "",
+        os: o.os_number || "",
+        data: o.data || "",
+        hora: o.hora || "",
+        horaExtra: o.hora_extra || "",
+        clienteId: o.cliente_id || "",
+        solicitante: o.solicitante || "",
+        centroCustoId: o.centro_custo || "",
+        motorista: o.motorista || "",
+        veiculoId: o.veiculo_id || undefined,
+        valorBruto: o.valor_bruto !== null ? Number(o.valor_bruto) : null,
+        imposto: o.imposto !== null ? Number(o.imposto) : null,
+        custo: o.custo !== null ? Number(o.custo) : null,
+        lucro: o.lucro !== null ? Number(o.lucro) : null,
+        obsFinanceiras: o.obs_financeiras || "",
+        status: {
+          operacional:
+            o.status_operacional as OrderService["status"]["operacional"],
+          financeiro: o.status_financeiro as OrderService["status"]["financeiro"],
+        },
+        distancia: o.distancia ? Number(o.distancia) : undefined,
+        driverMessageSentAt: o.driver_message_sent_at ?? undefined,
+        driverAcceptedAt: o.driver_accepted_at ?? undefined,
+        driverKmInitial: o.driver_km_initial ?? undefined,
+        routeStartedAt: o.route_started_at ?? undefined,
+        routeStartedKm: o.route_started_km ?? undefined,
+        routeFinishedAt: o.route_finished_at ?? undefined,
+        routeFinishedKm: o.route_finished_km ?? undefined,
+        operationalCycles: normalizeOperationalCycles(o.driver_operation_cycles),
+        currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
+      })),
+      totalCount: count ?? typedOrders.length,
+    };
+  });
 }
 
 function getNextMonthFirstDay(month: string): string {
@@ -1340,7 +1434,47 @@ export async function updateOSInDB(
     "";
 
   const waypoints = osData.rota?.waypoints || [];
-  const operationalCycles = buildOperationalCyclesFromWaypoints(waypoints);
+  
+  // Buscar ciclos operacionais existentes para preservar status
+  const { data: existingOS } = await getSupabase()
+    .from("ordens_servico")
+    .select("driver_operation_cycles")
+    .eq("id", id)
+    .single();
+  
+  const existingCycles: OperationalCycle[] = 
+    existingOS?.driver_operation_cycles as OperationalCycle[] || [];
+  
+  // Criar mapa de ciclos existentes por itineraryIndex para preservação rápida
+  const existingCyclesMap = new Map<number, OperationalCycle>();
+  existingCycles.forEach(cycle => {
+    existingCyclesMap.set(cycle.itineraryIndex, cycle);
+  });
+  
+  // Construir novos ciclos a partir dos waypoints
+  const newCycles = buildOperationalCyclesFromWaypoints(waypoints);
+  
+  // Mesclar: preservar status dos ciclos existentes, adicionar novos ciclos
+  const operationalCycles = newCycles.map(newCycle => {
+    const existingCycle = existingCyclesMap.get(newCycle.itineraryIndex);
+    
+    if (existingCycle) {
+      // Preservar todos os campos de status do ciclo existente
+      return {
+        ...newCycle,
+        state: existingCycle.state,
+        messageSentAt: existingCycle.messageSentAt,
+        acceptedAt: existingCycle.acceptedAt,
+        startedAt: existingCycle.startedAt,
+        finishedAt: existingCycle.finishedAt,
+        kmInitial: existingCycle.kmInitial,
+        kmFinal: existingCycle.kmFinal,
+      };
+    }
+    
+    // Ciclo novo: usar valores padrão
+    return newCycle;
+  });
 
   const osPayload = {
     data: osData.data,
@@ -1431,11 +1565,63 @@ export async function updateOSStatusInDB(
   }
 }
 
+// Função helper para inserir notificações diretamente no banco (usando service role)
+async function insertAppNotification(
+  type: "success" | "info" | "warning" | "error",
+  title: string,
+  message: string,
+  targetAudience: "interno" | "gestor" | "all" = "all",
+  targetUserId?: string | null,
+  createdById?: string | null,
+  createdByName?: string | null,
+  createdByAvatarUrl?: string | null,
+): Promise<void> {
+  try {
+    const adminClient = getAdminClient();
+    const { error } = await adminClient.from("app_notifications").insert({
+      type,
+      title,
+      message,
+      target_audience: targetAudience,
+      target_user_id: targetUserId || null,
+      empresa_id: null,
+      created_by: createdById || null,
+      created_by_name: createdByName || null,
+      created_by_avatar_url: createdByAvatarUrl || null,
+    });
+
+    if (error) {
+      console.error("Erro ao inserir notificação no banco:", error);
+    }
+  } catch (error) {
+    console.error("Erro ao inserir notificação no banco:", error);
+  }
+}
+
 export async function archiveOSFromDB(
   id: string,
   actorName?: string,
   actorId?: string | null,
+  osLabel?: string | null,
 ): Promise<void> {
+  const fallbackLabel = osLabel?.trim() || null;
+  // Buscar dados da OS para notificação usando admin client
+  const { data: osData, error: fetchError } = await getAdminClient()
+    .from("ordens_servico")
+    .select("protocolo, os_number")
+    .eq("id", id)
+    .single();
+
+  if (fetchError) {
+    console.error("Erro ao buscar dados da OS para notificação:", fetchError);
+  }
+
+  const osRow = osData as
+    | { protocolo?: string | null; os_number?: string | null }
+    | null;
+  const protocolo =
+    fallbackLabel || osRow?.protocolo || osRow?.os_number || `OS ${id.slice(0, 8)}`;
+
   const { error } = await getSupabase()
     .from("ordens_servico")
     .update({ arquivado: true })
@@ -1444,13 +1630,55 @@ export async function archiveOSFromDB(
   if (error) throw error;
 
   void insertOSLog(id, "archive", "OS arquivada", actorName || "Sistema", actorId);
+
+  // Buscar avatar do usuário para notificação
+  let avatarUrl: string | null = null;
+  if (actorId) {
+    const { data: userData } = await getAdminClient()
+      .from("user_roles")
+      .select("avatar_url")
+      .eq("id", actorId)
+      .single();
+    avatarUrl = userData?.avatar_url || null;
+  }
+
+  // Gerar notificação
+  void insertAppNotification(
+    "info",
+    "OS Arquivada",
+    `A OS "${protocolo}" foi arquivada por ${actorName || "Sistema"}. [OS_ID:${id}]`,
+    "all",
+    null,
+    actorId,
+    actorName,
+    avatarUrl,
+  );
 }
 
 export async function unarchiveOSFromDB(
   id: string,
   actorName?: string,
   actorId?: string | null,
+  osLabel?: string | null,
 ): Promise<void> {
+  const fallbackLabel = osLabel?.trim() || null;
+  // Buscar dados da OS para notificação usando admin client
+  const { data: osData, error: fetchError } = await getAdminClient()
+    .from("ordens_servico")
+    .select("protocolo, os_number")
+    .eq("id", id)
+    .single();
+
+  if (fetchError) {
+    console.error("Erro ao buscar dados da OS para notificação:", fetchError);
+  }
+
+  const osRow = osData as
+    | { protocolo?: string | null; os_number?: string | null }
+    | null;
+  const protocolo =
+    fallbackLabel || osRow?.protocolo || osRow?.os_number || `OS ${id.slice(0, 8)}`;
+
   const { error } = await getSupabase()
     .from("ordens_servico")
     .update({ arquivado: false, status_operacional: "Pendente" })
@@ -1459,6 +1687,29 @@ export async function unarchiveOSFromDB(
   if (error) throw error;
 
   void insertOSLog(id, "unarchive", "OS reaberta", actorName || "Sistema", actorId);
+
+  // Buscar avatar do usuário para notificação
+  let avatarUrl: string | null = null;
+  if (actorId) {
+    const { data: userData } = await getAdminClient()
+      .from("user_roles")
+      .select("avatar_url")
+      .eq("id", actorId)
+      .single();
+    avatarUrl = userData?.avatar_url || null;
+  }
+
+  // Gerar notificação
+  void insertAppNotification(
+    "success",
+    "OS Reaberta",
+    `A OS "${protocolo}" foi reaberta por ${actorName || "Sistema"}. [OS_ID:${id}]`,
+    "all",
+    null,
+    actorId,
+    actorName,
+    avatarUrl,
+  );
 }
 
 // ── Centros de Custo ──────────────────────────────────────
@@ -1466,82 +1717,33 @@ export async function unarchiveOSFromDB(
 export async function fetchCentrosCustoByCliente(
   clienteId: string,
 ): Promise<CentroCusto[]> {
-  const { data, error } = await getSupabase()
-    .from("centros_custo")
-    .select("id, nome")
-    .eq("cliente_id", clienteId)
-    .eq("arquivado", false)
-    .order("nome");
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("centros_custo")
+      .select("id, nome")
+      .eq("cliente_id", clienteId)
+      .eq("arquivado", false)
+      .order("nome");
 
-  if (error) throw error;
-  return ((data || []) as Array<Pick<CentroCustoRow, "id" | "nome">>).map(
-    (cc) => ({ id: cc.id, nome: cc.nome, clienteId: clienteId }),
-  );
+    if (error) throw error;
+    return ((data || []) as Array<Pick<CentroCustoRow, "id" | "nome">>).map(
+      (cc) => ({ id: cc.id, nome: cc.nome, clienteId: clienteId }),
+    );
+  });
 }
 
 // ── Motoristas ────────────────────────────────────────────
 
 export async function fetchDrivers(): Promise<Driver[]> {
-  const { data, error } = await getSupabase()
-    .from("drivers")
-    .select(DRIVER_SELECT_COLUMNS)
-    .eq("arquivado", false)
-    .order("name");
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("drivers")
+      .select(DRIVER_SELECT_COLUMNS)
+      .eq("arquivado", false)
+      .order("name");
 
-  if (error) throw error;
-  return ((data || []) as unknown as DriverRow[]).map((d) => ({
-    id: d.id,
-    name: d.name,
-    cpf: d.cpf || "",
-    cnh: d.cnh || "",
-    phone: d.phone || "",
-    status: d.status as "active" | "inactive",
-    created_at: d.created_at,
-    vinculo_tipo: d.vinculo_tipo,
-    parceiro_id: d.parceiro_id ?? undefined,
-    driver_vehicles:
-      d.driver_vehicles?.map((dv) => ({
-        id: dv.id,
-        driver_id: d.id,
-        vehicle_id: dv.vehicle_id,
-        vehicle: Array.isArray(dv.vehicle) ? dv.vehicle[0] : dv.vehicle,
-      })) || [],
-    docsCount:
-      (
-        (d as unknown as Record<string, unknown>).driver_documents as
-          | unknown[]
-          | undefined
-      )?.length || 0,
-  }));
-}
-
-export async function fetchDriversPage({
-  page = 1,
-  pageSize = 10,
-  searchTerm = "",
-}: PaginationParams = {}): Promise<PaginatedResult<Driver>> {
-  const { from, to } = normalizePagination(page, pageSize);
-  const term = searchTerm.trim();
-  const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
-
-  let query = getSupabase()
-    .from("drivers")
-    .select(DRIVER_PAGE_SELECT_COLUMNS, { count: "exact" })
-    .eq("arquivado", false)
-    .order("name", { ascending: true })
-    .range(from, to);
-
-  if (likeTerm) {
-    query = query.or(
-      `name.ilike.${likeTerm},cpf.ilike.${likeTerm},cnh.ilike.${likeTerm},phone.ilike.${likeTerm}`,
-    );
-  }
-
-  const { data, error, count } = await query;
-  if (error) throw error;
-
-  return {
-    items: ((data || []) as unknown as DriverRow[]).map((d) => ({
+    if (error) throw error;
+    return ((data || []) as unknown as DriverRow[]).map((d) => ({
       id: d.id,
       name: d.name,
       cpf: d.cpf || "",
@@ -1564,9 +1766,64 @@ export async function fetchDriversPage({
             | unknown[]
             | undefined
         )?.length || 0,
-    })),
-    totalCount: count ?? (data || []).length,
-  };
+    }));
+  });
+}
+
+export async function fetchDriversPage({
+  page = 1,
+  pageSize = 10,
+  searchTerm = "",
+}: PaginationParams = {}): Promise<PaginatedResult<Driver>> {
+  return withRetry(async () => {
+    const { from, to } = normalizePagination(page, pageSize);
+    const term = searchTerm.trim();
+    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+
+    let query = getSupabase()
+      .from("drivers")
+      .select(DRIVER_PAGE_SELECT_COLUMNS, { count: "exact" })
+      .eq("arquivado", false)
+      .order("name", { ascending: true })
+      .range(from, to);
+
+    if (likeTerm) {
+      query = query.or(
+        `name.ilike.${likeTerm},cpf.ilike.${likeTerm},cnh.ilike.${likeTerm},phone.ilike.${likeTerm}`,
+      );
+    }
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    return {
+      items: ((data || []) as unknown as DriverRow[]).map((d) => ({
+        id: d.id,
+        name: d.name,
+        cpf: d.cpf || "",
+        cnh: d.cnh || "",
+        phone: d.phone || "",
+        status: d.status as "active" | "inactive",
+        created_at: d.created_at,
+        vinculo_tipo: d.vinculo_tipo,
+        parceiro_id: d.parceiro_id ?? undefined,
+        driver_vehicles:
+          d.driver_vehicles?.map((dv) => ({
+            id: dv.id,
+            driver_id: d.id,
+            vehicle_id: dv.vehicle_id,
+            vehicle: Array.isArray(dv.vehicle) ? dv.vehicle[0] : dv.vehicle,
+          })) || [],
+        docsCount:
+          (
+            (d as unknown as Record<string, unknown>).driver_documents as
+              | unknown[]
+              | undefined
+          )?.length || 0,
+      })),
+      totalCount: count ?? (data || []).length,
+    };
+  });
 }
 
 // ── Veículos ───────────────────────────────────────────
@@ -1576,30 +1833,32 @@ export async function fetchVeiculosPage({
   pageSize = 10,
   searchTerm = "",
 }: PaginationParams = {}): Promise<PaginatedResult<Vehicle>> {
-  const { from, to } = normalizePagination(page, pageSize);
-  const term = searchTerm.trim();
-  const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+  return withRetry(async () => {
+    const { from, to } = normalizePagination(page, pageSize);
+    const term = searchTerm.trim();
+    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
 
-  let query = getSupabase()
-    .from("veiculos")
-    .select(VEICULO_PAGE_SELECT_COLUMNS, { count: "exact" })
-    .eq("arquivado", false)
-    .order("created_at", { ascending: false })
-    .range(from, to);
+    let query = getSupabase()
+      .from("veiculos")
+      .select(VEICULO_PAGE_SELECT_COLUMNS, { count: "exact" })
+      .eq("arquivado", false)
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
-  if (likeTerm) {
-    query = query.or(
-      `placa.ilike.${likeTerm},modelo.ilike.${likeTerm},marca.ilike.${likeTerm},renavam.ilike.${likeTerm}`,
-    );
-  }
+    if (likeTerm) {
+      query = query.or(
+        `placa.ilike.${likeTerm},modelo.ilike.${likeTerm},marca.ilike.${likeTerm},renavam.ilike.${likeTerm}`,
+      );
+    }
 
-  const { data, error, count } = await query;
-  if (error) throw error;
+    const { data, error, count } = await query;
+    if (error) throw error;
 
-  return {
-    items: (data || []) as Vehicle[],
-    totalCount: count ?? (data || []).length,
-  };
+    return {
+      items: (data || []) as Vehicle[],
+      totalCount: count ?? (data || []).length,
+    };
+  });
 }
 
 export async function insertDriver(
@@ -1649,6 +1908,7 @@ export interface ParceiroServico {
   documento: string;
   razaoSocialOuNomeCompleto: string;
   status: "ativo" | "inativo";
+  arquivado: boolean;
   contatos: ParceiroContato[];
   filiais: ParceiroFilial[];
   searchIndex: string;
@@ -1666,7 +1926,6 @@ export interface ParceiroFilial {
   id: string;
   rotulo: string;
   enderecoCompleto: string;
-  referencia?: string;
 }
 
 export interface NovoParceiroInput {
@@ -1682,7 +1941,6 @@ export interface NovoParceiroInput {
   filiais: {
     rotulo: string;
     enderecoCompleto: string;
-    referencia?: string;
   }[];
 }
 
@@ -1695,6 +1953,7 @@ type ParceiroRow = {
   razao_social_ou_nome_completo: string | null;
   telefone: string | null;
   status: "ativo" | "inativo";
+  arquivado: boolean;
   search_index: string;
 };
 
@@ -1733,7 +1992,6 @@ const buildParceiroSearchIndex = (
     ...filiais.flatMap((filial) => [
       filial.rotulo,
       filial.enderecoCompleto,
-      filial.referencia || "",
     ]),
   ];
 
@@ -1757,7 +2015,6 @@ const mapParceiroPayload = (
     id: filial.id,
     rotulo: filial.rotulo || "Filial",
     enderecoCompleto: filial.endereco_completo,
-    referencia: filial.referencia || undefined,
   }));
 
   const base = {
@@ -1767,6 +2024,7 @@ const mapParceiroPayload = (
     razaoSocialOuNomeCompleto:
       parceiro.razao_social_ou_nome_completo || parceiro.nome || "",
     status: parceiro.status || "ativo",
+    arquivado: parceiro.arquivado ?? false,
     contatos: mappedContatos,
     filiais: mappedFiliais,
   };
@@ -1778,99 +2036,42 @@ const mapParceiroPayload = (
 };
 
 export async function fetchParceiros(): Promise<ParceiroServico[]> {
-  const { data, error } = await getSupabase()
-    .from("parceiros_servico")
-    .select("*")
-    .eq("arquivado", false)
-    .order("razao_social_ou_nome_completo");
-
-  if (error) throw error;
-  const parceiros = data as ParceiroRow[];
-
-  // Buscar contatos e filiais para todos os parceiros
-  const parceirosIds = parceiros.map((p) => p.id);
-
-  let contatos: ParceiroContatoRow[] = [];
-  let filiais: ParceiroFilialRow[] = [];
-
-  if (parceirosIds.length > 0) {
-    const { data: contatosData, error: contatosError } = await getSupabase()
-      .from("parceiros_contatos")
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("parceiros_servico")
       .select("*")
-      .in("parceiro_id", parceirosIds);
+      .eq("arquivado", false)
+      .order("razao_social_ou_nome_completo");
 
-    if (contatosError) throw contatosError;
-    contatos = contatosData as ParceiroContatoRow[];
+    if (error) throw error;
+    const parceiros = data as ParceiroRow[];
 
-    const { data: filiaisData, error: filiaisError } = await getSupabase()
-      .from("parceiros_filiais")
-      .select("*")
-      .in("parceiro_id", parceirosIds);
+    // Buscar contatos e filiais para todos os parceiros
+    const parceirosIds = parceiros.map((p) => p.id);
 
-    if (filiaisError) throw filiaisError;
-    filiais = filiaisData as ParceiroFilialRow[];
-  }
+    let contatos: ParceiroContatoRow[] = [];
+    let filiais: ParceiroFilialRow[] = [];
 
-  // Mapear dados completos
-  return parceiros.map((parceiro) => {
-    const parceiroContatos = contatos.filter(
-      (c) => c.parceiro_id === parceiro.id,
-    );
-    const parceiroFiliais = filiais.filter(
-      (f) => f.parceiro_id === parceiro.id,
-    );
-    return mapParceiroPayload(parceiro, parceiroContatos, parceiroFiliais);
-  });
-}
+    if (parceirosIds.length > 0) {
+      const { data: contatosData, error: contatosError } = await getSupabase()
+        .from("parceiros_contatos")
+        .select("*")
+        .in("parceiro_id", parceirosIds);
 
-export async function fetchParceirosPage({
-  page = 1,
-  pageSize = 10,
-  searchTerm = "",
-}: PaginationParams = {}): Promise<PaginatedResult<ParceiroServico>> {
-  const { from, to } = normalizePagination(page, pageSize);
-  const term = searchTerm.trim();
-  const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+      if (contatosError) throw contatosError;
+      contatos = contatosData as ParceiroContatoRow[];
 
-  let query = getSupabase()
-    .from("parceiros_servico")
-    .select("*", { count: "exact" })
-    .eq("arquivado", false)
-    .order("razao_social_ou_nome_completo", { ascending: true })
-    .range(from, to);
+      const { data: filiaisData, error: filiaisError } = await getSupabase()
+        .from("parceiros_filiais")
+        .select("*")
+        .in("parceiro_id", parceirosIds);
 
-  if (likeTerm) {
-    query = query.or(`search_index.ilike.${likeTerm}`);
-  }
+      if (filiaisError) throw filiaisError;
+      filiais = filiaisData as ParceiroFilialRow[];
+    }
 
-  const { data: parceirosData, error: parceirosError, count } = await query;
-  if (parceirosError) throw parceirosError;
-  const parceiros = (parceirosData || []) as ParceiroRow[];
-
-  const parceirosIds = parceiros.map((p) => p.id);
-  let contatos: ParceiroContatoRow[] = [];
-  let filiais: ParceiroFilialRow[] = [];
-
-  if (parceirosIds.length > 0) {
-    const { data: contatosData, error: contatosError } = await getSupabase()
-      .from("parceiros_contatos")
-      .select("*")
-      .in("parceiro_id", parceirosIds);
-
-    if (contatosError) throw contatosError;
-    contatos = contatosData as ParceiroContatoRow[];
-
-    const { data: filiaisData, error: filiaisError } = await getSupabase()
-      .from("parceiros_filiais")
-      .select("*")
-      .in("parceiro_id", parceirosIds);
-
-    if (filiaisError) throw filiaisError;
-    filiais = filiaisData as ParceiroFilialRow[];
-  }
-
-  return {
-    items: parceiros.map((parceiro) => {
+    // Mapear dados completos
+    return parceiros.map((parceiro) => {
       const parceiroContatos = contatos.filter(
         (c) => c.parceiro_id === parceiro.id,
       );
@@ -1878,40 +2079,106 @@ export async function fetchParceirosPage({
         (f) => f.parceiro_id === parceiro.id,
       );
       return mapParceiroPayload(parceiro, parceiroContatos, parceiroFiliais);
-    }),
-    totalCount: count ?? parceiros.length,
-  };
+    });
+  });
+}
+
+export async function fetchParceirosPage({
+  page = 1,
+  pageSize = 10,
+  searchTerm = "",
+  arquivado = false,
+}: PaginationParams & { arquivado?: boolean } = {}): Promise<
+  PaginatedResult<ParceiroServico>
+> {
+  return withRetry(async () => {
+    const { from, to } = normalizePagination(page, pageSize);
+    const term = searchTerm.trim();
+    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+
+    let query = getSupabase()
+      .from("parceiros_servico")
+      .select("*", { count: "exact" })
+      .eq("arquivado", arquivado)
+      .order("razao_social_ou_nome_completo", { ascending: true })
+      .range(from, to);
+
+    if (likeTerm) {
+      query = query.or(`search_index.ilike.${likeTerm}`);
+    }
+
+    const { data: parceirosData, error: parceirosError, count } = await query;
+    if (parceirosError) throw parceirosError;
+    const parceiros = (parceirosData || []) as ParceiroRow[];
+
+    const parceirosIds = parceiros.map((p) => p.id);
+    let contatos: ParceiroContatoRow[] = [];
+    let filiais: ParceiroFilialRow[] = [];
+
+    if (parceirosIds.length > 0) {
+      const { data: contatosData, error: contatosError } = await getSupabase()
+        .from("parceiros_contatos")
+        .select("*")
+        .in("parceiro_id", parceirosIds);
+
+      if (contatosError) throw contatosError;
+      contatos = contatosData as ParceiroContatoRow[];
+
+      const { data: filiaisData, error: filiaisError } = await getSupabase()
+        .from("parceiros_filiais")
+        .select("*")
+        .in("parceiro_id", parceirosIds);
+
+      if (filiaisError) throw filiaisError;
+      filiais = filiaisData as ParceiroFilialRow[];
+    }
+
+    return {
+      items: parceiros.map((parceiro) => {
+        const parceiroContatos = contatos.filter(
+          (c) => c.parceiro_id === parceiro.id,
+        );
+        const parceiroFiliais = filiais.filter(
+          (f) => f.parceiro_id === parceiro.id,
+        );
+        return mapParceiroPayload(parceiro, parceiroContatos, parceiroFiliais);
+      }),
+      totalCount: count ?? parceiros.length,
+    };
+  });
 }
 
 export async function fetchParceiroById(id: string): Promise<ParceiroServico> {
-  const { data: parceiroData, error: parceiroError } = await getSupabase()
-    .from("parceiros_servico")
-    .select("*")
-    .eq("id", id)
-    .single();
+  return withRetry(async () => {
+    const { data: parceiroData, error: parceiroError } = await getSupabase()
+      .from("parceiros_servico")
+      .select("*")
+      .eq("id", id)
+      .single();
 
-  if (parceiroError) throw parceiroError;
-  const parceiro = parceiroData as ParceiroRow;
+    if (parceiroError) throw parceiroError;
+    const parceiro = parceiroData as ParceiroRow;
 
-  // Buscar contatos
-  const { data: contatosData, error: contatosError } = await getSupabase()
-    .from("parceiros_contatos")
-    .select("*")
-    .eq("parceiro_id", id);
+    // Buscar contatos
+    const { data: contatosData, error: contatosError } = await getSupabase()
+      .from("parceiros_contatos")
+      .select("*")
+      .eq("parceiro_id", id);
 
-  if (contatosError) throw contatosError;
-  const contatos = contatosData as ParceiroContatoRow[];
+    if (contatosError) throw contatosError;
+    const contatos = contatosData as ParceiroContatoRow[];
 
-  // Buscar filiais
-  const { data: filiaisData, error: filiaisError } = await getSupabase()
-    .from("parceiros_filiais")
-    .select("*")
-    .eq("parceiro_id", id);
+    // Buscar filiais
+    const { data: filiaisData, error: filiaisError } = await getSupabase()
+      .from("parceiros_filiais")
+      .select("*")
+      .eq("parceiro_id", id);
 
-  if (filiaisError) throw filiaisError;
-  const filiais = filiaisData as ParceiroFilialRow[];
+    if (filiaisError) throw filiaisError;
+    const filiais = filiaisData as ParceiroFilialRow[];
 
-  return mapParceiroPayload(parceiro, contatos, filiais);
+    return mapParceiroPayload(parceiro, contatos, filiais);
+  });
 }
 
 export async function insertParceiro(
@@ -1955,7 +2222,6 @@ export async function insertParceiro(
     parceiro_id: parceiro.id,
     rotulo: trimText(filial.rotulo),
     endereco_completo: trimText(filial.enderecoCompleto),
-    referencia: trimText(filial.referencia) || null,
   }));
 
   if (filiaisToInsert.length > 0) {
@@ -1984,7 +2250,6 @@ export async function updateParceiroInDB(
   const filiaisPayload = input.filiais.map((f) => ({
     rotulo: trimText(f.rotulo),
     endereco_completo: trimText(f.enderecoCompleto),
-    referencia: trimText(f.referencia) || null,
   }));
 
   const { error: rpcError } = await getSupabase().rpc(
@@ -2017,24 +2282,26 @@ export interface ParceiroVinculo {
 export async function checkParceiroVinculos(
   parceiroId: string,
 ): Promise<ParceiroVinculo[]> {
-  const vinculos: ParceiroVinculo[] = [];
+  return withRetry(async () => {
+    const vinculos: ParceiroVinculo[] = [];
 
-  const { data: driversData, error: driversError } = await getSupabase()
-    .from("drivers")
-    .select("id, name")
-    .eq("parceiro_id", parceiroId);
+    const { data: driversData, error: driversError } = await getSupabase()
+      .from("drivers")
+      .select("id, name")
+      .eq("parceiro_id", parceiroId);
 
-  if (driversError) throw driversError;
+    if (driversError) throw driversError;
 
-  if (driversData && driversData.length > 0) {
-    vinculos.push({
-      tabela: "Motoristas",
-      campo: "parceiro_id",
-      registros: driversData.map((d) => ({ id: d.id, nome: d.name })),
-    });
-  }
+    if (driversData && driversData.length > 0) {
+      vinculos.push({
+        tabela: "Motoristas",
+        campo: "parceiro_id",
+        registros: driversData.map((d) => ({ id: d.id, nome: d.name })),
+      });
+    }
 
-  return vinculos;
+    return vinculos;
+  });
 }
 
 export async function toggleParceiroStatus(
@@ -2054,6 +2321,15 @@ export async function deleteParceiroFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("parceiros_servico")
     .update({ arquivado: true, status: "inativo" })
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+export async function unarchiveParceiroFromDB(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("parceiros_servico")
+    .update({ arquivado: false })
     .eq("id", id);
 
   if (error) throw error;
@@ -2095,30 +2371,34 @@ export async function setAppSetting(key: string, value: string): Promise<void> {
 }
 
 export async function getImpostoPercentual(): Promise<number> {
-  const raw = await getAppSetting("imposto_percentual");
-  const parsed = parseFloat(raw || "");
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 12;
+  return withRetry(async () => {
+    const raw = await getAppSetting("imposto_percentual");
+    const parsed = parseFloat(raw || "");
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 12;
+  });
 }
 
 export async function getImpostoPercentualForDate(
   date: string,
 ): Promise<number> {
-  const { data, error } = await getSupabase()
-    .from("financial_config_history")
-    .select("value")
-    .eq("config_key", "imposto_percentual")
-    .lte("effective_from", date)
-    .order("effective_from", { ascending: false })
-    .limit(1)
-    .single();
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("financial_config_history")
+      .select("value")
+      .eq("config_key", "imposto_percentual")
+      .lte("effective_from", date)
+      .order("effective_from", { ascending: false })
+      .limit(1)
+      .single();
 
-  if (error || !data) {
-    // Fallback para app_settings se não houver histórico
-    return getImpostoPercentual();
-  }
+    if (error || !data) {
+      // Fallback para app_settings se não houver histórico
+      return getImpostoPercentual();
+    }
 
-  const parsed = parseFloat(data.value || "");
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 12;
+    const parsed = parseFloat(data.value || "");
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 12;
+  });
 }
 
 export async function setFinancialConfig(
@@ -2223,52 +2503,54 @@ export async function fetchOSCalendarRange({
   to: string;
   arquivado?: boolean;
 }): Promise<OrderService[]> {
-  let query = getSupabase()
-    .from("ordens_servico")
-    .select(OS_SELECT_COLUMNS)
-    .gte("data", from)
-    .lte("data", to);
+  return withRetry(async () => {
+    let query = getSupabase()
+      .from("ordens_servico")
+      .select(OS_SELECT_COLUMNS)
+      .gte("data", from)
+      .lte("data", to);
 
-  if (arquivado !== undefined) {
-    query = query.eq("arquivado", arquivado);
-  } else {
-    query = query.eq("arquivado", false);
-  }
-
-  const { data: osRaw, error } = await query.order("data", { ascending: true })
-    .order("hora", { ascending: true });
-
-  if (error) throw error;
-
-  const typedOrders = (osRaw || []) as unknown as OSRow[];
-  const osIds = typedOrders.map((o) => o.id);
-  let wpRaw: OSWaypointRow[] = [];
-  let wpPassRaw: OSWaypointPassengerRow[] = [];
-
-  if (osIds.length > 0) {
-    const { data: wpData } = await getSupabase()
-      .from("os_waypoints")
-      .select(
-        "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
-      )
-      .in("ordem_servico_id", osIds)
-      .order("position");
-
-    wpRaw = (wpData || []) as OSWaypointRow[];
-    const wpIds = wpRaw.map((w) => w.id);
-
-    if (wpIds.length > 0) {
-      wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
-        getSupabase(),
-        "os_waypoint_passengers",
-        "waypoint_id",
-        wpIds,
-        "id, waypoint_id, passageiro_id",
-      );
+    if (arquivado !== undefined) {
+      query = query.eq("arquivado", arquivado);
+    } else {
+      query = query.eq("arquivado", false);
     }
-  }
 
-  return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
+    const { data: osRaw, error } = await query.order("data", { ascending: true })
+      .order("hora", { ascending: true });
+
+    if (error) throw error;
+
+    const typedOrders = (osRaw || []) as unknown as OSRow[];
+    const osIds = typedOrders.map((o) => o.id);
+    let wpRaw: OSWaypointRow[] = [];
+    let wpPassRaw: OSWaypointPassengerRow[] = [];
+
+    if (osIds.length > 0) {
+      const { data: wpData } = await getSupabase()
+        .from("os_waypoints")
+        .select(
+          "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
+        )
+        .in("ordem_servico_id", osIds)
+        .order("position");
+
+      wpRaw = (wpData || []) as OSWaypointRow[];
+      const wpIds = wpRaw.map((w) => w.id);
+
+      if (wpIds.length > 0) {
+        wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
+          getSupabase(),
+          "os_waypoint_passengers",
+          "waypoint_id",
+          wpIds,
+          "id, waypoint_id, passageiro_id",
+        );
+      }
+    }
+
+    return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
+  });
 }
 
 export type OSStatusCounts = {
@@ -2280,24 +2562,26 @@ export type OSStatusCounts = {
 };
 
 export async function fetchOSStatusCounts(): Promise<OSStatusCounts> {
-  const { data, error } = await getSupabase().rpc("get_os_status_counts");
-  if (error) throw error;
+  return withRetry(async () => {
+    const { data, error } = await getSupabase().rpc("get_os_status_counts");
+    if (error) throw error;
 
-  const counts: OSStatusCounts = {
-    Pendente: 0,
-    Aguardando: 0,
-    "Em Rota": 0,
-    Finalizado: 0,
-    Cancelado: 0,
-  };
+    const counts: OSStatusCounts = {
+      Pendente: 0,
+      Aguardando: 0,
+      "Em Rota": 0,
+      Finalizado: 0,
+      Cancelado: 0,
+    };
 
-  (data || []).forEach((row: { status: string; count: number }) => {
-    if (row.status in counts) {
-      counts[row.status as keyof OSStatusCounts] = Number(row.count);
-    }
+    (data || []).forEach((row: { status: string; count: number }) => {
+      if (row.status in counts) {
+        counts[row.status as keyof OSStatusCounts] = Number(row.count);
+      }
+    });
+
+    return counts;
   });
-
-  return counts;
 }
 
 export type OSCalendarEvent = {
@@ -2362,46 +2646,528 @@ export async function fetchOSFinanceStats(month: string): Promise<{
   totalImposto: number;
   totalLucro: number;
 }> {
-  const { data, error } = await getSupabase().rpc("get_os_finance_stats", {
-    p_month: month,
-  });
-  if (error) throw error;
-  const row =
-    (data || [])[0] || {
-      total_os: 0,
-      total_bruto: 0,
-      total_custo: 0,
-      total_imposto: 0,
-      total_lucro: 0,
+  return withRetry(async () => {
+    const { data, error } = await getSupabase().rpc("get_os_finance_stats", {
+      p_month: month,
+    });
+    if (error) throw error;
+    const row =
+      (data || [])[0] || {
+        total_os: 0,
+        total_bruto: 0,
+        total_custo: 0,
+        total_imposto: 0,
+        total_lucro: 0,
+      };
+    return {
+      totalOS: Number(row.total_os),
+      totalBruto: Number(row.total_bruto),
+      totalCusto: Number(row.total_custo),
+      totalImposto: Number(row.total_imposto),
+      totalLucro: Number(row.total_lucro),
     };
-  return {
-    totalOS: Number(row.total_os),
-    totalBruto: Number(row.total_bruto),
-    totalCusto: Number(row.total_custo),
-    totalImposto: Number(row.total_imposto),
-    totalLucro: Number(row.total_lucro),
-  };
+  });
 }
 
 export async function fetchOSLogs(osId: string): Promise<OSLog[]> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("os_logs")
+      .select(
+        "id, os_id, type, actor_name, actor_id, description, metadata, created_at",
+      )
+      .eq("os_id", osId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((row) => ({
+      id: row.id,
+      os_id: row.os_id,
+      type: row.type,
+      actor_name: row.actor_name,
+      actor_id: row.actor_id,
+      description: row.description,
+      metadata: (row.metadata as Record<string, unknown>) || {},
+      created_at: row.created_at,
+    }));
+  });
+}
+
+// ── Chat Functions ──────────────────────────────────────────
+
+type ChatConversationWithParticipantsRow = {
+  id: string;
+  type: "direct" | "group";
+  title: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  chat_participants: ChatParticipantRow[];
+};
+
+type ChatParticipantRow = {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  joined_at: string;
+  last_read_at: string | null;
+  is_admin: boolean;
+};
+
+type ChatMessageRow = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender_name: string | null;
+  sender_avatar: string | null;
+  content: string;
+  message_type: string;
+  created_at: string;
+  updated_at: string;
+  is_edited: boolean;
+  reply_to_id: string | null;
+};
+
+export async function fetchChatConversations(): Promise<
+  import("@/context/DataContext").ChatConversation[]
+> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("chat_conversations")
+      .select(`
+        id,
+        type,
+        title,
+        created_by,
+        created_at,
+        updated_at,
+        chat_participants(
+          id,
+          conversation_id,
+          user_id,
+          joined_at,
+          last_read_at,
+          is_admin
+        )
+      `)
+      .order("updated_at", { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((conv: ChatConversationWithParticipantsRow) => ({
+      id: conv.id,
+      type: conv.type,
+      title: conv.title || undefined,
+      created_by: conv.created_by || undefined,
+      created_at: conv.created_at,
+      updated_at: conv.updated_at,
+      participants: conv.chat_participants?.map((p: ChatParticipantRow) => ({
+        id: p.id,
+        conversation_id: p.conversation_id,
+        user_id: p.user_id,
+        user_name: undefined,
+        user_avatar: undefined,
+        joined_at: p.joined_at,
+        last_read_at: p.last_read_at || undefined,
+        is_admin: p.is_admin,
+      })),
+    }));
+  });
+}
+
+export async function fetchChatMessages(
+  conversationId: string,
+): Promise<import("@/context/DataContext").ChatMessage[]> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("chat_messages")
+      .select("*")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []).map((msg: ChatMessageRow) => ({
+      id: msg.id,
+      conversation_id: msg.conversation_id,
+      sender_id: msg.sender_id,
+      sender_name: msg.sender_name,
+      sender_avatar: msg.sender_avatar,
+      content: msg.content,
+      message_type: msg.message_type as "text" | "image" | "file" | "system",
+      created_at: msg.created_at,
+      updated_at: msg.updated_at,
+      is_edited: msg.is_edited,
+      reply_to_id: msg.reply_to_id,
+    }));
+  });
+}
+
+export async function createChatConversation(
+  type: "direct" | "group",
+  title?: string,
+  participantIds: string[] = [],
+  createdBy?: string,
+): Promise<string> {
+  return withRetry(async () => {
+    const supabase = getSupabase();
+    const { data: convData, error: convError } = await supabase
+      .from("chat_conversations")
+      .insert({
+        type,
+        title: type === "group" ? title : null,
+        created_by: createdBy ?? null,
+      })
+      .select()
+      .single();
+
+    if (convError) throw convError;
+
+    const conversationId = convData.id;
+
+    if (participantIds.length > 0) {
+      const participants = participantIds.map((userId) => ({
+        conversation_id: conversationId,
+        user_id: userId,
+      }));
+
+      const { error: partError } = await supabase
+        .from("chat_participants")
+        .insert(participants);
+
+      if (partError) throw partError;
+    }
+
+    return conversationId;
+  });
+}
+
+export async function findExistingDirectConversation(
+  userId1: string,
+  userId2: string,
+): Promise<string | null> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("chat_conversations")
+      .select(`
+        id,
+        chat_participants(user_id)
+      `)
+      .eq("type", "direct")
+      .order("updated_at", { ascending: false });
+
+    if (error) throw error;
+
+    const conversations = data || [];
+    for (const conv of conversations) {
+      const participants = conv.chat_participants || [];
+      if (participants.length === 2) {
+        const participantIds = participants.map((p: any) => p.user_id);
+        if (
+          participantIds.includes(userId1) &&
+          participantIds.includes(userId2)
+        ) {
+          return conv.id;
+        }
+      }
+    }
+
+    return null;
+  });
+}
+
+export async function createChatMessage(
+  conversationId: string,
+  senderId: string,
+  content: string,
+  messageType: "text" | "image" | "file" | "system" = "text",
+  replyToId?: string,
+): Promise<import("@/context/DataContext").ChatMessage> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("chat_messages")
+      .insert({
+        conversation_id: conversationId,
+        sender_id: senderId,
+        content,
+        message_type: messageType,
+        reply_to_id: replyToId,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      conversation_id: data.conversation_id,
+      sender_id: data.sender_id,
+      sender_name: data.sender_name,
+      sender_avatar: data.sender_avatar,
+      content: data.content,
+      message_type: data.message_type as "text" | "image" | "file" | "system",
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+      is_edited: data.is_edited,
+      reply_to_id: data.reply_to_id,
+    };
+  });
+}
+
+export async function updateChatParticipantLastRead(
+  conversationId: string,
+  userId: string,
+): Promise<void> {
+  return withRetry(async () => {
+    const { error } = await getSupabase()
+      .from("chat_participants")
+      .update({ last_read_at: new Date().toISOString() })
+      .eq("conversation_id", conversationId)
+      .eq("user_id", userId);
+
+    if (error) throw error;
+  });
+}
+
+export async function addChatParticipant(
+  conversationId: string,
+  userId: string,
+): Promise<void> {
+  return withRetry(async () => {
+    const { error } = await getSupabase().from("chat_participants").insert({
+      conversation_id: conversationId,
+      user_id: userId,
+    });
+
+    if (error) throw error;
+  });
+}
+
+export async function getConversationUnreadCount(
+  conversationId: string,
+  userId: string,
+): Promise<number> {
+  return withRetry(async () => {
+    const { data: participant } = await getSupabase()
+      .from("chat_participants")
+      .select("last_read_at")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", userId)
+      .single();
+
+    if (!participant) return 0;
+
+    const lastReadAt = participant.last_read_at;
+
+    const { count, error } = await getSupabase()
+      .from("chat_messages")
+      .select("*", { count: "exact", head: true })
+      .eq("conversation_id", conversationId)
+      .gt("created_at", lastReadAt || "1970-01-01");
+
+    if (error) throw error;
+
+    return count || 0;
+  });
+}
+
+export async function getUserConversationsWithUnread(
+  userId: string,
+): Promise<
+  Array<
+    import("@/context/DataContext").ChatConversation & { unreadCount: number }
+  >
+> {
+  return withRetry(async () => {
+    const conversations = await fetchChatConversations();
+
+    const conversationsWithUnread = await Promise.all(
+      conversations.map(async (conv) => {
+        const unreadCount = await getConversationUnreadCount(conv.id, userId);
+        return { ...conv, unreadCount };
+      }),
+    );
+
+    return conversationsWithUnread;
+  });
+}
+
+export async function fetchChatUsers(
+  currentUserId: string,
+): Promise<Array<{ id: string; name: string; avatar?: string }>> {
+  return withRetry(async () => {
+    type ChatUserRow = {
+      id: string;
+      nome: string | null;
+      avatar_url: string | null;
+    };
+
+    const { data, error } = await getSupabase()
+      .from("user_roles")
+      .select("id, nome, avatar_url")
+      .neq("id", currentUserId)
+      .order("nome");
+
+    if (error) throw error;
+
+    return ((data || []) as ChatUserRow[]).map((user) => ({
+      id: user.id,
+      name: user.nome || "Usuário",
+      avatar: user.avatar_url ?? undefined,
+    }));
+  });
+}
+
+export async function fetchUsersByIds(
+  userIds: string[],
+): Promise<Map<string, { name: string; avatar?: string }>> {
+  if (userIds.length === 0) return new Map();
+
+  return withRetry(async () => {
+    type ChatUserRow = {
+      id: string;
+      nome: string | null;
+      avatar_url: string | null;
+    };
+
+    const { data, error } = await getSupabase()
+      .from("user_roles")
+      .select("id, nome, avatar_url")
+      .in("id", userIds);
+
+    if (error) throw error;
+
+    const userMap = new Map<string, { name: string; avatar?: string }>();
+    ((data || []) as ChatUserRow[]).forEach((user) => {
+      userMap.set(user.id, {
+        name: user.nome || "Usuário",
+        avatar: user.avatar_url ?? undefined,
+      });
+    });
+
+    return userMap;
+  });
+}
+
+// Funções para gerenciar avisos do sistema
+export async function fetchActiveAnnouncements(): Promise<
+  Array<{
+    id: string;
+    title: string;
+    subtitle: string | null;
+    message: string;
+    type: "info" | "warning" | "error" | "success";
+    created_at: string;
+    expires_at: string | null;
+  }>
+> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("system_announcements")
+      .select("id, title, subtitle, message, type, created_at, expires_at")
+      .eq("is_active", true)
+      .or("expires_at.is.null,expires_at.gte.now()")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return (data || []) as Array<{
+      id: string;
+      title: string;
+      subtitle: string | null;
+      message: string;
+      type: "info" | "warning" | "error" | "success";
+      created_at: string;
+      expires_at: string | null;
+    }>;
+  });
+}
+
+export async function fetchAllAnnouncements(): Promise<
+  Array<{
+    id: string;
+    title: string;
+    subtitle: string | null;
+    message: string;
+    type: "info" | "warning" | "error" | "success";
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+    expires_at: string | null;
+    created_by: string | null;
+  }>
+> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("system_announcements")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return (data || []) as Array<{
+      id: string;
+      title: string;
+      subtitle: string | null;
+      message: string;
+      type: "info" | "warning" | "error" | "success";
+      is_active: boolean;
+      created_at: string;
+      updated_at: string;
+      expires_at: string | null;
+      created_by: string | null;
+    }>;
+  });
+}
+
+export async function createAnnouncement(
+  title: string,
+  subtitle: string | null,
+  message: string,
+  type: "info" | "warning" | "error" | "success" = "info",
+  expiresAt?: string,
+  createdBy?: string
+): Promise<{ id: string }> {
   const { data, error } = await getSupabase()
-    .from("os_logs")
-    .select(
-      "id, os_id, type, actor_name, actor_id, description, metadata, created_at",
-    )
-    .eq("os_id", osId)
-    .order("created_at", { ascending: false });
+    .from("system_announcements")
+    .insert({
+      title,
+      subtitle,
+      message,
+      type,
+      expires_at: expiresAt || null,
+      created_by: createdBy || null,
+    })
+    .select("id")
+    .single();
 
   if (error) throw error;
+  return { id: data.id };
+}
 
-  return (data || []).map((row) => ({
-    id: row.id,
-    os_id: row.os_id,
-    type: row.type,
-    actor_name: row.actor_name,
-    actor_id: row.actor_id,
-    description: row.description,
-    metadata: (row.metadata as Record<string, unknown>) || {},
-    created_at: row.created_at,
-  }));
+export async function updateAnnouncement(
+  id: string,
+  updates: {
+    title?: string;
+    subtitle?: string | null;
+    message?: string;
+    type?: "info" | "warning" | "error" | "success";
+    is_active?: boolean;
+    expires_at?: string | null;
+  }
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("system_announcements")
+    .update(updates)
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+export async function deleteAnnouncement(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("system_announcements")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw error;
 }

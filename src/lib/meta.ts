@@ -456,6 +456,167 @@ export async function sendWhatsAppPoll(
 }
 
 /**
+ * Envia mensagem com botão interativo (call-to-action button)
+ *
+ * @param phone - Número do destinatário (com código do país, ex: 5521999999999)
+ * @param bodyText - Texto principal da mensagem
+ * @param buttonText - Texto do botão
+ * @param buttonUrl - URL para onde o botão leva
+ * @returns Resultado do envio
+ *
+ * @example
+ * ```ts
+ * const result = await sendWhatsAppButtonMessage(
+ *   '5521999999999',
+ *   'Olá! Clique no botão para aceitar o serviço.',
+ *   'Aceitar Serviço',
+ *   'https://portalgeolog.com.br/api/os-driver-accept?os_id=123'
+ * );
+ * ```
+ */
+export async function sendWhatsAppButtonMessage(
+  phone: string,
+  bodyText: string,
+  buttonText: string,
+  buttonUrl: string,
+): Promise<MetaMessageResult> {
+  const config = getMetaConfig();
+  const normalizedPhone = normalizeWhatsAppPhone(phone);
+
+  if (!config) {
+    console.error(
+      "[Meta API] Não configurada - variáveis de ambiente ausentes:",
+      {
+        hasToken: !!process.env.META_WHATSAPP_ACCESS_TOKEN,
+        hasPhoneId: !!process.env.META_PHONE_NUMBER_ID,
+        hasBusinessId: !!process.env.META_BUSINESS_ACCOUNT_ID,
+      },
+    );
+    return {
+      success: false,
+      error: "API da Meta não configurada. Variáveis de ambiente ausentes.",
+    };
+  }
+
+  void recordWhatsAppLog({
+    source: "whatsapp",
+    eventType: "send_button_message_attempt",
+    payload: {
+      phone,
+      normalizedPhone,
+      bodyTextLength: bodyText.length,
+      buttonText,
+    },
+  });
+
+  console.log("[Meta API] Enviando mensagem com botão:", {
+    phone,
+    normalizedPhone,
+    bodyTextLength: bodyText.length,
+    buttonText,
+  });
+
+  if (!normalizedPhone) {
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_button_message_error",
+      payload: {
+        phone,
+        normalizedPhone,
+        error: "Telefone inválido para envio.",
+      },
+    });
+
+    return {
+      success: false,
+      error: "Telefone inválido para envio.",
+    };
+  }
+
+  try {
+    const phoneNumberId = config.phoneNumberId;
+    const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.accessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: normalizedPhone,
+        type: "interactive",
+        interactive: {
+          type: "cta_url",
+          body: {
+            text: bodyText,
+          },
+          action: {
+            name: "cta_url",
+            parameters: {
+              display_text: buttonText,
+              url: buttonUrl,
+            },
+          },
+        },
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("[Meta API] Erro na resposta:", data);
+      void recordWhatsAppLog({
+        source: "whatsapp",
+        eventType: "send_button_message_error",
+        payload: {
+          phone,
+          normalizedPhone,
+          response: data,
+        },
+      });
+      return {
+        success: false,
+        error: data.error?.message || "Erro ao enviar mensagem com botão",
+      };
+    }
+
+    console.log("[Meta API] Mensagem com botão enviada com sucesso:", {
+      messageId: data.messages?.[0]?.id,
+    });
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_button_message_success",
+      payload: {
+        phone,
+        normalizedPhone,
+        messageId: data.messages?.[0]?.id || null,
+      },
+    });
+    return {
+      success: true,
+      messageId: data.messages?.[0]?.id,
+    };
+  } catch (error) {
+    console.error("[Meta API] Exceção:", error);
+    void recordWhatsAppLog({
+      source: "whatsapp",
+      eventType: "send_button_message_exception",
+      payload: {
+        phone,
+        normalizedPhone,
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+      },
+    });
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Erro desconhecido",
+    };
+  }
+}
+
+/**
  * Busca status da conexão com a Meta API.
  * A API da Meta é stateless; retorna "aberto" se configurada.
  */

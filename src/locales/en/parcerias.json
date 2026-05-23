@@ -1,0 +1,118 @@
+{
+  "titulo": "Service Partners",
+  "descricao": "Service partner registration for driver and vehicle linking",
+  "pessoa_tipo": {
+    "label": "Person type",
+    "juridica": "Legal entity",
+    "fisica": "Natural person"
+  },
+  "dados_principais": {
+    "razao_social": "Company name",
+    "nome_completo": "Full name",
+    "cnpj": "CNPJ",
+    "cpf": "CPF",
+    "placeholder_razao_social": "Ex: Silva Logistics LTDA",
+    "placeholder_nome_completo": "Ex: João da Silva",
+    "placeholder_cnpj": "00.000.000/0001-00",
+    "placeholder_cpf": "000.000.000-00"
+  },
+  "contatos": {
+    "titulo": "Contacts",
+    "setor": "Department",
+    "celular": "Mobile",
+    "email": "Email",
+    "responsavel": "Contact person",
+    "placeholder_setor": "Finance, Operations, Purchasing...",
+    "placeholder_celular": "(00) 00000-0000",
+    "placeholder_email": "email@example.com",
+    "placeholder_responsavel": "Contact person name",
+    "adicionar": "Add contact",
+    "remover": "Remove contact",
+    "principal": "Main",
+    "nenhum": "No contacts registered"
+  },
+  "filiais": {
+    "titulo": "Branches / Addresses",
+    "rotulo": "Label",
+    "endereco_completo": "Full address",
+    "placeholder_rotulo": "Headquarters, Center Branch, Warehouse...",
+    "placeholder_endereco": "Street, number, neighborhood, city - State",
+    "adicionar": "Add branch",
+    "remover": "Remove branch",
+    "principal": "Main",
+    "nenhuma": "No branches registered"
+  },
+  "tabela": {
+    "nome": "Name",
+    "tipo": "Type",
+    "juridica": "Legal",
+    "fisica": "Natural",
+    "contatos": "Contacts",
+    "filiais": "Branches",
+    "status": "Status",
+    "ativo": "Active",
+    "inativo": "Inactive",
+    "arquivado": "Archived",
+    "acoes": "Actions",
+    "buscar_placeholder": "Search by name, CPF/CNPJ, contact or city...",
+    "vazio": "No partners registered",
+    "filiais_contador": "+{count} branch(es)",
+    "sem_filiais": "No branches registered"
+  },
+  "botoes": {
+    "novo": "New Partner",
+    "editar": "Edit Partner",
+    "visualizar": "View Partner",
+    "arquivar": "Archive Partner",
+    "salvar": "Save partner",
+    "salvar_alteracoes": "Save changes",
+    "cancelar": "Cancel",
+    "fechar": "Close",
+    "ocultar_arquivados": "Hide",
+    "mostrar_arquivados": "Archived",
+    "editar_modal": "Edit"
+  },
+  "validacao": {
+    "razao_social_obrigatoria": "Company name/Full name is required",
+    "documento_obrigatorio": "CNPJ/CPF is required",
+    "cnpj_14_digitos": "CNPJ must have 14 complete digits",
+    "cnpj_invalido": "Invalid CNPJ",
+    "cpf_11_digitos": "CPF must have 11 complete digits",
+    "cpf_invalido": "Invalid CPF",
+    "documento_duplicado": "CNPJ/CPF is already being used by partner \"{parceiro}\"",
+    "setor_obrigatorio": "First contact department is required",
+    "celular_obrigatorio": "First contact mobile is required",
+    "responsavel_obrigatorio": "First contact person is required",
+    "celular_11_digitos": "Mobile must have 11 complete digits: (00) 00000-0000",
+    "celular_invalido": "Invalid mobile",
+    "email_invalido": "Invalid email",
+    "celular_duplicado_form": "Mobile {celular} is duplicated among this partner's contacts",
+    "email_duplicado_form": "Email {email} is duplicated among this partner's contacts",
+    "celular_duplicado_outro": "Mobile {celular} is already being used in contact \"{setor}\" of partner \"{parceiro}\"",
+    "email_duplicado_outro": "Email {email} is already being used in contact \"{setor}\" of partner \"{parceiro}\""
+  },
+  "sucesso": {
+    "criado": "Partner registered successfully!",
+    "atualizado": "Partner updated successfully!",
+    "arquivado": "Partner archived successfully!"
+  },
+  "erros": {
+    "salvar": "Could not save partner",
+    "verificar_vinculos": "Could not verify links. Please try again.",
+    "vinculos_encontrados": "This partner has active links and cannot be archived:"
+  },
+  "confirmacao": {
+    "arquivar_titulo": "Archive Partner",
+    "arquivar_mensagem": "Are you sure you want to archive partner \"{parceiro}\"? It will no longer appear in the list, but can be recovered later.",
+    "arquivar_confirmar": "Yes, archive",
+    "arquivar_cancelar": "Cancel"
+  },
+  "visualizacao": {
+    "pessoa_juridica": "Legal Entity",
+    "pessoa_fisica": "Natural Person",
+    "sem_dados": "—"
+  },
+  "loading": {
+    "arquivados": "Loading archived..."
+  }
+}

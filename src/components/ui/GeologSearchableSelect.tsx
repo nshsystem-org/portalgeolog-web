@@ -11,7 +11,7 @@ interface Option {
 }
 
 interface GeologSearchableSelectProps {
-  label: string;
+  label?: string;
   options: Option[];
   value: string;
   onChange: (id: string) => void;
@@ -53,6 +53,9 @@ export default function GeologSearchableSelect({
   const triggerRef = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((opt) => opt.id === value);
+  const triggerPaddingClass = compact ? "px-2 py-1.5" : "px-5 py-4";
+  const triggerTextClass = compact ? "text-sm" : "text-lg";
+  const triggerIconSize = compact ? 16 : 20;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -154,20 +157,15 @@ export default function GeologSearchableSelect({
                 setIsOpen(false);
                 setSearchTerm("");
               }}
-              className={`px-6 py-4 hover:bg-blue-50 cursor-pointer flex flex-col gap-0.5 transition-colors border-l-4 border-transparent ${value === opt.id ? "bg-blue-50/50 border-blue-600" : ""}`}
+              className={`px-4 py-3 hover:bg-blue-50 cursor-pointer flex flex-col gap-0.5 transition-colors border-l-4 border-transparent ${value === opt.id ? "bg-blue-50/50 border-blue-600" : ""}`}
             >
-              <span className="font-bold text-slate-900 text-base">
+              <span className="font-bold text-slate-900 text-sm">
                 {opt.nome}
               </span>
-              {opt.sublabel && (
-                <span className="text-[10px] font-black text-blue-600/60 uppercase tracking-widest">
-                  {opt.sublabel}
-                </span>
-              )}
             </div>
           ))
         ) : (
-          <div className="px-6 py-8 text-center text-slate-400 font-bold text-sm">
+          <div className="px-4 py-6 text-center text-slate-400 font-bold text-sm">
             Nenhum resultado
           </div>
         )}
@@ -189,10 +187,10 @@ export default function GeologSearchableSelect({
       <div
         ref={triggerRef}
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`geolog-searchable-trigger w-full bg-slate-50 border-2 border-slate-200 rounded-xl flex items-center justify-between cursor-pointer transition-all hover:bg-white hover:border-blue-300 ${isOpen ? "ring-4 ring-blue-500/10 border-blue-500 bg-white" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""} shadow-sm ${compact ? "px-4 py-3" : "px-5 py-4"} ${triggerClassName}`}
+        className={`geolog-searchable-trigger w-full bg-slate-50 border-2 border-slate-200 rounded-xl flex items-center justify-between cursor-pointer transition-all hover:bg-white hover:border-blue-300 ${isOpen ? "ring-4 ring-blue-500/10 border-blue-500 bg-white" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""} shadow-sm ${triggerPaddingClass} ${triggerClassName}`}
       >
         <span
-          className={`font-bold ${selectedOption ? "text-slate-900" : "text-slate-400"} ${compact ? "text-base" : "text-lg"}`}
+          className={`font-bold leading-none ${selectedOption ? "text-slate-900" : "text-slate-400"} ${triggerTextClass}`}
         >
           {selectedOption ? selectedOption.nome : placeholder}
         </span>
@@ -212,7 +210,7 @@ export default function GeologSearchableSelect({
             </button>
           )}
           <ChevronDown
-            size={compact ? 18 : 20}
+            size={triggerIconSize}
             className={`text-slate-400 transition-transform ${isOpen ? "rotate-180 text-blue-500" : ""}`}
           />
         </div>

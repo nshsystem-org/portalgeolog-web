@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import StandardModal from "@/components/StandardModal";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
+import { logInfo } from "@/lib/frontend-logger";
 import {
   Plus,
   Minus,
@@ -67,6 +68,7 @@ import {
 } from "@/context/DataContext";
 import {
   fetchOSById,
+  fetchOSByProtocolo,
   fetchOSPage,
   fetchOSLogs,
   fetchOSCalendarRange,
@@ -83,6 +85,7 @@ import RequiredAsterisk from "@/components/ui/RequiredAsterisk";
 import OSCalendar from "@/components/OS/OSCalendar";
 import { useConfirm } from "@/hooks/useConfirm";
 import { BASE_URL } from "@/lib/constants";
+import { logErrorEntry } from "@/lib/frontend-logger";
 import {
   formatBrazilPhone,
   normalizeBrazilPhone,
@@ -93,6 +96,7 @@ import {
   getOperationalCycleBannerTitle,
   getCycleDisplayStatus,
   deriveCyclesOperationalStatus,
+  getOperationalCycleTitle,
   type CycleOperationalStatus,
   type OperationalCycleState,
 } from "@/lib/os-messages";
@@ -501,6 +505,7 @@ export default function OSOperationalPage() {
   } | null>(null);
   const [editingOSId, setEditingOSId] = useState<string | null>(null);
   const [viewingOSId, setViewingOSId] = useState<string | null>(null);
+  const [viewingOSLoading, setViewingOSLoading] = useState(false);
   const [viewingOSLive, setViewingOSLive] = useState<OrderService | null>(null);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "calendar">("calendar");
@@ -560,15 +565,33 @@ export default function OSOperationalPage() {
   const [tableFilters, setTableFilters] = useState<OSPageFilters>({});
 
   const fetchOSPageWithFilters = useCallback(
-    (params: { page: number; pageSize: number; searchTerm: string }) =>
-      fetchOSPage({
+    async (params: { page: number; pageSize: number; searchTerm: string }) => {
+      const filters = { ...tableFilters, arquivado: showArchivedOnly ? true : undefined };
+      const result = await fetchOSPage({
         ...params,
-        filters: { ...tableFilters, arquivado: showArchivedOnly ? true : undefined },
-      }),
+        filters,
+      });
+
+      const filterDescription = Object.entries(filters)
+        .filter(([_, value]) => value !== undefined && value !== "")
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(", ");
+
+      logInfo("OS/Tabela", `Tabela carregada: página ${params.page}, ${result.totalCount} OS totais${filterDescription ? ` (filtros: ${filterDescription})` : ""}`, {
+        page: params.page,
+        pageSize: params.pageSize,
+        searchTerm: params.searchTerm,
+        filters,
+        totalItems: result.totalCount,
+        itemsLoaded: result.items.length,
+      });
+
+      return result;
+    },
     [tableFilters, showArchivedOnly],
   );
 
-  const osTable = useServerPaginatedTable(fetchOSPageWithFilters, 10, true);
+  const osTable = useServerPaginatedTable(fetchOSPageWithFilters, 10, true, "OS/Tabela");
 
   const getOperationalStatusForOS = useCallback(
     (os?: OrderService | null): CycleOperationalStatus => {
@@ -794,6 +817,21 @@ export default function OSOperationalPage() {
     const latestFromList = osList.find((os) => os.id === viewingOSId);
     if (latestFromList) {
       setViewingOSLive(latestFromList);
+    } else {
+      // Se não encontrou na lista, buscar do banco
+      setViewingOSLoading(true);
+      fetchOSById(viewingOSId)
+        .then((os) => {
+          if (os) {
+            setViewingOSLive(os);
+          }
+        })
+        .catch((err) => {
+          console.error("Erro ao buscar OS por ID:", err);
+        })
+        .finally(() => {
+          setViewingOSLoading(false);
+        });
     }
   }, [osList, viewingOSId, viewingOSLive]);
 
@@ -817,33 +855,202 @@ export default function OSOperationalPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advancedFilters]);
 
-  // Carregar calendário de forma escalável (range de ±3 meses)
   useEffect(() => {
-    if (viewMode !== "calendar") return;
-    const loadCalendar = async () => {
+    logInfo("OSPage", "Página de Ordens de Serviço carregada", {
+      viewMode,
+      showArchivedOnly,
+    });
+  }, [viewMode, showArchivedOnly]);
+
+  // Listener para abrir OS via notificações
+  useEffect(() => {
+    const handleOpenOSModal = async (event: Event) => {
+      const customEvent = event as CustomEvent<{ osId?: string; osProtocolo?: string }>;
+      if (customEvent.detail?.osId) {
+        const found = osList.find((os) => os.id === customEvent.detail.osId);
+        if (found) {
+          logInfo("OS/View", `Abriu visualização via notificação: protocolo ${found.protocolo}`, {
+            protocolo: found.protocolo,
+            osId: found.id,
+            source: "notification",
+          });
+          setViewingOSId(customEvent.detail.osId);
+        } else {
+          try {
+            const os = await fetchOSById(customEvent.detail.osId);
+            if (os) {
+              logInfo("OS/View", `Abriu visualização via notificação (fetch): protocolo ${os.protocolo}`, {
+                protocolo: os.protocolo,
+                osId: os.id,
+                source: "notification_fetch",
+              });
+              setViewingOSId(os.id);
+            }
+          } catch (err) {
+            console.error("Erro ao buscar OS por ID:", err);
+          }
+        }
+      } else if (customEvent.detail?.osProtocolo) {
+        const found = osList.find((os) => os.protocolo === customEvent.detail.osProtocolo);
+        if (found) {
+          logInfo("OS/View", `Abriu visualização via notificação (protocolo): ${customEvent.detail.osProtocolo}`, {
+            protocolo: found.protocolo,
+            osId: found.id,
+            source: "notification_protocolo",
+          });
+          setViewingOSId(found.id);
+        } else {
+          try {
+            const os = await fetchOSByProtocolo(customEvent.detail.osProtocolo);
+            if (os) {
+              logInfo("OS/View", `Abriu visualização via notificação (fetch protocolo): ${os.protocolo}`, {
+                protocolo: os.protocolo,
+                osId: os.id,
+                source: "notification_fetch_protocolo",
+              });
+              setViewingOSId(os.id);
+            }
+          } catch (err) {
+            console.error("Erro ao buscar OS por protocolo:", err);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("open-os-modal", handleOpenOSModal);
+
+    // Verificar parâmetros URL para abrir OS
+    const urlParams = new URLSearchParams(window.location.search);
+    const openOsParam = urlParams.get("open_os");
+    const openOsProtocoloParam = urlParams.get("open_os_protocolo");
+    if (openOsParam) {
+      const found = osList.find((os) => os.id === openOsParam);
+      if (found) {
+        logInfo("OS/View", `Abriu visualização via URL: protocolo ${found.protocolo}`, {
+          protocolo: found.protocolo,
+          osId: found.id,
+          source: "url_param",
+        });
+        setViewingOSId(openOsParam);
+        window.history.replaceState({}, "", "/portal/os");
+      } else {
+        (async () => {
+          try {
+            const os = await fetchOSById(openOsParam);
+            if (os) {
+              logInfo("OS/View", `Abriu visualização via URL (fetch): protocolo ${os.protocolo}`, {
+                protocolo: os.protocolo,
+                osId: os.id,
+                source: "url_param_fetch",
+              });
+              setViewingOSId(os.id);
+              window.history.replaceState({}, "", "/portal/os");
+            }
+          } catch (err) {
+            console.error("Erro ao buscar OS por ID via URL:", err);
+          }
+        })();
+      }
+    } else if (openOsProtocoloParam) {
+      const found = osList.find((os) => os.protocolo === openOsProtocoloParam);
+      if (found) {
+        logInfo("OS/View", `Abriu visualização via URL (protocolo): ${openOsProtocoloParam}`, {
+          protocolo: found.protocolo,
+          osId: found.id,
+          source: "url_param_protocolo",
+        });
+        setViewingOSId(found.id);
+        window.history.replaceState({}, "", "/portal/os");
+      } else {
+        (async () => {
+          try {
+            const os = await fetchOSByProtocolo(openOsProtocoloParam);
+            if (os) {
+              logInfo("OS/View", `Abriu visualização via URL (fetch protocolo): ${os.protocolo}`, {
+                protocolo: os.protocolo,
+                osId: os.id,
+                source: "url_param_fetch_protocolo",
+              });
+              setViewingOSId(os.id);
+              window.history.replaceState({}, "", "/portal/os");
+            }
+          } catch (err) {
+            console.error("Erro ao buscar OS por protocolo via URL:", err);
+          }
+        })();
+      }
+    }
+
+    return () => {
+      window.removeEventListener("open-os-modal", handleOpenOSModal);
+    };
+  }, [osList]);
+
+  // Carregar calendário dinamicamente conforme range visível
+  const calendarRangeRef = useRef<{ from: string; to: string } | null>(null);
+
+  const handleCalendarRangeChange = useCallback(
+    async (from: string, to: string) => {
+      calendarRangeRef.current = { from, to };
       setCalendarLoading(true);
+      const loadingTimeout = setTimeout(() => {
+        setCalendarLoading(false);
+      }, 30000);
+
       try {
-        const today = new Date();
-        const from = new Date(today.getFullYear(), today.getMonth() - 3, 1)
-          .toISOString()
-          .split("T")[0];
-        const to = new Date(today.getFullYear(), today.getMonth() + 4, 0)
-          .toISOString()
-          .split("T")[0];
         const data = await fetchOSCalendarRange({
           from,
           to,
           arquivado: showArchivedOnly ? true : undefined,
         });
         setCalendarOSList(data);
+        logInfo(
+          "OS/Calendar",
+          `Calendário carregado: ${data.length} OS no período ${from} a ${to}${showArchivedOnly ? " (arquivadas)" : ""}`,
+          {
+            from,
+            to,
+            arquivado: showArchivedOnly,
+            totalOS: data.length,
+          },
+        );
       } catch (err) {
-        console.error("Erro ao carregar calendário:", err);
+        logErrorEntry("OS/Calendar", "Erro ao carregar calendário", err as Error, {
+          showArchivedOnly,
+        });
       } finally {
+        clearTimeout(loadingTimeout);
         setCalendarLoading(false);
       }
-    };
-    void loadCalendar();
-  }, [viewMode, showArchivedOnly]);
+    },
+    [showArchivedOnly],
+  );
+
+  // Carregar range inicial quando mudar para modo calendário (apenas se não tiver range carregado)
+  useEffect(() => {
+    if (viewMode !== "calendar") return;
+    if (calendarRangeRef.current) return; // Já tem range carregado, não sobrescrever
+    const today = new Date();
+    const from = new Date(today.getFullYear(), today.getMonth(), 1)
+      .toISOString()
+      .split("T")[0];
+    const to = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      .toISOString()
+      .split("T")[0];
+    calendarRangeRef.current = { from, to };
+    void handleCalendarRangeChange(from, to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
+
+  // Recarregar calendário quando filtro de arquivados mudar
+  useEffect(() => {
+    if (viewMode !== "calendar" || !calendarRangeRef.current) return;
+    void handleCalendarRangeChange(
+      calendarRangeRef.current.from,
+      calendarRangeRef.current.to,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showArchivedOnly]);
 
   // Monitorar loading do filtro de arquivados
   useEffect(() => {
@@ -853,13 +1060,18 @@ export default function OSOperationalPage() {
     const calendarIsLoading = calendarLoading;
 
     if (!tableLoading && !calendarIsLoading) {
-      // Manter loader por pelo menos 3 segundos para melhor UX
       const timer = setTimeout(() => {
         setIsArchivedFilterLoading(false);
       }, 3000);
 
       return () => clearTimeout(timer);
     }
+
+    const safetyTimeout = setTimeout(() => {
+      setIsArchivedFilterLoading(false);
+    }, 15000);
+
+    return () => clearTimeout(safetyTimeout);
   }, [dataLoading, heavyLoading, calendarLoading, isArchivedFilterLoading]);
 
   // Buscar lista de usuários para filtro "Cadastro feito por"
@@ -1313,6 +1525,7 @@ export default function OSOperationalPage() {
   };
 
   const handleOpenCreateOSModal = () => {
+    logInfo("OS/Create", "Abriu modal para criar nova OS");
     void refreshData();
     setEditingOSId(null);
     setFormData(initialForm);
@@ -1375,6 +1588,13 @@ export default function OSOperationalPage() {
   };
 
   const handleViewOS = (osId: string) => {
+    const os = osList.find((o) => o.id === osId);
+    if (os) {
+      logInfo("OS/View", `Abriu visualização da OS protocolo ${os.protocolo}`, {
+        protocolo: os.protocolo,
+        osId: os.id,
+      });
+    }
     setViewingOSId(osId);
     setOpenActionMenuId(null);
   };
@@ -1386,6 +1606,11 @@ export default function OSOperationalPage() {
         toast.error("OS não encontrada.");
         return;
       }
+
+      logInfo("OS/Edit", `Abriu edição da OS protocolo ${targetOS.protocolo}`, {
+        protocolo: targetOS.protocolo,
+        osId: targetOS.id,
+      });
 
       void refreshData();
       hydrateFormFromOS(targetOS);
@@ -1425,6 +1650,10 @@ export default function OSOperationalPage() {
     }
 
     try {
+      logInfo("OS/Unarchive", `Desarquivou OS protocolo ${targetOS.protocolo || targetOS.os}`, {
+        protocolo: targetOS.protocolo,
+        osId: targetOS.id,
+      });
       await unarchiveOS(osId);
       await osTable.refresh();
       toast.success("OS reaberta com sucesso!");
@@ -1459,6 +1688,10 @@ export default function OSOperationalPage() {
     if (!confirmed) return;
 
     try {
+      logInfo("OS/Archive", `Arquivou OS protocolo ${targetOS.protocolo || targetOS.os}`, {
+        protocolo: targetOS.protocolo,
+        osId: targetOS.id,
+      });
       await deleteOS(osId);
       await osTable.refresh();
       setOpenActionMenuId(null);
@@ -1613,6 +1846,7 @@ export default function OSOperationalPage() {
 
   const sendWhatsAppNotification = async (
     osData: OrderService,
+    itineraryIndex: number,
   ) => {
     if (!osData.motorista) {
       toast.error("Motorista não atribuído a esta OS.");
@@ -1655,24 +1889,93 @@ export default function OSOperationalPage() {
       }
 
       console.log(
-        `[WhatsApp] Enviando notificação para ${osData.motorista} (${phone})`,
+        `[WhatsApp] Enviando notificação para ${osData.motorista} (${phone}) - Ciclo ${itineraryIndex}`,
       );
 
-      const msgResponse = await fetch("/api/whatsapp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          phone,
-          useTemplate: true,
-          templateName: "appointment_scheduling",
-          templateVariables: [osData.motorista],
-          language: "pt_BR",
-        }),
-      });
+      let msgResponse: Response;
+      let msgData: { success?: boolean; error?: string; messageId?: string };
 
-      const msgData = await msgResponse.json();
+      // Primeiro ciclo (itineraryIndex: 0) usa template obrigatório
+      if (itineraryIndex === 0) {
+        msgResponse = await fetch("/api/whatsapp", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phone,
+            useTemplate: true,
+            templateName: "appointment_scheduling",
+            templateVariables: [osData.motorista],
+            language: "pt_BR",
+          }),
+        });
+        msgData = await msgResponse.json();
+      } else {
+        // Demais ciclos usam template flow "inicio_viagem_motorista"
+        const cycles = osData.operationalCycles || [];
+        const targetCycle = cycles.find((c) => c.itineraryIndex === itineraryIndex);
+
+        if (targetCycle) {
+          const cycleTitle = getOperationalCycleTitle(targetCycle);
+          const motoristaName = osData.motorista || "Motorista";
+
+          // Construir componentes do template flow
+          const templateComponents = [
+            {
+              type: "header",
+              parameters: [
+                {
+                  type: "text",
+                  text: cycleTitle,
+                },
+              ],
+            },
+            {
+              type: "body",
+              parameters: [
+                {
+                  type: "text",
+                  text: motoristaName,
+                },
+              ],
+            },
+            {
+              type: "button",
+              sub_type: "flow",
+              index: 0,
+              parameters: [],
+            },
+          ];
+
+          // Enviar template flow via API route
+          msgResponse = await fetch("/api/whatsapp", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              phone,
+              useTemplate: true,
+              templateName: "inicio_viagem_motorista",
+              templateVariables: [], // Flow não usa variáveis no body
+              language: "pt_BR",
+              components: templateComponents,
+            }),
+          });
+          msgData = await msgResponse.json();
+        } else {
+          // Fallback se não encontrar o ciclo
+          msgData = {
+            success: false,
+            error: "Ciclo não encontrado",
+          };
+          msgResponse = new Response(JSON.stringify(msgData), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
 
       if (!msgResponse.ok || !msgData.success) {
         console.error("[WhatsApp] Erro na API de mensagem:", msgData);
@@ -1688,18 +1991,37 @@ export default function OSOperationalPage() {
         ...prev,
         [osData.id]: true,
       }));
+
+      // Atualizar apenas o ciclo específico em driver_operation_cycles
       try {
+        const currentCycles = osData.operationalCycles || [];
+        const updatedCycles = currentCycles.map((cycle) => {
+          if (cycle.itineraryIndex === itineraryIndex) {
+            return {
+              ...cycle,
+              messageSentAt: new Date().toISOString(),
+              state: "awaiting_accept" as const,
+            };
+          }
+          return cycle;
+        });
+
+        // Para o primeiro ciclo, também atualiza driver_template_message_id para compatibilidade com webhook
+        const updateData: Record<string, unknown> = {
+          driver_operation_cycles: updatedCycles,
+        };
+
+        if (itineraryIndex === 0 && msgData.messageId) {
+          updateData.driver_template_message_id = msgData.messageId;
+        }
+
         await supabase
           .from("ordens_servico")
-          .update({
-            driver_message_sent_at: new Date().toISOString(),
-            driver_whatsapp_state: "awaiting_accept",
-            driver_template_message_id: msgData.messageId ?? null,
-          })
+          .update(updateData)
           .eq("id", osData.id);
       } catch (dbErr) {
         console.error(
-          "[WhatsApp] Erro ao registrar timestamp de envio:",
+          "[WhatsApp] Erro ao registrar timestamp de envio no ciclo:",
           dbErr,
         );
       }
@@ -3324,7 +3646,8 @@ export default function OSOperationalPage() {
       try {
         const latestOS = await fetchOSById(String(osIdParam));
         if (latestOS) {
-          await sendWhatsAppNotification(latestOS);
+          // Notificar o primeiro ciclo (itineraryIndex: 0)
+          await sendWhatsAppNotification(latestOS, 0);
         }
       } catch (err) {
         console.error("Erro ao notificar motorista automaticamente:", err);
@@ -3654,7 +3977,7 @@ export default function OSOperationalPage() {
   const getStatusConfig = (status: string, arquivado?: boolean) => {
     if (arquivado) {
       return {
-        icon: <Archive size={20} />,
+        icon: <Archive size={20} className="text-red-400" />,
         bg: "bg-red-50/50",
         border: "border-red-100",
         accent: "bg-red-400",
@@ -3840,7 +4163,10 @@ export default function OSOperationalPage() {
             className={`flex items-center bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm shrink-0 ${viewMode === "calendar" ? "md:ml-0" : ""}`}
           >
             <button
-              onClick={() => setViewMode("table")}
+              onClick={() => {
+                logInfo("OS/ViewMode", "Mudou para visualização em tabela");
+                setViewMode("table");
+              }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm uppercase tracking-widest transition-all cursor-pointer ${
                 viewMode === "table"
                   ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
@@ -3851,7 +4177,10 @@ export default function OSOperationalPage() {
               Tabela
             </button>
             <button
-              onClick={() => setViewMode("calendar")}
+              onClick={() => {
+                logInfo("OS/ViewMode", "Mudou para visualização em calendário");
+                setViewMode("calendar");
+              }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm uppercase tracking-widest transition-all cursor-pointer ${
                 viewMode === "calendar"
                   ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
@@ -4288,7 +4617,7 @@ export default function OSOperationalPage() {
                 if (showArchivedOnly) {
                   return (
                     <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border bg-red-50/50 border-red-100 text-red-400">
-                      <Archive size={20} />
+                      <Archive size={20} className="text-red-400" />
                       Arquivado
                     </span>
                   );
@@ -4420,18 +4749,19 @@ export default function OSOperationalPage() {
           ) : (
             <>
               <OSCalendar
-            osList={filteredCalendarOSList}
-            clientes={clientes}
-            loading={calendarLoading}
-            showArchivedOnly={showArchivedOnly}
-            onEventClick={(
-              osId: string,
-              position?: { x: number; y: number },
-            ) => {
-              setOpenActionMenuId(osId);
-              setCalendarMenuPosition(position || null);
-            }}
-          />
+                osList={filteredCalendarOSList}
+                clientes={clientes}
+                loading={calendarLoading}
+                showArchivedOnly={showArchivedOnly}
+                onRangeChange={handleCalendarRangeChange}
+                onEventClick={(
+                  osId: string,
+                  position?: { x: number; y: number },
+                ) => {
+                  setOpenActionMenuId(osId);
+                  setCalendarMenuPosition(position || null);
+                }}
+              />
 
           {/* Menu de Ações para o Calendário */}
           {viewMode === "calendar" &&
@@ -5436,10 +5766,17 @@ export default function OSOperationalPage() {
         </StandardModal>
       )}
 
+      {viewingOSId && !viewingOSLive && viewingOSLoading && (
+        <div className="fixed inset-0 bg-blue-950/90 backdrop-blur-sm flex items-center justify-center z-50">
+          <Loader2 size={48} className="animate-spin text-white" />
+        </div>
+      )}
+
       {viewingOS && (
         <StandardModal
           onClose={() => {
             setViewingOSId(null);
+            setViewingOSLoading(false);
             void refreshData();
           }}
           title={`Visão Operacional ${viewingOS.os || "Sem OS"}`}
@@ -5639,8 +5976,8 @@ export default function OSOperationalPage() {
                     </p>
                   </div>
                   {viewingOS?.arquivado ? (
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-[0.2em]">
-                      <Archive size={14} />
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-[0.2em]">
+                      <Archive size={14} className="text-red-500" />
                       Arquivado
                     </div>
                   ) : (
@@ -5693,8 +6030,8 @@ export default function OSOperationalPage() {
                       },
                       {
                         id: "accepted",
-                        icon: <Handshake size={20} />,
-                        label: "Aceite",
+                        icon: <Eye size={20} />,
+                        label: "Visualizado",
                         sublabel: cycle.acceptedAt
                           ? "Confirmado"
                           : "Aguardando",
@@ -5922,6 +6259,7 @@ export default function OSOperationalPage() {
                                           onClick={() => {
                                             sendWhatsAppNotification(
                                               viewingOS,
+                                              cycle.itineraryIndex,
                                             );
                                             setOpenDriverNotifyMenu(false);
                                             setDriverNotifyMenuPos(null);
@@ -6273,7 +6611,7 @@ export default function OSOperationalPage() {
                         update: "Atualização",
                         status_change: "Status",
                         archive: "Arquivamento",
-                        driver_accept: "Aceite Motorista",
+                        driver_accept: "Visualização Motorista",
                         driver_start: "Início Rota",
                         driver_finish: "Finalização Rota",
                         passenger_notify: "Notificação Passageiro",
@@ -7938,9 +8276,9 @@ export default function OSOperationalPage() {
             setShowAcceptRevert(false);
             setSelectedCycleIndex(null);
           }}
-          title="Retornar Aceite"
-          subtitle="Desfazer aceite do ciclo"
-          icon={<Handshake size={24} />}
+          title="Retornar Visualização"
+          subtitle="Desfazer visualização do ciclo"
+          icon={<Eye size={24} />}
           maxWidthClassName="max-w-xl"
         >
           <div className="space-y-6">
@@ -8025,14 +8363,14 @@ export default function OSOperationalPage() {
               className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors cursor-pointer"
             >
               <ArrowLeft size={14} />
-              Retornar para Aceite
+              Retornar para Visualizado
             </button>
             <button
               type="button"
               onClick={() => {
                 // Send route message
-                if (viewingOS) {
-                  sendWhatsAppNotification(viewingOS);
+                if (viewingOS && selectedCycleIndex !== null) {
+                  sendWhatsAppNotification(viewingOS, selectedCycleIndex);
                 }
                 setShowRouteMenu(false);
                 setRouteMenuPosition(null);

@@ -12,6 +12,7 @@ import React, {
 import { createClient } from "@/lib/supabase/client";
 import { normalizeBrazilPhone } from "@/lib/phone";
 import type { OperationalCycle } from "@/lib/os-messages";
+import { logErrorEntry, logCritical, logInfo } from "@/lib/frontend-logger";
 import {
   fetchClientes,
   fetchSolicitantes,
@@ -43,6 +44,7 @@ import {
   updateParceiroInDB,
   toggleParceiroStatus,
   deleteParceiroFromDB,
+  unarchiveParceiroFromDB,
   getImpostoPercentual,
   setFinancialConfig,
   fetchOSStatusCounts,
@@ -218,6 +220,44 @@ export interface DriverDoc {
   expiryDate?: string;
 }
 
+export interface ChatConversation {
+  id: string;
+  type: "direct" | "group";
+  title?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  participants?: ChatParticipant[];
+  lastMessage?: ChatMessage;
+  unreadCount?: number;
+}
+
+export interface ChatParticipant {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  user_name?: string;
+  user_avatar?: string;
+  joined_at: string;
+  last_read_at?: string;
+  is_admin: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender_name?: string | null;
+  sender_avatar?: string | null;
+  content: string;
+  message_type: "text" | "image" | "file" | "system";
+  created_at: string;
+  updated_at: string;
+  is_edited: boolean;
+  reply_to_id?: string | null;
+  reply_to?: ChatMessage;
+}
+
 const normalizeTextValue = (value: string): string =>
   value.trim().toLowerCase();
 
@@ -310,6 +350,7 @@ interface DataContextType {
   updateParceiro: (id: string, parceiro: NovoParceiroInput) => Promise<void>;
   toggleParceiro: (id: string) => Promise<void>;
   deleteParceiro: (id: string) => void;
+  unarchiveParceiro: (id: string) => Promise<void>;
 
   // Centros de Custo
   addCentroCusto: (nome: string, clienteId: string) => Promise<CentroCusto>;
@@ -408,40 +449,74 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const refreshData = useCallback(async () => {
     try {
       // Fase 1: Dados leves — liberam a UI rapidamente
-      const [clientesData, solicitantesData, driversData, impostoPct] =
-        await Promise.all([
-          dbFetchClientes(),
-          dbFetchSolicitantes(),
-          dbFetchDrivers(),
-          getImpostoPercentual(),
-        ]);
+      // Usamos Promise.all mas com catches individuais para não quebrar todo o fluxo se um falhar
+      const results1 = await Promise.allSettled([
+        dbFetchClientes(),
+        dbFetchSolicitantes(),
+        dbFetchDrivers(),
+        getImpostoPercentual(),
+      ]);
 
-      setClientes(clientesData);
-      setSolicitantes(solicitantesData);
-      setDrivers(driversData);
-      setImpostoPercentualState(impostoPct);
+      const [clientesRes, solicitantesRes, driversRes, impostoRes] = results1;
+
+      if (clientesRes.status === "fulfilled") setClientes(clientesRes.value);
+      else logErrorEntry("DataContext", "dbFetchClientes falhou", clientesRes.reason as Error);
+
+      if (solicitantesRes.status === "fulfilled") setSolicitantes(solicitantesRes.value);
+      else logErrorEntry("DataContext", "dbFetchSolicitantes falhou", solicitantesRes.reason as Error);
+
+      if (driversRes.status === "fulfilled") setDrivers(driversRes.value);
+      else logErrorEntry("DataContext", "dbFetchDrivers falhou", driversRes.reason as Error);
+
+      if (impostoRes.status === "fulfilled") setImpostoPercentualState(impostoRes.value);
+      else logErrorEntry("DataContext", "getImpostoPercentual falhou", impostoRes.reason as Error);
+
+      logInfo("DataContext", "Dados básicos carregados (empresas, solicitantes, motoristas, imposto)", {
+        clientes: clientesRes.status === "fulfilled" ? clientesRes.value.length : "falhou",
+        solicitantes: solicitantesRes.status === "fulfilled" ? solicitantesRes.value.length : "falhou",
+        drivers: driversRes.status === "fulfilled" ? driversRes.value.length : "falhou",
+        impostoPercentual: impostoRes.status === "fulfilled" ? impostoRes.value : "falhou",
+      });
+
+      // Se todos os principais falharem, aí sim consideramos crítico
+      if (results1.every(r => r.status === "rejected")) {
+        throw new Error("Todas as buscas da Fase 1 falharam.");
+      }
 
       // Fase 2: Dados pesados — carregam em background sem bloquear a UI
       setHeavyLoading(true);
       try {
-        const [passageirosData, parceirosData, osCountsData] = await Promise.all([
+        const results2 = await Promise.allSettled([
           dbFetchPassageiros(),
           dbFetchParceiros(),
           fetchOSStatusCounts(),
         ]);
-        setPassageiros(passageirosData);
-        setParceiros(parceirosData);
-        setOsCounts(osCountsData);
+
+        const [passageirosRes, parceirosRes, osCountsRes] = results2;
+
+        if (passageirosRes.status === "fulfilled") setPassageiros(passageirosRes.value);
+        else logErrorEntry("DataContext", "dbFetchPassageiros falhou", passageirosRes.reason as Error);
+
+        if (parceirosRes.status === "fulfilled") setParceiros(parceirosRes.value);
+        else logErrorEntry("DataContext", "dbFetchParceiros falhou", parceirosRes.reason as Error);
+
+        if (osCountsRes.status === "fulfilled") setOsCounts(osCountsRes.value);
+        else logErrorEntry("DataContext", "fetchOSStatusCounts falhou", osCountsRes.reason as Error);
+
+        logInfo("DataContext", "Dados complementares carregados (passageiros, parceiros, contagens de OS)", {
+          passageiros: passageirosRes.status === "fulfilled" ? passageirosRes.value.length : "falhou",
+          parceiros: parceirosRes.status === "fulfilled" ? parceirosRes.value.length : "falhou",
+          osCounts: osCountsRes.status === "fulfilled" ? osCountsRes.value : "falhou",
+        });
       } catch (heavyErr) {
-        console.error("⚠️ Erro ao carregar dados pesados:", heavyErr);
-        toast.error(
-          "Alguns dados pesados não foram carregados. Tente atualizar.",
-        );
+        logErrorEntry("DataContext", "Erro inesperado ao processar dados pesados", heavyErr as Error);
       } finally {
         setHeavyLoading(false);
       }
     } catch (err) {
-      console.error("🔥 CRITICAL: Error refreshing global data:", err);
+      logCritical("DataContext", "CRITICAL: Error refreshing global data", err as Error, {
+        phase: err instanceof Error ? err.message : String(err),
+      });
       toast.error("Erro ao sincronizar dados. Tente atualizar a página.");
     }
   }, [
@@ -693,11 +768,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const result = await insertCliente(cleanNome, contato);
+      logInfo("DataContext", "Empresa adicionada com sucesso", {
+        clienteId: result.id,
+        nome: cleanNome,
+      });
       setClientes((prev) =>
         [...prev, result].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
       );
       return result;
     } catch (error) {
+      logErrorEntry("DataContext", "Falha ao adicionar empresa", error as Error, {
+        nome: cleanNome,
+      });
       if (isUniqueConstraintError(error)) {
         throw new Error("Já existe uma empresa com este nome.");
       }
@@ -734,6 +816,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await updateClienteInDB(id, updates);
+      logInfo("DataContext", "Empresa atualizada com sucesso", {
+        clienteId: id,
+        updates,
+      });
       setClientes((prev) =>
         prev.map((cliente) => {
           if (cliente.id !== id) return cliente;
@@ -766,13 +852,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const deleteCliente = (id: string) => {
     deleteClienteFromDB(id)
       .then(() => {
+        logInfo("DataContext", "Empresa excluída com sucesso", { clienteId: id });
         setClientes((prev) => prev.filter((cliente) => cliente.id !== id));
         setSolicitantes((prev) =>
           prev.filter((solicitante) => solicitante.clienteId !== id),
         );
         void refreshData();
       })
-      .catch((err) => console.error("Error deleteClienteFromDB:", err));
+      .catch((err) => {
+        logErrorEntry("DataContext", "Falha ao excluir empresa", err as Error, {
+          clienteId: id,
+        });
+        console.error("Error deleteClienteFromDB:", err);
+      });
   };
 
   const addSolicitante = async (
@@ -804,6 +896,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     const result = await insertSolicitante(cleanNome, clienteId, centroCustoId);
+    logInfo("DataContext", "Solicitante adicionado com sucesso", {
+      solicitanteId: result.id,
+      nome: cleanNome,
+      clienteId,
+    });
     setSolicitantes((prev) =>
       [...prev, result].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     );
@@ -813,6 +910,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const updateSolicitante = (id: string, updates: Partial<Solicitante>) => {
     updateSolicitanteInDB(id, updates)
       .then(() => {
+        logInfo("DataContext", "Solicitante atualizado com sucesso", {
+          solicitanteId: id,
+          updates,
+        });
         setSolicitantes((prev) =>
           prev.map((solicitante) => {
             if (solicitante.id !== id) return solicitante;
@@ -916,9 +1017,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         cpf: cleanCpf || undefined,
       });
 
+      logInfo("DataContext", "Passageiro adicionado com sucesso", {
+        passageiroId: real.id,
+        nome: cleanNome,
+      });
       setPassageiros((prev) => prev.map((p) => (p.id === tempId ? real : p)));
       return real;
     } catch (error) {
+      logErrorEntry("DataContext", "Falha ao adicionar passageiro", error as Error, {
+        nome: cleanNome,
+      });
       setPassageiros((prev) => prev.filter((p) => p.id !== tempId));
 
       if (isUniqueConstraintError(error)) {
@@ -1035,9 +1143,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         cpf: cleanCpf || undefined,
       });
 
+      logInfo("DataContext", "Passageiro atualizado com sucesso", {
+        passageiroId: id,
+        nome: cleanNome,
+      });
       setPassageiros((prev) => prev.map((p) => (p.id === id ? real : p)));
       return real;
     } catch (error) {
+      logErrorEntry("DataContext", "Falha ao atualizar passageiro", error as Error, {
+        passageiroId: id,
+        nome: cleanNome,
+      });
       setPassageiros(previousState);
 
       if (isUniqueConstraintError(error)) {
@@ -1177,9 +1293,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const actorId = user?.id || null;
     try {
       const real = await insertOS(osDataWithNumbers, actorName, actorId);
+      logInfo("DataContext", "Ordem de Serviço adicionada com sucesso", {
+        osId: real.id,
+        protocolo: real.protocolo,
+        actorName,
+      });
       setOsList((prev) => prev.map((o) => (o.id === tempId ? real : o)));
       return real;
     } catch (err) {
+      logErrorEntry("DataContext", "Falha ao adicionar Ordem de Serviço", err as Error, {
+        actorName,
+        osData: osDataWithNumbers,
+      });
       console.error("Error adding OS:", err);
       console.error("OS Data that failed:", osData);
       setOsList((prev) => prev.filter((o) => o.id !== tempId));
@@ -1225,7 +1350,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const actorId = user?.id || null;
     try {
       await updateOSInDB(id, osData, actorName, actorId);
+      logInfo("DataContext", "Ordem de Serviço atualizada com sucesso", {
+        osId: id,
+        actorName,
+        updates: osData,
+      });
     } catch (err) {
+      logErrorEntry("DataContext", "Falha ao atualizar Ordem de Serviço", err as Error, {
+        osId: id,
+        actorName,
+      });
       console.error("Error updateOSInDB:", err);
       throw err;
     }
@@ -1253,26 +1387,46 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const actorId = user?.id || null;
     try {
       await updateOSStatusInDB(id, updates, actorName, actorId);
+      logInfo("DataContext", "Status da Ordem de Serviço atualizado", {
+        osId: id,
+        updates,
+        actorName,
+      });
     } catch (err) {
+      logErrorEntry("DataContext", "Falha ao atualizar status da Ordem de Serviço", err as Error, {
+        osId: id,
+        updates,
+        actorName,
+      });
       console.error("Error updateOSStatusInDB:", err);
       throw err;
     }
   };
 
   const deleteOS = async (id: string): Promise<void> => {
+    const currentOS = osList.find((os) => os.id === id) || null;
     setOsList((prev) => prev.filter((os) => os.id !== id));
 
     const actorName = profile?.nome || user?.email || "Sistema";
     const actorId = user?.id || null;
     try {
-      await archiveOSFromDB(id, actorName, actorId);
+      await archiveOSFromDB(id, actorName, actorId, currentOS?.protocolo || currentOS?.os || null);
+      logInfo("DataContext", "Ordem de Serviço excluída/arquivada", {
+        osId: id,
+        actorName,
+      });
     } catch (err) {
+      logErrorEntry("DataContext", "Falha ao excluir/arquivar Ordem de Serviço", err as Error, {
+        osId: id,
+        actorName,
+      });
       console.error("Error archiveOSFromDB:", err);
       throw err;
     }
   };
 
   const unarchiveOS = async (id: string): Promise<void> => {
+    const currentOS = osList.find((os) => os.id === id) || null;
     setOsList((prev) =>
       prev.map((os) =>
         os.id === id
@@ -1288,8 +1442,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const actorName = profile?.nome || user?.email || "Sistema";
     const actorId = user?.id || null;
     try {
-      await unarchiveOSFromDB(id, actorName, actorId);
+      await unarchiveOSFromDB(id, actorName, actorId, currentOS?.protocolo || currentOS?.os || null);
+      logInfo("DataContext", "Ordem de Serviço desarquivada", {
+        osId: id,
+        actorName,
+      });
     } catch (err) {
+      logErrorEntry("DataContext", "Falha ao desarquivar Ordem de Serviço", err as Error, {
+        osId: id,
+        actorName,
+      });
       console.error("Error unarchiveOSFromDB:", err);
       throw err;
     }
@@ -1477,6 +1639,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       .catch((err) => console.error("Error deleteParceiroFromDB:", err));
   };
 
+  const unarchiveParceiro = async (id: string): Promise<void> => {
+    await unarchiveParceiroFromDB(id);
+    setParceiros((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, arquivado: false } : p)),
+    );
+    void refreshData();
+  };
+
   // Funções de Centros de Custo
   const addCentroCusto = async (
     nome: string,
@@ -1573,6 +1743,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         updateParceiro,
         toggleParceiro,
         deleteParceiro,
+        unarchiveParceiro,
         addCentroCusto,
         updateCentroCusto,
         deleteCentroCusto,

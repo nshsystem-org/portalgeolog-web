@@ -105,6 +105,220 @@ export interface DriverAcceptResult {
 }
 
 /**
+ * Busca dados detalhados da OS para envio de mensagem ao motorista.
+ * Se itineraryIndex for 0, retorna todos os itinerários.
+ * Se itineraryIndex for diferente de 0, filtra para mostrar apenas o ciclo específico.
+ */
+export async function fetchOSDataForDriverMessage(
+  osId: string,
+  itineraryIndex: number,
+): Promise<{
+  protocolo: string;
+  osNumber: string | null;
+  data: string | null;
+  hora: string | null;
+  empresa: string;
+  solicitante: string | null;
+  centroCusto: string | null;
+  motorista: string;
+  motoristaTelefone: string;
+  veiculoTipo: string | null;
+  veiculoMarcaModelo: string | null;
+  veiculoPlaca: string | null;
+  passageiros: PassengerInfo[];
+  itineraries: ItineraryGroup[];
+}> {
+  const [{ data: osData }, { data: waypointsData }] = await Promise.all([
+    getAdmin()
+      .from("ordens_servico")
+      .select(
+        "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id",
+      )
+      .eq("id", osId)
+      .maybeSingle(),
+    getAdmin()
+      .from("os_waypoints")
+      .select("id, label, comment, itinerary_index, hora, data, position")
+      .eq("ordem_servico_id", osId)
+      .order("position"),
+  ]);
+
+  const osRecord = osData as Record<string, unknown> | null;
+  if (!osRecord) {
+    throw new Error("OS não encontrada");
+  }
+
+  let empresa = "Não informado";
+  if (osRecord.cliente_id) {
+    const { data: cliente } = await getAdmin()
+      .from("clientes")
+      .select("nome")
+      .eq("id", String(osRecord.cliente_id))
+      .maybeSingle();
+    empresa = (cliente as { nome?: string } | null)?.nome || empresa;
+  }
+
+  let vehicleData: Record<string, unknown> | null = null;
+  if (osRecord.veiculo_id) {
+    const { data: v } = await getAdmin()
+      .from("veiculos")
+      .select("marca, modelo, placa, tipo")
+      .eq("id", String(osRecord.veiculo_id))
+      .maybeSingle();
+    vehicleData = v as Record<string, unknown> | null;
+  }
+
+  const waypointIds = (waypointsData || []).map((wp: Record<string, unknown>) =>
+    String(wp.id),
+  );
+  let paxRows: Record<string, unknown>[] = [];
+  if (waypointIds.length > 0) {
+    paxRows = await fetchInChunks<Record<string, unknown>>(
+      getAdmin(),
+      "os_waypoint_passengers",
+      "waypoint_id",
+      waypointIds,
+      "passageiro_id, waypoint_id",
+    );
+  }
+
+  const passengerIds = new Set<string>();
+  (paxRows || []).forEach((row: Record<string, unknown>) => {
+    const pid = String(row.passageiro_id || "");
+    if (pid) passengerIds.add(pid);
+  });
+
+  const passageirosList = Array.from(passengerIds);
+  let passageirosData: Record<string, unknown>[] = [];
+  if (passageirosList.length > 0) {
+    passageirosData = await fetchInChunks<Record<string, unknown>>(
+      getAdmin(),
+      "passageiros",
+      "id",
+      passageirosList,
+      "id, nome_completo, celular",
+    );
+  }
+
+  const passageiros: PassengerInfo[] = (passageirosData || []).map(
+    (p: Record<string, unknown>) => ({
+      nome: String(p.nome_completo || ""),
+      celular: String(p.celular || ""),
+    }),
+  );
+
+  const itineraryGroups = new Map<
+    number,
+    { firstIndex: number; stops: ItineraryGroup["stops"] }
+  >();
+  (waypointsData || []).forEach((wp: Record<string, unknown>) => {
+    const idx = typeof wp.itinerary_index === "number" ? wp.itinerary_index : 0;
+    if (!itineraryGroups.has(idx)) {
+      itineraryGroups.set(idx, {
+        firstIndex: Number(wp.position ?? 0),
+        stops: [],
+      });
+    }
+    const group = itineraryGroups.get(idx);
+    if (!group) return;
+    group.stops.push({
+      label: String(wp.label || "Não informado"),
+      comment: wp.comment ? String(wp.comment) : null,
+      isOrigin: false,
+      isDestination: false,
+      dateTime:
+        wp.data || wp.hora
+          ? `${wp.data ? String(wp.data).split("-").reverse().join("/") : ""}${wp.hora ? ` - ${String(wp.hora).slice(0, 5)}` : ""}`.trim()
+          : null,
+    });
+    if (typeof wp.position === "number" && wp.position < group.firstIndex) {
+      group.firstIndex = wp.position;
+    }
+  });
+
+  let sortedGroups: ItineraryGroup[] = Array.from(itineraryGroups.entries())
+    .sort((a, b) => a[1].firstIndex - b[1].firstIndex)
+    .map(([index, group]) => {
+      const stops = group.stops;
+      if (stops.length > 0) {
+        stops[0].isOrigin = true;
+        stops[stops.length - 1].isDestination = true;
+      }
+      const title =
+        index < 0
+          ? `🔄 *${Math.abs(index)} Retorno*`
+          : `📍 *${index + 1} Itinerário*`;
+      const firstWp = (waypointsData || []).find(
+        (w: Record<string, unknown>) => w.itinerary_index === index,
+      );
+      const dateTime =
+        firstWp?.data || firstWp?.hora
+          ? `${firstWp.data ? String(firstWp.data).split("-").reverse().join("/") : ""}${firstWp.hora ? ` - ${String(firstWp.hora).slice(0, 5)}` : ""}`.trim()
+          : "Não informado";
+      return {
+        index,
+        title: `${title} — ${dateTime}`,
+        stops,
+      };
+    });
+
+  // Filtrar itinerários baseado no itineraryIndex
+  // Se for 0 (primeiro ciclo), mostra todos
+  // Se for diferente de 0, mostra apenas o ciclo específico
+  if (itineraryIndex !== 0) {
+    sortedGroups = sortedGroups.filter((group) => group.index === itineraryIndex);
+  }
+
+  let driverPhone = "Não informado";
+  if (osRecord.motorista) {
+    const normalized = String(osRecord.motorista)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+    const { data: candidates } = await getAdmin()
+      .from("drivers")
+      .select("name, phone")
+      .ilike("name", `%${String(osRecord.motorista).trim()}%`)
+      .limit(10);
+    const matched = (candidates || []).find((c: Record<string, unknown>) => {
+      const n = String(c.name || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+      return n === normalized || n.includes(normalized);
+    });
+    if (matched)
+      driverPhone = String(
+        (matched as { phone?: string }).phone || driverPhone,
+      );
+  }
+
+  return {
+    protocolo: String(osRecord.protocolo || "N/A"),
+    osNumber: osRecord.os_number ? String(osRecord.os_number) : null,
+    data: osRecord.data ? String(osRecord.data) : null,
+    hora: osRecord.hora ? String(osRecord.hora) : null,
+    empresa,
+    solicitante: osRecord.solicitante ? String(osRecord.solicitante) : null,
+    centroCusto: osRecord.centro_custo ? String(osRecord.centro_custo) : null,
+    motorista: String(osRecord.motorista || "Não informado"),
+    motoristaTelefone: driverPhone,
+    veiculoTipo: (vehicleData as { tipo?: string | null } | null)?.tipo || null,
+    veiculoMarcaModelo: vehicleData
+      ? `${(vehicleData as { marca?: string | null }).marca || ""} ${(vehicleData as { modelo?: string | null }).modelo || ""}`.trim()
+      : null,
+    veiculoPlaca:
+      (vehicleData as { placa?: string | null } | null)?.placa || null,
+    passageiros,
+    itineraries: sortedGroups,
+  };
+}
+
+/**
  * Monta a mensagem completa da OS com link de Iniciar Rota para envio pós-aceite.
  * Busca waypoints, passageiros, veículo e cliente para montar a mensagem detalhada.
  */

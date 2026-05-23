@@ -2,9 +2,19 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useState, useRef, cloneElement, ReactElement } from "react";
+import Image from "next/image";
+import {
+  useEffect,
+  useState,
+  useRef,
+  cloneElement,
+  ReactElement,
+  useCallback,
+} from "react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useUserPresence } from "@/hooks/useUserPresence";
+import { useAppVersion } from "@/hooks/useAppVersion";
+import { toast } from "sonner";
 import {
   Truck,
   LogOut,
@@ -25,9 +35,52 @@ import {
   Briefcase,
   User,
   Handshake,
+  Archive,
+  RotateCcw,
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
+import AnnouncementBanner from "@/components/AnnouncementBanner";
+import { ChatWidget } from "@/components/chat/ChatWidget";
+
+// Função helper para formatar mensagem de notificação com protocolo em azul
+function formatNotificationMessage(message: string): React.ReactNode {
+  // Remove o [OS_ID:xxx] se existir
+  let cleanMessage = message.replace(/\[OS_ID:[a-f0-9-]+\]/, "");
+
+  // Extrai o protocolo (com ou sem #) e aplica formatação azul
+  const protocoloMatch = cleanMessage.match(/Protocolo #?(\d+)/);
+  if (protocoloMatch) {
+    const protocolo = protocoloMatch[1];
+    cleanMessage = cleanMessage.replace(/Protocolo #?\d+/, `Protocolo ${protocolo}`);
+    // Divide a mensagem e destaca o protocolo em azul
+    const parts = cleanMessage.split(`Protocolo ${protocolo}`);
+    return (
+      <>
+        {parts[0]}
+        <span className="text-blue-600 font-semibold">{protocolo}</span>
+        {parts[1] || ""}
+      </>
+    );
+  }
+
+  // Extrai protocolo entre aspas para OS arquivada/reaberta
+  const quotesProtocoloMatch = cleanMessage.match(/"(\d{10})"/);
+  if (quotesProtocoloMatch) {
+    const protocolo = quotesProtocoloMatch[1];
+    const parts = cleanMessage.split(`"${protocolo}"`);
+    return (
+      <>
+        {parts[0]}
+        <span className="text-blue-600 font-semibold">{protocolo}</span>
+        {parts[1] || ""}
+      </>
+    );
+  }
+
+  return cleanMessage;
+}
 
 export default function DashboardLayout({
   children,
@@ -37,20 +90,121 @@ export default function DashboardLayout({
   const { user, profile, loading, logout } = useAuth();
   const { unreadCount, notifications, dismiss, dismissAll, realtimeConnected } =
     useNotifications();
+  const { currentVersion, updateAvailable, updateCountdown } = useAppVersion();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showEmployees, setShowEmployees] = useState(false);
-  const [announcementStep, setAnnouncementStep] = useState<"intro" | "explanation" | "closed">("closed");
+  const [announcementStep, setAnnouncementStep] = useState<
+    "intro" | "explanation" | "closed"
+  >("closed");
   const employeesButtonRef = useRef<HTMLButtonElement>(null);
-  const { users: presenceUsers, onlineCount, loading: presenceLoading, getTimeAgo: getPresenceTimeAgo } = useUserPresence();
+  const {
+    users: presenceUsers,
+    onlineCount,
+    loading: presenceLoading,
+    getTimeAgo: getPresenceTimeAgo,
+  } = useUserPresence();
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
+
+  // Função helper para obter ícone de notificação
+  const getNotificationIcon = (notification: {
+    type: string;
+    title: string;
+  }) => {
+    // Casos específicos baseados no título
+    if (notification.title === "OS Arquivada") {
+      return {
+        icon: Archive,
+        color: "text-red-500",
+        bg: "bg-red-50",
+      };
+    }
+
+    if (notification.title === "OS Reaberta") {
+      return {
+        icon: RotateCcw,
+        color: "text-emerald-500",
+        bg: "bg-emerald-50",
+      };
+    }
+
+    // Mapeamento padrão baseado no tipo
+    const iconConfig = {
+      success: {
+        icon: CheckCircle,
+        color: "text-green-500",
+        bg: "bg-green-50",
+      },
+      info: {
+        icon: Info,
+        color: "text-blue-500",
+        bg: "bg-blue-50",
+      },
+      warning: {
+        icon: AlertTriangle,
+        color: "text-amber-500",
+        bg: "bg-amber-50",
+      },
+      error: {
+        icon: XCircle,
+        color: "text-red-500",
+        bg: "bg-red-50",
+      },
+    };
+    return (
+      iconConfig[notification.type as keyof typeof iconConfig] ||
+      iconConfig.info
+    );
+  };
 
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
     }
   }, [user, loading, router]);
+
+  // Função helper para verificar permissões de página
+  const hasPageAccess = useCallback(
+    (page: string): boolean => {
+      if (!profile) return false;
+
+      // Administradores têm acesso a tudo
+      if (profile.categoria === "administrador") return true;
+
+      // Verificar permissões específicas
+      const specificPermissions =
+        (profile.specific_permissions as Record<string, unknown>) || {};
+
+      switch (page) {
+        case "financeiro":
+          const financeiroPerms =
+            (specificPermissions.financeiro as Record<string, unknown>) || {};
+          // Se existir bloco de permissões do financeiro, ele passa a ser a fonte de verdade.
+          if (Object.keys(financeiroPerms).length > 0) {
+            return financeiroPerms.page_access === true;
+          }
+          // Sem bloco específico, mantém o acesso baseado na categoria.
+          return profile.categoria === "financeiro";
+        default:
+          return true;
+      }
+    },
+    [profile],
+  );
+
+  // Verificar se o usuário tem acesso à página atual
+  useEffect(() => {
+    if (!profile || loading) return;
+
+    // Se estiver na página financeiro mas não tiver acesso, redirecionar
+    if (pathname === "/portal/financeiro" && !hasPageAccess("financeiro")) {
+      toast.warning(
+        "Você não tem acesso à página financeira. Redirecionando...",
+      );
+      router.push("/portal/dashboard");
+    }
+  }, [profile, loading, pathname, router, hasPageAccess]);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -152,13 +306,15 @@ export default function DashboardLayout({
             active={pathname === "/portal/os"}
             collapsed={collapsed}
           />
-          <NavLink
-            href="/portal/financeiro"
-            icon={<DollarSign />}
-            label="Medição Financeira"
-            active={pathname === "/portal/financeiro"}
-            collapsed={collapsed}
-          />
+          {hasPageAccess("financeiro") && (
+            <NavLink
+              href="/portal/financeiro"
+              icon={<DollarSign />}
+              label="Medição Financeira"
+              active={pathname === "/portal/financeiro"}
+              collapsed={collapsed}
+            />
+          )}
           <NavLink
             href="/portal/motoristas"
             icon={<Users />}
@@ -202,7 +358,40 @@ export default function DashboardLayout({
             active={pathname === "/portal/config"}
             collapsed={collapsed}
           />
+          {profile?.categoria === "administrador" && (
+            <NavLink
+              href="/admin"
+              icon={<ShieldCheck />}
+              label="Administração"
+              active={pathname === "/admin"}
+              collapsed={collapsed}
+            />
+          )}
         </nav>
+
+        {currentVersion && (
+          <div className="px-4 pb-3">
+            <div className="rounded-2xl border border-blue-700/60 bg-blue-950/30 px-3 py-2 text-center shadow-inner shadow-black/10">
+              {collapsed ? (
+                <RefreshCw className="w-5 h-5 text-blue-300/80 mx-auto" />
+              ) : (
+                <>
+                  <p className="text-[9px] font-black uppercase tracking-[0.35em] text-blue-300/80">
+                    Versão atual
+                  </p>
+                  <p className="mt-1 text-[11px] font-black text-white leading-tight truncate">
+                    v{currentVersion}
+                  </p>
+                  {updateAvailable && updateCountdown !== null && (
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.25em] text-blue-200/80">
+                      Recarregando em {updateCountdown}s
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="p-4 border-t border-blue-800/50">
           <button
@@ -277,6 +466,9 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-6">
+            {/* Avisos do Sistema */}
+            <AnnouncementBanner />
+
             {/* Funcionários Online */}
             <div className="relative">
               <button
@@ -317,7 +509,10 @@ export default function DashboardLayout({
                   <div className="max-h-[400px] overflow-y-auto">
                     {presenceLoading ? (
                       <div className="p-8 text-center text-slate-400">
-                        <Users size={32} className="mx-auto mb-2 opacity-50 animate-pulse" />
+                        <Users
+                          size={32}
+                          className="mx-auto mb-2 opacity-50 animate-pulse"
+                        />
                         <p className="text-sm">Carregando...</p>
                       </div>
                     ) : presenceUsers.length === 0 ? (
@@ -333,9 +528,12 @@ export default function DashboardLayout({
                         >
                           <div className="relative flex-shrink-0">
                             {u.avatar_url ? (
-                              <img
+                              <Image
                                 src={u.avatar_url}
                                 alt={u.nome}
+                                width={40}
+                                height={40}
+                                unoptimized
                                 className="w-10 h-10 rounded-full object-cover border border-slate-200"
                               />
                             ) : (
@@ -369,13 +567,16 @@ export default function DashboardLayout({
                                 </span>
                                 {u.last_seen_at && (
                                   <span className="text-[11px] text-slate-400 block">
-                                    {new Date(u.last_seen_at).toLocaleString("pt-BR", {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      year: "numeric",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })}
+                                    {new Date(u.last_seen_at).toLocaleString(
+                                      "pt-BR",
+                                      {
+                                        day: "2-digit",
+                                        month: "2-digit",
+                                        year: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      },
+                                    )}
                                   </span>
                                 )}
                               </div>
@@ -450,30 +651,7 @@ export default function DashboardLayout({
                       </div>
                     ) : (
                       notifications.map((notification) => {
-                        const iconConfig = {
-                          success: {
-                            icon: CheckCircle,
-                            color: "text-green-500",
-                            bg: "bg-green-50",
-                          },
-                          info: {
-                            icon: Info,
-                            color: "text-blue-500",
-                            bg: "bg-blue-50",
-                          },
-                          warning: {
-                            icon: AlertTriangle,
-                            color: "text-amber-500",
-                            bg: "bg-amber-50",
-                          },
-                          error: {
-                            icon: XCircle,
-                            color: "text-red-500",
-                            bg: "bg-red-50",
-                          },
-                        };
-                        const config =
-                          iconConfig[notification.type] || iconConfig.info;
+                        const config = getNotificationIcon(notification);
                         const IconComponent = config.icon;
 
                         // Detectar tipo de entidade pelo conteúdo
@@ -530,7 +708,45 @@ export default function DashboardLayout({
                           <div
                             key={notification.id}
                             className="p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
-                            onClick={() => dismiss(notification.id)}
+                            onClick={() => {
+                              dismiss(notification.id);
+
+                              // Extrair ID da OS da mensagem se existir (archive/reopen)
+                              const osIdMatch = notification.message.match(/\[OS_ID:([a-f0-9-]+)\]/);
+                              // Extrair protocolo da mensagem de "Nova Ordem de Serviço"
+                              const osProtocoloMatch = notification.message.match(/Protocolo #(\d+)/);
+                              // Extrair protocolo entre aspas (OS arquivada/reaberta)
+                              const osProtocoloQuotesMatch = notification.message.match(/"(\d{10})"/);
+
+                              if (osIdMatch) {
+                                const osId = osIdMatch[1];
+                                if (pathname === "/portal/os") {
+                                  window.dispatchEvent(
+                                    new CustomEvent("open-os-modal", { bubbles: true, detail: { osId } }),
+                                  );
+                                } else {
+                                  router.push(`/portal/os?open_os=${osId}`);
+                                }
+                              } else if (osProtocoloMatch) {
+                                const osProtocolo = osProtocoloMatch[1];
+                                if (pathname === "/portal/os") {
+                                  window.dispatchEvent(
+                                    new CustomEvent("open-os-modal", { bubbles: true, detail: { osProtocolo } }),
+                                  );
+                                } else {
+                                  router.push(`/portal/os?open_os_protocolo=${osProtocolo}`);
+                                }
+                              } else if (osProtocoloQuotesMatch) {
+                                const osProtocolo = osProtocoloQuotesMatch[1];
+                                if (pathname === "/portal/os") {
+                                  window.dispatchEvent(
+                                    new CustomEvent("open-os-modal", { bubbles: true, detail: { osProtocolo } }),
+                                  );
+                                } else {
+                                  router.push(`/portal/os?open_os_protocolo=${osProtocolo}`);
+                                }
+                              }
+                            }}
                           >
                             <div className="flex items-start gap-3">
                               <div
@@ -552,7 +768,7 @@ export default function DashboardLayout({
                                   </p>
                                 </div>
                                 <p className="text-sm text-slate-600 mt-1 leading-relaxed">
-                                  {notification.message}
+                                  {formatNotificationMessage(notification.message)}
                                 </p>
                                 <div className="flex items-center gap-2 mt-2">
                                   <p className="text-xs text-slate-400">
@@ -568,13 +784,17 @@ export default function DashboardLayout({
                                       {notification.created_by_avatar_url ? (
                                         // eslint-disable-next-line @next/next/no-img-element
                                         <img
-                                          src={notification.created_by_avatar_url}
+                                          src={
+                                            notification.created_by_avatar_url
+                                          }
                                           alt={notification.created_by_name}
                                           className="w-6 h-6 rounded-full object-cover border border-slate-200"
                                         />
                                       ) : (
                                         <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center">
-                                          {notification.created_by_name.charAt(0).toUpperCase()}
+                                          {notification.created_by_name
+                                            .charAt(0)
+                                            .toUpperCase()}
                                         </span>
                                       )}
                                       <p className="text-xs text-slate-500 font-medium">
@@ -646,9 +866,15 @@ export default function DashboardLayout({
 
         {/* Overlay de bloqueio durante explicação */}
         {announcementStep === "explanation" && (
-          <div className="fixed inset-0 z-[9995]" onClick={(e) => e.stopPropagation()} />
+          <div
+            className="fixed inset-0 z-[9995]"
+            onClick={(e) => e.stopPropagation()}
+          />
         )}
       </div>
+
+      {/* Chat Widget Flutuante */}
+      <ChatWidget />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
+import { useRouter, usePathname } from "next/navigation";
 
 import { toast } from "sonner";
 
@@ -24,6 +25,7 @@ export interface UserProfile {
     | "jovem aprendiz";
   empresa_id?: string;
   avatar_url?: string | null;
+  specific_permissions?: Record<string, unknown> | null;
 }
 
 interface AuthContextType {
@@ -46,6 +48,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
   const supabase = createClient();
 
   // Buscar perfil inicial
@@ -158,6 +162,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             );
           }
 
+          // Verificar mudanças nas permissões específicas
+          if (profile && profile.specific_permissions !== newProfile.specific_permissions) {
+            const oldPerms = (profile.specific_permissions || {}) as Record<string, unknown>;
+            const newPerms = (newProfile.specific_permissions || {}) as Record<string, unknown>;
+
+            // Verificar se perdeu acesso à página financeira
+            const oldFinanceiroAccess = (oldPerms.financeiro as { page_access?: boolean })?.page_access;
+            const newFinanceiroAccess = (newPerms.financeiro as { page_access?: boolean })?.page_access;
+
+            if (oldFinanceiroAccess && !newFinanceiroAccess && pathname === "/portal/financeiro") {
+              toast.warning("Seu acesso à página financeira foi revogado. Redirecionando...");
+              router.push("/portal/dashboard");
+            }
+
+            toast.info("Suas permissões específicas foram atualizadas.");
+          }
+
           setProfile(newProfile);
         },
       )
@@ -180,7 +201,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, profile, supabase]);
+  }, [user, profile, supabase, pathname, router]);
 
   const login = async (email: string, password: string) => {
     try {
