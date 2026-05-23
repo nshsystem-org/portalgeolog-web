@@ -557,7 +557,7 @@ export default function OSCalendar({
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden relative">
       {/* Loading overlay — keeps FullCalendar mounted to preserve navigation state */}
       {loading && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 rounded-[2rem]">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-[2rem]">
           <div className="flex flex-col items-center gap-4 text-slate-400">
             <Loader2 size={48} className="text-blue-500 animate-spin" />
             <p className="font-bold text-lg text-slate-500">
@@ -569,7 +569,7 @@ export default function OSCalendar({
 
       {/* Empty state overlay */}
       {!loading && osList.length === 0 && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 rounded-[2rem]">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-[2rem]">
           <div className="flex flex-col items-center gap-4 text-slate-400">
             <CalendarDays size={64} className="text-slate-300" />
             <p className="font-bold text-lg">
@@ -580,7 +580,7 @@ export default function OSCalendar({
       )}
 
       {/* Header do Calendário Customizado */}
-      <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 bg-slate-50/50">
+      <div className="relative z-20 flex items-center justify-between p-4 md:p-6 border-b border-slate-200 bg-slate-50/50">
         {/* Navegação - Canto Esquerdo */}
         <div className="flex items-center gap-2">
           <button
