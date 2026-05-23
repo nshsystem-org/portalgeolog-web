@@ -128,7 +128,9 @@ const formatCalendarDateTime = (
   if (!date) return null;
 
   const normalizedTime = time || null;
-  const [hours = "00", minutes = "00"] = normalizedTime ? normalizedTime.split(":") : ["00", "00"];
+  const [hours = "00", minutes = "00"] = normalizedTime
+    ? normalizedTime.split(":")
+    : ["00", "00"];
   return `${date}T${hours}:${minutes}:00`;
 };
 
@@ -150,13 +152,12 @@ const EventContent = ({
   showArchivedOnly,
   isDayView,
 }: EventContentProps) => {
-  const colors =
-    showArchivedOnly
-      ? statusColors["Arquivado"]
-      : statusColors[status] || statusColors["Pendente"];
+  const colors = showArchivedOnly
+    ? statusColors["Arquivado"]
+    : statusColors[status] || statusColors["Pendente"];
   const clienteNome =
     clientes.find((c) => c.id === os.clienteId)?.nome || "N/A";
-  
+
   // Prioridade: propStartTime (string direta), depois formatar displayDateTime, depois os.hora
   const startTime = propStartTime
     ? propStartTime.slice(0, 5)
@@ -335,7 +336,7 @@ export default function OSCalendar({
           ? deriveCyclesOperationalStatus(os.operationalCycles)
           : os.status.operacional;
       const waypoints = os.rota?.waypoints || [];
-      
+
       const itineraries =
         waypoints.length > 0
           ? waypoints.reduce<
@@ -365,7 +366,9 @@ export default function OSCalendar({
         if (!startDateTime) return;
 
         const timeStr = os.hora;
-        const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
+        const [hours = "00", minutes = "00"] = timeStr
+          ? timeStr.split(":")
+          : ["00", "00"];
         const endHour = Number(hours) + 1;
         const endDateTime = `${os.data}T${String(endHour).padStart(2, "0")}:${minutes}:00`;
         const colors =
@@ -410,7 +413,9 @@ export default function OSCalendar({
           const startDateTime = formatCalendarDateTime(dateStr, timeStr);
           if (!startDateTime) return;
 
-          const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
+          const [hours = "00", minutes = "00"] = timeStr
+            ? timeStr.split(":")
+            : ["00", "00"];
           const endHour = Number(hours) + 1;
           const endDateTime = `${dateStr}T${String(endHour).padStart(2, "0")}:${minutes}:00`;
           const cycle = os.operationalCycles?.find(
@@ -464,9 +469,7 @@ export default function OSCalendar({
     console.log("Data selecionada:", selectInfo.startStr);
   }, []);
 
-  const changeView = (
-    view: "dayGridMonth" | "dayGridWeek" | "dayGridDay",
-  ) => {
+  const changeView = (view: "dayGridMonth" | "dayGridWeek" | "dayGridDay") => {
     setCurrentView(view);
     const calendarApi = calendarRef.current?.getApi();
     if (calendarApi) {
@@ -496,7 +499,11 @@ export default function OSCalendar({
       endDate.setDate(endDate.getDate() - 1);
       const to = endDate.toISOString().split("T")[0];
 
-      if (lastRangeRef.current && lastRangeRef.current.from === from && lastRangeRef.current.to === to) {
+      if (
+        lastRangeRef.current &&
+        lastRangeRef.current.from === from &&
+        lastRangeRef.current.to === to
+      ) {
         return;
       }
 
@@ -546,36 +553,34 @@ export default function OSCalendar({
     );
   };
 
-  if (loading) {
-    return (
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 p-16">
-        <div className="flex flex-col items-center justify-center gap-4 text-slate-400">
-          <Loader2 size={48} className="text-blue-500 animate-spin" />
-          <p className="font-bold text-lg text-slate-500">
-            Carregando ordens de serviço...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (osList.length === 0) {
-    return (
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 p-16">
-        <div className="flex flex-col items-center justify-center gap-4 text-slate-400">
-          <CalendarDays size={64} className="text-slate-300" />
-          <p className="font-bold text-lg">
-            Nenhuma OS encontrada para exibir no calendário.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden">
+    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden relative">
+      {/* Loading overlay — keeps FullCalendar mounted to preserve navigation state */}
+      {loading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-[2rem]">
+          <div className="flex flex-col items-center gap-4 text-slate-400">
+            <Loader2 size={48} className="text-blue-500 animate-spin" />
+            <p className="font-bold text-lg text-slate-500">
+              Carregando ordens de serviço...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state overlay */}
+      {!loading && osList.length === 0 && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-[2rem]">
+          <div className="flex flex-col items-center gap-4 text-slate-400">
+            <CalendarDays size={64} className="text-slate-300" />
+            <p className="font-bold text-lg">
+              Nenhuma OS encontrada para exibir no calendário.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header do Calendário Customizado */}
-      <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 bg-slate-50/50">
+      <div className="relative z-20 flex items-center justify-between p-4 md:p-6 border-b border-slate-200 bg-slate-50/50">
         {/* Navegação - Canto Esquerdo */}
         <div className="flex items-center gap-2">
           <button
@@ -631,11 +636,7 @@ export default function OSCalendar({
       <div className="p-4 md:p-6">
         <FullCalendar
           ref={calendarRef}
-          plugins={[
-            dayGridPlugin,
-            timeGridPlugin,
-            interactionPlugin,
-          ]}
+          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView={currentView}
           locale={ptBrLocale}
           events={events}
