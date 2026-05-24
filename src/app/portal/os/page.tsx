@@ -511,6 +511,7 @@ export default function OSOperationalPage() {
   const [viewMode, setViewMode] = useState<"table" | "calendar">("calendar");
   const [calendarOSList, setCalendarOSList] = useState<OrderService[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarHasLoaded, setCalendarHasLoaded] = useState(false);
   const [users, setUsers] = useState<{ id: string; nome: string }[]>([]);
 
   const [driverNotificationSentByOS, setDriverNotificationSentByOS] = useState<
@@ -573,7 +574,7 @@ export default function OSOperationalPage() {
       });
 
       const filterDescription = Object.entries(filters)
-        .filter(([_, value]) => value !== undefined && value !== "")
+        .filter(([, value]) => value !== undefined && value !== "")
         .map(([key, value]) => `${key}: ${value}`)
         .join(", ");
 
@@ -991,6 +992,13 @@ export default function OSOperationalPage() {
 
   const handleCalendarRangeChange = useCallback(
     async (from: string, to: string) => {
+      // Verificar se o range realmente mudou antes de recarregar
+      if (calendarRangeRef.current && 
+          calendarRangeRef.current.from === from && 
+          calendarRangeRef.current.to === to) {
+        return; // Range não mudou, não recarregar
+      }
+
       calendarRangeRef.current = { from, to };
       setCalendarLoading(true);
       const loadingTimeout = setTimeout(() => {
@@ -1004,6 +1012,7 @@ export default function OSOperationalPage() {
           arquivado: showArchivedOnly ? true : undefined,
         });
         setCalendarOSList(data);
+        setCalendarHasLoaded(true);
         logInfo(
           "OS/Calendar",
           `Calendário carregado: ${data.length} OS no período ${from} a ${to}${showArchivedOnly ? " (arquivadas)" : ""}`,
@@ -1037,7 +1046,8 @@ export default function OSOperationalPage() {
     const to = new Date(today.getFullYear(), today.getMonth() + 1, 0)
       .toISOString()
       .split("T")[0];
-    calendarRangeRef.current = { from, to };
+    // NÃO setar calendarRangeRef aqui - deixar handleCalendarRangeChange fazer isso
+    // para que a verificação de cache funcione corretamente
     void handleCalendarRangeChange(from, to);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
@@ -4752,6 +4762,7 @@ export default function OSOperationalPage() {
                 osList={filteredCalendarOSList}
                 clientes={clientes}
                 loading={calendarLoading}
+                hasLoaded={calendarHasLoaded}
                 showArchivedOnly={showArchivedOnly}
                 onRangeChange={handleCalendarRangeChange}
                 onEventClick={(

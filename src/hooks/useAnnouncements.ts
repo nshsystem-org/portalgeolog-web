@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchActiveAnnouncements } from "@/lib/supabase/queries";
 
@@ -15,16 +16,58 @@ export interface Announcement {
 export function useAnnouncements() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
+  const dismissedIdsRef = React.useRef<Set<string>>(new Set());
 
   const loadAnnouncements = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchActiveAnnouncements();
-      setAnnouncements(data);
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        const data = await fetchActiveAnnouncements();
+        setAnnouncements(data);
+        return;
+      }
+
+      // Buscar anúncios ativos
+      const announcements = await fetchActiveAnnouncements();
+
+      // Buscar anúncios já dispensados pelo usuário
+      const { data: dismissed } = await supabase
+        .from("announcement_dismissals")
+        .select("announcement_id")
+        .eq("user_id", user.id);
+
+      const dismissedSet = new Set(dismissed?.map(d => d.announcement_id) || []);
+      dismissedIdsRef.current = dismissedSet;
+
+      // Filtrar anúncios que não foram dispensados
+      const filtered = announcements.filter(a => !dismissedSet.has(a.id));
+      setAnnouncements(filtered);
     } catch (error) {
       console.error("Erro ao carregar avisos:", error);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const dismissAnnouncement = useCallback(async (announcementId: string) => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      await supabase
+        .from("announcement_dismissals")
+        .insert({ user_id: user.id, announcement_id: announcementId });
+
+      // Atualizar estado local
+      dismissedIdsRef.current.add(announcementId);
+      setAnnouncements(prev => prev.filter(a => a.id !== announcementId));
+    } catch (error) {
+      console.error("Erro ao dispensar aviso:", error);
     }
   }, []);
 
@@ -54,5 +97,5 @@ export function useAnnouncements() {
     };
   }, [loadAnnouncements]);
 
-  return { announcements, loading, refetch: loadAnnouncements };
+  return { announcements, loading, refetch: loadAnnouncements, dismissAnnouncement };
 }

@@ -1,15 +1,8 @@
 "use client";
 
-import React from "react";
-import { useAnnouncements, Announcement } from "@/hooks/useAnnouncements";
-import { Info, AlertTriangle, XCircle, CheckCircle, Megaphone } from "lucide-react";
-
-const ICONS = {
-  info: Info,
-  warning: AlertTriangle,
-  error: XCircle,
-  success: CheckCircle,
-};
+import React, { useState, useRef } from "react";
+import { useAnnouncements } from "@/hooks/useAnnouncements";
+import { Megaphone, Check } from "lucide-react";
 
 const STYLES = {
   info: {
@@ -18,7 +11,6 @@ const STYLES = {
     text: "text-blue-900",
     icon: "text-blue-600",
     iconBg: "bg-blue-100",
-    dropdown: "bg-blue-50 border-blue-200",
   },
   warning: {
     bg: "bg-gradient-to-r from-amber-50 to-amber-100/50",
@@ -26,7 +18,6 @@ const STYLES = {
     text: "text-amber-900",
     icon: "text-amber-600",
     iconBg: "bg-amber-100",
-    dropdown: "bg-amber-50 border-amber-200",
   },
   error: {
     bg: "bg-gradient-to-r from-red-50 to-red-100/50",
@@ -34,7 +25,6 @@ const STYLES = {
     text: "text-red-900",
     icon: "text-red-600",
     iconBg: "bg-red-100",
-    dropdown: "bg-red-50 border-red-200",
   },
   success: {
     bg: "bg-gradient-to-r from-green-50 to-green-100/50",
@@ -42,12 +32,13 @@ const STYLES = {
     text: "text-green-900",
     icon: "text-green-600",
     iconBg: "bg-green-100",
-    dropdown: "bg-green-50 border-green-200",
   },
 };
 
 export default function AnnouncementBanner() {
-  const { announcements, loading } = useAnnouncements();
+  const { announcements, loading, dismissAnnouncement } = useAnnouncements();
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   if (loading || announcements.length === 0) {
     return null;
@@ -55,11 +46,34 @@ export default function AnnouncementBanner() {
 
   // Mostrar apenas o aviso de maior prioridade
   const topAnnouncement = announcements[0];
-  const Icon = ICONS[topAnnouncement.type];
   const style = STYLES[topAnnouncement.type];
+  const isDismissible = topAnnouncement.type === "success";
+
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    dismissAnnouncement(topAnnouncement.id);
+  };
+
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setIsDropdownOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsDropdownOpen(false);
+    }, 200);
+  };
 
   return (
-    <div className="relative max-w-2xl mx-auto group">
+    <div
+      className="relative max-w-2xl mx-auto"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       <div
         className={`${style.bg} ${style.border} ${style.text} px-6 py-4 flex items-center gap-4 shadow-sm cursor-pointer transition-all hover:shadow-md`}
       >
@@ -76,24 +90,25 @@ export default function AnnouncementBanner() {
 
       {/* Dropdown suave com mensagem completa */}
       <div
-        className={`absolute left-0 right-0 mt-2 rounded-2xl border-2 shadow-xl overflow-hidden transition-all duration-300 ease-in-out ${
-          "opacity-0 -translate-y-2 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto"
-        } ${style.dropdown}`}
+        className={`absolute left-0 right-0 mt-2 rounded-2xl border-2 border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden transition-all duration-300 ease-in-out bg-white ${
+          isDropdownOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-2 pointer-events-none"
+        }`}
       >
-        <div className="p-6">
-          <div className="flex items-start gap-3 mb-4">
-            <div className={`p-2 rounded-lg ${style.iconBg} flex-shrink-0`}>
-              <Icon size={16} className={style.icon} />
-            </div>
-            <div className="flex-1">
-              <h4 className="font-bold text-lg mb-1">{topAnnouncement.title}</h4>
-              {topAnnouncement.subtitle && (
-                <p className="text-sm font-medium opacity-80 mb-2">{topAnnouncement.subtitle}</p>
-              )}
-              <p className="text-sm opacity-90 leading-relaxed">{topAnnouncement.message}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-xs opacity-70 pt-4 border-t border-black/10">
+        <div className="p-6 pb-8">
+          <div
+            className="text-sm text-slate-700 leading-relaxed mb-6 prose prose-sm max-w-none"
+            dangerouslySetInnerHTML={{ __html: topAnnouncement.message }}
+          />
+          {isDismissible && (
+            <button
+              onClick={handleDismiss}
+              className="w-full py-2.5 px-4 bg-slate-100 text-slate-700 font-semibold text-sm rounded-xl hover:bg-green-100 hover:text-green-700 hover:border-green-200 transition-colors flex items-center justify-center gap-2 mb-6 border border-slate-200 cursor-pointer"
+            >
+              <Check size={16} />
+              Li e Entendi
+            </button>
+          )}
+          <div className="flex items-center gap-4 text-xs opacity-70 pt-4 border-t border-slate-200">
             <span>
               Criado em {new Date(topAnnouncement.created_at).toLocaleDateString("pt-BR", {
                 day: "2-digit",

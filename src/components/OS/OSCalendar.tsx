@@ -41,6 +41,7 @@ interface OSCalendarProps {
   clientes: Cliente[];
   onEventClick: (osId: string, position?: { x: number; y: number }) => void;
   loading?: boolean;
+  hasLoaded?: boolean;
   showArchivedOnly?: boolean;
   onRangeChange?: (from: string, to: string) => void;
 }
@@ -314,6 +315,7 @@ export default function OSCalendar({
   clientes,
   onEventClick,
   loading,
+  hasLoaded,
   showArchivedOnly,
   onRangeChange,
 }: OSCalendarProps) {
@@ -326,6 +328,9 @@ export default function OSCalendar({
   // Converter OS para eventos do FullCalendar
   const events = useMemo(() => {
     const derivedEvents: CalendarEvent[] = [];
+    let skipNoDataHora = 0;
+    let skipFormatDateTimeNull = 0;
+    let skipNoWaypointDataHora = 0;
 
     osList.forEach((os) => {
       const clienteNome =
@@ -356,13 +361,17 @@ export default function OSCalendar({
       const itineraryEntries = Object.entries(itineraries);
 
       if (itineraryEntries.length === 0) {
-        // Se não tiver data ou hora, não criar evento
-        if (!os.data || !os.hora) {
+        // Só precisa de data para criar evento (sem hora = dia todo)
+        if (!os.data) {
+          skipNoDataHora++;
           return;
         }
 
         const startDateTime = formatCalendarDateTime(os.data, os.hora);
-        if (!startDateTime) return;
+        if (!startDateTime) {
+          skipFormatDateTimeNull++;
+          return;
+        }
 
         const timeStr = os.hora;
         const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
@@ -397,18 +406,29 @@ export default function OSCalendar({
           const itineraryIndex = Number(itineraryIndexRaw);
           const firstWaypoint = itinerary.waypoints[0];
 
-          // Só criar evento se tiver data E hora definidos
+          // Regra: primeiro itinerário (índice 0) sempre gera card, demais só se tiver data E hora
+          const isFirstItinerary = itineraryIndex === 0;
           const hasDate = firstWaypoint?.data || os.data;
           const hasTime = firstWaypoint?.hora || os.hora;
 
-          if (!hasDate || !hasTime) {
+          if (!hasDate) {
+            skipNoWaypointDataHora++;
+            return;
+          }
+
+          // Para itinerários > 0, exigir data E hora
+          if (!isFirstItinerary && !hasTime) {
+            skipNoWaypointDataHora++;
             return;
           }
 
           const dateStr = parseBrDateToIso(firstWaypoint?.data) || os.data;
           const timeStr = firstWaypoint?.hora || os.hora;
           const startDateTime = formatCalendarDateTime(dateStr, timeStr);
-          if (!startDateTime) return;
+          if (!startDateTime) {
+            skipFormatDateTimeNull++;
+            return;
+          }
 
           const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
           const endHour = Number(hours) + 1;
@@ -470,7 +490,9 @@ export default function OSCalendar({
     setCurrentView(view);
     const calendarApi = calendarRef.current?.getApi();
     if (calendarApi) {
+      // Sempre resetar para data atual ao mudar de view
       calendarApi.changeView(view);
+      calendarApi.today();
     }
   };
 
@@ -496,29 +518,14 @@ export default function OSCalendar({
       endDate.setDate(endDate.getDate() - 1);
       const to = endDate.toISOString().split("T")[0];
 
-      if (lastRangeRef.current && lastRangeRef.current.from === from && lastRangeRef.current.to === to) {
-        return;
-      }
-
+      // Remover o bloqueio do lastRangeRef para permitir navegação correta
+      // O FullCalendar pode disparar datesSet múltiplas vezes, mas o componente pai
+      // já tem seu próprio mecanismo de cache via calendarRangeRef
       lastRangeRef.current = { from, to };
       onRangeChange(from, to);
     },
     [onRangeChange],
   );
-
-  const prevTitle =
-    currentView === "dayGridDay"
-      ? "Dia anterior"
-      : currentView === "dayGridWeek"
-        ? "Semana anterior"
-        : "Mês anterior";
-
-  const nextTitle =
-    currentView === "dayGridDay"
-      ? "Próximo dia"
-      : currentView === "dayGridWeek"
-        ? "Próxima semana"
-        : "Próximo mês";
 
   // Renderizador customizado de eventos
   const renderEventContent = (eventInfo: {
@@ -546,34 +553,15 @@ export default function OSCalendar({
     );
   };
 
-  if (loading) {
-    return (
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 p-16">
-        <div className="flex flex-col items-center justify-center gap-4 text-slate-400">
-          <Loader2 size={48} className="text-blue-500 animate-spin" />
-          <p className="font-bold text-lg text-slate-500">
-            Carregando ordens de serviço...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (osList.length === 0) {
-    return (
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 p-16">
-        <div className="flex flex-col items-center justify-center gap-4 text-slate-400">
-          <CalendarDays size={64} className="text-slate-300" />
-          <p className="font-bold text-lg">
-            Nenhuma OS encontrada para exibir no calendário.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Lógica de exibição baseada em hasLoaded
+  const isInitialLoading = !hasLoaded && loading;
+  // Mostrar overlay de loading sempre que estiver carregando, independente de ter dados anteriores
+  const showCalendarWithOverlay = loading;
+  const isEmpty = !loading && hasLoaded && osList.length === 0;
+  const showCalendar = hasLoaded && osList.length > 0;
 
   return (
-    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden">
+    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden relative">
       {/* Header do Calendário Customizado */}
       <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 bg-slate-50/50">
         {/* Navegação - Canto Esquerdo */}
@@ -581,7 +569,6 @@ export default function OSCalendar({
           <button
             onClick={goToPrev}
             className="p-2 hover:bg-slate-200 rounded-xl transition-colors"
-            title={prevTitle}
           >
             <ChevronLeft size={20} className="text-slate-600" />
           </button>
@@ -620,7 +607,6 @@ export default function OSCalendar({
           <button
             onClick={goToNext}
             className="p-2 hover:bg-slate-200 rounded-xl transition-colors"
-            title={nextTitle}
           >
             <ChevronRight size={20} className="text-slate-600" />
           </button>
@@ -628,78 +614,170 @@ export default function OSCalendar({
       </div>
 
       {/* Calendário */}
-      <div className="p-4 md:p-6">
-        <FullCalendar
-          ref={calendarRef}
-          plugins={[
-            dayGridPlugin,
-            timeGridPlugin,
-            interactionPlugin,
-          ]}
-          initialView={currentView}
-          locale={ptBrLocale}
-          events={events}
-          eventClick={handleEventClick}
-          selectable={true}
-          select={handleDateSelect}
-          datesSet={handleDatesSet}
-          headerToolbar={false}
-          eventContent={renderEventContent}
-          height="auto"
-          contentHeight="auto"
-          aspectRatio={1.8}
-          dayMaxEvents={false}
-          eventDisplay="block"
-          slotEventOverlap={false}
-          slotDuration="00:30:00"
-          slotLabelInterval="01:00"
-          eventTimeFormat={{
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }}
-          slotLabelFormat={{
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          }}
-          dayHeaderFormat={{
-            weekday: "short",
-            day: "numeric",
-            omitCommas: true,
-          }}
-          slotMinTime="06:00:00"
-          slotMaxTime="22:00:00"
-          allDaySlot={true}
-          allDayText="Dia Todo"
-          expandRows={true}
-          stickyHeaderDates={true}
-          nowIndicator={true}
-          navLinks={true}
-          weekNumbers={false}
-          businessHours={{
-            daysOfWeek: [1, 2, 3, 4, 5, 6],
-            startTime: "08:00",
-            endTime: "18:00",
-          }}
-          buttonText={{
-            today: "Hoje",
-            month: "Mês",
-            week: "Semana",
-            day: "Dia",
-          }}
-          eventMinHeight={100}
-        />
-        <style>{`
+      <div className="p-4 md:p-6 relative">
+        {isInitialLoading ? (
+          <div className="flex flex-col items-center justify-center gap-4 text-slate-400 py-16">
+            <Loader2 size={48} className="text-blue-500 animate-spin" />
+            <p className="font-bold text-lg text-slate-500">
+              Carregando ordens de serviço...
+            </p>
+          </div>
+        ) : (
+          <>
+            <FullCalendar
+              ref={calendarRef}
+              plugins={[
+                dayGridPlugin,
+                timeGridPlugin,
+                interactionPlugin,
+              ]}
+              initialView={currentView}
+              locale={ptBrLocale}
+              events={events}
+              eventClick={handleEventClick}
+              selectable={true}
+              select={handleDateSelect}
+              datesSet={handleDatesSet}
+              headerToolbar={currentView === "dayGridMonth" ? {
+                left: "",
+                center: "title",
+                right: ""
+              } : false}
+              titleFormat={{ year: 'numeric', month: 'long' }}
+              eventContent={renderEventContent}
+              dayCellClassNames={(dateInfo) => {
+                if (dateInfo.isOtherMonth) {
+                  return 'fc-day-other-month';
+                }
+                return '';
+              }}
+              height="auto"
+              contentHeight="auto"
+              aspectRatio={1.8}
+              dayMaxEvents={false}
+              eventDisplay="block"
+              slotEventOverlap={false}
+              slotDuration="00:30:00"
+              slotLabelInterval="01:00"
+              eventTimeFormat={{
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              }}
+              slotLabelFormat={{
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              }}
+              dayHeaderFormat={{
+                weekday: "short",
+                day: "numeric",
+                omitCommas: true,
+              }}
+              slotMinTime="06:00:00"
+              slotMaxTime="22:00:00"
+              allDaySlot={true}
+              allDayText="Dia Todo"
+              expandRows={true}
+              stickyHeaderDates={true}
+              nowIndicator={true}
+              navLinks={true}
+              weekNumbers={false}
+              showNonCurrentDates={false}
+              fixedWeekCount={false}
+              businessHours={{
+                daysOfWeek: [1, 2, 3, 4, 5, 6],
+                startTime: "08:00",
+                endTime: "18:00",
+              }}
+              buttonText={{
+                today: "Hoje",
+                month: "Mês",
+                week: "Semana",
+                day: "Dia",
+              }}
+            />
+            <style>{`
           /* Estilos para o DayGrid (Mês, Semana, Dia) */
           .fc .fc-daygrid-day-frame {
             min-height: 500px !important;
             overflow-y: auto !important;
           }
 
+          /* Forçar altura mínima do calendário no modo Mês */
+          .fc-dayGridMonth-view {
+            min-height: 800px !important;
+          }
+
+          .fc-dayGridMonth-view .fc-scroller {
+            overflow: visible !important;
+            height: auto !important;
+          }
+
+          .fc-dayGridMonth-view .fc-scroller-harness {
+            overflow: visible !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-body {
+            width: 100% !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-body-unbalanced .fc-daygrid-day-events {
+            min-height: 1em !important;
+          }
+
+          /* Modo Mês: forçar altura mínima das células */
+          .fc-dayGridMonth-view .fc-daygrid-day-frame {
+            min-height: 200px !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-event-harness {
+            min-height: auto !important;
+            margin-bottom: 4px !important;
+            visibility: visible !important;
+            display: block !important;
+          }
+
+          /* Esconder cabeçalho de dias no modo mês */
+          .fc-dayGridMonth-view .fc-col-header {
+            display: none !important;
+          }
+
+          /* Capitalizar primeira letra do título do mês */
+          .fc-toolbar-title {
+            text-transform: capitalize !important;
+          }
+
+          /* Estilizar números dos dias */
+          .fc-daygrid-day-number {
+            font-weight: 800 !important;
+            color: #000000 !important;
+          }
+
+          /* Estilizar dias de outros meses */
+          .fc-day-other-month {
+            background-color: #f1f5f9 !important;
+            color: #94a3b8 !important;
+            pointer-events: none !important;
+          }
+
+          .fc-day-other-month:hover {
+            background-color: #f1f5f9 !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-event-harness-abs {
+            display: block !important;
+            visibility: visible !important;
+            position: relative !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-day-bottom {
+            display: none !important;
+          }
+
           /* Cor de fundo do dia atual (exceto no modo Dia) */
           .fc .fc-daygrid-day.fc-day-today {
-            background-color: #ffebd5 !important;
+            background-color: #feffd5 !important;
           }
 
           .fc-dayGridDay-view .fc-day-today,
@@ -715,7 +793,7 @@ export default function OSCalendar({
           /* Hover/focus do dia atual */
           .fc .fc-daygrid-day.fc-day-today:hover,
           .fc .fc-daygrid-day.fc-day-today:focus {
-            background-color: #ffebd5 !important;
+            background-color: #feffd5 !important;
           }
 
           .fc-dayGridDay-view .fc-day-today:hover,
@@ -735,7 +813,7 @@ export default function OSCalendar({
           }
 
           .fc .fc-daygrid-day.fc-day-today.fc-day-selected {
-            background-color: #ffebd5 !important;
+            background-color: #feffd5 !important;
           }
 
           .fc-dayGridDay-view .fc-day-today.fc-day-selected,
@@ -932,6 +1010,28 @@ export default function OSCalendar({
             margin-bottom: 4px !important;
           }
         `}</style>
+
+        {/* Overlay de carregamento durante navegação */}
+        {showCalendarWithOverlay && (
+          <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-20 rounded-b-[2rem]">
+            <Loader2 size={48} className="text-blue-500 animate-spin" />
+            <p className="font-bold text-lg text-slate-500 mt-4">
+              Carregando ordens de serviço...
+            </p>
+          </div>
+        )}
+
+        {/* Overlay de Vazio - só mostrar se não estiver carregando */}
+        {isEmpty && (
+          <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center z-10 rounded-b-[2rem]">
+            <CalendarDays size={64} className="text-slate-300 mb-4" />
+            <p className="font-bold text-lg text-slate-400">
+              Nenhuma OS encontrada para exibir no calendário.
+            </p>
+          </div>
+        )}
+          </>
+        )}
       </div>
 
       {/* Legenda de Status */}

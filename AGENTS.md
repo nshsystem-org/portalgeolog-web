@@ -294,7 +294,14 @@ Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir
 
 **IMPORTANTE:** NUNCA executar `npx @cloudflare/next-on-pages@1` nem buildar via Cloudflare Pages. Use sempre o build interno do Next.js e faça o deploy direto para Workers.
 
-**Secrets Obrigatórios:** O sistema requer 5 secrets configurados. Se algum estiver faltando ou inválido, o agente deve re-enviar automaticamente do `.env.production` antes do deploy.
+**Secrets Obrigatórios:** O sistema requer 5 secrets configurados (todos relacionados à META):
+- `SUPABASE_SERVICE_ROLE_KEY` - Chave de serviço do Supabase
+- `RESEND_API_KEY` - Chave da API Resend para e-mails
+- `META_WHATSAPP_ACCESS_TOKEN` - Token de acesso da Meta WhatsApp
+- `META_PHONE_NUMBER_ID` - ID do número de telefone da Meta
+- `META_BUSINESS_ACCOUNT_ID` - ID da conta de negócio da Meta
+
+**IMPORTANTE:** WAHA e Evolution API NÃO são mais usados. NUNCA configurar secrets como `WAHA_API_KEY`, `WAHA_SSH_PASSWORD`, `WHATSAPP_HOOK_HMAC_KEY`, `EVOLUTION_API_KEY`, `EVOLUTION_API_URL` ou `EVOLUTION_INSTANCE`. O sistema usa exclusivamente a API oficial da Meta para WhatsApp.
 
 **Publicação de Versão:** Sempre que fizer deploy manual, DEVE executar `npm run publish:app-version` (ou usar `deploy:workers:versioned`) para ativar o auto-reload. Sem isso, usuários ficarão na versão antiga até recarregar manualmente.
 

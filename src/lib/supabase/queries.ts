@@ -2863,7 +2863,7 @@ export async function findExistingDirectConversation(
     for (const conv of conversations) {
       const participants = conv.chat_participants || [];
       if (participants.length === 2) {
-        const participantIds = participants.map((p: any) => p.user_id);
+        const participantIds = participants.map((p: { user_id: string }) => p.user_id);
         if (
           participantIds.includes(userId1) &&
           participantIds.includes(userId2)

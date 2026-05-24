@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { Shield, ArrowLeft, LogOut, LayoutDashboard, Activity, Bell, Plus, Trash2, Edit2, Check, X } from "lucide-react";
 import LogsViewer from "@/components/LogsViewer";
+import RichTextEditor from "@/components/RichTextEditor";
 import { logInfo } from "@/lib/frontend-logger";
 import Link from "next/link";
 import { fetchAllAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from "@/lib/supabase/queries";
@@ -408,9 +409,10 @@ export default function AdminPage() {
                                 {announcement.subtitle}
                               </p>
                             )}
-                            <p className="text-sm text-slate-600 mb-2">
-                              {announcement.message}
-                            </p>
+                            <div
+                              className="text-sm text-slate-600 mb-2 prose prose-sm max-w-none"
+                              dangerouslySetInnerHTML={{ __html: announcement.message }}
+                            />
                             <div className="flex items-center gap-4 text-xs text-slate-500">
                               <span>
                                 Criado em{" "}
@@ -521,14 +523,9 @@ export default function AdminPage() {
                     <label className="block text-sm font-bold text-slate-700 mb-2">
                       Mensagem
                     </label>
-                    <textarea
-                      value={formData.message}
-                      onChange={(e) =>
-                        setFormData({ ...formData, message: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      rows={3}
-                      required
+                    <RichTextEditor
+                      content={formData.message}
+                      onChange={(content) => setFormData({ ...formData, message: content })}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
