@@ -619,15 +619,6 @@ export default function MedicaoFinanceiraPage() {
               <Wallet size={14} />
               Gestão Financeira Geolog
             </div>
-            <div>
-              <h1 className="text-3xl font-black tracking-tight text-slate-900">
-                Dashboard de Medição
-              </h1>
-              <p className="mt-1 max-w-2xl text-sm font-medium text-slate-500">
-                Controle completo de faturamento, recebimento e repasse. Monitore KPIs em tempo real,
-                gerencie comprovantes e exporte relatórios.
-              </p>
-            </div>
           </div>
 
           <div className="flex flex-wrap gap-3">
