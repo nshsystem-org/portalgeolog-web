@@ -46,7 +46,7 @@ function getPresenceStatusLabel(user: PresenceUser): string {
   if (user.is_active_now) return "Ativo agora";
   if (user.is_online) {
     const relative = getRelativeElapsedLabel(user.last_activity_at);
-    return relative ? `Online há ${relative}` : "Online recente";
+    return relative ? `Atividade recente há ${relative}` : "Online recente";
   }
   if (user.last_seen_at) {
     const relative = getRelativeElapsedLabel(user.last_seen_at);
