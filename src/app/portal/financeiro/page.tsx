@@ -627,7 +627,11 @@ export default function MedicaoFinanceiraPage() {
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-95"
+              className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-black shadow-sm transition-all active:scale-95 ${
+                showFilters
+                  ? 'border-blue-400 bg-blue-50 text-blue-700'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+              }`}
             >
               <Filter size={16} />
               Filtros
