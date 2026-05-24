@@ -113,6 +113,20 @@ export interface OrderService {
   obsFinanceiras: string;
   status: OSStatus;
   distancia?: number;
+  financeiroFaturadoEm?: string;
+  financeiroRecebidoEm?: string;
+  financeiroAnexos?: Array<{
+    id: string;
+    ordemServicoId: string;
+    storagePath: string;
+    nomeArquivo: string;
+    mimeType: string;
+    tamanhoBytes: number;
+    tipoDocumento: string;
+    observacao?: string;
+    createdBy?: string;
+    createdAt: string;
+  }>;
   rota?: {
     waypoints: Waypoint[];
   };
@@ -138,7 +152,7 @@ export interface OSStatus {
     | "Em Rota"
     | "Finalizado"
     | "Cancelado";
-  financeiro: "Pendente" | "Pago" | "Faturado";
+  financeiro: "Pendente" | "Faturado" | "Recebido" | "Pago";
 }
 
 export interface Passageiro {
@@ -621,6 +635,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
           if (change.eventType === "DELETE") {
             removeOSFromState(osId);
+            setLastOSUpdate(Date.now());
             debouncedFetch("os-counts", async () => {
               const counts = await fetchOSStatusCounts();
               setOsCounts(counts);
@@ -628,6 +643,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             return;
           }
 
+          setLastOSUpdate(Date.now());
           debouncedFetch(`os-${osId}`, async () => {
             await refreshOSById(osId);
           });

@@ -73,6 +73,19 @@ type PaginationParams = {
   searchTerm?: string;
 };
 
+export type FinanceQueryFilters = {
+  month?: string;
+  dataInicio?: string;
+  dataFim?: string;
+  clienteId?: string;
+  centroCustoId?: string;
+  motorista?: string;
+  driverId?: string;
+  parceiroId?: string;
+  statusOperacional?: string;
+  statusFinanceiro?: string;
+};
+
 export type PaginatedResult<T> = {
   items: T[];
   totalCount: number;
@@ -207,6 +220,21 @@ type OSRow = {
   created_at: string | null;
   created_by: string | null;
   created_by_name: string | null;
+  financeiro_faturado_em: string | null;
+  financeiro_recebido_em: string | null;
+  os_financeiro_anexos?: FinanceAttachmentRow[] | null;
+};
+type FinanceAttachmentRow = {
+  id: string;
+  ordem_servico_id: string;
+  storage_path: string;
+  nome_arquivo: string;
+  mime_type: string;
+  tamanho_bytes: number | string;
+  tipo_documento: string;
+  observacao: string | null;
+  created_by: string | null;
+  created_at: string;
 };
 type OSWaypointRow = {
   id: string;
@@ -362,6 +390,20 @@ const mapOSRecord = (
     createdBy: o.created_by ?? undefined,
     createdByName: undefined,
     arquivado: o.arquivado ?? undefined,
+    financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
+    financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
+    financeiroAnexos: (o.os_financeiro_anexos || []).map((anexo) => ({
+      id: anexo.id,
+      ordemServicoId: anexo.ordem_servico_id,
+      storagePath: anexo.storage_path,
+      nomeArquivo: anexo.nome_arquivo,
+      mimeType: anexo.mime_type,
+      tamanhoBytes: Number(anexo.tamanho_bytes),
+      tipoDocumento: anexo.tipo_documento,
+      observacao: anexo.observacao ?? undefined,
+      createdBy: anexo.created_by ?? undefined,
+      createdAt: anexo.created_at,
+    })),
   };
 };
 
@@ -1145,6 +1187,8 @@ export async function fetchOSPage({
           ),
           currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
           arquivado: o.arquivado ?? false,
+          financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
+          financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
         };
       }),
       totalCount: count ?? typedOrders.length,
@@ -1152,12 +1196,23 @@ export async function fetchOSPage({
   });
 }
 
+const FINANCE_OS_SELECT_COLUMNS = `${OS_SELECT_COLUMNS}, financeiro_faturado_em, financeiro_recebido_em, os_financeiro_anexos(id, ordem_servico_id, storage_path, nome_arquivo, mime_type, tamanho_bytes, tipo_documento, observacao, created_by, created_at)`;
+
 export async function fetchOSFinancePage({
   page = 1,
   pageSize = 10,
   searchTerm = "",
   month = "",
-}: PaginationParams & { month?: string } = {}): Promise<
+  dataInicio,
+  dataFim,
+  clienteId,
+  centroCustoId,
+  motorista,
+  driverId,
+  parceiroId,
+  statusOperacional,
+  statusFinanceiro,
+}: PaginationParams & FinanceQueryFilters = {}): Promise<
   PaginatedResult<OrderService>
 > {
   return withRetry(async () => {
@@ -1167,7 +1222,7 @@ export async function fetchOSFinancePage({
 
     let query = getSupabase()
       .from("ordens_servico")
-      .select(OS_SELECT_COLUMNS, { count: "exact" })
+      .select(FINANCE_OS_SELECT_COLUMNS, { count: "exact" })
       .eq("arquivado", false)
       .order("created_at", { ascending: false })
       .range(from, to);
@@ -1176,6 +1231,55 @@ export async function fetchOSFinancePage({
       query = query
         .gte("data", `${month}-01`)
         .lt("data", getNextMonthFirstDay(month));
+    }
+
+    if (dataInicio) {
+      query = query.gte("data", dataInicio);
+    }
+
+    if (dataFim) {
+      query = query.lte("data", dataFim);
+    }
+
+    if (clienteId) {
+      query = query.eq("cliente_id", clienteId);
+    }
+
+    if (centroCustoId) {
+      query = query.eq("centro_custo_id", centroCustoId);
+    }
+
+    if (motorista) {
+      query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
+    }
+
+    if (driverId) {
+      query = query.eq("driver_id", driverId);
+    }
+
+    if (parceiroId) {
+      const { data: driverRows, error: driverError } = await getSupabase()
+        .from("drivers")
+        .select("id")
+        .eq("parceiro_id", parceiroId)
+        .eq("status", "active");
+
+      if (driverError) throw driverError;
+
+      const driverIds = (driverRows || []).map((row) => row.id);
+      if (driverIds.length === 0) {
+        return { items: [], totalCount: 0 };
+      }
+
+      query = query.in("driver_id", driverIds);
+    }
+
+    if (statusOperacional) {
+      query = query.eq("status_operacional", statusOperacional);
+    }
+
+    if (statusFinanceiro) {
+      query = query.eq("status_financeiro", statusFinanceiro);
     }
 
     if (likeTerm) {
@@ -1222,9 +1326,137 @@ export async function fetchOSFinancePage({
         routeFinishedKm: o.route_finished_km ?? undefined,
         operationalCycles: normalizeOperationalCycles(o.driver_operation_cycles),
         currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
+        financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
+        financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
+        financeiroAnexos: (o.os_financeiro_anexos || []).map((anexo) => ({
+          id: anexo.id,
+          ordemServicoId: anexo.ordem_servico_id,
+          storagePath: anexo.storage_path,
+          nomeArquivo: anexo.nome_arquivo,
+          mimeType: anexo.mime_type,
+          tamanhoBytes: Number(anexo.tamanho_bytes),
+          tipoDocumento: anexo.tipo_documento,
+          observacao: anexo.observacao ?? undefined,
+          createdBy: anexo.created_by ?? undefined,
+          createdAt: anexo.created_at,
+        })),
       })),
       totalCount: count ?? typedOrders.length,
     };
+  });
+}
+
+export async function fetchOSFinanceOverview(
+  filters: FinanceQueryFilters = {},
+): Promise<OrderService[]> {
+  return withRetry(async () => {
+    const {
+      month = "",
+      dataInicio,
+      dataFim,
+      clienteId,
+      centroCustoId,
+      motorista,
+      driverId,
+      parceiroId,
+      statusOperacional,
+      statusFinanceiro,
+      searchTerm = "",
+    } = filters;
+    const term = searchTerm.trim();
+    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+
+    let query = getSupabase()
+      .from("ordens_servico")
+      .select(FINANCE_OS_SELECT_COLUMNS)
+      .eq("arquivado", false)
+      .order("created_at", { ascending: false });
+
+    if (month) {
+      query = query
+        .gte("data", `${month}-01`)
+        .lt("data", getNextMonthFirstDay(month));
+    }
+    if (dataInicio) query = query.gte("data", dataInicio);
+    if (dataFim) query = query.lte("data", dataFim);
+    if (clienteId) query = query.eq("cliente_id", clienteId);
+    if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
+    if (motorista) query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
+    if (driverId) query = query.eq("driver_id", driverId);
+    if (statusOperacional) query = query.eq("status_operacional", statusOperacional);
+    if (statusFinanceiro) query = query.eq("status_financeiro", statusFinanceiro);
+    if (likeTerm) {
+      query = query.or(
+        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
+      );
+    }
+    if (parceiroId) {
+      const { data: driverRows, error: driverError } = await getSupabase()
+        .from("drivers")
+        .select("id")
+        .eq("parceiro_id", parceiroId)
+        .eq("status", "active");
+      if (driverError) throw driverError;
+      const driverIds = (driverRows || []).map((row) => row.id);
+      if (driverIds.length === 0) return [];
+      query = query.in("driver_id", driverIds);
+    }
+
+    const { data: osRaw, error } = await query;
+    if (error) throw error;
+
+    const typedOrders = (osRaw || []) as unknown as OSRow[];
+    return typedOrders.map((o) => ({
+      id: o.id,
+      protocolo: o.protocolo || "",
+      os: o.os_number || "",
+      data: o.data || "",
+      hora: o.hora,
+      horaExtra: o.hora_extra || "",
+      clienteId: o.cliente_id || "",
+      solicitante: o.solicitante || "",
+      solicitanteId: o.solicitante_id || undefined,
+      centroCustoId: o.centro_custo_id || o.centro_custo || "",
+      motorista: o.motorista || "",
+      driverId: o.driver_id || undefined,
+      veiculoId: o.veiculo_id || undefined,
+      valorBruto: o.valor_bruto !== null ? Number(o.valor_bruto) : null,
+      imposto: o.imposto !== null ? Number(o.imposto) : null,
+      custo: o.custo !== null ? Number(o.custo) : null,
+      lucro: o.lucro !== null ? Number(o.lucro) : null,
+      obsFinanceiras: o.obs_financeiras || "",
+      status: {
+        operacional:
+          o.status_operacional as OrderService["status"]["operacional"],
+        financeiro: o.status_financeiro as OrderService["status"]["financeiro"],
+      },
+      distancia: o.distancia ? Number(o.distancia) : undefined,
+      rota: undefined,
+      driverMessageSentAt: o.driver_message_sent_at ?? undefined,
+      driverAcceptedAt: o.driver_accepted_at ?? undefined,
+      driverKmInitial: o.driver_km_initial ?? undefined,
+      routeStartedAt: o.route_started_at ?? undefined,
+      routeStartedKm: o.route_started_km ?? undefined,
+      routeFinishedAt: o.route_finished_at ?? undefined,
+      routeFinishedKm: o.route_finished_km ?? undefined,
+      operationalCycles: normalizeOperationalCycles(o.driver_operation_cycles),
+      currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
+      arquivado: o.arquivado ?? false,
+      financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
+      financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
+      financeiroAnexos: (o.os_financeiro_anexos || []).map((anexo) => ({
+        id: anexo.id,
+        ordemServicoId: anexo.ordem_servico_id,
+        storagePath: anexo.storage_path,
+        nomeArquivo: anexo.nome_arquivo,
+        mimeType: anexo.mime_type,
+        tamanhoBytes: Number(anexo.tamanho_bytes),
+        tipoDocumento: anexo.tipo_documento,
+        observacao: anexo.observacao ?? undefined,
+        createdBy: anexo.created_by ?? undefined,
+        createdAt: anexo.created_at,
+      })),
+    }));
   });
 }
 
@@ -2639,32 +2871,126 @@ export async function checkActiveOSForDriverVehicle(
   return Boolean(data);
 }
 
-export async function fetchOSFinanceStats(month: string): Promise<{
+export async function fetchOSFinanceStats(
+  filters: FinanceQueryFilters = {},
+): Promise<{
   totalOS: number;
   totalBruto: number;
   totalCusto: number;
   totalImposto: number;
   totalLucro: number;
+  totalFaturado: number;
+  totalRecebido: number;
+  totalPendente: number;
 }> {
   return withRetry(async () => {
-    const { data, error } = await getSupabase().rpc("get_os_finance_stats", {
-      p_month: month,
-    });
+    const {
+      month = "",
+      dataInicio,
+      dataFim,
+      clienteId,
+      centroCustoId,
+      motorista,
+      driverId,
+      parceiroId,
+      statusOperacional,
+      statusFinanceiro,
+    } = filters;
+
+    let query = getSupabase()
+      .from("ordens_servico")
+      .select(
+        "id, valor_bruto, custo, imposto, lucro, status_financeiro, data, motorista, driver_id, cliente_id, centro_custo_id",
+        { count: "exact" },
+      )
+      .eq("arquivado", false);
+
+    if (month) {
+      query = query
+        .gte("data", `${month}-01`)
+        .lt("data", getNextMonthFirstDay(month));
+    }
+    if (dataInicio) query = query.gte("data", dataInicio);
+    if (dataFim) query = query.lte("data", dataFim);
+    if (clienteId) query = query.eq("cliente_id", clienteId);
+    if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
+    if (motorista) query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
+    if (driverId) query = query.eq("driver_id", driverId);
+    if (statusOperacional) query = query.eq("status_operacional", statusOperacional);
+    if (statusFinanceiro) query = query.eq("status_financeiro", statusFinanceiro);
+    if (parceiroId) {
+      const { data: driverRows, error: driverError } = await getSupabase()
+        .from("drivers")
+        .select("id")
+        .eq("parceiro_id", parceiroId)
+        .eq("status", "active");
+      if (driverError) throw driverError;
+      const driverIds = (driverRows || []).map((row) => row.id);
+      if (driverIds.length === 0) {
+        return {
+          totalOS: 0,
+          totalBruto: 0,
+          totalCusto: 0,
+          totalImposto: 0,
+          totalLucro: 0,
+          totalFaturado: 0,
+          totalRecebido: 0,
+          totalPendente: 0,
+        };
+      }
+      query = query.in("driver_id", driverIds);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
-    const row =
-      (data || [])[0] || {
-        total_os: 0,
-        total_bruto: 0,
-        total_custo: 0,
-        total_imposto: 0,
-        total_lucro: 0,
-      };
+
+    const rows = (data || []) as Array<{
+      valor_bruto: number | string | null;
+      custo: number | string | null;
+      imposto: number | string | null;
+      lucro: number | string | null;
+      status_financeiro: string | null;
+    }>;
+
+    const summary = rows.reduce(
+      (acc, row) => {
+        const bruto = Number(row.valor_bruto || 0);
+        const custo = Number(row.custo || 0);
+        const imposto = Number(row.imposto || 0);
+        const lucro = Number(row.lucro || 0);
+        const status = row.status_financeiro || "Pendente";
+
+        acc.totalOS += 1;
+        acc.totalBruto += bruto;
+        acc.totalCusto += custo;
+        acc.totalImposto += imposto;
+        acc.totalLucro += lucro;
+        if (status === "Faturado") acc.totalFaturado += bruto;
+        if (status === "Recebido" || status === "Pago") acc.totalRecebido += bruto;
+        if (status === "Pendente") acc.totalPendente += bruto;
+        return acc;
+      },
+      {
+        totalOS: 0,
+        totalBruto: 0,
+        totalCusto: 0,
+        totalImposto: 0,
+        totalLucro: 0,
+        totalFaturado: 0,
+        totalRecebido: 0,
+        totalPendente: 0,
+      },
+    );
+
     return {
-      totalOS: Number(row.total_os),
-      totalBruto: Number(row.total_bruto),
-      totalCusto: Number(row.total_custo),
-      totalImposto: Number(row.total_imposto),
-      totalLucro: Number(row.total_lucro),
+      totalOS: summary.totalOS,
+      totalBruto: summary.totalBruto,
+      totalCusto: summary.totalCusto,
+      totalImposto: summary.totalImposto,
+      totalLucro: summary.totalLucro,
+      totalFaturado: summary.totalFaturado,
+      totalRecebido: summary.totalRecebido,
+      totalPendente: summary.totalPendente,
     };
   });
 }

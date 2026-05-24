@@ -572,7 +572,7 @@ export default function DashboardLayout({
                                 Ativo agora
                               </span>
                             ) : u.is_online ? (
-                              <span className="text-[10px] font-black uppercase tracking-wider text-blue-400 bg-blue-50 px-2 py-1 rounded-full">
+                              <span className="text-[9px] leading-none font-black uppercase tracking-wider text-blue-400 bg-blue-50 px-2 py-1 rounded-full">
                                 {getPresenceStatusLabel(u)}
                               </span>
                             ) : (
