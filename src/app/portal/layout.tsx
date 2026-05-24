@@ -53,7 +53,10 @@ function formatNotificationMessage(message: string): React.ReactNode {
   const protocoloMatch = cleanMessage.match(/Protocolo #?(\d+)/);
   if (protocoloMatch) {
     const protocolo = protocoloMatch[1];
-    cleanMessage = cleanMessage.replace(/Protocolo #?\d+/, `Protocolo ${protocolo}`);
+    cleanMessage = cleanMessage.replace(
+      /Protocolo #?\d+/,
+      `Protocolo ${protocolo}`,
+    );
     // Divide a mensagem e destaca o protocolo em azul
     const parts = cleanMessage.split(`Protocolo ${protocolo}`);
     return (
@@ -100,8 +103,10 @@ export default function DashboardLayout({
   const {
     users: presenceUsers,
     onlineCount,
+    activeNowCount,
     loading: presenceLoading,
     getTimeAgo: getPresenceTimeAgo,
+    getPresenceStatusLabel,
   } = useUserPresence();
   const router = useRouter();
   const pathname = usePathname();
@@ -478,7 +483,7 @@ export default function DashboardLayout({
                   setShowEmployees(!showEmployees);
                 }}
                 className="p-3 text-slate-400 hover:bg-slate-100 hover:text-[var(--color-geolog-blue)] rounded-xl relative transition-all border border-slate-100 cursor-pointer"
-                title={`Funcionários online: ${onlineCount}`}
+                title={`Funcionários online: ${onlineCount} | ativos agora: ${activeNowCount}`}
               >
                 <Users size={20} />
                 {onlineCount > 0 && (
@@ -503,6 +508,14 @@ export default function DashboardLayout({
                         <span className="text-xs text-slate-500 font-bold">
                           {onlineCount} online
                         </span>
+                        {activeNowCount > 0 && (
+                          <>
+                            <span className="text-slate-300">•</span>
+                            <span className="text-xs text-emerald-600 font-black">
+                              {activeNowCount} ativos agora
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -542,7 +555,7 @@ export default function DashboardLayout({
                               </span>
                             )}
                             <span
-                              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${u.is_online ? "bg-green-500" : "bg-slate-300"}`}
+                              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${u.is_active_now ? "bg-emerald-500" : u.is_online ? "bg-green-400" : "bg-slate-300"}`}
                             />
                           </div>
                           <div className="flex-1 min-w-0">
@@ -554,9 +567,13 @@ export default function DashboardLayout({
                             </p>
                           </div>
                           <div className="text-right flex-shrink-0">
-                            {u.is_online ? (
+                            {u.is_active_now ? (
+                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                                Ativo agora
+                              </span>
+                            ) : u.is_online ? (
                               <span className="text-[10px] font-black uppercase tracking-wider text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                                Online
+                                Online recente
                               </span>
                             ) : (
                               <div className="text-right">
@@ -581,6 +598,9 @@ export default function DashboardLayout({
                                 )}
                               </div>
                             )}
+                            <span className="sr-only">
+                              {getPresenceStatusLabel(u)}
+                            </span>
                           </div>
                         </div>
                       ))
@@ -712,17 +732,24 @@ export default function DashboardLayout({
                               dismiss(notification.id);
 
                               // Extrair ID da OS da mensagem se existir (archive/reopen)
-                              const osIdMatch = notification.message.match(/\[OS_ID:([a-f0-9-]+)\]/);
+                              const osIdMatch = notification.message.match(
+                                /\[OS_ID:([a-f0-9-]+)\]/,
+                              );
                               // Extrair protocolo da mensagem de "Nova Ordem de Serviço"
-                              const osProtocoloMatch = notification.message.match(/Protocolo #(\d+)/);
+                              const osProtocoloMatch =
+                                notification.message.match(/Protocolo #(\d+)/);
                               // Extrair protocolo entre aspas (OS arquivada/reaberta)
-                              const osProtocoloQuotesMatch = notification.message.match(/"(\d{10})"/);
+                              const osProtocoloQuotesMatch =
+                                notification.message.match(/"(\d{10})"/);
 
                               if (osIdMatch) {
                                 const osId = osIdMatch[1];
                                 if (pathname === "/portal/os") {
                                   window.dispatchEvent(
-                                    new CustomEvent("open-os-modal", { bubbles: true, detail: { osId } }),
+                                    new CustomEvent("open-os-modal", {
+                                      bubbles: true,
+                                      detail: { osId },
+                                    }),
                                   );
                                 } else {
                                   router.push(`/portal/os?open_os=${osId}`);
@@ -731,19 +758,29 @@ export default function DashboardLayout({
                                 const osProtocolo = osProtocoloMatch[1];
                                 if (pathname === "/portal/os") {
                                   window.dispatchEvent(
-                                    new CustomEvent("open-os-modal", { bubbles: true, detail: { osProtocolo } }),
+                                    new CustomEvent("open-os-modal", {
+                                      bubbles: true,
+                                      detail: { osProtocolo },
+                                    }),
                                   );
                                 } else {
-                                  router.push(`/portal/os?open_os_protocolo=${osProtocolo}`);
+                                  router.push(
+                                    `/portal/os?open_os_protocolo=${osProtocolo}`,
+                                  );
                                 }
                               } else if (osProtocoloQuotesMatch) {
                                 const osProtocolo = osProtocoloQuotesMatch[1];
                                 if (pathname === "/portal/os") {
                                   window.dispatchEvent(
-                                    new CustomEvent("open-os-modal", { bubbles: true, detail: { osProtocolo } }),
+                                    new CustomEvent("open-os-modal", {
+                                      bubbles: true,
+                                      detail: { osProtocolo },
+                                    }),
                                   );
                                 } else {
-                                  router.push(`/portal/os?open_os_protocolo=${osProtocolo}`);
+                                  router.push(
+                                    `/portal/os?open_os_protocolo=${osProtocolo}`,
+                                  );
                                 }
                               }
                             }}
@@ -768,7 +805,9 @@ export default function DashboardLayout({
                                   </p>
                                 </div>
                                 <p className="text-sm text-slate-600 mt-1 leading-relaxed">
-                                  {formatNotificationMessage(notification.message)}
+                                  {formatNotificationMessage(
+                                    notification.message,
+                                  )}
                                 </p>
                                 <div className="flex items-center gap-2 mt-2">
                                   <p className="text-xs text-slate-400">

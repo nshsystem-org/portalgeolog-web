@@ -3,6 +3,10 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { AppDatabase } from "@/lib/supabase/app-database";
+import {
+  PRESENCE_ACTIVE_NOW_TIMEOUT_MS,
+  PRESENCE_ONLINE_TIMEOUT_MS,
+} from "@/lib/presence";
 
 export const runtime = "edge";
 
@@ -35,8 +39,11 @@ async function createAuthClient() {
 export async function GET() {
   try {
     const authClient = await createAuthClient();
-    
-    const { data: { user }, error: userError } = await authClient.auth.getUser();
+
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
 
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
@@ -47,7 +54,9 @@ export async function GET() {
     // Uma única query com JOIN (embedded resource) para máxima performance
     const { data, error } = await adminClient
       .from("user_roles")
-      .select("id, nome, tipo_usuario, categoria, avatar_url, user_presence(last_seen_at, status)")
+      .select(
+        "id, nome, tipo_usuario, categoria, avatar_url, user_presence(last_seen_at, last_activity_at, status)",
+      )
       .order("nome", { ascending: true });
 
     if (error) {
@@ -55,7 +64,14 @@ export async function GET() {
       throw error;
     }
 
-    const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+    const onlineCutoff = Date.now() - PRESENCE_ONLINE_TIMEOUT_MS;
+    const activeNowCutoff = Date.now() - PRESENCE_ACTIVE_NOW_TIMEOUT_MS;
+
+    interface PresenceRow {
+      last_seen_at: string;
+      last_activity_at: string;
+      status: string;
+    }
 
     interface UserRow {
       id: string;
@@ -63,19 +79,25 @@ export async function GET() {
       tipo_usuario: string | null;
       categoria: string | null;
       avatar_url: string | null;
-      user_presence: { last_seen_at: string; status: string } | { last_seen_at: string; status: string }[] | null;
+      user_presence: PresenceRow | PresenceRow[] | null;
     }
 
-    const users = ((data as unknown) as UserRow[] ?? []).map((row) => {
+    const users = ((data as unknown as UserRow[]) ?? []).map((row) => {
       // user_presence retorna como objeto ou array dependendo da versão do postgrest, tratamos ambos
-      const presence = Array.isArray(row.user_presence) ? row.user_presence[0] : row.user_presence;
-      
+      const presence = Array.isArray(row.user_presence)
+        ? row.user_presence[0]
+        : row.user_presence;
+
       const lastSeen = presence?.last_seen_at
         ? new Date(presence.last_seen_at).getTime()
         : 0;
-      
-      const isOnline =
-        lastSeen > twoMinutesAgo && presence?.status === "online";
+      const lastActivity = presence?.last_activity_at
+        ? new Date(presence.last_activity_at).getTime()
+        : 0;
+
+      const isOnline = lastSeen > onlineCutoff && presence?.status === "online";
+      const isActiveNow =
+        lastActivity > activeNowCutoff && presence?.status === "online";
 
       return {
         id: row.id,
@@ -84,7 +106,9 @@ export async function GET() {
         categoria: row.categoria || "operador",
         avatar_url: row.avatar_url,
         is_online: isOnline,
+        is_active_now: isActiveNow,
         last_seen_at: presence?.last_seen_at ?? null,
+        last_activity_at: presence?.last_activity_at ?? null,
       };
     });
 
