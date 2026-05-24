@@ -22,6 +22,7 @@ import {
   Link2,
   FileUp,
   BadgeInfo,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -218,6 +219,7 @@ export default function MedicaoFinanceiraPage() {
   const [faturarObservacao, setFaturarObservacao] = useState("");
   const [recebimentoObservacao, setRecebimentoObservacao] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filters = useMemo<FinanceQueryFilters>(
@@ -624,6 +626,15 @@ export default function MedicaoFinanceiraPage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
+              onClick={() => setShowFilters(!showFilters)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-95"
+            >
+              <Filter size={16} />
+              Filtros
+              <ChevronDown size={16} className={`transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+            </button>
+            <button
+              type="button"
               onClick={() => setQuickRange("today")}
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-95"
             >
@@ -665,144 +676,146 @@ export default function MedicaoFinanceiraPage() {
         ))}
       </section>
 
-      <section className="rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/40">
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-slate-900">Filtros Avançados</h2>
-            <p className="text-sm font-medium text-slate-500">
-              Refine os dados por período, cliente, centro de custo ou status.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-black text-slate-700 transition-all hover:bg-slate-100 active:scale-95"
-          >
-            <Filter size={16} />
-            Limpar Filtros
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          <Field label="Mês de Referência">
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(event) => setSelectedMonth(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            />
-          </Field>
-          <Field label="Data Inicial">
-            <input
-              type="date"
-              value={dataInicio}
-              onChange={(event) => setDataInicio(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            />
-          </Field>
-          <Field label="Data Final">
-            <input
-              type="date"
-              value={dataFim}
-              onChange={(event) => setDataFim(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            />
-          </Field>
-          <Field label="Empresa / Cliente">
-            <select
-              value={clienteId}
-              onChange={(event) => setClienteId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            >
-              <option value="">Todos os Clientes</option>
-              {clientes.map((cliente) => (
-                <option key={cliente.id} value={cliente.id}>
-                  {cliente.nome}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Centro de Custo">
-            <select
-              value={centroCustoId}
-              onChange={(event) => setCentroCustoId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            >
-              <option value="">Todos os Centros</option>
-              {clientes.flatMap((cliente) => cliente.centrosCusto).map((centro) => (
-                <option key={centro.id} value={centro.id}>
-                  {centro.nome}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Parceiro Estratégico">
-            <select
-              value={parceiroId}
-              onChange={(event) => setParceiroId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            >
-              <option value="">Todos os Parceiros</option>
-              {parceiros.map((parceiro) => (
-                <option key={parceiro.id} value={parceiro.id}>
-                  {parceiro.razaoSocialOuNomeCompleto}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Motorista Específico">
-            <select
-              value={driverId}
-              onChange={(event) => setDriverId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            >
-              <option value="">Todos os Motoristas</option>
-              {drivers.map((driver) => (
-                <option key={driver.id} value={driver.id}>
-                  {driver.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Status Operacional">
-            <select
-              value={statusOperacional}
-              onChange={(event) => setStatusOperacional(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            >
-              <option value="">Todos os Estados</option>
-              <option value="Finalizado">Concluídas</option>
-              <option value="Pendente">Pendentes</option>
-              <option value="Em Rota">Em Rota</option>
-              <option value="Cancelado">Canceladas</option>
-            </select>
-          </Field>
-          <Field label="Situação Financeira">
-            <select
-              value={statusFinanceiro}
-              onChange={(event) => setStatusFinanceiro(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            >
-              <option value="">Todas as Situações</option>
-              <option value="Pendente">A Faturar</option>
-              <option value="Faturado">Faturado (A Receber)</option>
-              <option value="Recebido">Recebido</option>
-              <option value="Pago">Pago (Legado)</option>
-            </select>
-          </Field>
-          <Field label="Busca Direta">
-            <div className="relative">
-              <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                value={motorista}
-                onChange={(event) => setMotorista(event.target.value)}
-                placeholder="Nome do motorista..."
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              />
+      {showFilters && (
+        <section className="rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/40">
+          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900">Filtros Avançados</h2>
+              <p className="text-sm font-medium text-slate-500">
+                Refine os dados por período, cliente, centro de custo ou status.
+              </p>
             </div>
-          </Field>
-        </div>
-      </section>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-black text-slate-700 transition-all hover:bg-slate-100 active:scale-95"
+            >
+              <Filter size={16} />
+              Limpar Filtros
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <Field label="Mês de Referência">
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(event) => setSelectedMonth(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              />
+            </Field>
+            <Field label="Data Inicial">
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(event) => setDataInicio(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              />
+            </Field>
+            <Field label="Data Final">
+              <input
+                type="date"
+                value={dataFim}
+                onChange={(event) => setDataFim(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              />
+            </Field>
+            <Field label="Empresa / Cliente">
+              <select
+                value={clienteId}
+                onChange={(event) => setClienteId(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              >
+                <option value="">Todos os Clientes</option>
+                {clientes.map((cliente) => (
+                  <option key={cliente.id} value={cliente.id}>
+                    {cliente.nome}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Centro de Custo">
+              <select
+                value={centroCustoId}
+                onChange={(event) => setCentroCustoId(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              >
+                <option value="">Todos os Centros</option>
+                {clientes.flatMap((cliente) => cliente.centrosCusto).map((centro) => (
+                  <option key={centro.id} value={centro.id}>
+                    {centro.nome}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Parceiro Estratégico">
+              <select
+                value={parceiroId}
+                onChange={(event) => setParceiroId(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              >
+                <option value="">Todos os Parceiros</option>
+                {parceiros.map((parceiro) => (
+                  <option key={parceiro.id} value={parceiro.id}>
+                    {parceiro.razaoSocialOuNomeCompleto}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Motorista Específico">
+              <select
+                value={driverId}
+                onChange={(event) => setDriverId(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              >
+                <option value="">Todos os Motoristas</option>
+                {drivers.map((driver) => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Status Operacional">
+              <select
+                value={statusOperacional}
+                onChange={(event) => setStatusOperacional(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              >
+                <option value="">Todos os Estados</option>
+                <option value="Finalizado">Concluídas</option>
+                <option value="Pendente">Pendentes</option>
+                <option value="Em Rota">Em Rota</option>
+                <option value="Cancelado">Canceladas</option>
+              </select>
+            </Field>
+            <Field label="Situação Financeira">
+              <select
+                value={statusFinanceiro}
+                onChange={(event) => setStatusFinanceiro(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              >
+                <option value="">Todas as Situações</option>
+                <option value="Pendente">A Faturar</option>
+                <option value="Faturado">Faturado (A Receber)</option>
+                <option value="Recebido">Recebido</option>
+                <option value="Pago">Pago (Legado)</option>
+              </select>
+            </Field>
+            <Field label="Busca Direta">
+              <div className="relative">
+                <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={motorista}
+                  onChange={(event) => setMotorista(event.target.value)}
+                  placeholder="Nome do motorista..."
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+                />
+              </div>
+            </Field>
+          </div>
+        </section>
+      )}
 
       <div className="rounded-[2.5rem] border border-slate-200 bg-white p-2 shadow-xl shadow-slate-200/40 overflow-hidden">
         <DataTable<OrderService>
