@@ -191,8 +191,8 @@ export default function MedicaoFinanceiraPage() {
   const { profile } = useAuth();
   const { clientes, drivers, parceiros, loading: dataLoading, lastOSUpdate } = useData();
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
+  const [dataInicio, setDataInicio] = useState(normalizeToInputDate(new Date()));
+  const [dataFim, setDataFim] = useState(normalizeToInputDate(new Date()));
   const [clienteId, setClienteId] = useState("");
   const [centroCustoId, setCentroCustoId] = useState("");
   const [parceiroId, setParceiroId] = useState("");
@@ -220,6 +220,7 @@ export default function MedicaoFinanceiraPage() {
   const [recebimentoObservacao, setRecebimentoObservacao] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [activeQuickRange, setActiveQuickRange] = useState<"today" | "week" | "month" | "custom">("today");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filters = useMemo<FinanceQueryFilters>(
@@ -393,8 +394,9 @@ export default function MedicaoFinanceiraPage() {
 
   const resetFilters = useCallback(() => {
     setSelectedMonth(new Date().toISOString().slice(0, 7));
-    setDataInicio("");
-    setDataFim("");
+    const today = normalizeToInputDate(new Date());
+    setDataInicio(today);
+    setDataFim(today);
     setClienteId("");
     setCentroCustoId("");
     setParceiroId("");
@@ -402,6 +404,7 @@ export default function MedicaoFinanceiraPage() {
     setMotorista("");
     setStatusOperacional("");
     setStatusFinanceiro("");
+    setActiveQuickRange("today");
   }, []);
 
   const setQuickRange = useCallback((mode: "week" | "month" | "today") => {
@@ -410,18 +413,28 @@ export default function MedicaoFinanceiraPage() {
       const today = normalizeToInputDate(now);
       setDataInicio(today);
       setDataFim(today);
+      setActiveQuickRange("today");
       return;
     }
     if (mode === "week") {
       setDataInicio(normalizeToInputDate(startOfWeek(now)));
       setDataFim(normalizeToInputDate(endOfWeek(now)));
       setSelectedMonth(now.toISOString().slice(0, 7));
+      setActiveQuickRange("week");
       return;
     }
     setSelectedMonth(now.toISOString().slice(0, 7));
     setDataInicio("");
     setDataFim("");
+    setActiveQuickRange("month");
   }, []);
+
+  const quickRangeButtonClass = (mode: "today" | "week" | "month") =>
+    `inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-black shadow-sm transition-all active:scale-95 ${
+      activeQuickRange === mode
+        ? "border-blue-400 bg-blue-50 text-blue-700"
+        : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+    }`;
 
   const handleOpenFaturar = (os: OrderService) => {
     setActionTarget({ os });
@@ -640,7 +653,7 @@ export default function MedicaoFinanceiraPage() {
             <button
               type="button"
               onClick={() => setQuickRange("today")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-95"
+              className={quickRangeButtonClass("today")}
             >
               <CalendarClock size={16} />
               Hoje
@@ -648,7 +661,7 @@ export default function MedicaoFinanceiraPage() {
             <button
               type="button"
               onClick={() => setQuickRange("week")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-95"
+              className={quickRangeButtonClass("week")}
             >
               <ArrowRightLeft size={16} />
               Semana
@@ -656,7 +669,7 @@ export default function MedicaoFinanceiraPage() {
             <button
               type="button"
               onClick={() => setQuickRange("month")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-95"
+              className={quickRangeButtonClass("month")}
             >
               <ReceiptText size={16} />
               Mês
@@ -704,7 +717,10 @@ export default function MedicaoFinanceiraPage() {
               <input
                 type="month"
                 value={selectedMonth}
-                onChange={(event) => setSelectedMonth(event.target.value)}
+                onChange={(event) => {
+                  setSelectedMonth(event.target.value);
+                  setActiveQuickRange("custom");
+                }}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
               />
             </Field>
@@ -712,7 +728,10 @@ export default function MedicaoFinanceiraPage() {
               <input
                 type="date"
                 value={dataInicio}
-                onChange={(event) => setDataInicio(event.target.value)}
+                onChange={(event) => {
+                  setDataInicio(event.target.value);
+                  setActiveQuickRange("custom");
+                }}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
               />
             </Field>
@@ -720,7 +739,10 @@ export default function MedicaoFinanceiraPage() {
               <input
                 type="date"
                 value={dataFim}
-                onChange={(event) => setDataFim(event.target.value)}
+                onChange={(event) => {
+                  setDataFim(event.target.value);
+                  setActiveQuickRange("custom");
+                }}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
               />
             </Field>
