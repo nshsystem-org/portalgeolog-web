@@ -99,7 +99,16 @@ function endOfWeek(date = new Date()): Date {
 }
 
 function normalizeToInputDate(value: Date): string {
-  return value.toISOString().slice(0, 10);
+  const year = value.getFullYear();
+  const month = `${value.getMonth() + 1}`.padStart(2, "0");
+  const day = `${value.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeToInputMonth(value: Date): string {
+  const year = value.getFullYear();
+  const month = `${value.getMonth() + 1}`.padStart(2, "0");
+  return `${year}-${month}`;
 }
 
 function getStatusLabel(status: string): string {
@@ -190,7 +199,7 @@ function FinanceCard({
 export default function MedicaoFinanceiraPage() {
   const { profile } = useAuth();
   const { clientes, drivers, parceiros, loading: dataLoading, lastOSUpdate } = useData();
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState(normalizeToInputMonth(new Date()));
   const [dataInicio, setDataInicio] = useState(normalizeToInputDate(new Date()));
   const [dataFim, setDataFim] = useState(normalizeToInputDate(new Date()));
   const [clienteId, setClienteId] = useState("");
@@ -393,7 +402,7 @@ export default function MedicaoFinanceiraPage() {
   );
 
   const resetFilters = useCallback(() => {
-    setSelectedMonth(new Date().toISOString().slice(0, 7));
+    setSelectedMonth(normalizeToInputMonth(new Date()));
     const today = normalizeToInputDate(new Date());
     setDataInicio(today);
     setDataFim(today);
@@ -419,11 +428,11 @@ export default function MedicaoFinanceiraPage() {
     if (mode === "week") {
       setDataInicio(normalizeToInputDate(startOfWeek(now)));
       setDataFim(normalizeToInputDate(endOfWeek(now)));
-      setSelectedMonth(now.toISOString().slice(0, 7));
+      setSelectedMonth(normalizeToInputMonth(now));
       setActiveQuickRange("week");
       return;
     }
-    setSelectedMonth(now.toISOString().slice(0, 7));
+    setSelectedMonth(normalizeToInputMonth(now));
     setDataInicio("");
     setDataFim("");
     setActiveQuickRange("month");
