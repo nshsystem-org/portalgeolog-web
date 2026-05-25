@@ -19,6 +19,10 @@ import {
   normalizeOperationalCycles,
   type OperationalCycle,
 } from "@/lib/os-messages";
+import {
+  isFinanceStatusSettled,
+  isLiberadoParaFaturamento,
+} from "@/lib/financeiro";
 import type { AppDatabase } from "@/lib/supabase/app-database";
 
 let _supabase: ReturnType<typeof createClient> | null = null;
@@ -1196,7 +1200,7 @@ export async function fetchOSPage({
   });
 }
 
-const FINANCE_OS_SELECT_COLUMNS = `${OS_SELECT_COLUMNS}, financeiro_faturado_em, financeiro_recebido_em, os_financeiro_anexos(id, ordem_servico_id, storage_path, nome_arquivo, mime_type, tamanho_bytes, tipo_documento, observacao, created_by, created_at)`;
+const FINANCE_OS_SELECT_COLUMNS = `${OS_SELECT_COLUMNS}, financeiro_faturado_em, financeiro_recebido_em`;
 
 export async function fetchOSFinancePage({
   page = 1,
@@ -1328,18 +1332,7 @@ export async function fetchOSFinancePage({
         currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
         financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
         financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
-        financeiroAnexos: (o.os_financeiro_anexos || []).map((anexo) => ({
-          id: anexo.id,
-          ordemServicoId: anexo.ordem_servico_id,
-          storagePath: anexo.storage_path,
-          nomeArquivo: anexo.nome_arquivo,
-          mimeType: anexo.mime_type,
-          tamanhoBytes: Number(anexo.tamanho_bytes),
-          tipoDocumento: anexo.tipo_documento,
-          observacao: anexo.observacao ?? undefined,
-          createdBy: anexo.created_by ?? undefined,
-          createdAt: anexo.created_at,
-        })),
+        financeiroAnexos: [],
       })),
       totalCount: count ?? typedOrders.length,
     };
@@ -1361,10 +1354,7 @@ export async function fetchOSFinanceOverview(
       parceiroId,
       statusOperacional,
       statusFinanceiro,
-      searchTerm = "",
     } = filters;
-    const term = searchTerm.trim();
-    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
 
     let query = getSupabase()
       .from("ordens_servico")
@@ -1385,11 +1375,6 @@ export async function fetchOSFinanceOverview(
     if (driverId) query = query.eq("driver_id", driverId);
     if (statusOperacional) query = query.eq("status_operacional", statusOperacional);
     if (statusFinanceiro) query = query.eq("status_financeiro", statusFinanceiro);
-    if (likeTerm) {
-      query = query.or(
-        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
-      );
-    }
     if (parceiroId) {
       const { data: driverRows, error: driverError } = await getSupabase()
         .from("drivers")
@@ -1444,18 +1429,7 @@ export async function fetchOSFinanceOverview(
       arquivado: o.arquivado ?? false,
       financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
       financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
-      financeiroAnexos: (o.os_financeiro_anexos || []).map((anexo) => ({
-        id: anexo.id,
-        ordemServicoId: anexo.ordem_servico_id,
-        storagePath: anexo.storage_path,
-        nomeArquivo: anexo.nome_arquivo,
-        mimeType: anexo.mime_type,
-        tamanhoBytes: Number(anexo.tamanho_bytes),
-        tipoDocumento: anexo.tipo_documento,
-        observacao: anexo.observacao ?? undefined,
-        createdBy: anexo.created_by ?? undefined,
-        createdAt: anexo.created_at,
-      })),
+      financeiroAnexos: [],
     }));
   });
 }
@@ -2879,6 +2853,7 @@ export async function fetchOSFinanceStats(
   totalCusto: number;
   totalImposto: number;
   totalLucro: number;
+  totalLiberadoFaturamento: number;
   totalFaturado: number;
   totalRecebido: number;
   totalPendente: number;
@@ -2900,7 +2875,7 @@ export async function fetchOSFinanceStats(
     let query = getSupabase()
       .from("ordens_servico")
       .select(
-        "id, valor_bruto, custo, imposto, lucro, status_financeiro, data, motorista, driver_id, cliente_id, centro_custo_id",
+        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id",
         { count: "exact" },
       )
       .eq("arquivado", false);
@@ -2933,6 +2908,7 @@ export async function fetchOSFinanceStats(
           totalCusto: 0,
           totalImposto: 0,
           totalLucro: 0,
+          totalLiberadoFaturamento: 0,
           totalFaturado: 0,
           totalRecebido: 0,
           totalPendente: 0,
@@ -2950,6 +2926,7 @@ export async function fetchOSFinanceStats(
       imposto: number | string | null;
       lucro: number | string | null;
       status_financeiro: string | null;
+      status_operacional: string | null;
     }>;
 
     const summary = rows.reduce(
@@ -2958,16 +2935,23 @@ export async function fetchOSFinanceStats(
         const custo = Number(row.custo || 0);
         const imposto = Number(row.imposto || 0);
         const lucro = Number(row.lucro || 0);
-        const status = row.status_financeiro || "Pendente";
+        const statusFinanceiro = row.status_financeiro || "Pendente";
+        const statusOperacional = row.status_operacional || "";
 
         acc.totalOS += 1;
         acc.totalBruto += bruto;
         acc.totalCusto += custo;
         acc.totalImposto += imposto;
         acc.totalLucro += lucro;
-        if (status === "Faturado") acc.totalFaturado += bruto;
-        if (status === "Recebido" || status === "Pago") acc.totalRecebido += bruto;
-        if (status === "Pendente") acc.totalPendente += bruto;
+
+        const isLiberadaFaturar = isLiberadoParaFaturamento(statusOperacional);
+        if (isLiberadaFaturar && statusFinanceiro === "Pendente") {
+          acc.totalLiberadoFaturamento += bruto;
+        }
+        if (statusFinanceiro === "Faturado") acc.totalFaturado += bruto;
+
+        if (isFinanceStatusSettled(statusFinanceiro)) acc.totalRecebido += bruto;
+        if (statusFinanceiro === "Pendente") acc.totalPendente += bruto;
         return acc;
       },
       {
@@ -2976,6 +2960,7 @@ export async function fetchOSFinanceStats(
         totalCusto: 0,
         totalImposto: 0,
         totalLucro: 0,
+        totalLiberadoFaturamento: 0,
         totalFaturado: 0,
         totalRecebido: 0,
         totalPendente: 0,
@@ -2988,6 +2973,7 @@ export async function fetchOSFinanceStats(
       totalCusto: summary.totalCusto,
       totalImposto: summary.totalImposto,
       totalLucro: summary.totalLucro,
+      totalLiberadoFaturamento: summary.totalLiberadoFaturamento,
       totalFaturado: summary.totalFaturado,
       totalRecebido: summary.totalRecebido,
       totalPendente: summary.totalPendente,

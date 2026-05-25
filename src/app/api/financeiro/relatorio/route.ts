@@ -3,7 +3,11 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { sanitizeFinanceFileName } from "@/lib/financeiro";
+import {
+  isFinanceStatusSettled,
+  isLiberadoParaFaturamento,
+  sanitizeFinanceFileName,
+} from "@/lib/financeiro";
 
 export const runtime = "edge";
 
@@ -34,6 +38,7 @@ type FinanceRow = {
   imposto: number | string | null;
   lucro: number | string | null;
   status_financeiro: string | null;
+  status_operacional: string | null;
 };
 
 function getRequiredEnv(name: string): string {
@@ -132,7 +137,7 @@ export async function GET(request: Request) {
     let query = adminClient
       .from("ordens_servico")
       .select(
-        "id, os_number, data, cliente_id, centro_custo_id, motorista, driver_id, valor_bruto, custo, imposto, lucro, status_financeiro",
+        "id, os_number, data, cliente_id, centro_custo_id, motorista, driver_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional",
       )
       .eq("arquivado", false);
 
@@ -217,13 +222,17 @@ export async function GET(request: Request) {
         const imposto = Number(row.imposto || 0);
         const lucro = Number(row.lucro || 0);
         const status = row.status_financeiro || "Pendente";
+        const statusOperacional = row.status_operacional || "";
         acc.totalOS += 1;
         acc.totalBruto += bruto;
         acc.totalCusto += custo;
         acc.totalImposto += imposto;
         acc.totalLucro += lucro;
-        if (status === "Recebido" || status === "Pago") acc.totalRecebido += bruto;
+        if (isLiberadoParaFaturamento(statusOperacional) && status === "Pendente") {
+          acc.totalLiberadoFaturamento += bruto;
+        }
         if (status === "Faturado") acc.totalFaturado += bruto;
+        if (isFinanceStatusSettled(status)) acc.totalRecebido += bruto;
         if (status === "Pendente") acc.totalPendente += bruto;
         return acc;
       },
@@ -233,6 +242,7 @@ export async function GET(request: Request) {
         totalCusto: 0,
         totalImposto: 0,
         totalLucro: 0,
+        totalLiberadoFaturamento: 0,
         totalFaturado: 0,
         totalRecebido: 0,
         totalPendente: 0,
@@ -367,9 +377,16 @@ export async function GET(request: Request) {
 
     drawPageHeader(page);
     drawSummaryBox(page, margin, pageHeight - 156, 170, "Total OS", String(summary.totalOS));
-    drawSummaryBox(page, margin + 182, pageHeight - 156, 170, "Faturado", formatCurrency(summary.totalFaturado));
+    drawSummaryBox(
+      page,
+      margin + 182,
+      pageHeight - 156,
+      170,
+      "Liberado",
+      formatCurrency(summary.totalLiberadoFaturamento),
+    );
     drawSummaryBox(page, margin + 364, pageHeight - 156, 170, "Recebido", formatCurrency(summary.totalRecebido));
-    drawSummaryBox(page, margin + 546, pageHeight - 156, 170, "A faturar", formatCurrency(summary.totalPendente));
+    drawSummaryBox(page, margin + 546, pageHeight - 156, 170, "A Receber", formatCurrency(summary.totalFaturado));
     drawSummaryBox(page, margin, pageHeight - 228, 170, "Bruto", formatCurrency(summary.totalBruto));
     drawSummaryBox(page, margin + 182, pageHeight - 228, 170, "Custos", formatCurrency(summary.totalCusto));
     drawSummaryBox(page, margin + 364, pageHeight - 228, 170, "Impostos", formatCurrency(summary.totalImposto));
@@ -414,8 +431,6 @@ export async function GET(request: Request) {
       ];
 
       const xPositions = [margin + 8, margin + 74, margin + 244, margin + 404, margin + 564, margin + 652, margin + 740, margin + 828];
-      const widths = [58, 58, 156, 150, 76, 76, 76, 76];
-
       cells.forEach((cell, cellIndex) => {
         const isRightAligned = cellIndex >= 4;
         page.drawText(String(cell), {
@@ -437,8 +452,10 @@ export async function GET(request: Request) {
     const fileName = sanitizeFinanceFileName(
       `medicao-financeira-${month || "periodo"}.pdf`,
     );
+    const pdfArrayBuffer = new Uint8Array(pdfBytes.length);
+    pdfArrayBuffer.set(pdfBytes);
 
-    return new Response(pdfBytes, {
+    return new Response(pdfArrayBuffer.buffer, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="${fileName}"`,

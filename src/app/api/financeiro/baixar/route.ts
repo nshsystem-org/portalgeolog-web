@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     }
 
     const currentStatus = osRow.status_financeiro || "Pendente";
-    if (currentStatus !== "Faturado" && currentStatus !== "Pago") {
+    if (currentStatus !== "Faturado") {
       return NextResponse.json(
         { error: "A baixa só pode ser dada após o faturamento." },
         { status: 409 },

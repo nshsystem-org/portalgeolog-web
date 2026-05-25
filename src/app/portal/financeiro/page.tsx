@@ -5,8 +5,10 @@ import {
   CalendarRange,
   CheckCircle2,
   Download,
+  Eye,
   Filter,
   FileText,
+  MoreVertical,
   ReceiptText,
   RotateCcw,
   Search,
@@ -14,15 +16,15 @@ import {
   Truck,
   Upload,
   Wallet,
-  CircleDollarSign,
   Building2,
   CalendarClock,
   ArrowRightLeft,
-  Clock3,
   Link2,
   FileUp,
   BadgeInfo,
   ChevronDown,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -31,13 +33,14 @@ import { DataTable } from "@/components/ui/DataTable";
 import StandardModal from "@/components/StandardModal";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import {
-  fetchOSFinanceOverview,
+  fetchOSById,
   fetchOSFinancePage,
   fetchOSFinanceStats,
   type FinanceQueryFilters,
 } from "@/lib/supabase/queries";
 import {
   normalizeFinanceStatus,
+  isLiberadoParaFaturamento,
 } from "@/lib/financeiro";
 
 type FinanceActionTarget = {
@@ -51,16 +54,10 @@ type FinanceOverview = {
   totalCusto: number;
   totalImposto: number;
   totalLucro: number;
+  totalLiberadoFaturamento: number;
   totalFaturado: number;
   totalRecebido: number;
   totalPendente: number;
-};
-
-type GroupSummary = {
-  id: string;
-  label: string;
-  total: number;
-  count: number;
 };
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
@@ -84,18 +81,19 @@ function formatDate(value?: string | null): string {
 function startOfWeek(date = new Date()): Date {
   const clone = new Date(date);
   const day = clone.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  clone.setDate(clone.getDate() + diff);
+  const diff = day; // No Brasil, semana começa no domingo (day 0)
+  clone.setDate(clone.getDate() - diff);
   clone.setHours(0, 0, 0, 0);
   return clone;
 }
 
 function endOfWeek(date = new Date()): Date {
-  const start = startOfWeek(date);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
-  return end;
+  const clone = new Date(date);
+  const day = clone.getDay();
+  const diff = 6 - day; // No Brasil, semana termina no sábado (day 6)
+  clone.setDate(clone.getDate() + diff);
+  clone.setHours(23, 59, 59, 999);
+  return clone;
 }
 
 function normalizeToInputDate(value: Date): string {
@@ -111,13 +109,22 @@ function normalizeToInputMonth(value: Date): string {
   return `${year}-${month}`;
 }
 
+function getFinanceDisplayStatus(os: OrderService): string {
+  const normalized = normalizeFinanceStatus(os.status.financeiro);
+  if (normalized === "Pendente" && isLiberadoParaFaturamento(os.status.operacional)) {
+    return "Liberado";
+  }
+  return normalized;
+}
+
 function getStatusLabel(status: string): string {
-  return normalizeFinanceStatus(status);
+  return status;
 }
 
 function statusStyle(status: string): string {
-  const normalized = normalizeFinanceStatus(status);
-  switch (normalized) {
+  switch (status) {
+    case "Liberado":
+      return "border-blue-200 bg-blue-50 text-blue-600";
     case "Faturado":
       return "border-amber-200 bg-amber-50 text-amber-700";
     case "Recebido":
@@ -125,28 +132,6 @@ function statusStyle(status: string): string {
     default:
       return "border-slate-200 bg-slate-50 text-slate-700";
   }
-}
-
-function sumGroup<T>(
-  items: T[],
-  getKey: (item: T) => string,
-  getLabel: (item: T) => string,
-  getValue: (item: T) => number,
-): GroupSummary[] {
-  const map = new Map<string, GroupSummary>();
-  items.forEach((item) => {
-    const key = getKey(item) || "sem-id";
-    const current = map.get(key) ?? {
-      id: key,
-      label: getLabel(item),
-      total: 0,
-      count: 0,
-    };
-    current.total += getValue(item);
-    current.count += 1;
-    map.set(key, current);
-  });
-  return Array.from(map.values()).sort((a, b) => b.total - a.total);
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -169,28 +154,68 @@ function FinanceCard({
   value: string;
   subtitle: string;
   icon: React.ReactNode;
-  tone: "blue" | "emerald" | "amber" | "slate";
+  tone: "blue" | "emerald" | "amber" | "slate" | "light-blue";
 }) {
   const toneMap: Record<typeof tone, string> = {
     blue: "bg-blue-50/80 border-blue-100 text-blue-600 shadow-blue-100/50",
-    emerald: "bg-emerald-50/80 border-emerald-100 text-emerald-600 shadow-emerald-100/50",
+    "light-blue": "bg-blue-50/40 border-blue-200 text-blue-400 shadow-blue-50/30",
+    emerald: "bg-teal-50/80 border-teal-100 text-teal-500 shadow-teal-100/50",
     amber: "bg-amber-50/80 border-amber-100 text-amber-600 shadow-amber-100/50",
     slate: "bg-slate-50/80 border-slate-200 text-slate-600 shadow-slate-100/50",
   };
 
+  const titleColorMap: Record<typeof tone, string> = {
+    blue: "text-blue-900",
+    "light-blue": "text-blue-400",
+    emerald: "text-teal-500",
+    amber: "text-[rgb(135,138,28)]",
+    slate: "text-slate-800",
+  };
+
+  const valueColorMap: Record<typeof tone, string> = {
+    blue: "text-blue-950",
+    "light-blue": "text-blue-600",
+    emerald: "text-teal-600",
+    amber: "text-[rgb(100,102,20)]",
+    slate: "text-slate-900",
+  };
+
+  const isLiberado = title === "Liberado";
+  const isFaturado = title === "Faturado";
+  const isRecebido = title === "Recebido";
+
+  const iconDivClass = (() => {
+    if (isLiberado) {
+      return "inline-flex items-center gap-2 rounded-full border border-blue-300 bg-gradient-to-r from-blue-300 via-cyan-300 to-emerald-300 bg-[length:200%_100%] animate-gradient shadow-lg shadow-blue-400/60 hover:shadow-2xl hover:shadow-cyan-500/80 hover:scale-105 transition-all duration-300";
+    }
+    if (isFaturado) {
+      return "inline-flex items-center gap-2 rounded-full border border-yellow-200 bg-gradient-to-r from-yellow-100 via-yellow-200 to-yellow-300 bg-[length:200%_100%] animate-gradient shadow-md shadow-yellow-300/50 hover:shadow-xl hover:shadow-yellow-400/70 hover:scale-105 transition-all duration-300";
+    }
+    if (isRecebido) {
+      return "inline-flex items-center gap-2 rounded-full border border-teal-200 bg-gradient-to-r from-teal-100 via-teal-200 to-teal-300 bg-[length:200%_100%] animate-gradient shadow-lg shadow-teal-300/60 hover:shadow-2xl hover:shadow-teal-400/80 hover:scale-105 transition-all duration-300";
+    }
+    return toneMap[tone];
+  })();
+
+  const iconColorClass = (() => {
+    if (isFaturado) return "text-[rgb(135,138,28)]";
+    if (isRecebido) return "text-teal-500";
+    return "";
+  })();
+
   return (
     <div className="flex items-start gap-5 rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-200/50">
-      <div className={`rounded-2xl border p-4 shadow-sm ${toneMap[tone]}`}>
-        <div className="[&>svg]:h-7 [&>svg]:w-7">{icon}</div>
+      <div className={`rounded-2xl border p-4 shadow-sm ${iconDivClass}`}>
+        <div className={`[&>svg]:h-7 [&>svg]:w-7 ${iconColorClass}`}>{icon}</div>
       </div>
       <div className="min-w-0 flex-1">
-        <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 truncate">
+        <p className={`mb-1.5 text-[11px] font-black uppercase tracking-[0.2em] truncate ${titleColorMap[tone]}`}>
           {title}
         </p>
-        <h3 className="text-3xl font-black tracking-tighter text-slate-800 tabular-nums truncate">
+        <h3 className={`text-2xl font-black tracking-tighter tabular-nums truncate ${valueColorMap[tone]}`}>
           {value}
         </h3>
-        <p className="mt-2 text-sm font-bold text-slate-500 truncate">{subtitle}</p>
+        <p className="mt-2 text-xs font-medium text-slate-400 truncate">{subtitle}</p>
       </div>
     </div>
   );
@@ -199,9 +224,10 @@ function FinanceCard({
 export default function MedicaoFinanceiraPage() {
   const { profile } = useAuth();
   const { clientes, drivers, parceiros, loading: dataLoading, lastOSUpdate } = useData();
-  const [selectedMonth, setSelectedMonth] = useState(normalizeToInputMonth(new Date()));
-  const [dataInicio, setDataInicio] = useState(normalizeToInputDate(new Date()));
-  const [dataFim, setDataFim] = useState(normalizeToInputDate(new Date()));
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(normalizeToInputMonth(now));
+  const [dataInicio, setDataInicio] = useState(normalizeToInputDate(startOfWeek(now)));
+  const [dataFim, setDataFim] = useState(normalizeToInputDate(endOfWeek(now)));
   const [clienteId, setClienteId] = useState("");
   const [centroCustoId, setCentroCustoId] = useState("");
   const [parceiroId, setParceiroId] = useState("");
@@ -215,26 +241,30 @@ export default function MedicaoFinanceiraPage() {
     totalCusto: 0,
     totalImposto: 0,
     totalLucro: 0,
+    totalLiberadoFaturamento: 0,
     totalFaturado: 0,
     totalRecebido: 0,
     totalPendente: 0,
   });
-  const [overviewRows, setOverviewRows] = useState<OrderService[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [actionTarget, setActionTarget] = useState<FinanceActionTarget | null>(null);
+  const [viewingOS, setViewingOS] = useState<OrderService | null>(null);
+  const [viewingOSLoading, setViewingOSLoading] = useState(false);
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [faturarFile, setFaturarFile] = useState<File | null>(null);
   const [faturarTipoDocumento, setFaturarTipoDocumento] = useState("nota_fiscal");
   const [faturarObservacao, setFaturarObservacao] = useState("");
   const [recebimentoObservacao, setRecebimentoObservacao] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [activeQuickRange, setActiveQuickRange] = useState<"today" | "week" | "month" | "custom">("today");
+  const [activeQuickRange, setActiveQuickRange] = useState<"today" | "week" | "month" | "custom" | null>("week");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const actionMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const filters = useMemo<FinanceQueryFilters>(
     () => ({
-      month: selectedMonth,
+      month: undefined,
       dataInicio: dataInicio || undefined,
       dataFim: dataFim || undefined,
       clienteId: clienteId || undefined,
@@ -246,7 +276,6 @@ export default function MedicaoFinanceiraPage() {
       statusFinanceiro: statusFinanceiro || undefined,
     }),
     [
-      selectedMonth,
       dataInicio,
       dataFim,
       clienteId,
@@ -316,13 +345,9 @@ export default function MedicaoFinanceiraPage() {
     const loadStats = async () => {
       setOverviewLoading(true);
       try {
-        const [statsData, overviewData] = await Promise.all([
-          fetchOSFinanceStats(filters),
-          fetchOSFinanceOverview(filters),
-        ]);
+        const statsData = await fetchOSFinanceStats(filters);
         if (cancelled) return;
         setStats(statsData);
-        setOverviewRows(overviewData);
       } catch (error) {
         console.error("Erro ao carregar dashboard financeiro:", error);
         if (!cancelled) {
@@ -332,11 +357,11 @@ export default function MedicaoFinanceiraPage() {
             totalCusto: 0,
             totalImposto: 0,
             totalLucro: 0,
+            totalLiberadoFaturamento: 0,
             totalFaturado: 0,
             totalRecebido: 0,
             totalPendente: 0,
           });
-          setOverviewRows([]);
         }
       } finally {
         if (!cancelled) setOverviewLoading(false);
@@ -349,63 +374,27 @@ export default function MedicaoFinanceiraPage() {
     };
   }, [filters, lastOSUpdate]);
 
-  const weeklyProvision = useMemo(() => {
-    const weekStart = startOfWeek(new Date());
-    const weekEnd = endOfWeek(new Date());
-    return overviewRows
-      .filter((row) => {
-        if (!row.data) return false;
-        const date = new Date(`${row.data}T00:00:00`);
-        const normalized = normalizeFinanceStatus(row.status.financeiro);
-        return date >= weekStart && date <= weekEnd && normalized !== "Recebido";
-      })
-      .reduce((sum, row) => sum + Number(row.valorBruto || 0), 0);
-  }, [overviewRows]);
+  useEffect(() => {
+    if (!openActionMenuId) return;
 
-  const topCustomers = useMemo(
-    () =>
-      sumGroup(
-        overviewRows,
-        (row) => row.clienteId || "",
-        (row) => customerMap.get(row.clienteId || "") || "Sem cliente",
-        (row) => Number(row.valorBruto || 0),
-      ).slice(0, 5),
-    [overviewRows, customerMap],
-  );
+    const handleOutsideClick = (event: MouseEvent) => {
+      const currentMenu = actionMenuRefs.current[openActionMenuId];
+      if (currentMenu && !currentMenu.contains(event.target as Node)) {
+        setOpenActionMenuId(null);
+      }
+    };
 
-  const topDrivers = useMemo(
-    () =>
-      sumGroup(
-        overviewRows,
-        (row) => row.driverId || row.motorista || "",
-        (row) => {
-          const driverName = row.driverId ? driverMap.get(row.driverId) : undefined;
-          const partnerName = row.driverId
-            ? parceiros.find((partner) => partner.id === drivers.find((driver) => driver.id === row.driverId)?.parceiro_id)?.razaoSocialOuNomeCompleto
-            : undefined;
-          return driverName || row.motorista || partnerName || "Sem motorista";
-        },
-        (row) => Number(row.custo || 0),
-      ).slice(0, 5),
-    [overviewRows, driverMap, drivers, parceiros],
-  );
-
-  const topCenters = useMemo(
-    () =>
-      sumGroup(
-        overviewRows,
-        (row) => row.centroCustoId || "",
-        (row) => centerMap.get(row.centroCustoId || "") || "Sem centro",
-        (row) => Number(row.valorBruto || 0),
-      ).slice(0, 5),
-    [overviewRows, centerMap],
-  );
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, [openActionMenuId]);
 
   const resetFilters = useCallback(() => {
-    setSelectedMonth(normalizeToInputMonth(new Date()));
-    const today = normalizeToInputDate(new Date());
-    setDataInicio(today);
-    setDataFim(today);
+    const now = new Date();
+    setSelectedMonth(normalizeToInputMonth(now));
+    setDataInicio(normalizeToInputDate(startOfWeek(now)));
+    setDataFim(normalizeToInputDate(endOfWeek(now)));
     setClienteId("");
     setCentroCustoId("");
     setParceiroId("");
@@ -413,7 +402,7 @@ export default function MedicaoFinanceiraPage() {
     setMotorista("");
     setStatusOperacional("");
     setStatusFinanceiro("");
-    setActiveQuickRange("today");
+    setActiveQuickRange("week");
   }, []);
 
   const setQuickRange = useCallback((mode: "week" | "month" | "today") => {
@@ -432,20 +421,43 @@ export default function MedicaoFinanceiraPage() {
       setActiveQuickRange("week");
       return;
     }
+    // month
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    setDataInicio(normalizeToInputDate(firstDay));
+    setDataFim(normalizeToInputDate(lastDay));
     setSelectedMonth(normalizeToInputMonth(now));
-    setDataInicio("");
-    setDataFim("");
     setActiveQuickRange("month");
   }, []);
 
-  const quickRangeButtonClass = (mode: "today" | "week" | "month") =>
+  const quickRangeButtonClass = (mode: "today" | "week" | "month" | null) =>
     `inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-black shadow-sm transition-all active:scale-95 ${
       activeQuickRange === mode
         ? "border-blue-400 bg-blue-50 text-blue-700"
         : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
     }`;
 
+  const handleViewOS = useCallback(async (os: OrderService) => {
+    setOpenActionMenuId(null);
+    setViewingOS(os);
+    setViewingOSLoading(true);
+    try {
+      const latest = await fetchOSById(os.id);
+      if (latest) {
+        setViewingOS(latest);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar detalhes da OS:", error);
+      toast.error("Não foi possível carregar os detalhes da OS.");
+    } finally {
+      setViewingOSLoading(false);
+    }
+  }, []);
+
   const handleOpenFaturar = (os: OrderService) => {
+    setOpenActionMenuId(null);
     setActionTarget({ os });
     setFaturarFile(null);
     setFaturarTipoDocumento("nota_fiscal");
@@ -454,6 +466,7 @@ export default function MedicaoFinanceiraPage() {
   };
 
   const handleOpenRecebimento = (os: OrderService) => {
+    setOpenActionMenuId(null);
     setActionTarget({ os });
     setRecebimentoObservacao("");
     setFaturarFile(null);
@@ -605,44 +618,73 @@ export default function MedicaoFinanceiraPage() {
 
   const statsCards = [
     {
-      title: "Total Faturamento",
-      value: formatCurrency(stats.totalBruto),
-      subtitle: `Provisionamento mensal: ${formatCurrency(stats.totalPendente + stats.totalFaturado)}`,
-      icon: <CircleDollarSign size={28} className="text-blue-600" />,
-      tone: "blue" as const,
+      title: "Liberado",
+      value: formatCurrency(stats.totalLiberadoFaturamento),
+      subtitle: "Já podem ser faturados",
+      icon: <Wallet size={28} className="text-blue-700" />,
+      tone: "light-blue" as const,
+    },
+    {
+      title: "Faturado",
+      value: formatCurrency(stats.totalFaturado),
+      subtitle: "Já faturados, aguardando receber",
+      icon: <ReceiptText size={28} className="text-[rgb(135,138,28)]" />,
+      tone: "amber" as const,
     },
     {
       title: "Recebido",
       value: formatCurrency(stats.totalRecebido),
-      subtitle: "Valores em conta",
-      icon: <CheckCircle2 size={28} className="text-emerald-600" />,
+      subtitle: "Valores recebidos em conta",
+      icon: <CheckCircle2 size={28} className="text-teal-500" />,
       tone: "emerald" as const,
-    },
-    {
-      title: "A Receber (Faturado)",
-      value: formatCurrency(stats.totalFaturado),
-      subtitle: `A faturar (Pendente): ${formatCurrency(stats.totalPendente)}`,
-      icon: <Clock3 size={28} className="text-amber-600" />,
-      tone: "amber" as const,
     },
     {
       title: "Repasse Motoristas",
       value: formatCurrency(stats.totalCusto),
-      subtitle: `Provisão semana: ${formatCurrency(weeklyProvision)}`,
+      subtitle: "Precisam ser repassados",
       icon: <Truck size={28} className="text-slate-600" />,
       tone: "slate" as const,
     },
   ];
 
+  const filterDateRange = (() => {
+    if (dataInicio && dataFim) {
+      const start = new Date(dataInicio + 'T00:00:00');
+      const end = new Date(dataFim + 'T00:00:00');
+      const startFormatted = start.toLocaleDateString('pt-BR');
+      const endFormatted = end.toLocaleDateString('pt-BR');
+      if (dataInicio === dataFim) {
+        return <span className="font-medium text-slate-800">{startFormatted}</span>;
+      }
+      return (
+        <>
+          <span className="font-medium text-slate-800">{startFormatted}</span> <span className="text-slate-300">-</span> <span className="font-medium text-slate-800">{endFormatted}</span>
+        </>
+      );
+    }
+    if (dataInicio) {
+      const start = new Date(dataInicio + 'T00:00:00');
+      return <>A partir de <span className="font-medium text-slate-800">{start.toLocaleDateString('pt-BR')}</span></>;
+    }
+    if (dataFim) {
+      const end = new Date(dataFim + 'T00:00:00');
+      return <>Até <span className="font-medium text-slate-800">{end.toLocaleDateString('pt-BR')}</span></>;
+    }
+    return "Todas as datas";
+  })();
+
   return (
     <div className="space-y-6 pb-10">
       <section className="rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 transition-all">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-xs font-black uppercase tracking-[0.3em] text-blue-700">
-              <Wallet size={14} />
-              Gestão Financeira Geolog
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-gradient-to-r from-blue-100 via-cyan-100 to-emerald-100 bg-[length:200%_100%] animate-gradient px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-blue-800 shadow-md shadow-blue-300/50 hover:shadow-xl hover:shadow-cyan-400/70 hover:scale-105 transition-all duration-300">
+              <Wallet size={14} className="transition-transform duration-300 hover:rotate-12" />
+              Gestão Financeira
             </div>
+            <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+              {filterDateRange}
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -831,7 +873,7 @@ export default function MedicaoFinanceiraPage() {
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
               >
                 <option value="">Todas as Situações</option>
-                <option value="Pendente">A Faturar</option>
+                <option value="Pendente">Liberado</option>
                 <option value="Faturado">Faturado (A Receber)</option>
                 <option value="Recebido">Recebido</option>
                 <option value="Pago">Pago (Legado)</option>
@@ -852,7 +894,7 @@ export default function MedicaoFinanceiraPage() {
         </section>
       )}
 
-      <div className="rounded-[2.5rem] border border-slate-200 bg-white p-2 shadow-xl shadow-slate-200/40 overflow-hidden">
+      <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-200/40 overflow-hidden">
         <DataTable<OrderService>
           data={financeTable.items}
           loading={financeTable.loading}
@@ -871,7 +913,7 @@ export default function MedicaoFinanceiraPage() {
           columns={[
             {
               key: "documento",
-              title: "OS / Data",
+              title: "Protocolo",
               render: (_value, item) => (
                 <div className="space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
@@ -935,9 +977,15 @@ export default function MedicaoFinanceiraPage() {
                 return (
                   <div className="space-y-1 text-right">
                     <p className="text-base font-black text-slate-800">{formatCurrency(bruto)}</p>
-                    <div className="flex items-center justify-end gap-2 text-[10px] font-bold uppercase text-slate-400">
-                      <span className="text-orange-500/80">Custo {formatCurrency(custo)}</span>
-                      <span className="text-emerald-500/80">Líq {formatCurrency(lucro)}</span>
+                    <div className="flex flex-col items-end gap-0.5 text-xs font-semibold">
+                      <span className="flex items-center gap-1 text-emerald-500">
+                        <TrendingUp size={12} />
+                        {formatCurrency(lucro)}
+                      </span>
+                      <span className="flex items-center gap-1 text-red-500">
+                        <TrendingDown size={12} />
+                        {formatCurrency(custo)}
+                      </span>
                     </div>
                   </div>
                 );
@@ -945,17 +993,22 @@ export default function MedicaoFinanceiraPage() {
             },
             {
               key: "financeiro",
-              title: "Status & Datas",
+              title: "Status",
               render: (_value, item) => {
-                const normalized = normalizeFinanceStatus(item.status.financeiro);
+                const displayStatus = getFinanceDisplayStatus(item);
                 const attachment = item.financeiroAnexos?.[0];
+                const isLiberado = displayStatus === "Liberado";
                 
                 return (
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${statusStyle(normalized)}`}>
-                        <BadgeInfo size={12} />
-                        {getStatusLabel(normalized)}
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.3em] ${
+                        isLiberado
+                          ? "border-blue-100 bg-gradient-to-r from-blue-100 via-cyan-100 to-emerald-100 bg-[length:200%_100%] animate-gradient shadow-lg shadow-blue-400/60 hover:shadow-2xl hover:shadow-cyan-500/80 hover:scale-105 transition-all duration-300 text-blue-500"
+                          : statusStyle(displayStatus)
+                      }`}>
+                        {isLiberado ? <Wallet size={12} className="text-blue-500" /> : <BadgeInfo size={12} />}
+                        {getStatusLabel(displayStatus)}
                       </span>
                       {attachment && (
                         <button
@@ -985,32 +1038,63 @@ export default function MedicaoFinanceiraPage() {
               align: "right",
               render: (_value, item) => {
                 const normalized = normalizeFinanceStatus(item.status.financeiro);
-                const canFaturar = item.status.operacional === "Finalizado" && normalized === "Pendente";
+                const displayStatus = getFinanceDisplayStatus(item);
+                const canFaturar = displayStatus === "Liberado";
                 const canBaixar = normalized === "Faturado";
 
                 return (
-                  <div className="flex justify-end gap-2">
-                    {canFaturar && (
-                      <button
-                        onClick={() => handleOpenFaturar(item)}
-                        className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-blue-200 transition-all hover:bg-blue-700 active:scale-95"
-                      >
-                        <FileUp size={14} />
-                        Faturar
-                      </button>
-                    )}
-                    {canBaixar && (
-                      <button
-                        onClick={() => handleOpenRecebimento(item)}
-                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-emerald-200 transition-all hover:bg-emerald-700 active:scale-95"
-                      >
-                        <CircleDollarSign size={14} />
-                        Baixar
-                      </button>
-                    )}
-                    {!canFaturar && !canBaixar && (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-300">
-                        <ShieldCheck size={18} />
+                  <div
+                    className="relative ml-auto inline-block"
+                    ref={(el) => {
+                      if (el) {
+                        actionMenuRefs.current[item.id] = el;
+                      } else {
+                        delete actionMenuRefs.current[item.id];
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenActionMenuId((prev) => (prev === item.id ? null : item.id));
+                      }}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-slate-500 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600"
+                      aria-haspopup="true"
+                      aria-expanded={openActionMenuId === item.id}
+                    >
+                      <MoreVertical size={18} />
+                    </button>
+                    {openActionMenuId === item.id && (
+                      <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[200px] space-y-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
+                        <button
+                          type="button"
+                          onClick={() => handleViewOS(item)}
+                          className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-cyan-50 hover:text-cyan-600"
+                        >
+                          <Eye size={16} className="text-slate-400 group-hover:text-cyan-600" />
+                          Visualizar
+                        </button>
+                        {canFaturar && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenFaturar(item)}
+                            className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                          >
+                            <FileUp size={16} className="text-slate-400 group-hover:text-blue-600" />
+                            Faturar
+                          </button>
+                        )}
+                        {canBaixar && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenRecebimento(item)}
+                            className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+                          >
+                            <Wallet size={16} className="text-slate-400 group-hover:text-emerald-600" />
+                            Dar baixa
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1020,6 +1104,97 @@ export default function MedicaoFinanceiraPage() {
           ]}
         />
       </div>
+
+      {viewingOS ? (
+        <StandardModal
+          title={`Visualizar OS ${viewingOS.os || "Sem número"}`}
+          subtitle={`Protocolo ${viewingOS.protocolo || viewingOS.id.slice(0, 8)}`}
+          icon={<Eye size={22} />}
+          onClose={() => {
+            setViewingOS(null);
+            setViewingOSLoading(false);
+          }}
+          maxWidthClassName="max-w-3xl"
+          bodyClassName="p-6 md:p-8 space-y-6"
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Cliente</p>
+              <p className="mt-2 text-base font-black text-slate-800">
+                {customerMap.get(viewingOS.clienteId) || "Sem cliente"}
+              </p>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Centro de custo</p>
+              <p className="mt-2 text-base font-black text-slate-800">
+                {centerMap.get(viewingOS.centroCustoId || "") || viewingOS.centroCustoId || "Geral"}
+              </p>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Motorista</p>
+              <p className="mt-2 text-base font-black text-slate-800">
+                {viewingOS.driverId ? driverMap.get(viewingOS.driverId) || viewingOS.motorista || "Sem motorista" : viewingOS.motorista || "Sem motorista"}
+              </p>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Parceiro</p>
+              <p className="mt-2 text-base font-black text-slate-800">
+                {viewingOS.driverId
+                  ? partnerMap.get(drivers.find((driver) => driver.id === viewingOS.driverId)?.parceiro_id || "") || "Sem parceiro"
+                  : "Sem parceiro"}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-3xl border border-blue-100 bg-blue-50/70 p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-500">Status financeiro</p>
+              <p className="mt-2 text-lg font-black text-blue-700">
+                {getFinanceDisplayStatus(viewingOS)}
+              </p>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Data da OS</p>
+              <p className="mt-2 text-lg font-black text-slate-800">{formatDate(viewingOS.data)}</p>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Status operacional</p>
+              <p className="mt-2 text-lg font-black text-slate-800">{viewingOS.status.operacional || "-"}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Valor bruto</p>
+              <p className="mt-2 text-xl font-black text-slate-800">{formatCurrency(Number(viewingOS.valorBruto || 0))}</p>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-white p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Custo</p>
+              <p className="mt-2 text-xl font-black text-red-500">{formatCurrency(Number(viewingOS.custo || 0))}</p>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-white p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Lucro</p>
+              <p className="mt-2 text-xl font-black text-emerald-600">{formatCurrency(Number(viewingOS.lucro || 0))}</p>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Datas financeiras</p>
+            <div className="mt-3 space-y-2 text-sm font-bold text-slate-700">
+              <p>Faturado em: {formatDate(viewingOS.financeiroFaturadoEm)}</p>
+              <p>Recebido em: {formatDate(viewingOS.financeiroRecebidoEm)}</p>
+              <p>Anexos: {viewingOS.financeiroAnexos?.length || 0}</p>
+            </div>
+          </div>
+
+          {viewingOSLoading ? (
+            <div className="flex items-center justify-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+              <RotateCcw size={16} className="animate-spin" />
+              Carregando detalhes mais recentes...
+            </div>
+          ) : null}
+        </StandardModal>
+      ) : null}
 
       {actionTarget ? (
         <StandardModal

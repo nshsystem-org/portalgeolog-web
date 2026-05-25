@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import {
   FINANCE_ATTACHMENT_BUCKET,
   sanitizeFinanceFileName,
+  isLiberadoParaFaturamento,
 } from "@/lib/financeiro";
 
 export const runtime = "edge";
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
     const adminClient = createAdminClient();
     const { data: osRow, error: osError } = await adminClient
       .from("ordens_servico")
-      .select("id, status_financeiro")
+      .select("id, status_financeiro, status_operacional")
       .eq("id", osId)
       .single();
 
@@ -110,9 +111,16 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!isLiberadoParaFaturamento(osRow.status_operacional)) {
+      return NextResponse.json(
+        { error: "A OS precisa estar finalizada ou concluída para faturar." },
+        { status: 409 },
+      );
+    }
+
     if ((osRow.status_financeiro || "Pendente") !== "Pendente") {
       return NextResponse.json(
-        { error: "A OS já foi faturada." },
+        { error: "A OS já foi faturada ou recebida." },
         { status: 409 },
       );
     }
