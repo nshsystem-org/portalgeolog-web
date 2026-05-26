@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
-import React from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchActiveAnnouncements } from "@/lib/supabase/queries";
 
@@ -10,13 +9,14 @@ export interface Announcement {
   message: string;
   type: "info" | "warning" | "error" | "success";
   created_at: string;
+  updated_at: string;
   expires_at: string | null;
 }
 
 export function useAnnouncements() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
-  const dismissedIdsRef = React.useRef<Set<string>>(new Set());
+  const dismissedIdsRef = useRef<Set<string>>(new Set());
 
   const loadAnnouncements = useCallback(async () => {
     try {
@@ -36,14 +36,28 @@ export function useAnnouncements() {
       // Buscar anúncios já dispensados pelo usuário
       const { data: dismissed } = await supabase
         .from("announcement_dismissals")
-        .select("announcement_id")
+        .select("announcement_id, dismissed_at")
         .eq("user_id", user.id);
 
-      const dismissedSet = new Set(dismissed?.map(d => d.announcement_id) || []);
-      dismissedIdsRef.current = dismissedSet;
+      const dismissedRows = (dismissed ?? []) as Array<{
+        announcement_id: string;
+        dismissed_at: string;
+      }>;
+      const dismissedMap = new Map(
+        dismissedRows.map((item) => [item.announcement_id, item.dismissed_at]),
+      );
+      dismissedIdsRef.current = new Set(dismissedMap.keys());
 
-      // Filtrar anúncios que não foram dispensados
-      const filtered = announcements.filter(a => !dismissedSet.has(a.id));
+      // Exibir novamente se o aviso foi atualizado depois do último dismiss
+      const filtered = announcements.filter((announcement) => {
+        const dismissedAt = dismissedMap.get(announcement.id);
+        if (!dismissedAt) return true;
+
+        return (
+          new Date(dismissedAt).getTime() <
+          new Date(announcement.updated_at).getTime()
+        );
+      });
       setAnnouncements(filtered);
     } catch (error) {
       console.error("Erro ao carregar avisos:", error);
@@ -61,7 +75,14 @@ export function useAnnouncements() {
 
       await supabase
         .from("announcement_dismissals")
-        .insert({ user_id: user.id, announcement_id: announcementId });
+        .delete()
+        .eq("user_id", user.id)
+        .eq("announcement_id", announcementId);
+
+      await supabase.from("announcement_dismissals").insert({
+        user_id: user.id,
+        announcement_id: announcementId,
+      });
 
       // Atualizar estado local
       dismissedIdsRef.current.add(announcementId);

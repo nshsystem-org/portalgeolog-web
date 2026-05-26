@@ -82,13 +82,24 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
       os_id: string;
-      cycle_index: number;
-      action: "finish_cycle" | "revert_to_pending" | "revert_to_accept";
+      cycle_index?: number;
+      action:
+        | "finish_cycle"
+        | "revert_to_pending"
+        | "revert_to_accept"
+        | "finish_all";
     };
 
     const { os_id, cycle_index, action } = body;
 
-    if (!os_id || !Number.isFinite(cycle_index)) {
+    if (!os_id) {
+      return NextResponse.json(
+        { success: false, error: "Parâmetros inválidos." },
+        { status: 400 },
+      );
+    }
+
+    if (action !== "finish_all" && !Number.isFinite(cycle_index)) {
       return NextResponse.json(
         { success: false, error: "Parâmetros inválidos." },
         { status: 400 },
@@ -110,7 +121,47 @@ export async function POST(request: Request) {
 
     const os = osRaw as OSRow;
     const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
-    
+
+    // Caso especial: finalizar todos os ciclos de uma vez
+    if (action === "finish_all") {
+      const now = new Date().toISOString();
+      const finishedCycles: OperationalCycle[] = cycles.map((c) =>
+        c.state === "cancelled"
+          ? c
+          : {
+              ...c,
+              state: "completed",
+              acceptedAt: c.acceptedAt || now,
+              startedAt: c.startedAt || now,
+              finishedAt: c.finishedAt || now,
+            },
+      );
+
+      const ordensServicoBulk = getAdmin().from(
+        "ordens_servico",
+      ) as unknown as OrdensServicoUpdateBuilder;
+      const { error: bulkUpdateError } = await ordensServicoBulk
+        .update({
+          driver_operation_cycles: finishedCycles,
+          status_operacional: "Finalizado",
+        })
+        .eq("id", os_id);
+
+      if (bulkUpdateError) {
+        console.error("Erro ao finalizar todos os ciclos:", bulkUpdateError);
+        return NextResponse.json(
+          { success: false, error: "Erro ao atualizar banco de dados." },
+          { status: 500 },
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Todos os ciclos finalizados com sucesso.",
+        cycle_state: "completed",
+      });
+    }
+
     console.log(
       "[os-manual-cycle] Buscando ciclo para atualizar:",
       "cycle_index recebido:",
@@ -124,7 +175,7 @@ export async function POST(request: Request) {
       })),
     );
 
-    const cycle = cycles.find((c) => c.itineraryIndex === cycle_index);
+    const cycle = cycles.find((c) => c.itineraryIndex === (cycle_index as number));
 
     if (!cycle) {
       console.error(
@@ -147,11 +198,12 @@ export async function POST(request: Request) {
 
     let updatedCycles: OperationalCycle[] = cycles;
     let newState: OperationalCycleState = cycle.state;
+    const targetIndex = cycle_index as number;
 
     switch (action) {
       case "finish_cycle":
         // Finalizar ciclo: transition to completed
-        updatedCycles = updateCycleInList(cycles, cycle_index, {
+        updatedCycles = updateCycleInList(cycles, targetIndex, {
           state: "completed",
           finishedAt: new Date().toISOString(),
         });
@@ -160,7 +212,7 @@ export async function POST(request: Request) {
 
       case "revert_to_pending":
         // Revert accept to pending: reset to pending state and clear all progress data
-        updatedCycles = updateCycleInList(cycles, cycle_index, {
+        updatedCycles = updateCycleInList(cycles, targetIndex, {
           state: "pending",
           acceptedAt: undefined,
           startedAt: undefined,
@@ -173,7 +225,7 @@ export async function POST(request: Request) {
 
       case "revert_to_accept":
         // Revert from started/finished to accept: reset to awaiting_start state
-        updatedCycles = updateCycleInList(cycles, cycle_index, {
+        updatedCycles = updateCycleInList(cycles, targetIndex, {
           state: "awaiting_start",
           startedAt: undefined,
           finishedAt: undefined,
@@ -208,7 +260,7 @@ export async function POST(request: Request) {
 
     // Validar que apenas o ciclo específico foi modificado
     const modifiedCycles = updatedCycles.filter(
-      (c) => c.itineraryIndex === cycle_index,
+      (c) => c.itineraryIndex === (cycle_index as number),
     );
     if (modifiedCycles.length !== 1) {
       console.error(

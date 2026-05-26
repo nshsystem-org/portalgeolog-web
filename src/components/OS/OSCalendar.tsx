@@ -30,9 +30,12 @@ interface EventContentProps {
   os: OrderService;
   clientes: Cliente[];
   status: CycleOperationalStatus;
+  timeText?: string;
+  eventStartStr?: string;
   displayDateTime?: string;
   startTime?: string;
   showArchivedOnly?: boolean;
+  isMonthView?: boolean;
   isDayView?: boolean;
 }
 
@@ -133,6 +136,28 @@ const formatCalendarDateTime = (
   return `${date}T${hours}:${minutes}:00`;
 };
 
+const extractTimeFromDateTime = (value?: string | null): string | undefined => {
+  if (!value) return undefined;
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return undefined;
+
+  // Se já é hora pura (HH:MM ou HH:MM:SS), retornar direto
+  if (/^\d{2}:\d{2}/.test(trimmedValue)) {
+    return trimmedValue.slice(0, 5);
+  }
+
+  // Se tem T (ISO datetime), extrair a parte do horário
+  if (trimmedValue.includes("T")) {
+    const timePart = trimmedValue.split("T")[1];
+    if (timePart && /^\d{2}:\d{2}/.test(timePart)) {
+      return timePart.slice(0, 5);
+    }
+  }
+
+  return undefined;
+};
+
 const getItineraryLabel = (itineraryIndex: number): string => {
   if (itineraryIndex < 0) {
     return "Retorno";
@@ -146,9 +171,12 @@ const EventContent = ({
   os,
   clientes,
   status,
+  timeText,
+  eventStartStr,
   displayDateTime,
   startTime: propStartTime,
   showArchivedOnly,
+  isMonthView,
   isDayView,
 }: EventContentProps) => {
   const colors =
@@ -157,18 +185,22 @@ const EventContent = ({
       : statusColors[status] || statusColors["Pendente"];
   const clienteNome =
     clientes.find((c) => c.id === os.clienteId)?.nome || "N/A";
-  
-  // Prioridade: propStartTime (string direta), depois formatar displayDateTime, depois os.hora
-  const startTime = propStartTime
-    ? propStartTime.slice(0, 5)
-    : displayDateTime
-      ? new Date(displayDateTime).toLocaleTimeString("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : os.hora
-        ? os.hora.slice(0, 5)
-        : "";
+
+  const firstWaypointHora = os.rota?.waypoints?.[0]?.hora;
+
+  const explicitTime =
+    extractTimeFromDateTime(propStartTime) ||
+    extractTimeFromDateTime(os.hora) ||
+    extractTimeFromDateTime(firstWaypointHora);
+
+  const calendarFallbackTime =
+    isMonthView === true
+      ? undefined
+      : extractTimeFromDateTime(timeText) ||
+        extractTimeFromDateTime(eventStartStr) ||
+        extractTimeFromDateTime(displayDateTime);
+
+  const startTime = explicitTime || calendarFallbackTime || "--:--";
 
   return (
     <div
@@ -328,9 +360,6 @@ export default function OSCalendar({
   // Converter OS para eventos do FullCalendar
   const events = useMemo(() => {
     const derivedEvents: CalendarEvent[] = [];
-    let skipNoDataHora = 0;
-    let skipFormatDateTimeNull = 0;
-    let skipNoWaypointDataHora = 0;
 
     osList.forEach((os) => {
       const clienteNome =
@@ -363,20 +392,19 @@ export default function OSCalendar({
       if (itineraryEntries.length === 0) {
         // Só precisa de data para criar evento (sem hora = dia todo)
         if (!os.data) {
-          skipNoDataHora++;
           return;
         }
 
         const startDateTime = formatCalendarDateTime(os.data, os.hora);
         if (!startDateTime) {
-          skipFormatDateTimeNull++;
           return;
         }
 
         const timeStr = os.hora;
         const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
-        const endHour = Number(hours) + 1;
-        const endDateTime = `${os.data}T${String(endHour).padStart(2, "0")}:${minutes}:00`;
+        const endHour = Math.min(Number(hours) + 1, 23);
+        const endMinutes = Number(hours) >= 23 ? "59" : minutes;
+        const endDateTime = `${os.data}T${String(endHour).padStart(2, "0")}:${endMinutes}:00`;
         const colors =
           statusColors[effectiveStatus] || statusColors["Pendente"];
 
@@ -412,13 +440,11 @@ export default function OSCalendar({
           const hasTime = firstWaypoint?.hora || os.hora;
 
           if (!hasDate) {
-            skipNoWaypointDataHora++;
             return;
           }
 
           // Para itinerários > 0, exigir data E hora
           if (!isFirstItinerary && !hasTime) {
-            skipNoWaypointDataHora++;
             return;
           }
 
@@ -426,13 +452,13 @@ export default function OSCalendar({
           const timeStr = firstWaypoint?.hora || os.hora;
           const startDateTime = formatCalendarDateTime(dateStr, timeStr);
           if (!startDateTime) {
-            skipFormatDateTimeNull++;
             return;
           }
 
           const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
-          const endHour = Number(hours) + 1;
-          const endDateTime = `${dateStr}T${String(endHour).padStart(2, "0")}:${minutes}:00`;
+          const endHour = Math.min(Number(hours) + 1, 23);
+          const endMinutes = Number(hours) >= 23 ? "59" : minutes;
+          const endDateTime = `${dateStr}T${String(endHour).padStart(2, "0")}:${endMinutes}:00`;
           const cycle = os.operationalCycles?.find(
             (item) => item.itineraryIndex === itineraryIndex,
           );
@@ -512,6 +538,14 @@ export default function OSCalendar({
 
   const handleDatesSet = useCallback(
     (dateInfo: { start: Date; end: Date; view: { type: string } }) => {
+      // Remove day-bottom elements after calendar renders to eliminate empty space
+      setTimeout(() => {
+        const dayBottoms = document.querySelectorAll('.fc-daygrid-day-bottom');
+        dayBottoms.forEach((el) => {
+          el.remove();
+        });
+      }, 100);
+
       if (!onRangeChange) return;
       const from = dateInfo.start.toISOString().split("T")[0];
       const endDate = new Date(dateInfo.end);
@@ -528,8 +562,10 @@ export default function OSCalendar({
   );
 
   // Renderizador customizado de eventos
-  const renderEventContent = (eventInfo: {
+  const renderEventContent = useCallback((eventInfo: {
+    timeText?: string;
     event: {
+      startStr?: string;
       extendedProps: {
         os: OrderService;
         status: CycleOperationalStatus;
@@ -545,20 +581,22 @@ export default function OSCalendar({
         os={os}
         clientes={clientes}
         status={eventInfo.event.extendedProps.status}
+        timeText={eventInfo.timeText}
+        eventStartStr={eventInfo.event.startStr}
         displayDateTime={eventInfo.event.extendedProps.displayDateTime}
         startTime={eventInfo.event.extendedProps.startTime}
         showArchivedOnly={showArchivedOnly}
+        isMonthView={currentView === "dayGridMonth"}
         isDayView={currentView === "dayGridDay"}
       />
     );
-  };
+  }, [clientes, showArchivedOnly, currentView]);
 
   // Lógica de exibição baseada em hasLoaded
   const isInitialLoading = !hasLoaded && loading;
   // Mostrar overlay de loading sempre que estiver carregando, independente de ter dados anteriores
   const showCalendarWithOverlay = loading;
   const isEmpty = !loading && hasLoaded && osList.length === 0;
-  const showCalendar = hasLoaded && osList.length > 0;
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden relative">
@@ -633,6 +671,7 @@ export default function OSCalendar({
               ]}
               initialView={currentView}
               locale={ptBrLocale}
+              firstDay={1}
               events={events}
               eventClick={handleEventClick}
               selectable={true}
@@ -678,7 +717,7 @@ export default function OSCalendar({
               slotMaxTime="22:00:00"
               allDaySlot={true}
               allDayText="Dia Todo"
-              expandRows={true}
+              expandRows={false}
               stickyHeaderDates={true}
               nowIndicator={true}
               navLinks={true}
@@ -698,15 +737,16 @@ export default function OSCalendar({
               }}
             />
             <style>{`
-          /* Estilos para o DayGrid (Mês, Semana, Dia) */
+          /* Estilos base para células do calendário */
           .fc .fc-daygrid-day-frame {
-            min-height: 500px !important;
-            overflow-y: auto !important;
+            min-height: 0 !important;
+            height: auto !important;
           }
 
           /* Forçar altura mínima do calendário no modo Mês */
           .fc-dayGridMonth-view {
-            min-height: 800px !important;
+            min-height: auto !important;
+            height: auto !important;
           }
 
           .fc-dayGridMonth-view .fc-scroller {
@@ -716,19 +756,98 @@ export default function OSCalendar({
 
           .fc-dayGridMonth-view .fc-scroller-harness {
             overflow: visible !important;
+            height: auto !important;
           }
 
           .fc-dayGridMonth-view .fc-daygrid-body {
             width: 100% !important;
+            height: auto !important;
           }
 
           .fc-dayGridMonth-view .fc-daygrid-body-unbalanced .fc-daygrid-day-events {
             min-height: 1em !important;
           }
 
-          /* Modo Mês: forçar altura mínima das células */
+          .fc-dayGridMonth-view .fc-daygrid-body {
+            display: flex !important;
+            flex-direction: column !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-body-row {
+            flex: 0 0 auto !important;
+            height: auto !important;
+          }
+
           .fc-dayGridMonth-view .fc-daygrid-day-frame {
-            min-height: 200px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            height: auto !important;
+          }
+
+          .fc-dayGridMonth-view .fc-scrollgrid-sync-inner {
+            height: auto !important;
+            min-height: 0 !important;
+          }
+
+          /* Modo Mês: forçar altura mínima das células */
+          /* No modo mês, mantemos uma altura base razoável para a grade */
+          .fc-dayGridMonth-view .fc-daygrid-day-frame {
+            min-height: 60px !important;
+            height: auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            align-items: stretch !important;
+            flex: 1 !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-day-events {
+            padding-bottom: 0 !important;
+            padding-top: 0 !important;
+            margin: 0 !important;
+            flex: 0 1 auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-day-bottom {
+            margin-top: 0 !important;
+            display: none !important;
+            height: 0 !important;
+            max-height: 0 !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            flex: 0 0 auto !important;
+            padding: 0 !important;
+            border: none !important;
+            visibility: hidden !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 0 !important;
+          }
+
+          .fc-daygrid-day-bottom {
+            margin-top: 0 !important;
+            display: none !important;
+            height: 0 !important;
+            max-height: 0 !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            flex: 0 0 auto !important;
+            padding: 0 !important;
+            border: none !important;
+            visibility: hidden !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 0 !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-day-frame > *:last-child {
+            margin-bottom: 0 !important;
           }
 
           .fc-dayGridMonth-view .fc-daygrid-event-harness {
@@ -736,6 +855,8 @@ export default function OSCalendar({
             margin-bottom: 4px !important;
             visibility: visible !important;
             display: block !important;
+            position: relative !important;
+            flex-shrink: 0 !important;
           }
 
           /* Esconder cabeçalho de dias no modo mês */
@@ -769,10 +890,6 @@ export default function OSCalendar({
             display: block !important;
             visibility: visible !important;
             position: relative !important;
-          }
-
-          .fc-dayGridMonth-view .fc-daygrid-day-bottom {
-            display: none !important;
           }
 
           /* Cor de fundo do dia atual (exceto no modo Dia) */
@@ -833,25 +950,40 @@ export default function OSCalendar({
             z-index: 100 !important;
           }
 
+          /* Área de cards com altura máxima dinâmica e scroll interno */
           .fc .fc-daygrid-day-events {
-            padding: 8px !important;
+            padding: 10px !important;
             display: flex !important;
             flex-direction: column !important;
-            gap: 8px !important;
+            gap: 10px !important;
+            min-height: 0 !important;
+            /* A altura máxima será 75% da altura da tela, mas encolhe se houver poucos cards */
+            max-height: 75vh !important; 
             overflow-y: auto !important;
-            max-height: 500px !important;
+            overflow-x: hidden !important;
+          }
+          
+          /* Garante que o container de eventos não reserve espaço extra */
+          .fc-daygrid-day-events:after,
+          .fc-daygrid-day-events:before {
+            display: none !important;
           }
 
           /* Estilo específico para visualização de Dia (fileira de cards) */
           .fc-dayGridDay-view .fc-daygrid-day-frame,
           .fc-view-dayGridDay .fc-daygrid-day-frame {
-            min-height: 500px !important;
-            max-height: 72vh !important;
-            overflow-y: auto !important;
+            min-height: 0 !important;
+            max-height: 80vh !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
           }
 
           .fc-dayGridDay-view .fc-daygrid-day-events,
           .fc-view-dayGridDay .fc-daygrid-day-events {
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
             gap: 12px !important;
@@ -859,7 +991,6 @@ export default function OSCalendar({
             justify-content: flex-start !important;
             padding: 16px !important;
             padding-left: 16px !important;
-            max-height: 72vh !important;
             overflow-y: auto !important;
           }
 
@@ -882,7 +1013,7 @@ export default function OSCalendar({
           .fc-daygrid-event-harness {
             margin: 0 !important;
             padding: 0 !important;
-            min-height: 100px !important;
+            min-height: auto !important;
           }
 
           /* Garantir que o conteúdo do evento ocupe o espaço */

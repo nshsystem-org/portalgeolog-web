@@ -9,6 +9,7 @@ import React, {
   useMemo,
   useRef,
 } from "react";
+import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeBrazilPhone } from "@/lib/phone";
 import type { OperationalCycle } from "@/lib/os-messages";
@@ -395,7 +396,28 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
+// Função auxiliar para obter o nome da página a partir do pathname
+function getPageName(pathname: string | null): string {
+  if (!pathname) return "Desconhecida";
+  
+  const pageMap: Record<string, string> = {
+    "/portal/os": "Ordem de Serviço",
+    "/portal/financeiro": "Medição Financeira",
+    "/portal/motoristas": "Motoristas",
+    "/portal/veiculos": "Veículos",
+    "/portal/passageiros": "Passageiros",
+    "/portal/clientes": "Clientes",
+    "/portal/parcerias": "Parceiros de Serviço",
+    "/portal/config": "Configurações",
+    "/portal/dashboard": "Dashboard",
+    "/admin": "Administrador",
+  };
+
+  return pageMap[pathname] || pathname;
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const hasLoadedData = useRef(false);
   const debounceTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -517,7 +539,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (osCountsRes.status === "fulfilled") setOsCounts(osCountsRes.value);
         else logErrorEntry("DataContext", "fetchOSStatusCounts falhou", osCountsRes.reason as Error);
 
-        logInfo("DataContext", "Dados complementares carregados (passageiros, parceiros, contagens de OS)", {
+        logInfo("DataContext", `Dados da página ${getPageName(pathname)} carregados com sucesso!`, {
           passageiros: passageirosRes.status === "fulfilled" ? passageirosRes.value.length : "falhou",
           parceiros: parceirosRes.status === "fulfilled" ? parceirosRes.value.length : "falhou",
           osCounts: osCountsRes.status === "fulfilled" ? osCountsRes.value : "falhou",
@@ -539,6 +561,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     dbFetchPassageiros,
     dbFetchParceiros,
     dbFetchDrivers,
+    pathname,
   ]);
 
   useEffect(() => {

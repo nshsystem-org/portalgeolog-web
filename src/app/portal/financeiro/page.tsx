@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Calendar,
   CalendarRange,
   CheckCircle2,
   Download,
@@ -25,6 +26,8 @@ import {
   ChevronDown,
   TrendingUp,
   TrendingDown,
+  User,
+  Handshake,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -58,6 +61,10 @@ type FinanceOverview = {
   totalFaturado: number;
   totalRecebido: number;
   totalPendente: number;
+  totalCustoAutonomos: number;
+  totalPagoAutonomos: number;
+  totalCustoParceiros: number;
+  totalPagoParceiros: number;
 };
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
@@ -73,6 +80,14 @@ function formatCurrency(value: number): string {
 
 function formatDate(value?: string | null): string {
   if (!value) return "-";
+  
+  // Se for formato YYYY-MM-DD, parse manualmente para evitar problemas de timezone
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return dateFormatter.format(date);
+  }
+  
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
   return dateFormatter.format(parsed);
@@ -81,7 +96,9 @@ function formatDate(value?: string | null): string {
 function startOfWeek(date = new Date()): Date {
   const clone = new Date(date);
   const day = clone.getDay();
-  const diff = day; // No Brasil, semana começa no domingo (day 0)
+  // No Brasil, semana vai de segunda a domingo
+  // Sempre volta para a segunda-feira mais recente (ou hoje se for segunda)
+  const diff = day === 0 ? 6 : day - 1; // Se domingo, volta 6 dias; senão volta até segunda
   clone.setDate(clone.getDate() - diff);
   clone.setHours(0, 0, 0, 0);
   return clone;
@@ -90,7 +107,9 @@ function startOfWeek(date = new Date()): Date {
 function endOfWeek(date = new Date()): Date {
   const clone = new Date(date);
   const day = clone.getDay();
-  const diff = 6 - day; // No Brasil, semana termina no sábado (day 6)
+  // No Brasil, semana termina no domingo
+  // Sempre avança para o próximo domingo (ou hoje se for domingo)
+  const diff = day === 0 ? 0 : 7 - day; // Se domingo, fica; senão avança até domingo
   clone.setDate(clone.getDate() + diff);
   clone.setHours(23, 59, 59, 999);
   return clone;
@@ -149,12 +168,14 @@ function FinanceCard({
   subtitle,
   icon,
   tone,
+  valueColor,
 }: {
   title: string;
   value: string;
   subtitle: string;
   icon: React.ReactNode;
-  tone: "blue" | "emerald" | "amber" | "slate" | "light-blue";
+  tone: "blue" | "emerald" | "amber" | "slate" | "light-blue" | "purple" | "orange";
+  valueColor?: string;
 }) {
   const toneMap: Record<typeof tone, string> = {
     blue: "bg-blue-50/80 border-blue-100 text-blue-600 shadow-blue-100/50",
@@ -162,6 +183,8 @@ function FinanceCard({
     emerald: "bg-teal-50/80 border-teal-100 text-teal-500 shadow-teal-100/50",
     amber: "bg-amber-50/80 border-amber-100 text-amber-600 shadow-amber-100/50",
     slate: "bg-slate-50/80 border-slate-200 text-slate-600 shadow-slate-100/50",
+    purple: "bg-purple-50/80 border-purple-100 text-purple-600 shadow-purple-100/50",
+    orange: "bg-orange-50/80 border-orange-100 text-orange-600 shadow-orange-100/50",
   };
 
   const titleColorMap: Record<typeof tone, string> = {
@@ -170,6 +193,8 @@ function FinanceCard({
     emerald: "text-teal-500",
     amber: "text-[rgb(135,138,28)]",
     slate: "text-slate-800",
+    purple: "text-purple-900",
+    orange: "text-orange-900",
   };
 
   const valueColorMap: Record<typeof tone, string> = {
@@ -178,11 +203,15 @@ function FinanceCard({
     emerald: "text-teal-600",
     amber: "text-[rgb(100,102,20)]",
     slate: "text-slate-900",
+    purple: "text-purple-950",
+    orange: "text-orange-950",
   };
 
   const isLiberado = title === "Liberado";
   const isFaturado = title === "Faturado";
   const isRecebido = title === "Recebido";
+
+  const actualValueColor = valueColor || valueColorMap[tone];
 
   const iconDivClass = (() => {
     if (isLiberado) {
@@ -212,7 +241,7 @@ function FinanceCard({
         <p className={`mb-1.5 text-[11px] font-black uppercase tracking-[0.2em] truncate ${titleColorMap[tone]}`}>
           {title}
         </p>
-        <h3 className={`text-2xl font-black tracking-tighter tabular-nums truncate ${valueColorMap[tone]}`}>
+        <h3 className={`text-2xl font-black tracking-tighter tabular-nums truncate ${actualValueColor}`}>
           {value}
         </h3>
         <p className="mt-2 text-xs font-medium text-slate-400 truncate">{subtitle}</p>
@@ -245,6 +274,10 @@ export default function MedicaoFinanceiraPage() {
     totalFaturado: 0,
     totalRecebido: 0,
     totalPendente: 0,
+    totalCustoAutonomos: 0,
+    totalPagoAutonomos: 0,
+    totalCustoParceiros: 0,
+    totalPagoParceiros: 0,
   });
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
@@ -258,6 +291,7 @@ export default function MedicaoFinanceiraPage() {
   const [recebimentoObservacao, setRecebimentoObservacao] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showMotorista, setShowMotorista] = useState(false);
   const [activeQuickRange, setActiveQuickRange] = useState<"today" | "week" | "month" | "custom" | null>("week");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const actionMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -361,6 +395,10 @@ export default function MedicaoFinanceiraPage() {
             totalFaturado: 0,
             totalRecebido: 0,
             totalPendente: 0,
+            totalCustoAutonomos: 0,
+            totalPagoAutonomos: 0,
+            totalCustoParceiros: 0,
+            totalPagoParceiros: 0,
           });
         }
       } finally {
@@ -407,6 +445,7 @@ export default function MedicaoFinanceiraPage() {
 
   const setQuickRange = useCallback((mode: "week" | "month" | "today") => {
     const now = new Date();
+    
     if (mode === "today") {
       const today = normalizeToInputDate(now);
       setDataInicio(today);
@@ -424,8 +463,12 @@ export default function MedicaoFinanceiraPage() {
     // month
     const year = now.getFullYear();
     const month = now.getMonth();
+    
     const firstDay = new Date(year, month, 1);
+    firstDay.setHours(0, 0, 0, 0);
     const lastDay = new Date(year, month + 1, 0);
+    lastDay.setHours(23, 59, 59, 999);
+    
     setDataInicio(normalizeToInputDate(firstDay));
     setDataFim(normalizeToInputDate(lastDay));
     setSelectedMonth(normalizeToInputMonth(now));
@@ -616,7 +659,7 @@ export default function MedicaoFinanceiraPage() {
     );
   }
 
-  const statsCards = [
+  const baseCards = [
     {
       title: "Liberado",
       value: formatCurrency(stats.totalLiberadoFaturamento),
@@ -627,7 +670,7 @@ export default function MedicaoFinanceiraPage() {
     {
       title: "Faturado",
       value: formatCurrency(stats.totalFaturado),
-      subtitle: "Já faturados, aguardando receber",
+      subtitle: "Aguardando recebimento",
       icon: <ReceiptText size={28} className="text-[rgb(135,138,28)]" />,
       tone: "amber" as const,
     },
@@ -638,60 +681,68 @@ export default function MedicaoFinanceiraPage() {
       icon: <CheckCircle2 size={28} className="text-teal-500" />,
       tone: "emerald" as const,
     },
-    {
-      title: "Repasse Motoristas",
-      value: formatCurrency(stats.totalCusto),
-      subtitle: "Precisam ser repassados",
-      icon: <Truck size={28} className="text-slate-600" />,
-      tone: "slate" as const,
-    },
   ];
 
-  const filterDateRange = (() => {
-    if (dataInicio && dataFim) {
-      const start = new Date(dataInicio + 'T00:00:00');
-      const end = new Date(dataFim + 'T00:00:00');
-      const startFormatted = start.toLocaleDateString('pt-BR');
-      const endFormatted = end.toLocaleDateString('pt-BR');
-      if (dataInicio === dataFim) {
-        return <span className="font-medium text-slate-800">{startFormatted}</span>;
-      }
-      return (
-        <>
-          <span className="font-medium text-slate-800">{startFormatted}</span> <span className="text-slate-300">-</span> <span className="font-medium text-slate-800">{endFormatted}</span>
-        </>
-      );
-    }
-    if (dataInicio) {
-      const start = new Date(dataInicio + 'T00:00:00');
-      return <>A partir de <span className="font-medium text-slate-800">{start.toLocaleDateString('pt-BR')}</span></>;
-    }
-    if (dataFim) {
-      const end = new Date(dataFim + 'T00:00:00');
-      return <>Até <span className="font-medium text-slate-800">{end.toLocaleDateString('pt-BR')}</span></>;
-    }
-    return "Todas as datas";
-  })();
+  const calculoTotalCard = {
+    title: "CÁLCULO TOTAL",
+    value: formatCurrency(stats.totalBruto),
+    subtitle: "Valor total de todas as OS",
+    icon: <TrendingUp size={28} className="text-blue-700" />,
+    tone: "blue" as const,
+  };
+
+  const repasseMotoristaCard = {
+    title: "Repasse Autônomos",
+    value: formatCurrency(stats.totalCustoAutonomos),
+    subtitle: "Precisam ser repassados",
+    icon: <User size={28} className="text-orange-500" />,
+    tone: "slate" as const,
+  };
+
+  const pagoAutonomosCard = {
+    title: "Pagos Autônomos",
+    value: formatCurrency(stats.totalPagoAutonomos),
+    subtitle: "Já repassados",
+    icon: <User size={28} className="text-slate-600" />,
+    tone: "slate" as const,
+    valueColor: "text-emerald-600",
+  };
+
+  const repasseParceirosCard = {
+    title: "Repasse Parceiros",
+    value: formatCurrency(stats.totalCustoParceiros),
+    subtitle: "Precisam ser repassados",
+    icon: <Handshake size={28} className="text-teal-500" />,
+    tone: "slate" as const,
+  };
+
+  const pagoParceirosCard = {
+    title: "Pagos Parceiros",
+    value: formatCurrency(stats.totalPagoParceiros),
+    subtitle: "Já repassados",
+    icon: <Handshake size={28} className="text-slate-600" />,
+    tone: "slate" as const,
+    valueColor: "text-emerald-600",
+  };
+
+  const statsCards = [calculoTotalCard, ...baseCards];
 
   return (
     <div className="space-y-6 pb-10">
       <section className="rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 transition-all">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-gradient-to-r from-blue-100 via-cyan-100 to-emerald-100 bg-[length:200%_100%] animate-gradient px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-blue-800 shadow-md shadow-blue-300/50 hover:shadow-xl hover:shadow-cyan-400/70 hover:scale-105 transition-all duration-300">
-              <Wallet size={14} className="transition-transform duration-300 hover:rotate-12" />
-              Gestão Financeira
-            </div>
-            <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
-              {filterDateRange}
-            </p>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-50 border border-slate-200">
+            <Calendar size={14} className="text-slate-500" />
+            <span className="text-sm font-semibold text-slate-700">
+              {formatDate(dataInicio)} - {formatDate(dataFim)}
+            </span>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
-              className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-black shadow-sm transition-all active:scale-95 ${
+              className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer ${
                 showFilters
                   ? 'border-blue-400 bg-blue-50 text-blue-700'
                   : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
@@ -703,8 +754,21 @@ export default function MedicaoFinanceiraPage() {
             </button>
             <button
               type="button"
+              onClick={() => setShowMotorista(!showMotorista)}
+              className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer ${
+                showMotorista
+                  ? 'border-slate-400 bg-slate-100 text-slate-800'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800'
+              }`}
+            >
+              <Truck size={16} />
+              Motorista
+              <ChevronDown size={16} className={`transition-transform ${showMotorista ? 'rotate-180' : ''}`} />
+            </button>
+            <button
+              type="button"
               onClick={() => setQuickRange("today")}
-              className={quickRangeButtonClass("today")}
+              className={`${quickRangeButtonClass("today")} cursor-pointer`}
             >
               <CalendarClock size={16} />
               Hoje
@@ -712,7 +776,7 @@ export default function MedicaoFinanceiraPage() {
             <button
               type="button"
               onClick={() => setQuickRange("week")}
-              className={quickRangeButtonClass("week")}
+              className={`${quickRangeButtonClass("week")} cursor-pointer`}
             >
               <ArrowRightLeft size={16} />
               Semana
@@ -720,7 +784,7 @@ export default function MedicaoFinanceiraPage() {
             <button
               type="button"
               onClick={() => setQuickRange("month")}
-              className={quickRangeButtonClass("month")}
+              className={`${quickRangeButtonClass("month")} cursor-pointer`}
             >
               <ReceiptText size={16} />
               Mês
@@ -729,7 +793,7 @@ export default function MedicaoFinanceiraPage() {
               type="button"
               onClick={handleExportPdf}
               disabled={reportLoading}
-              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95"
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
             >
               {reportLoading ? <RotateCcw size={16} className="animate-spin" /> : <Download size={16} />}
               Exportar Medição
@@ -744,6 +808,41 @@ export default function MedicaoFinanceiraPage() {
         ))}
       </section>
 
+      {showMotorista && (
+        <>
+          <div className="flex items-center gap-4 py-6">
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
+            <span className="text-sm font-black uppercase tracking-[0.3em] text-slate-500">
+              Motoristas
+            </span>
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
+          </div>
+
+          <section className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4 relative">
+            <div className="relative">
+              <FinanceCard {...repasseMotoristaCard} />
+              <div className="absolute top-1/2 left-full w-5 h-px bg-slate-300 -translate-y-1/2 hidden md:block z-10">
+                <div className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-400 border-2 border-white shadow-sm" />
+                <div className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-400 border-2 border-white shadow-sm" />
+              </div>
+            </div>
+            <div className="relative">
+              <FinanceCard {...pagoAutonomosCard} />
+            </div>
+            <div className="relative">
+              <FinanceCard {...repasseParceirosCard} />
+              <div className="absolute top-1/2 left-full w-5 h-px bg-slate-300 -translate-y-1/2 hidden md:block z-10">
+                <div className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-400 border-2 border-white shadow-sm" />
+                <div className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-400 border-2 border-white shadow-sm" />
+              </div>
+            </div>
+            <div className="relative">
+              <FinanceCard {...pagoParceirosCard} />
+            </div>
+          </section>
+        </>
+      )}
+
       {showFilters && (
         <section className="rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/40">
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -756,7 +855,7 @@ export default function MedicaoFinanceiraPage() {
             <button
               type="button"
               onClick={resetFilters}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-black text-slate-700 transition-all hover:bg-slate-100 active:scale-95"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-black text-slate-700 transition-all hover:bg-slate-100 active:scale-95 cursor-pointer"
             >
               <Filter size={16} />
               Limpar Filtros
@@ -769,7 +868,16 @@ export default function MedicaoFinanceiraPage() {
                 type="month"
                 value={selectedMonth}
                 onChange={(event) => {
-                  setSelectedMonth(event.target.value);
+                  const monthValue = event.target.value;
+                  setSelectedMonth(monthValue);
+                  
+                  // Atualizar datas para o primeiro e último dia do mês selecionado
+                  const [year, month] = monthValue.split('-').map(Number);
+                  const firstDay = new Date(year, month - 1, 1);
+                  const lastDay = new Date(year, month, 0);
+                  setDataInicio(normalizeToInputDate(firstDay));
+                  setDataFim(normalizeToInputDate(lastDay));
+                  
                   setActiveQuickRange("custom");
                 }}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
@@ -1013,7 +1121,7 @@ export default function MedicaoFinanceiraPage() {
                       {attachment && (
                         <button
                           onClick={() => handleOpenAttachment({ os: item })}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100 cursor-pointer"
                           title="Ver comprovante"
                         >
                           <Link2 size={12} />
@@ -1059,7 +1167,7 @@ export default function MedicaoFinanceiraPage() {
                         event.stopPropagation();
                         setOpenActionMenuId((prev) => (prev === item.id ? null : item.id));
                       }}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-slate-500 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-slate-500 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 cursor-pointer"
                       aria-haspopup="true"
                       aria-expanded={openActionMenuId === item.id}
                     >
@@ -1070,7 +1178,7 @@ export default function MedicaoFinanceiraPage() {
                         <button
                           type="button"
                           onClick={() => handleViewOS(item)}
-                          className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-cyan-50 hover:text-cyan-600"
+                          className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-cyan-50 hover:text-cyan-600 cursor-pointer"
                         >
                           <Eye size={16} className="text-slate-400 group-hover:text-cyan-600" />
                           Visualizar
@@ -1079,7 +1187,7 @@ export default function MedicaoFinanceiraPage() {
                           <button
                             type="button"
                             onClick={() => handleOpenFaturar(item)}
-                            className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                            className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
                           >
                             <FileUp size={16} className="text-slate-400 group-hover:text-blue-600" />
                             Faturar
@@ -1089,7 +1197,7 @@ export default function MedicaoFinanceiraPage() {
                           <button
                             type="button"
                             onClick={() => handleOpenRecebimento(item)}
-                            className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-emerald-50 hover:text-emerald-600"
+                            className="group flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left text-sm font-bold text-slate-700 transition-colors hover:bg-emerald-50 hover:text-emerald-600 cursor-pointer"
                           >
                             <Wallet size={16} className="text-slate-400 group-hover:text-emerald-600" />
                             Dar baixa
@@ -1215,7 +1323,7 @@ export default function MedicaoFinanceiraPage() {
               <button
                 type="button"
                 onClick={closeActionModal}
-                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 transition-all hover:bg-slate-50"
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 transition-all hover:bg-slate-50 cursor-pointer"
               >
                 Cancelar
               </button>
@@ -1224,7 +1332,7 @@ export default function MedicaoFinanceiraPage() {
                   type="button"
                   onClick={uploadFaturamento}
                   disabled={uploading}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-600 px-6 py-3 text-sm font-black text-white transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70 shadow-lg shadow-blue-100"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-600 px-6 py-3 text-sm font-black text-white transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70 shadow-lg shadow-blue-100 cursor-pointer"
                 >
                   {uploading ? <RotateCcw size={16} className="animate-spin" /> : <Upload size={16} />}
                   Confirmar Faturamento
@@ -1234,7 +1342,7 @@ export default function MedicaoFinanceiraPage() {
                   type="button"
                   onClick={confirmRecebimento}
                   disabled={uploading}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-600 px-6 py-3 text-sm font-black text-white transition-all hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70 shadow-lg shadow-emerald-100"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-600 px-6 py-3 text-sm font-black text-white transition-all hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70 shadow-lg shadow-emerald-100 cursor-pointer"
                 >
                   {uploading ? <RotateCcw size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                   Confirmar Recebimento

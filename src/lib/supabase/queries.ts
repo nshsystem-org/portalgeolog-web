@@ -411,6 +411,40 @@ const mapOSRecord = (
   };
 };
 
+const fetchWaypointsForOSIds = async (
+  osIds: string[],
+): Promise<{
+  wpRaw: OSWaypointRow[];
+  wpPassRaw: OSWaypointPassengerRow[];
+}> => {
+  if (osIds.length === 0) {
+    return { wpRaw: [], wpPassRaw: [] };
+  }
+
+  const wpRaw = await fetchInChunks<OSWaypointRow>(
+    getSupabase(),
+    "os_waypoints",
+    "ordem_servico_id",
+    osIds,
+    "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
+    "position",
+  );
+
+  const wpIds = wpRaw.map((waypoint) => waypoint.id);
+  const wpPassRaw =
+    wpIds.length > 0
+      ? await fetchInChunks<OSWaypointPassengerRow>(
+          getSupabase(),
+          "os_waypoint_passengers",
+          "waypoint_id",
+          wpIds,
+          "id, waypoint_id, passageiro_id",
+        )
+      : [];
+
+  return { wpRaw, wpPassRaw };
+};
+
 // ── Clientes ──────────────────────────────────────────────
 
 export async function fetchClientes(): Promise<Cliente[]> {
@@ -909,32 +943,9 @@ export async function fetchOSList(): Promise<OrderService[]> {
     if (error) throw error;
 
     const typedOrders = (osRaw || []) as unknown as OSRow[];
-    const osIds = typedOrders.map((o) => o.id);
-    let wpRaw: OSWaypointRow[] = [];
-    let wpPassRaw: OSWaypointPassengerRow[] = [];
-
-    if (osIds.length > 0) {
-      const { data: wpData } = await getSupabase()
-        .from("os_waypoints")
-        .select(
-          "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
-        )
-        .in("ordem_servico_id", osIds)
-        .order("position");
-
-      wpRaw = (wpData || []) as OSWaypointRow[];
-      const wpIds = wpRaw.map((w) => w.id);
-
-      if (wpIds.length > 0) {
-        wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
-          getSupabase(),
-          "os_waypoint_passengers",
-          "waypoint_id",
-          wpIds,
-          "id, waypoint_id, passageiro_id",
-        );
-      }
-    }
+    const { wpRaw, wpPassRaw } = await fetchWaypointsForOSIds(
+      typedOrders.map((o) => o.id),
+    );
 
     return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
   });
@@ -2177,7 +2188,6 @@ type ParceiroFilialRow = {
   parceiro_id: string;
   rotulo: string;
   endereco_completo: string;
-  referencia: string | null;
 };
 
 const buildParceiroSearchIndex = (
@@ -2728,32 +2738,9 @@ export async function fetchOSCalendarRange({
     if (error) throw error;
 
     const typedOrders = (osRaw || []) as unknown as OSRow[];
-    const osIds = typedOrders.map((o) => o.id);
-    let wpRaw: OSWaypointRow[] = [];
-    let wpPassRaw: OSWaypointPassengerRow[] = [];
-
-    if (osIds.length > 0) {
-      const { data: wpData } = await getSupabase()
-        .from("os_waypoints")
-        .select(
-          "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
-        )
-        .in("ordem_servico_id", osIds)
-        .order("position");
-
-      wpRaw = (wpData || []) as OSWaypointRow[];
-      const wpIds = wpRaw.map((w) => w.id);
-
-      if (wpIds.length > 0) {
-        wpPassRaw = await fetchInChunks<OSWaypointPassengerRow>(
-          getSupabase(),
-          "os_waypoint_passengers",
-          "waypoint_id",
-          wpIds,
-          "id, waypoint_id, passageiro_id",
-        );
-      }
-    }
+    const { wpRaw, wpPassRaw } = await fetchWaypointsForOSIds(
+      typedOrders.map((o) => o.id),
+    );
 
     return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
   });
@@ -2857,6 +2844,10 @@ export async function fetchOSFinanceStats(
   totalFaturado: number;
   totalRecebido: number;
   totalPendente: number;
+  totalCustoAutonomos: number;
+  totalPagoAutonomos: number;
+  totalCustoParceiros: number;
+  totalPagoParceiros: number;
 }> {
   return withRetry(async () => {
     const {
@@ -2875,7 +2866,7 @@ export async function fetchOSFinanceStats(
     let query = getSupabase()
       .from("ordens_servico")
       .select(
-        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id",
+        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id, repasse_pago",
         { count: "exact" },
       )
       .eq("arquivado", false);
@@ -2912,6 +2903,10 @@ export async function fetchOSFinanceStats(
           totalFaturado: 0,
           totalRecebido: 0,
           totalPendente: 0,
+          totalCustoAutonomos: 0,
+          totalPagoAutonomos: 0,
+          totalCustoParceiros: 0,
+          totalPagoParceiros: 0,
         };
       }
       query = query.in("driver_id", driverIds);
@@ -2927,7 +2922,22 @@ export async function fetchOSFinanceStats(
       lucro: number | string | null;
       status_financeiro: string | null;
       status_operacional: string | null;
+      driver_id: string | null;
+      repasse_pago: boolean | null;
     }>;
+
+    const driverIds = [...new Set(rows.map((row) => row.driver_id).filter((id): id is string => id !== null))];
+
+    const { data: driversData, error: driversError } = await getSupabase()
+      .from("drivers")
+      .select("id, parceiro_id")
+      .in("id", driverIds);
+
+    if (driversError) throw driversError;
+
+    const driverMap = new Map(
+      (driversData || []).map((driver) => [driver.id, driver.parceiro_id])
+    );
 
     const summary = rows.reduce(
       (acc, row) => {
@@ -2937,6 +2947,8 @@ export async function fetchOSFinanceStats(
         const lucro = Number(row.lucro || 0);
         const statusFinanceiro = row.status_financeiro || "Pendente";
         const statusOperacional = row.status_operacional || "";
+        const driverId = row.driver_id;
+        const repassePago = row.repasse_pago || false;
 
         acc.totalOS += 1;
         acc.totalBruto += bruto;
@@ -2952,6 +2964,18 @@ export async function fetchOSFinanceStats(
 
         if (isFinanceStatusSettled(statusFinanceiro)) acc.totalRecebido += bruto;
         if (statusFinanceiro === "Pendente") acc.totalPendente += bruto;
+
+        if (driverId) {
+          const parceiroId = driverMap.get(driverId);
+          if (parceiroId) {
+            acc.totalCustoParceiros += custo;
+            if (repassePago) acc.totalPagoParceiros += custo;
+          } else {
+            acc.totalCustoAutonomos += custo;
+            if (repassePago) acc.totalPagoAutonomos += custo;
+          }
+        }
+
         return acc;
       },
       {
@@ -2964,6 +2988,10 @@ export async function fetchOSFinanceStats(
         totalFaturado: 0,
         totalRecebido: 0,
         totalPendente: 0,
+        totalCustoAutonomos: 0,
+        totalPagoAutonomos: 0,
+        totalCustoParceiros: 0,
+        totalPagoParceiros: 0,
       },
     );
 
@@ -2977,6 +3005,10 @@ export async function fetchOSFinanceStats(
       totalFaturado: summary.totalFaturado,
       totalRecebido: summary.totalRecebido,
       totalPendente: summary.totalPendente,
+      totalCustoAutonomos: summary.totalCustoAutonomos,
+      totalPagoAutonomos: summary.totalPagoAutonomos,
+      totalCustoParceiros: summary.totalCustoParceiros,
+      totalPagoParceiros: summary.totalPagoParceiros,
     };
   });
 }
@@ -3371,13 +3403,14 @@ export async function fetchActiveAnnouncements(): Promise<
     message: string;
     type: "info" | "warning" | "error" | "success";
     created_at: string;
+    updated_at: string;
     expires_at: string | null;
   }>
 > {
   return withRetry(async () => {
     const { data, error } = await getSupabase()
       .from("system_announcements")
-      .select("id, title, subtitle, message, type, created_at, expires_at")
+      .select("id, title, subtitle, message, type, created_at, updated_at, expires_at")
       .eq("is_active", true)
       .or("expires_at.is.null,expires_at.gte.now()")
       .order("created_at", { ascending: false });
@@ -3390,6 +3423,7 @@ export async function fetchActiveAnnouncements(): Promise<
       message: string;
       type: "info" | "warning" | "error" | "success";
       created_at: string;
+      updated_at: string;
       expires_at: string | null;
     }>;
   });

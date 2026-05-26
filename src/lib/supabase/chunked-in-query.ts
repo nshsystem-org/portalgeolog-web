@@ -4,6 +4,7 @@ export async function fetchInChunks<T>(
   column: string,
   values: string[],
   selectColumns: string,
+  orderBy?: string,
   chunkSize = 100,
 ): Promise<T[]> {
   if (values.length === 0) return [];
@@ -16,7 +17,10 @@ export async function fetchInChunks<T>(
   const results = await Promise.all(
     chunks.map(async (chunk) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const query = (client as any).from(table).select(selectColumns).in(column, chunk);
+      let query = (client as any).from(table).select(selectColumns).in(column, chunk);
+      if (orderBy) {
+        query = query.order(orderBy);
+      }
       const { data, error } = await query;
       if (error) throw error;
       return (data || []) as T[];

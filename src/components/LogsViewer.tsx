@@ -30,6 +30,7 @@ import {
   Edit2,
   Archive,
   RotateCcw,
+  Check,
 } from "lucide-react";
 
 interface SystemLogEntry {
@@ -310,29 +311,30 @@ export default function LogsViewer() {
       );
     }
 
-    if (summary === "Dados complementares carregados (passageiros, parceiros, contagens de OS)" && errorDetails) {
-      const details = errorDetails as Record<string, unknown>;
-      const passageiros = typeof details.passageiros === "number" ? details.passageiros : 0;
-      const parceiros = typeof details.parceiros === "number" ? details.parceiros : 0;
-      const osCounts = typeof details.osCounts === "object" ? details.osCounts as Record<string, unknown> : null;
-
+    if (summary === "Dados da página Ordem de Serviço carregados com sucesso!") {
       return (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-slate-700">Dados complementares carregados:</span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-pink-50 text-pink-700 rounded-md font-bold text-xs">
-            <UserSquare2 size={12} />
-            {passageiros} passageiros
+        <div className="inline-flex items-center flex-wrap gap-1">
+          Dados da página{" "}
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
+            <FileText size={12} />
+            Ordem de Serviço
           </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md font-bold text-xs">
-            <Handshake size={12} />
-            {parceiros} parceiros
+          {" "}carregados com sucesso!{" "}
+          <Check size={14} className="text-green-500" />
+        </div>
+      );
+    }
+
+    if (summary === "Dados da página Administrador carregados com sucesso!") {
+      return (
+        <div className="inline-flex items-center flex-wrap gap-1">
+          Dados da página{" "}
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-slate-50 text-slate-700">
+            <Settings size={12} />
+            Administrador
           </span>
-          {osCounts && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-bold text-xs">
-              <FileText size={12} />
-              {Object.values(osCounts).reduce((sum: number, val) => sum + (typeof val === "number" ? val : 0), 0)} OS totais
-            </span>
-          )}
+          {" "}carregados com sucesso!{" "}
+          <Check size={14} className="text-green-500" />
         </div>
       );
     }

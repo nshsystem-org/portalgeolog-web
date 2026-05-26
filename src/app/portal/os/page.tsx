@@ -60,6 +60,7 @@ import {
   Link,
   History,
   Archive,
+  Save,
 } from "lucide-react";
 import {
   useData,
@@ -1150,6 +1151,7 @@ export default function OSOperationalPage() {
 
   // Novos estados para o modal de confirmação de notificações
   const [showNotificationConfirm, setShowNotificationConfirm] = useState(false);
+  const [showCompletionConfirm, setShowCompletionConfirm] = useState(false);
   const [pendingOSData, setPendingOSData] = useState<PendingOSData | null>(
     null,
   );
@@ -3817,8 +3819,8 @@ export default function OSOperationalPage() {
     setPendingOSData(finalData);
 
     if (editingOSId) {
-      // Editar Atendimento: salva direto, sem modal de notificação
-      await executeSaveOS(finalData, editingOSId);
+      // Editar Atendimento: abre modal perguntando se deseja marcar como concluído
+      setShowCompletionConfirm(true);
       return;
     }
 
@@ -3829,6 +3831,34 @@ export default function OSOperationalPage() {
   const executeAddOS = async () => {
     if (!pendingOSData) return;
     await executeSaveOS(pendingOSData, editingOSId);
+  };
+
+  const executeEditOS = async (markAsCompleted: boolean) => {
+    if (!pendingOSData || !editingOSId) return;
+    await executeSaveOS(pendingOSData, editingOSId);
+    if (markAsCompleted) {
+      try {
+        const response = await fetch("/api/os-manual-cycle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            os_id: editingOSId,
+            action: "finish_all",
+          }),
+        });
+        const result = await response.json();
+        if (!result.success) {
+          toast.error(result.error || "Erro ao concluir todos os ciclos.");
+          return;
+        }
+        toast.success("Atendimento concluído com sucesso!");
+        await osTable.refresh();
+        void refreshData();
+      } catch (error) {
+        console.error("Erro ao finalizar todos os ciclos:", error);
+        toast.error("Erro ao concluir o atendimento. Tente novamente.");
+      }
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -8216,6 +8246,52 @@ export default function OSOperationalPage() {
               >
                 <CheckCircle2 size={18} />
                 Confirmar e {editingOSId ? "Salvar" : "Criar OS"}
+              </button>
+            </div>
+          </div>
+        </StandardModal>
+      )}
+
+      {/* Modal de Confirmação de Conclusão (Edição) */}
+      {showCompletionConfirm && (
+        <StandardModal
+          onClose={() => setShowCompletionConfirm(false)}
+          title="Concluir Atendimento"
+          subtitle="Deseja marcar este atendimento como concluído?"
+          icon={<CheckCircle2 className="w-6 h-6 md:w-7 md:h-7" />}
+          maxWidthClassName="max-w-2xl"
+        >
+          <div className="space-y-8">
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+              <p className="text-sm text-slate-600 font-medium leading-relaxed">
+                Você pode marcar o atendimento como{" "}
+                <span className="font-black text-slate-800">concluído</span> agora
+                ou mantê-lo com o status atual.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-4 pt-4">
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowCompletionConfirm(false);
+                  await executeEditOS(true);
+                }}
+                className="flex-[2] px-6 py-4 bg-emerald-600 text-white font-black rounded-xl shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-3 cursor-pointer"
+              >
+                <CheckCircle2 size={18} />
+                Salvar e Concluir
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowCompletionConfirm(false);
+                  await executeEditOS(false);
+                }}
+                className="flex-1 px-6 py-4 bg-white border-2 border-slate-200 text-slate-700 font-black rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all text-xs uppercase tracking-widest cursor-pointer flex items-center justify-center gap-3"
+              >
+                <Save size={18} />
+                Somente Salvar
               </button>
             </div>
           </div>

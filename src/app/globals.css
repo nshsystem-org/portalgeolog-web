@@ -209,3 +209,43 @@ body {
 .animate-toast-in {
   animation: toast-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Strong shake to draw attention to pending announcements */
+@keyframes announcement-shake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  10% {
+    transform: translate3d(-1px, 1px, 0) rotate(-1deg);
+  }
+  20% {
+    transform: translate3d(1px, -1px, 0) rotate(1deg);
+  }
+  30% {
+    transform: translate3d(-2px, 1px, 0) rotate(-1deg);
+  }
+  40% {
+    transform: translate3d(2px, -1px, 0) rotate(1deg);
+  }
+  50% {
+    transform: translate3d(-1px, 1px, 0) rotate(-0.5deg);
+  }
+  60% {
+    transform: translate3d(1px, -1px, 0) rotate(0.5deg);
+  }
+  70% {
+    transform: translate3d(-1px, 0, 0) rotate(-0.5deg);
+  }
+  80% {
+    transform: translate3d(1px, 0, 0) rotate(0.5deg);
+  }
+  90% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+.animate-announcement-shake {
+  animation: announcement-shake 1.15s ease-in-out infinite;
+  will-change: transform;
+}
