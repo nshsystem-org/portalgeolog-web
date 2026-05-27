@@ -79,6 +79,7 @@ import {
 } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
+import GeologDateInput from "@/components/ui/GeologDateInput";
 import { DataTable } from "@/components/ui/DataTable";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { toast } from "sonner";
@@ -4275,7 +4276,7 @@ export default function OSOperationalPage() {
                   }))
                 }
                 placeholder="Ex: 00123"
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
               />
             </div>
             {/* Empresa */}
@@ -4293,7 +4294,7 @@ export default function OSOperationalPage() {
                   centroCustoId: "",
                 }))
               }
-              compact
+              triggerClassName="px-4 py-3 text-base"
               disableSearch={false}
             />
             {/* Centro de Custo */}
@@ -4311,7 +4312,7 @@ export default function OSOperationalPage() {
                 setAdvancedFilters((prev) => ({ ...prev, centroCustoId: id }))
               }
               disabled={!advancedFilters.clienteId}
-              compact
+              triggerClassName="px-4 py-3 text-base"
               disableSearch={false}
             />
             {/* Solicitante */}
@@ -4331,7 +4332,7 @@ export default function OSOperationalPage() {
               onChange={(id) =>
                 setAdvancedFilters((prev) => ({ ...prev, solicitante: id }))
               }
-              compact
+              triggerClassName="px-4 py-3 text-base"
               disableSearch={false}
             />
             {/* Motorista */}
@@ -4349,7 +4350,7 @@ export default function OSOperationalPage() {
                   }))
                 }
                 placeholder="Nome do motorista..."
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
               />
             </div>
             {/* Veículo */}
@@ -4366,7 +4367,7 @@ export default function OSOperationalPage() {
               onChange={(id) =>
                 setAdvancedFilters((prev) => ({ ...prev, veiculoId: id }))
               }
-              compact
+              triggerClassName="px-4 py-3 text-base"
               disableSearch={false}
             />
             {/* Passageiro */}
@@ -4384,43 +4385,31 @@ export default function OSOperationalPage() {
                   }))
                 }
                 placeholder="Nome do passageiro..."
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
               />
             </div>
             {/* Data Início */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Data Início
-              </label>
-              <input
-                type="date"
-                value={advancedFilters.dataInicio}
-                onChange={(e) =>
-                  setAdvancedFilters((prev) => ({
-                    ...prev,
-                    dataInicio: e.target.value,
-                  }))
-                }
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
-              />
-            </div>
+            <GeologDateInput
+              label="Data Início"
+              value={advancedFilters.dataInicio}
+              onChange={(value) =>
+                setAdvancedFilters((prev) => ({
+                  ...prev,
+                  dataInicio: value,
+                }))
+              }
+            />
             {/* Data Fim */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Data Fim
-              </label>
-              <input
-                type="date"
-                value={advancedFilters.dataFim}
-                onChange={(e) =>
-                  setAdvancedFilters((prev) => ({
-                    ...prev,
-                    dataFim: e.target.value,
-                  }))
-                }
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
-              />
-            </div>
+            <GeologDateInput
+              label="Data Fim"
+              value={advancedFilters.dataFim}
+              onChange={(value) =>
+                setAdvancedFilters((prev) => ({
+                  ...prev,
+                  dataFim: value,
+                }))
+              }
+            />
             {/* Status Operacional */}
             <GeologSearchableSelect
               label="Status Operacional"
@@ -4439,7 +4428,7 @@ export default function OSOperationalPage() {
                   statusOperacional: id as AdvancedFilters["statusOperacional"],
                 }))
               }
-              compact
+              triggerClassName="px-4 py-3 text-base"
               disableSearch={false}
             />
             {/* Cadastro feito por */}
@@ -4456,7 +4445,7 @@ export default function OSOperationalPage() {
                   createdBy: id,
                 }))
               }
-              compact
+              triggerClassName="px-4 py-3 text-base"
               disableSearch={false}
             />
           </div>

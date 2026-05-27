@@ -35,6 +35,8 @@ import { useData, type OrderService } from "@/context/DataContext";
 import { DataTable } from "@/components/ui/DataTable";
 import StandardModal from "@/components/StandardModal";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
+import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
+import GeologDateInput from "@/components/ui/GeologDateInput";
 import {
   fetchOSById,
   fetchOSFinancePage,
@@ -120,12 +122,6 @@ function normalizeToInputDate(value: Date): string {
   const month = `${value.getMonth() + 1}`.padStart(2, "0");
   const day = `${value.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function normalizeToInputMonth(value: Date): string {
-  const year = value.getFullYear();
-  const month = `${value.getMonth() + 1}`.padStart(2, "0");
-  return `${year}-${month}`;
 }
 
 function getFinanceDisplayStatus(os: OrderService): string {
@@ -254,14 +250,12 @@ export default function MedicaoFinanceiraPage() {
   const { profile } = useAuth();
   const { clientes, drivers, parceiros, loading: dataLoading, lastOSUpdate } = useData();
   const now = new Date();
-  const [selectedMonth, setSelectedMonth] = useState(normalizeToInputMonth(now));
   const [dataInicio, setDataInicio] = useState(normalizeToInputDate(startOfWeek(now)));
   const [dataFim, setDataFim] = useState(normalizeToInputDate(endOfWeek(now)));
   const [clienteId, setClienteId] = useState("");
   const [centroCustoId, setCentroCustoId] = useState("");
   const [parceiroId, setParceiroId] = useState("");
   const [driverId, setDriverId] = useState("");
-  const [motorista, setMotorista] = useState("");
   const [statusOperacional, setStatusOperacional] = useState("");
   const [statusFinanceiro, setStatusFinanceiro] = useState("");
   const [stats, setStats] = useState<FinanceOverview>({
@@ -303,7 +297,6 @@ export default function MedicaoFinanceiraPage() {
       dataFim: dataFim || undefined,
       clienteId: clienteId || undefined,
       centroCustoId: centroCustoId || undefined,
-      motorista: motorista || undefined,
       driverId: driverId || undefined,
       parceiroId: parceiroId || undefined,
       statusOperacional: statusOperacional || undefined,
@@ -314,7 +307,6 @@ export default function MedicaoFinanceiraPage() {
       dataFim,
       clienteId,
       centroCustoId,
-      motorista,
       driverId,
       parceiroId,
       statusOperacional,
@@ -430,14 +422,12 @@ export default function MedicaoFinanceiraPage() {
 
   const resetFilters = useCallback(() => {
     const now = new Date();
-    setSelectedMonth(normalizeToInputMonth(now));
     setDataInicio(normalizeToInputDate(startOfWeek(now)));
     setDataFim(normalizeToInputDate(endOfWeek(now)));
     setClienteId("");
     setCentroCustoId("");
     setParceiroId("");
     setDriverId("");
-    setMotorista("");
     setStatusOperacional("");
     setStatusFinanceiro("");
     setActiveQuickRange("week");
@@ -456,7 +446,6 @@ export default function MedicaoFinanceiraPage() {
     if (mode === "week") {
       setDataInicio(normalizeToInputDate(startOfWeek(now)));
       setDataFim(normalizeToInputDate(endOfWeek(now)));
-      setSelectedMonth(normalizeToInputMonth(now));
       setActiveQuickRange("week");
       return;
     }
@@ -471,7 +460,6 @@ export default function MedicaoFinanceiraPage() {
     
     setDataInicio(normalizeToInputDate(firstDay));
     setDataFim(normalizeToInputDate(lastDay));
-    setSelectedMonth(normalizeToInputMonth(now));
     setActiveQuickRange("month");
   }, []);
 
@@ -608,7 +596,10 @@ export default function MedicaoFinanceiraPage() {
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `medicao-financeira-${selectedMonth || "periodo"}.pdf`;
+      const fileName = dataInicio && dataFim 
+        ? `medicao-financeira-${dataInicio}-ate-${dataFim}.pdf`
+        : `medicao-financeira-${new Date().toISOString().split('T')[0]}.pdf`;
+      anchor.download = fileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -862,142 +853,113 @@ export default function MedicaoFinanceiraPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <Field label="Mês de Referência">
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(event) => {
-                  const monthValue = event.target.value;
-                  setSelectedMonth(monthValue);
-                  
-                  // Atualizar datas para o primeiro e último dia do mês selecionado
-                  const [year, month] = monthValue.split('-').map(Number);
-                  const firstDay = new Date(year, month - 1, 1);
-                  const lastDay = new Date(year, month, 0);
-                  setDataInicio(normalizeToInputDate(firstDay));
-                  setDataFim(normalizeToInputDate(lastDay));
-                  
-                  setActiveQuickRange("custom");
-                }}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              />
-            </Field>
-            <Field label="Data Inicial">
-              <input
-                type="date"
-                value={dataInicio}
-                onChange={(event) => {
-                  setDataInicio(event.target.value);
-                  setActiveQuickRange("custom");
-                }}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              />
-            </Field>
-            <Field label="Data Final">
-              <input
-                type="date"
-                value={dataFim}
-                onChange={(event) => {
-                  setDataFim(event.target.value);
-                  setActiveQuickRange("custom");
-                }}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              />
-            </Field>
-            <Field label="Empresa / Cliente">
-              <select
-                value={clienteId}
-                onChange={(event) => setClienteId(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              >
-                <option value="">Todos os Clientes</option>
-                {clientes.map((cliente) => (
-                  <option key={cliente.id} value={cliente.id}>
-                    {cliente.nome}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Centro de Custo">
-              <select
-                value={centroCustoId}
-                onChange={(event) => setCentroCustoId(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              >
-                <option value="">Todos os Centros</option>
-                {clientes.flatMap((cliente) => cliente.centrosCusto).map((centro) => (
-                  <option key={centro.id} value={centro.id}>
-                    {centro.nome}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Parceiro Estratégico">
-              <select
-                value={parceiroId}
-                onChange={(event) => setParceiroId(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              >
-                <option value="">Todos os Parceiros</option>
-                {parceiros.map((parceiro) => (
-                  <option key={parceiro.id} value={parceiro.id}>
-                    {parceiro.razaoSocialOuNomeCompleto}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Motorista Específico">
-              <select
-                value={driverId}
-                onChange={(event) => setDriverId(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              >
-                <option value="">Todos os Motoristas</option>
-                {drivers.map((driver) => (
-                  <option key={driver.id} value={driver.id}>
-                    {driver.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Status Operacional">
-              <select
-                value={statusOperacional}
-                onChange={(event) => setStatusOperacional(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              >
-                <option value="">Todos os Estados</option>
-                <option value="Finalizado">Concluídas</option>
-                <option value="Pendente">Pendentes</option>
-                <option value="Em Rota">Em Rota</option>
-                <option value="Cancelado">Canceladas</option>
-              </select>
-            </Field>
-            <Field label="Situação Financeira">
-              <select
-                value={statusFinanceiro}
-                onChange={(event) => setStatusFinanceiro(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              >
-                <option value="">Todas as Situações</option>
-                <option value="Pendente">Liberado</option>
-                <option value="Faturado">Faturado (A Receber)</option>
-                <option value="Recebido">Recebido</option>
-                <option value="Pago">Pago (Legado)</option>
-              </select>
-            </Field>
-            <Field label="Busca Direta">
-              <div className="relative">
-                <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={motorista}
-                  onChange={(event) => setMotorista(event.target.value)}
-                  placeholder="Nome do motorista..."
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-                />
-              </div>
-            </Field>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12">
+            <GeologDateInput
+              label="Data Inicial"
+              value={dataInicio}
+              onChange={(value) => {
+                setDataInicio(value);
+                setActiveQuickRange("custom");
+              }}
+              className="xl:col-span-2"
+            />
+            <GeologDateInput
+              label="Data Final"
+              value={dataFim}
+              onChange={(value) => {
+                setDataFim(value);
+                setActiveQuickRange("custom");
+              }}
+              className="xl:col-span-2"
+            />
+            <GeologSearchableSelect
+              label="Empresa / Cliente"
+              options={[
+                { id: "", nome: "Todos os Clientes" },
+                ...clientes.map((c) => ({ id: c.id, nome: c.nome })),
+              ]}
+              value={clienteId}
+              onChange={(id) => {
+                setClienteId(id);
+                setCentroCustoId("");
+              }}
+              disableSearch={false}
+              triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-4"
+            />
+            <GeologSearchableSelect
+              label="Centro de Custo"
+              options={[
+                { id: "", nome: "Todos os Centros" },
+                ...(clienteId
+                  ? clientes.find((c) => c.id === clienteId)?.centrosCusto || []
+                  : clientes.flatMap((c) => c.centrosCusto)
+                ).map((cc) => ({ id: cc.id, nome: cc.nome })),
+              ]}
+              value={centroCustoId}
+              onChange={(id) => setCentroCustoId(id)}
+              disabled={!clienteId}
+              disableSearch={false}
+              triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-4"
+            />
+            <GeologSearchableSelect
+              label="Parceiro Estratégico"
+              options={[
+                { id: "", nome: "Todos os Parceiros" },
+                ...parceiros.map((p) => ({
+                  id: p.id,
+                  nome: p.razaoSocialOuNomeCompleto,
+                })),
+              ]}
+              value={parceiroId}
+              onChange={(id) => setParceiroId(id)}
+              disableSearch={false}
+              triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-3"
+            />
+            <GeologSearchableSelect
+              label="Motorista Específico"
+              options={[
+                { id: "", nome: "Todos os Motoristas" },
+                ...drivers.map((d) => ({ id: d.id, nome: d.name })),
+              ]}
+              value={driverId}
+              onChange={(id) => setDriverId(id)}
+              disableSearch={false}
+              triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-3"
+            />
+            <GeologSearchableSelect
+              label="Status Operacional"
+              options={[
+                { id: "", nome: "Todos os Estados" },
+                { id: "Finalizado", nome: "Concluídas" },
+                { id: "Pendente", nome: "Pendentes" },
+                { id: "Em Rota", nome: "Em Rota" },
+                { id: "Cancelado", nome: "Canceladas" },
+              ]}
+              value={statusOperacional}
+              onChange={(id) => setStatusOperacional(id)}
+              disableSearch={false}
+              triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-3"
+            />
+            <GeologSearchableSelect
+              label="Situação Financeira"
+              options={[
+                { id: "", nome: "Todas as Situações" },
+                { id: "Pendente", nome: "Liberado" },
+                { id: "Faturado", nome: "Faturado (A Receber)" },
+                { id: "Recebido", nome: "Recebido" },
+                { id: "Pago", nome: "Pago (Legado)" },
+              ]}
+              value={statusFinanceiro}
+              onChange={(id) => setStatusFinanceiro(id)}
+              disableSearch={false}
+              triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-3"
+            />
           </div>
         </section>
       )}
@@ -1364,7 +1326,7 @@ export default function MedicaoFinanceiraPage() {
                   <select
                     value={faturarTipoDocumento}
                     onChange={(event) => setFaturarTipoDocumento(event.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-bold text-slate-800 outline-none transition-all focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
                   >
                     <option value="nota_fiscal">Nota Fiscal Eletrônica</option>
                     <option value="fatura">Fatura / Invoice</option>

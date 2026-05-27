@@ -27,6 +27,7 @@ type FinanceFilters = {
 
 type FinanceRow = {
   id: string;
+  protocolo: string | null;
   os_number: string | null;
   data: string | null;
   cliente_id: string | null;
@@ -106,6 +107,11 @@ const formatCurrency = (value: number): string =>
 const formatDate = (value?: string | null): string =>
   value ? new Date(value).toLocaleDateString("pt-BR") : "-";
 
+const truncateText = (text: string, maxLength: number): string => {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength - 3) + "...";
+};
+
 export async function GET(request: Request) {
   try {
     const authClient = await createAuthClient();
@@ -137,7 +143,7 @@ export async function GET(request: Request) {
     let query = adminClient
       .from("ordens_servico")
       .select(
-        "id, os_number, data, cliente_id, centro_custo_id, motorista, driver_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional",
+        "id, protocolo, os_number, data, cliente_id, centro_custo_id, motorista, driver_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional",
       )
       .eq("arquivado", false);
 
@@ -270,41 +276,99 @@ export async function GET(request: Request) {
     let page = pdfDoc.addPage([pageWidth, pageHeight]);
     let currentY = pageHeight - margin;
 
-    const drawPageHeader = (currentPage = page) => {
+    const companyData = {
+      name: "GELOG TRANSPORTES E LOGÍSTICA LTDA",
+      cnpj: "31.223.049/0001-37",
+      address: "Rua Jandira Morais Pimentel, 490 Centro 28893-046 - Rio das Ostras - Rio de Janeiro",
+      city: "Rio das Ostras - RJ",
+      phone: "2299759-9213",
+      email: "contato@geolog.com.br"
+    };
+
+    const drawInvoiceHeader = (currentPage = page) => {
       currentPage.drawRectangle({
         x: 0,
-        y: pageHeight - 96,
+        y: pageHeight - 120,
         width: pageWidth,
-        height: 96,
-        color: rgb(0, 0.11, 0.23),
+        height: 120,
+        color: rgb(0.02, 0.12, 0.25),
       });
 
       if (logoImage) {
         currentPage.drawImage(logoImage, {
           x: margin,
-          y: pageHeight - 78,
-          width: 44,
-          height: 44,
+          y: pageHeight - 100,
+          width: 50,
+          height: 50,
         });
       }
 
-      currentPage.drawText("Medição Financeira Geolog", {
-        x: margin + 56,
-        y: pageHeight - 50,
-        size: 20,
+      currentPage.drawText(companyData.name, {
+        x: margin + 60,
+        y: pageHeight - 55,
+        size: 16,
         font: boldFont,
         color: rgb(1, 1, 1),
       });
-      currentPage.drawText(
-        `Período: ${month || `${formatDate(dataInicio)} - ${formatDate(dataFim)}`}`,
-        {
-          x: margin + 56,
-          y: pageHeight - 72,
-          size: 10,
-          font: regularFont,
-          color: rgb(0.83, 0.89, 0.98),
-        },
-      );
+
+      currentPage.drawText(`CNPJ: ${companyData.cnpj}`, {
+        x: margin + 60,
+        y: pageHeight - 75,
+        size: 8,
+        font: regularFont,
+        color: rgb(0.8, 0.85, 0.95),
+      });
+
+      currentPage.drawText(companyData.address, {
+        x: margin + 60,
+        y: pageHeight - 90,
+        size: 8,
+        font: regularFont,
+        color: rgb(0.8, 0.85, 0.95),
+      });
+
+      currentPage.drawText(`Tel: ${companyData.phone}`, {
+        x: margin + 60,
+        y: pageHeight - 105,
+        size: 8,
+        font: regularFont,
+        color: rgb(0.8, 0.85, 0.95),
+      });
+
+      currentPage.drawRectangle({
+        x: pageWidth - 220,
+        y: pageHeight - 110,
+        width: 180,
+        height: 80,
+        borderColor: rgb(0.8, 0.85, 0.95),
+        borderWidth: 1,
+        color: rgb(0.02, 0.12, 0.25),
+      });
+
+      currentPage.drawText("RELATÓRIO FINANCEIRO", {
+        x: pageWidth - 210,
+        y: pageHeight - 55,
+        size: 12,
+        font: boldFont,
+        color: rgb(1, 1, 1),
+      });
+
+      currentPage.drawText(`Período: ${month || `${formatDate(dataInicio)} a ${formatDate(dataFim)}`}`, {
+        x: pageWidth - 210,
+        y: pageHeight - 75,
+        size: 9,
+        font: regularFont,
+        color: rgb(0.8, 0.85, 0.95),
+      });
+
+      const today = new Date().toLocaleDateString("pt-BR");
+      currentPage.drawText(`Emissão: ${today}`, {
+        x: pageWidth - 210,
+        y: pageHeight - 90,
+        size: 9,
+        font: regularFont,
+        color: rgb(0.8, 0.85, 0.95),
+      });
     };
 
     const drawSummaryBox = (
@@ -314,51 +378,65 @@ export async function GET(request: Request) {
       width: number,
       title: string,
       value: string,
+      isHighlighted = false,
+      isPrimary = false,
     ) => {
+      // Background
       currentPage.drawRectangle({
         x,
         y,
         width,
-        height: 60,
-        borderColor: rgb(0.87, 0.9, 0.95),
-        color: rgb(1, 1, 1),
-        borderWidth: 1,
+        height: 65,
+        color: isPrimary ? rgb(0.02, 0.12, 0.25) : (isHighlighted ? rgb(0.95, 0.98, 0.96) : rgb(1, 1, 1)),
+        borderColor: isPrimary ? rgb(0.02, 0.12, 0.25) : (isHighlighted ? rgb(0.05, 0.56, 0.31) : rgb(0.87, 0.9, 0.95)),
+        borderWidth: isPrimary ? 2 : (isHighlighted ? 2 : 1),
       });
+
+      // Title
       currentPage.drawText(title, {
         x: x + 12,
-        y: y + 38,
+        y: y + 45,
         size: 8,
-        font: regularFont,
-        color: rgb(0.42, 0.47, 0.55),
+        font: boldFont,
+        color: isPrimary ? rgb(0.8, 0.85, 0.95) : (isHighlighted ? rgb(0.05, 0.56, 0.31) : rgb(0.42, 0.47, 0.55)),
       });
+
+      // Value
       currentPage.drawText(value, {
         x: x + 12,
-        y: y + 18,
-        size: 13,
+        y: y + 20,
+        size: 16,
         font: boldFont,
-        color: rgb(0.05, 0.12, 0.23),
+        color: isPrimary ? rgb(1, 1, 1) : (isHighlighted ? rgb(0.05, 0.56, 0.31) : rgb(0.05, 0.12, 0.23)),
+      });
+
+      // Decorative line
+      currentPage.drawLine({
+        start: { x: x + 12, y: y + 38 },
+        end: { x: x + width - 12, y: y + 38 },
+        thickness: 1,
+        color: isPrimary ? rgb(0.3, 0.4, 0.6) : (isHighlighted ? rgb(0.05, 0.56, 0.31) : rgb(0.85, 0.89, 0.94)),
       });
     };
 
     const drawTableHeader = (currentPage: typeof page, y: number) => {
       const headers = [
-        { label: "OS", width: 66 },
-        { label: "Data", width: 66 },
-        { label: "Cliente", width: 170 },
-        { label: "Motorista", width: 160 },
-        { label: "Bruto", width: 88, align: "right" as const },
-        { label: "Custo", width: 88, align: "right" as const },
-        { label: "Lucro", width: 88, align: "right" as const },
-        { label: "Status", width: 88 },
+        { label: "Protocolo", width: 90 },
+        { label: "OS", width: 70 },
+        { label: "Empresa / Centro de Custo", width: 280 },
+        { label: "Motorista", width: 180 },
+        { label: "Data", width: 80 },
+        { label: "Valor", width: 100, align: "center" as const },
+        { label: "Status", width: 90 },
       ];
 
       currentPage.drawRectangle({
         x: margin,
         y,
         width: pageWidth - margin * 2,
-        height: 24,
-        color: rgb(0.95, 0.97, 0.99),
-        borderColor: rgb(0.85, 0.89, 0.94),
+        height: 32,
+        color: rgb(0.02, 0.12, 0.25),
+        borderColor: rgb(0.02, 0.12, 0.25),
         borderWidth: 1,
       });
 
@@ -366,43 +444,46 @@ export async function GET(request: Request) {
       headers.forEach((header) => {
         currentPage.drawText(header.label, {
           x,
-          y: y + 8,
-          size: 8,
+          y: y + 12,
+          size: 9,
           font: boldFont,
-          color: rgb(0.34, 0.39, 0.47),
+          color: rgb(1, 1, 1),
         });
         x += header.width;
       });
     };
 
-    drawPageHeader(page);
-    drawSummaryBox(page, margin, pageHeight - 156, 170, "Total OS", String(summary.totalOS));
+    drawInvoiceHeader(page);
+
+    drawSummaryBox(page, margin, pageHeight - 200, 170, "Total OS", String(summary.totalOS), false, true);
     drawSummaryBox(
       page,
       margin + 182,
-      pageHeight - 156,
+      pageHeight - 200,
       170,
-      "Liberado",
+      "Liberado Faturamento",
       formatCurrency(summary.totalLiberadoFaturamento),
+      true,
+      false,
     );
-    drawSummaryBox(page, margin + 364, pageHeight - 156, 170, "Recebido", formatCurrency(summary.totalRecebido));
-    drawSummaryBox(page, margin + 546, pageHeight - 156, 170, "A Receber", formatCurrency(summary.totalFaturado));
-    drawSummaryBox(page, margin, pageHeight - 228, 170, "Bruto", formatCurrency(summary.totalBruto));
-    drawSummaryBox(page, margin + 182, pageHeight - 228, 170, "Custos", formatCurrency(summary.totalCusto));
-    drawSummaryBox(page, margin + 364, pageHeight - 228, 170, "Impostos", formatCurrency(summary.totalImposto));
-    drawSummaryBox(page, margin + 546, pageHeight - 228, 170, "Lucro", formatCurrency(summary.totalLucro));
+    drawSummaryBox(page, margin + 364, pageHeight - 200, 170, "Recebido", formatCurrency(summary.totalRecebido), true, false);
+    drawSummaryBox(page, margin + 546, pageHeight - 200, 170, "A Receber", formatCurrency(summary.totalFaturado), false, false);
+    drawSummaryBox(page, margin, pageHeight - 268, 170, "Faturamento Bruto", formatCurrency(summary.totalBruto), false, false);
+    drawSummaryBox(page, margin + 182, pageHeight - 268, 170, "Custos Totais", formatCurrency(summary.totalCusto), false, false);
+    drawSummaryBox(page, margin + 364, pageHeight - 268, 170, "Impostos", formatCurrency(summary.totalImposto), false, false);
+    drawSummaryBox(page, margin + 546, pageHeight - 268, 170, "Lucro Líquido", formatCurrency(summary.totalLucro), true, true);
 
-    currentY = pageHeight - 272;
+    currentY = pageHeight - 320;
     drawTableHeader(page, currentY);
-    currentY -= 22;
+    currentY -= 36;
 
     rows.forEach((row, index) => {
-      if (currentY < margin + 28) {
+      if (currentY < margin + 36) {
         page = pdfDoc.addPage([pageWidth, pageHeight]);
-        drawPageHeader(page);
-        currentY = pageHeight - 120;
+        drawInvoiceHeader(page);
+        currentY = pageHeight - 160;
         drawTableHeader(page, currentY);
-        currentY -= 22;
+        currentY -= 36;
       }
 
       const isEven = index % 2 === 0;
@@ -410,8 +491,8 @@ export async function GET(request: Request) {
         x: margin,
         y: currentY - 2,
         width: pageWidth - margin * 2,
-        height: 20,
-        color: isEven ? rgb(0.99, 0.99, 0.995) : rgb(1, 1, 1),
+        height: 36,
+        color: isEven ? rgb(0.97, 0.98, 0.99) : rgb(1, 1, 1),
       });
 
       const clienteNome = clienteMap.get(row.cliente_id || "") || "-";
@@ -419,34 +500,138 @@ export async function GET(request: Request) {
       const motoristaNome = driverMap.get(row.driver_id || "") || row.motorista || "-";
       const status = row.status_financeiro || "Pendente";
 
-      const cells = [
-        `#${row.os_number || "-"}${centroCustoNome ? ` / ${centroCustoNome}` : ""}`,
-        formatDate(row.data),
-        clienteNome,
-        motoristaNome,
-        formatCurrency(Number(row.valor_bruto || 0)),
-        formatCurrency(Number(row.custo || 0)),
-        formatCurrency(Number(row.lucro || 0)),
-        status,
-      ];
+      const osValue = row.os_number || "-";
+      const osIsEmpty = !row.os_number;
 
-      const xPositions = [margin + 8, margin + 74, margin + 244, margin + 404, margin + 564, margin + 652, margin + 740, margin + 828];
-      cells.forEach((cell, cellIndex) => {
-        const isRightAligned = cellIndex >= 4;
-        page.drawText(String(cell), {
-          x: isRightAligned ? xPositions[cellIndex] - 8 - String(cell).length * 0.5 : xPositions[cellIndex],
-          y: currentY + 4,
-          size: 8,
-          font: cellIndex === 0 || cellIndex === 7 ? boldFont : regularFont,
-          color:
-            cellIndex === 7 && status === "Recebido"
-              ? rgb(0.05, 0.56, 0.31)
-              : rgb(0.15, 0.19, 0.24),
-        });
+      const xPositions = [margin + 8, margin + 98, margin + 168, margin + 448, margin + 628, margin + 708, margin + 808];
+
+      // Protocolo
+      page.drawText(row.protocolo || "-", {
+        x: xPositions[0],
+        y: currentY + 10,
+        size: 9,
+        font: regularFont,
+        color: rgb(0.15, 0.19, 0.24),
       });
 
-      currentY -= 20;
+      // OS
+      const osColor = osIsEmpty ? rgb(0.7, 0.75, 0.85) : rgb(0.15, 0.19, 0.24);
+      page.drawText(osValue, {
+        x: xPositions[1],
+        y: currentY + 10,
+        size: 9,
+        font: boldFont,
+        color: osColor,
+      });
+
+      // Empresa / Centro de Custo (empresa em cima, centro embaixo)
+      page.drawText(truncateText(clienteNome, 35), {
+        x: xPositions[2],
+        y: currentY + 18,
+        size: 9,
+        font: boldFont,
+        color: rgb(0.15, 0.19, 0.24),
+      });
+
+      if (centroCustoNome) {
+        page.drawText(truncateText(centroCustoNome, 35), {
+          x: xPositions[2],
+          y: currentY + 6,
+          size: 8,
+          font: regularFont,
+          color: rgb(0.42, 0.47, 0.55),
+        });
+      }
+
+      // Motorista
+      page.drawText(truncateText(motoristaNome, 25), {
+        x: xPositions[3],
+        y: currentY + 10,
+        size: 9,
+        font: regularFont,
+        color: rgb(0.15, 0.19, 0.24),
+      });
+
+      // Data
+      page.drawText(formatDate(row.data), {
+        x: xPositions[4],
+        y: currentY + 10,
+        size: 9,
+        font: regularFont,
+        color: rgb(0.15, 0.19, 0.24),
+      });
+
+      // Valor
+      const valorText = formatCurrency(Number(row.valor_bruto || 0));
+      const valorWidth = valorText.length * 5.5;
+      page.drawText(valorText, {
+        x: xPositions[5] + 50 - valorWidth / 2,
+        y: currentY + 10,
+        size: 9,
+        font: boldFont,
+        color: rgb(0.05, 0.56, 0.31),
+      });
+
+      // Status
+      const statusColor = status === "Recebido" ? rgb(0.05, 0.56, 0.31) : rgb(0.15, 0.19, 0.24);
+      page.drawText(status, {
+        x: xPositions[6],
+        y: currentY + 10,
+        size: 9,
+        font: boldFont,
+        color: statusColor,
+      });
+
+      currentY -= 36;
     });
+
+    const drawFooter = (currentPage: typeof page, pageNumber: number, totalPages: number) => {
+      const footerY = 40;
+      currentPage.drawLine({
+        start: { x: margin, y: footerY + 15 },
+        end: { x: pageWidth - margin, y: footerY + 15 },
+        thickness: 1,
+        color: rgb(0.85, 0.89, 0.94),
+      });
+
+      currentPage.drawText("Geolog Transportes e Logística Ltda", {
+        x: margin,
+        y: footerY + 5,
+        size: 8,
+        font: regularFont,
+        color: rgb(0.42, 0.47, 0.55),
+      });
+
+      currentPage.drawText(`CNPJ: ${companyData.cnpj}`, {
+        x: margin,
+        y: footerY - 8,
+        size: 8,
+        font: regularFont,
+        color: rgb(0.42, 0.47, 0.55),
+      });
+
+      currentPage.drawText(`Página ${pageNumber} de ${totalPages}`, {
+        x: pageWidth - margin - 80,
+        y: footerY + 5,
+        size: 8,
+        font: regularFont,
+        color: rgb(0.42, 0.47, 0.55),
+      });
+
+      currentPage.drawText("Documento emitido eletronicamente", {
+        x: pageWidth - margin - 180,
+        y: footerY - 8,
+        size: 8,
+        font: regularFont,
+        color: rgb(0.42, 0.47, 0.55),
+      });
+    };
+
+    const totalPages = pdfDoc.getPageCount();
+    for (let i = 0; i < totalPages; i++) {
+      const currentPage = pdfDoc.getPage(i);
+      drawFooter(currentPage, i + 1, totalPages);
+    }
 
     const pdfBytes = await pdfDoc.save();
     const fileName = sanitizeFinanceFileName(

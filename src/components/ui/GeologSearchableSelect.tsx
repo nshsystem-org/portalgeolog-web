@@ -54,8 +54,8 @@ export default function GeologSearchableSelect({
 
   const selectedOption = options.find((opt) => opt.id === value);
   const triggerPaddingClass = compact ? "px-2 py-1.5" : "px-5 py-4";
-  const triggerTextClass = compact ? "text-sm" : "text-lg";
-  const triggerIconSize = compact ? 16 : 20;
+  const triggerTextClass = triggerClassName?.includes("text-") ? "" : (compact ? "text-sm" : "text-lg");
+  const triggerIconSize = triggerClassName?.includes("text-base") ? 18 : (compact ? 16 : 20);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -177,7 +177,7 @@ export default function GeologSearchableSelect({
     <div className={`group relative ${className}`} ref={wrapperRef}>
       {(label || required) && (
         <label
-          className={`font-black uppercase text-slate-500 tracking-wider ml-1 ${compact ? "text-[10px]" : "text-sm"} flex items-center gap-1`}
+          className={`font-black uppercase text-slate-400 tracking-[0.25em] ml-1 ${compact ? "text-[10px]" : "text-[11px]"} flex items-center gap-1 mb-2`}
         >
           {label}
           {required && <span className="text-rose-300 text-base">*</span>}
