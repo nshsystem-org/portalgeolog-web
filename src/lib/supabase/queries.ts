@@ -1035,7 +1035,7 @@ export type OSPageFilters = {
   clienteId?: string;
   centroCustoId?: string;
   solicitante?: string;
-  motorista?: string;
+  driverId?: string;
   veiculoId?: string;
   dataInicio?: string;
   dataFim?: string;
@@ -1071,7 +1071,7 @@ export async function fetchOSPage({
 
     if (likeTerm) {
       query = query.or(
-        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
+        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm},driver_id.ilike.${likeTerm}`,
       );
     }
 
@@ -1090,11 +1090,8 @@ export async function fetchOSPage({
         `%${sanitizeSearchTerm(filters.solicitante)}%`,
       );
     }
-    if (filters.motorista) {
-      query = query.ilike(
-        "motorista",
-        `%${sanitizeSearchTerm(filters.motorista)}%`,
-      );
+    if (filters.driverId) {
+      query = query.eq("driver_id", filters.driverId);
     }
     if (filters.veiculoId) {
       query = query.eq("veiculo_id", filters.veiculoId);
@@ -1299,7 +1296,7 @@ export async function fetchOSFinancePage({
 
     if (likeTerm) {
       query = query.or(
-        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
+        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm},driver_id.ilike.${likeTerm}`,
       );
     }
 
