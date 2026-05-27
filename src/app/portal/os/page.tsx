@@ -4246,24 +4246,30 @@ export default function OSOperationalPage() {
 
       {/* Painel de Filtros Avançados */}
       {showAdvancedFilters && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black uppercase tracking-widest text-slate-600">
-              Filtros Avançados
-            </h3>
+        <section className="rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/40">
+          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900">Filtros Avançados</h2>
+              <p className="text-sm font-medium text-slate-500">
+                Refine as ordens de serviço por período, cliente, motorista ou status.
+              </p>
+            </div>
             {hasActiveAdvancedFilters && (
               <button
+                type="button"
                 onClick={() => setAdvancedFilters(defaultAdvancedFilters)}
-                className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-black text-slate-700 transition-all hover:bg-slate-100 active:scale-95 cursor-pointer"
               >
-                Limpar filtros
+                <Filter size={16} />
+                Limpar Filtros
               </button>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12">
             {/* OS */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+            <div className="space-y-2 xl:col-span-2">
+              <label className="ml-1 text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">
                 Número OS
               </label>
               <input
@@ -4276,7 +4282,7 @@ export default function OSOperationalPage() {
                   }))
                 }
                 placeholder="Ex: 00123"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all placeholder:text-slate-400"
               />
             </div>
             {/* Empresa */}
@@ -4295,6 +4301,7 @@ export default function OSOperationalPage() {
                 }))
               }
               triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-5"
               disableSearch={false}
             />
             {/* Centro de Custo */}
@@ -4313,6 +4320,7 @@ export default function OSOperationalPage() {
               }
               disabled={!advancedFilters.clienteId}
               triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-5"
               disableSearch={false}
             />
             {/* Solicitante */}
@@ -4333,11 +4341,12 @@ export default function OSOperationalPage() {
                 setAdvancedFilters((prev) => ({ ...prev, solicitante: id }))
               }
               triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-3"
               disableSearch={false}
             />
             {/* Motorista */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+            <div className="space-y-2 xl:col-span-3">
+              <label className="ml-1 text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">
                 Motorista
               </label>
               <input
@@ -4350,7 +4359,7 @@ export default function OSOperationalPage() {
                   }))
                 }
                 placeholder="Nome do motorista..."
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all placeholder:text-slate-400"
               />
             </div>
             {/* Veículo */}
@@ -4368,11 +4377,12 @@ export default function OSOperationalPage() {
                 setAdvancedFilters((prev) => ({ ...prev, veiculoId: id }))
               }
               triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-3"
               disableSearch={false}
             />
             {/* Passageiro */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+            <div className="space-y-2 xl:col-span-3">
+              <label className="ml-1 text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">
                 Passageiro
               </label>
               <input
@@ -4385,31 +4395,9 @@ export default function OSOperationalPage() {
                   }))
                 }
                 placeholder="Nome do passageiro..."
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all placeholder:text-slate-400"
               />
             </div>
-            {/* Data Início */}
-            <GeologDateInput
-              label="Data Início"
-              value={advancedFilters.dataInicio}
-              onChange={(value) =>
-                setAdvancedFilters((prev) => ({
-                  ...prev,
-                  dataInicio: value,
-                }))
-              }
-            />
-            {/* Data Fim */}
-            <GeologDateInput
-              label="Data Fim"
-              value={advancedFilters.dataFim}
-              onChange={(value) =>
-                setAdvancedFilters((prev) => ({
-                  ...prev,
-                  dataFim: value,
-                }))
-              }
-            />
             {/* Status Operacional */}
             <GeologSearchableSelect
               label="Status Operacional"
@@ -4429,6 +4417,7 @@ export default function OSOperationalPage() {
                 }))
               }
               triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-3"
               disableSearch={false}
             />
             {/* Cadastro feito por */}
@@ -4446,10 +4435,35 @@ export default function OSOperationalPage() {
                 }))
               }
               triggerClassName="px-4 py-3 text-base"
+              className="xl:col-span-3"
               disableSearch={false}
             />
+            {/* Data Início */}
+            <GeologDateInput
+              label="Data Início"
+              value={advancedFilters.dataInicio}
+              onChange={(value) =>
+                setAdvancedFilters((prev) => ({
+                  ...prev,
+                  dataInicio: value,
+                }))
+              }
+              className="xl:col-span-3"
+            />
+            {/* Data Fim */}
+            <GeologDateInput
+              label="Data Fim"
+              value={advancedFilters.dataFim}
+              onChange={(value) =>
+                setAdvancedFilters((prev) => ({
+                  ...prev,
+                  dataFim: value,
+                }))
+              }
+              className="xl:col-span-3"
+            />
           </div>
-        </div>
+        </section>
       )}
 
       {/* Loader do filtro de arquivados */}
