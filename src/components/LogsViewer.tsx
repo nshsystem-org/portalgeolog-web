@@ -37,6 +37,7 @@ import {
   ListFilter,
   Layers,
   Database,
+  Globe,
 } from "lucide-react";
 
 interface SystemLogEntry {
@@ -120,6 +121,18 @@ const TABS: TabConfig[] = [
   },
 ];
 
+const PAGE_OPTIONS = [
+  { value: "/portal/os", label: "Ordem de Serviço" },
+  { value: "/portal/financeiro", label: "Medição Financeira" },
+  { value: "/portal/motoristas", label: "Motoristas" },
+  { value: "/portal/veiculos", label: "Veículos" },
+  { value: "/portal/passageiros", label: "Passageiros" },
+  { value: "/portal/clientes", label: "Clientes" },
+  { value: "/portal/parcerias", label: "Parceiros de Serviço" },
+  { value: "/portal/config", label: "Configurações" },
+  { value: "/portal/dashboard", label: "Dashboard" },
+];
+
 const LEVEL_COLORS = {
   info: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", icon: Info },
   warning: { bg: "bg-yellow-50", text: "text-yellow-700", border: "border-yellow-200", icon: AlertTriangle },
@@ -143,6 +156,7 @@ export default function LogsViewer() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedPage, setSelectedPage] = useState<string>("all");
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const PAGE_SIZE = 50;
 
@@ -687,7 +701,13 @@ export default function LogsViewer() {
     return true;
   });
 
-  const filteredLogs = categoryFilteredLogs.filter((log) => {
+  const pageFilteredLogs = categoryFilteredLogs.filter((log) => {
+    if (selectedPage === "all") return true;
+    const url = log.url || "";
+    return url.includes(selectedPage);
+  });
+
+  const filteredLogs = pageFilteredLogs.filter((log) => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) return true;
     return [
@@ -804,6 +824,23 @@ export default function LogsViewer() {
                     <option value="all">Todas Categorias</option>
                     <option value="operacao">Operação</option>
                     <option value="dados">Dados</option>
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                </div>
+
+                <div className="relative w-full md:w-64">
+                  <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <select
+                    value={selectedPage}
+                    onChange={(e) => setSelectedPage(e.target.value)}
+                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+                  >
+                    <option value="all">Todas Páginas</option>
+                    {PAGE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
