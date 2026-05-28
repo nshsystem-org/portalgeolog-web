@@ -751,6 +751,13 @@ export default function LogsViewer() {
       .includes(term);
   });
 
+  const filteredTotal = filteredLogs.length;
+  const filteredTotalPages = Math.ceil(filteredTotal / PAGE_SIZE) || 1;
+  const paginatedLogs = filteredLogs.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
   const systemCount = systemLogs.length;
   const whatsappCount = whatsappLogs.length;
 
@@ -978,7 +985,7 @@ export default function LogsViewer() {
             )}
           </div>
         ) : (
-          filteredLogs.map((log) => {
+          paginatedLogs.map((log) => {
             const levelConfig = log.level ? LEVEL_COLORS[log.level] : LEVEL_COLORS.info;
             const LevelIcon = levelConfig.icon;
             const isExpanded = expandedLogs.has(log.id);
@@ -1091,17 +1098,17 @@ export default function LogsViewer() {
 
       {/* Footer */}
       <div className="p-4 border-t border-slate-200 bg-slate-50/50">
-        {activeTab === "sistema" && totalRecords > 0 ? (
+        {activeTab === "sistema" && filteredTotal > 0 ? (
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-xs text-slate-500">
               <span className="font-bold uppercase tracking-wider">
-                Total: {totalRecords} logs
+                Total: {filteredTotal} logs
               </span>
               <span className="font-medium ml-2">
-                Página {currentPage} de {Math.ceil(totalRecords / PAGE_SIZE)}
+                Página {currentPage} de {filteredTotalPages}
               </span>
               <span className="font-medium ml-2">
-                ({Math.min((currentPage - 1) * PAGE_SIZE + 1, totalRecords)}-{Math.min(currentPage * PAGE_SIZE, totalRecords)})
+                ({Math.min((currentPage - 1) * PAGE_SIZE + 1, filteredTotal)}-{Math.min(currentPage * PAGE_SIZE, filteredTotal)})
               </span>
             </div>
 
@@ -1115,9 +1122,9 @@ export default function LogsViewer() {
               </button>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, Math.ceil(totalRecords / PAGE_SIZE)) }, (_, i) => {
+                {Array.from({ length: Math.min(5, filteredTotalPages) }, (_, i) => {
                   let pageNum;
-                  const totalPages = Math.ceil(totalRecords / PAGE_SIZE);
+                  const totalPages = filteredTotalPages;
 
                   if (totalPages <= 5) {
                     pageNum = i + 1;
@@ -1147,8 +1154,8 @@ export default function LogsViewer() {
               </div>
 
               <button
-                onClick={() => setCurrentPage((prev) => Math.min(Math.ceil(totalRecords / PAGE_SIZE), prev + 1))}
-                disabled={currentPage === Math.ceil(totalRecords / PAGE_SIZE) || loading}
+                onClick={() => setCurrentPage((prev) => Math.min(filteredTotalPages, prev + 1))}
+                disabled={currentPage === filteredTotalPages || loading}
                 className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Próxima
