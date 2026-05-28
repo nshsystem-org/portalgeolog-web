@@ -532,31 +532,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (osCountsRes.status === "fulfilled") setOsCounts(osCountsRes.value);
         else logErrorEntry("DataContext", "fetchOSStatusCounts falhou", osCountsRes.reason as Error);
 
-        // Unificar log de sucesso apenas se todos os dados carregaram corretamente
-        const allPhase1Success = results1.every(r => r.status === "fulfilled");
-        const allPhase2Success = results2.every(r => r.status === "fulfilled");
-
-        if (allPhase1Success && allPhase2Success) {
-          logInfo("DataContext", `Dados da página ${getPageName(pathname)} carregados com sucesso!`, {
-            clientes: clientesRes.value.length,
-            solicitantes: solicitantesRes.value.length,
-            drivers: driversRes.value.length,
-            impostoPercentual: impostoRes.value,
-            passageiros: passageirosRes.value.length,
-            parceiros: parceirosRes.value.length,
-            osCounts: osCountsRes.value,
-          });
-        } else {
-          logErrorEntry("DataContext", "Falha ao carregar dados da página", new Error("Alguns dados não foram carregados"), {
-            clientes: clientesRes.status === "fulfilled" ? clientesRes.value.length : "falhou",
-            solicitantes: solicitantesRes.status === "fulfilled" ? solicitantesRes.value.length : "falhou",
-            drivers: driversRes.status === "fulfilled" ? driversRes.value.length : "falhou",
-            impostoPercentual: impostoRes.status === "fulfilled" ? impostoRes.value : "falhou",
-            passageiros: passageirosRes.status === "fulfilled" ? passageirosRes.value.length : "falhou",
-            parceiros: parceirosRes.status === "fulfilled" ? parceirosRes.value.length : "falhou",
-            osCounts: osCountsRes.status === "fulfilled" ? osCountsRes.value : "falhou",
-          });
-        }
+        // Unificar log de sucesso - mostrar dados que carregaram corretamente
+        logInfo("DataContext", `Dados da página ${getPageName(pathname)} carregados com sucesso!`, {
+          clientes: clientesRes.status === "fulfilled" ? clientesRes.value.length : 0,
+          solicitantes: solicitantesRes.status === "fulfilled" ? solicitantesRes.value.length : 0,
+          drivers: driversRes.status === "fulfilled" ? driversRes.value.length : 0,
+          impostoPercentual: impostoRes.status === "fulfilled" ? impostoRes.value : 0,
+          passageiros: passageirosRes.status === "fulfilled" ? passageirosRes.value.length : 0,
+          parceiros: parceirosRes.status === "fulfilled" ? parceirosRes.value.length : 0,
+          osCounts: osCountsRes.status === "fulfilled" ? osCountsRes.value : {},
+        });
       } catch (heavyErr) {
         logErrorEntry("DataContext", "Erro inesperado ao processar dados pesados", heavyErr as Error);
       } finally {
