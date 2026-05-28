@@ -20,6 +20,7 @@ import {
   Loader2,
   User,
 } from "lucide-react";
+import { logInfo } from "@/lib/frontend-logger";
 
 interface Cliente {
   id: string;
@@ -510,10 +511,17 @@ export default function OSCalendar({
     console.log("Data selecionada:", selectInfo.startStr);
   }, []);
 
+  const viewLabelMap: Record<string, string> = {
+    dayGridMonth: "Mês",
+    dayGridWeek: "Semana",
+    dayGridDay: "Dia",
+  };
+
   const changeView = (
     view: "dayGridMonth" | "dayGridWeek" | "dayGridDay",
   ) => {
     setCurrentView(view);
+    logInfo("OSCalendar", `Mudou visualização do calendário para ${viewLabelMap[view]}`);
     const calendarApi = calendarRef.current?.getApi();
     if (calendarApi) {
       // Sempre resetar para data atual ao mudar de view
@@ -523,6 +531,7 @@ export default function OSCalendar({
   };
 
   const goToPrev = () => {
+    logInfo("OSCalendar", `Navegou para ${viewLabelMap[currentView] || "período"} anterior`);
     const calendarApi = calendarRef.current?.getApi();
     if (calendarApi) {
       calendarApi.prev();
@@ -530,6 +539,7 @@ export default function OSCalendar({
   };
 
   const goToNext = () => {
+    logInfo("OSCalendar", `Navegou para próximo ${viewLabelMap[currentView] || "período"}`);
     const calendarApi = calendarRef.current?.getApi();
     if (calendarApi) {
       calendarApi.next();
