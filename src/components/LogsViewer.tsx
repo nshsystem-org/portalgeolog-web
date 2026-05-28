@@ -153,6 +153,7 @@ export default function LogsViewer() {
   const [totalRecords, setTotalRecords] = useState(0);
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [quickDateRange, setQuickDateRange] = useState<string>("30");
   const [showFilters, setShowFilters] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -160,16 +161,32 @@ export default function LogsViewer() {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const PAGE_SIZE = 10;
 
+  const applyQuickDateRange = useCallback((range: string) => {
+    if (range === "all") {
+      setStartDate("");
+      setEndDate("");
+      return;
+    }
+    const days = parseInt(range, 10);
+    const today = new Date();
+    const from = new Date(today);
+    from.setDate(today.getDate() - days + 1);
+    setStartDate(from.toISOString().split("T")[0]);
+    setEndDate(today.toISOString().split("T")[0]);
+  }, []);
+
+  useEffect(() => {
+    applyQuickDateRange(quickDateRange);
+  }, [quickDateRange, applyQuickDateRange]);
+
   const fetchLogs = useCallback(async (tab?: TabType) => {
     const targetTab = tab || activeTab;
     setLoading(true);
     try {
       if (targetTab === "sistema") {
-        const hasFrontendFilter = selectedCategory !== "all" || selectedPage !== "all";
-        const batchLimit = hasFrontendFilter ? 200 : PAGE_SIZE;
-        const offset = hasFrontendFilter ? 0 : (currentPage - 1) * PAGE_SIZE;
+        const offset = (currentPage - 1) * PAGE_SIZE;
         const systemParams = new URLSearchParams({
-          limit: batchLimit.toString(),
+          limit: PAGE_SIZE.toString(),
           offset: offset.toString(),
         });
 
@@ -726,16 +743,6 @@ export default function LogsViewer() {
       .includes(term);
   });
 
-  // Quando filtros frontend-only estão ativos, fazemos paginação no cliente
-  const hasFrontendFilter = selectedCategory !== "all" || selectedPage !== "all";
-  const displayTotal = hasFrontendFilter ? filteredLogs.length : totalRecords;
-  const displayTotalPages = Math.max(1, Math.ceil(displayTotal / PAGE_SIZE));
-  const displayStart = (currentPage - 1) * PAGE_SIZE + 1;
-  const displayEnd = Math.min(currentPage * PAGE_SIZE, displayTotal);
-  const paginatedLogs = hasFrontendFilter
-    ? filteredLogs.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-    : filteredLogs;
-
   const systemCount = systemLogs.length;
   const whatsappCount = whatsappLogs.length;
 
@@ -880,13 +887,33 @@ export default function LogsViewer() {
                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
 
+              <div className="relative w-full md:w-64">
+                <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <select
+                  value={quickDateRange}
+                  onChange={(e) => setQuickDateRange(e.target.value)}
+                  className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+                >
+                  <option value="all">Todo Período</option>
+                  <option value="1">Hoje</option>
+                  <option value="7">Últimos 7 dias</option>
+                  <option value="15">Últimos 15 dias</option>
+                  <option value="30">Últimos 30 dias</option>
+                  <option value="90">Últimos 90 dias</option>
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              </div>
+
               <div className="flex items-center gap-2 w-full lg:w-auto">
                 <div className="relative flex-1">
                   <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
                     type="date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      setQuickDateRange("all");
+                    }}
                     className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -896,7 +923,10 @@ export default function LogsViewer() {
                   <input
                     type="date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      setQuickDateRange("all");
+                    }}
                     className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -905,6 +935,7 @@ export default function LogsViewer() {
                     onClick={() => {
                       setStartDate("");
                       setEndDate("");
+                      setQuickDateRange("all");
                     }}
                     className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 hover:bg-red-100 transition-colors"
                     title="Limpar filtro de data"
@@ -925,7 +956,7 @@ export default function LogsViewer() {
             <RefreshCw size={48} className="text-blue-500 animate-spin" />
             <p className="font-bold text-lg text-slate-500">Carregando logs...</p>
           </div>
-        ) : paginatedLogs.length === 0 ? (
+        ) : filteredLogs.length === 0 ? (
           <div className="p-16 flex flex-col items-center justify-center gap-4 text-slate-400">
             <AlertCircle size={64} className="text-slate-300" />
             <p className="font-bold text-lg">
@@ -938,7 +969,7 @@ export default function LogsViewer() {
             )}
           </div>
         ) : (
-          paginatedLogs.map((log) => {
+          filteredLogs.map((log) => {
             const levelConfig = log.level ? LEVEL_COLORS[log.level] : LEVEL_COLORS.info;
             const LevelIcon = levelConfig.icon;
             const isExpanded = expandedLogs.has(log.id);
@@ -1055,13 +1086,13 @@ export default function LogsViewer() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-xs text-slate-500">
               <span className="font-bold uppercase tracking-wider">
-                Total: {displayTotal} logs
+                Total: {totalRecords} logs
               </span>
               <span className="font-medium ml-2">
-                Página {currentPage} de {displayTotalPages}
+                Página {currentPage} de {Math.ceil(totalRecords / PAGE_SIZE)}
               </span>
               <span className="font-medium ml-2">
-                ({displayStart}-{displayEnd})
+                ({Math.min((currentPage - 1) * PAGE_SIZE + 1, totalRecords)}-{Math.min(currentPage * PAGE_SIZE, totalRecords)})
               </span>
             </div>
 
@@ -1075,15 +1106,16 @@ export default function LogsViewer() {
               </button>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, displayTotalPages) }, (_, i) => {
+                {Array.from({ length: Math.min(5, Math.ceil(totalRecords / PAGE_SIZE)) }, (_, i) => {
                   let pageNum;
+                  const totalPages = Math.ceil(totalRecords / PAGE_SIZE);
 
-                  if (displayTotalPages <= 5) {
+                  if (totalPages <= 5) {
                     pageNum = i + 1;
                   } else if (currentPage <= 3) {
                     pageNum = i + 1;
-                  } else if (currentPage >= displayTotalPages - 2) {
-                    pageNum = displayTotalPages - 4 + i;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
                   } else {
                     pageNum = currentPage - 2 + i;
                   }
@@ -1106,8 +1138,8 @@ export default function LogsViewer() {
               </div>
 
               <button
-                onClick={() => setCurrentPage((prev) => Math.min(displayTotalPages, prev + 1))}
-                disabled={currentPage === displayTotalPages || loading}
+                onClick={() => setCurrentPage((prev) => Math.min(Math.ceil(totalRecords / PAGE_SIZE), prev + 1))}
+                disabled={currentPage === Math.ceil(totalRecords / PAGE_SIZE) || loading}
                 className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Próxima
@@ -1117,10 +1149,10 @@ export default function LogsViewer() {
         ) : (
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span className="font-bold uppercase tracking-wider">
-              Total: {displayTotal} logs
+              Total: {activeTab === "whatsapp" ? whatsappCount : systemLogs.length} logs
             </span>
             <span className="font-medium">
-              Exibindo: {paginatedLogs.length} logs
+              Exibindo: {filteredLogs.length} logs
             </span>
           </div>
         )}
