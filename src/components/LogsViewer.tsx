@@ -158,7 +158,7 @@ export default function LogsViewer() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedPage, setSelectedPage] = useState<string>("all");
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = 10;
 
   const fetchLogs = useCallback(async (tab?: TabType) => {
     const targetTab = tab || activeTab;
