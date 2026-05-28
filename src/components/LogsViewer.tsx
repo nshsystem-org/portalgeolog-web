@@ -33,6 +33,10 @@ import {
   RotateCcw,
   Check,
   SlidersHorizontal,
+  ShieldAlert,
+  ListFilter,
+  Layers,
+  Database,
 } from "lucide-react";
 
 interface SystemLogEntry {
@@ -137,6 +141,8 @@ export default function LogsViewer() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedLevel, setSelectedLevel] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const PAGE_SIZE = 50;
 
@@ -167,6 +173,10 @@ export default function LogsViewer() {
           systemParams.append("endDate", endDate);
         }
 
+        if (selectedLevel && selectedLevel !== "all") {
+          systemParams.append("level", selectedLevel);
+        }
+
         const systemResponse = await fetch(`/api/frontend-logs/list?${systemParams}`);
         const systemData: LogsResponse = await systemResponse.json();
         setSystemLogs(systemData.logs || []);
@@ -183,7 +193,7 @@ export default function LogsViewer() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, searchTerm, selectedUserId, currentPage, startDate, endDate]);
+  }, [activeTab, searchTerm, selectedUserId, currentPage, startDate, endDate, selectedLevel]);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -207,7 +217,7 @@ export default function LogsViewer() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedUserId, startDate, endDate]);
+  }, [searchTerm, selectedUserId, startDate, endDate, selectedLevel, selectedCategory]);
 
   useEffect(() => {
     if (activeTab !== "sistema") return;
@@ -657,7 +667,27 @@ export default function LogsViewer() {
 
   const baseLogs = activeTab === "whatsapp" ? normalizedWhatsappLogs : normalizedSystemLogs;
 
-  const filteredLogs = baseLogs.filter((log) => {
+  const isDataLog = (log: LogEntry): boolean => {
+    const dataPatterns = [
+      "Dados da página",
+      "Dados básicos",
+      "Calendário carregado:",
+      "Tabela carregada:",
+      "Mudou visualização",
+      "Navegou para",
+    ];
+    const summary = (log.summary as string) || "";
+    return log.component === "DataContext" || dataPatterns.some((p) => summary.startsWith(p));
+  };
+
+  const categoryFilteredLogs = baseLogs.filter((log) => {
+    if (selectedCategory === "all") return true;
+    if (selectedCategory === "dados") return isDataLog(log);
+    if (selectedCategory === "operacao") return !isDataLog(log);
+    return true;
+  });
+
+  const filteredLogs = categoryFilteredLogs.filter((log) => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) return true;
     return [
@@ -732,7 +762,8 @@ export default function LogsViewer() {
 
       {/* Filters */}
       {showFilters && (
-        <div className="p-4 border-b border-slate-200 bg-white">
+        <div className="p-4 border-b border-slate-200 bg-white space-y-4">
+          {/* Row 1: Search, Level, Category */}
           <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -747,59 +778,94 @@ export default function LogsViewer() {
 
             {activeTab === "sistema" && (
               <>
-                <div className="relative w-full md:w-64">
-                  <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <div className="relative w-full md:w-56">
+                  <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <select
-                    value={selectedUserId}
-                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    value={selectedLevel}
+                    onChange={(e) => setSelectedLevel(e.target.value)}
                     className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
                   >
-                    <option value="all">Todos Usuários</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nome}
-                      </option>
-                    ))}
+                    <option value="all">Todos Níveis</option>
+                    <option value="info">Info</option>
+                    <option value="warning">Warning</option>
+                    <option value="error">Error</option>
+                    <option value="critical">Critical</option>
                   </select>
                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
 
-                <div className="flex items-center gap-2 w-full lg:w-auto">
-                  <div className="relative flex-1">
-                    <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                  <span className="text-slate-400 font-bold">→</span>
-                  <div className="relative flex-1">
-                    <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                  {(startDate || endDate) && (
-                    <button
-                      onClick={() => {
-                        setStartDate("");
-                        setEndDate("");
-                      }}
-                      className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 hover:bg-red-100 transition-colors"
-                      title="Limpar filtro de data"
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
+                <div className="relative w-full md:w-56">
+                  <Layers className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+                  >
+                    <option value="all">Todas Categorias</option>
+                    <option value="operacao">Operação</option>
+                    <option value="dados">Dados</option>
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
               </>
             )}
           </div>
+
+          {/* Row 2: User, Date Range */}
+          {activeTab === "sistema" && (
+            <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
+              <div className="relative w-full md:w-64">
+                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <select
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+                >
+                  <option value="all">Todos Usuários</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.nome}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              </div>
+
+              <div className="flex items-center gap-2 w-full lg:w-auto">
+                <div className="relative flex-1">
+                  <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <span className="text-slate-400 font-bold">→</span>
+                <div className="relative flex-1">
+                  <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                {(startDate || endDate) && (
+                  <button
+                    onClick={() => {
+                      setStartDate("");
+                      setEndDate("");
+                    }}
+                    className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 hover:bg-red-100 transition-colors"
+                    title="Limpar filtro de data"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
