@@ -439,18 +439,26 @@ export default function LogsViewer() {
     }
 
     // Formatar logs de tabela
-    if (summary.startsWith("Modo Tabela:")) {
-      const match = summary.match(/Modo Tabela: Acessou Página (\d+)/);
+    if (summary.startsWith("Tabela carregada:")) {
+      const match = summary.match(/Tabela carregada: página (\d+), \d+ OS totais(?: \(filtros: (.+)\))?/);
       if (match) {
-        const [, page] = match;
+        const [, page, filters] = match;
 
         return (
           <div className="inline-flex items-center flex-wrap gap-1">
-            Modo Tabela: Acessou{" "}
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-purple-50 text-purple-700">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md font-bold text-xs">
               <LayoutGrid size={12} />
+              Modo Tabela
+            </span>
+            <span className="text-sm font-semibold text-slate-700">Acessou</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md font-bold text-xs">
               Página {page}
             </span>
+            {filters && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold text-xs">
+                Filtros: {filters}
+              </span>
+            )}
           </div>
         );
       }
