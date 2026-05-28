@@ -419,6 +419,8 @@ function getPageName(pathname: string | null): string {
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const hasLoadedData = useRef(false);
+  const lastSuccessLogTime = useRef<number>(0);
+  const SUCCESS_LOG_THROTTLE_MS = 30_000; // 30 segundos
   const debounceTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [solicitantes, setSolicitantes] = useState<Solicitante[]>([]);
@@ -533,15 +535,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         else logErrorEntry("DataContext", "fetchOSStatusCounts falhou", osCountsRes.reason as Error);
 
         // Unificar log de sucesso - mostrar dados que carregaram corretamente
-        logInfo("DataContext", `Dados da página ${getPageName(pathname)} carregados com sucesso!`, {
-          clientes: clientesRes.status === "fulfilled" ? clientesRes.value.length : 0,
-          solicitantes: solicitantesRes.status === "fulfilled" ? solicitantesRes.value.length : 0,
-          drivers: driversRes.status === "fulfilled" ? driversRes.value.length : 0,
-          impostoPercentual: impostoRes.status === "fulfilled" ? impostoRes.value : 0,
-          passageiros: passageirosRes.status === "fulfilled" ? passageirosRes.value.length : 0,
-          parceiros: parceirosRes.status === "fulfilled" ? parceirosRes.value.length : 0,
-          osCounts: osCountsRes.status === "fulfilled" ? osCountsRes.value : {},
-        });
+        // Throttle: evita logs repetidos em menos de 30 segundos
+        const now = Date.now();
+        if (now - lastSuccessLogTime.current >= SUCCESS_LOG_THROTTLE_MS) {
+          lastSuccessLogTime.current = now;
+          logInfo("DataContext", `Dados da página ${getPageName(pathname)} carregados com sucesso!`, {
+            clientes: clientesRes.status === "fulfilled" ? clientesRes.value.length : 0,
+            solicitantes: solicitantesRes.status === "fulfilled" ? solicitantesRes.value.length : 0,
+            drivers: driversRes.status === "fulfilled" ? driversRes.value.length : 0,
+            impostoPercentual: impostoRes.status === "fulfilled" ? impostoRes.value : 0,
+            passageiros: passageirosRes.status === "fulfilled" ? passageirosRes.value.length : 0,
+            parceiros: parceirosRes.status === "fulfilled" ? parceirosRes.value.length : 0,
+            osCounts: osCountsRes.status === "fulfilled" ? osCountsRes.value : {},
+          });
+        }
       } catch (heavyErr) {
         logErrorEntry("DataContext", "Erro inesperado ao processar dados pesados", heavyErr as Error);
       } finally {
