@@ -32,6 +32,7 @@ import {
   Archive,
   RotateCcw,
   Check,
+  SlidersHorizontal,
 } from "lucide-react";
 
 interface SystemLogEntry {
@@ -135,6 +136,7 @@ export default function LogsViewer() {
   const [totalRecords, setTotalRecords] = useState(0);
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const PAGE_SIZE = 50;
 
@@ -683,14 +685,27 @@ export default function LogsViewer() {
           <h2 className="text-xl font-black text-slate-800 uppercase tracking-wider">
             Histórico de Logs
           </h2>
-          <button
-            onClick={() => fetchLogs()}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            Atualizar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFilters((prev) => !prev)}
+              className={`flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-sm transition-colors shadow-sm ${
+                showFilters
+                  ? "bg-[var(--color-geolog-blue)] text-white border-[var(--color-geolog-blue)]"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <SlidersHorizontal size={16} />
+              Filtros
+            </button>
+            <button
+              onClick={() => fetchLogs()}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+              Atualizar
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -716,75 +731,77 @@ export default function LogsViewer() {
       </div>
 
       {/* Filters */}
-      <div className="p-4 border-b border-slate-200 bg-white">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              type="text"
-              placeholder="Buscar por componente..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
+      {showFilters && (
+        <div className="p-4 border-b border-slate-200 bg-white">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="text"
+                placeholder="Buscar por componente..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
 
-          {activeTab === "sistema" && (
-            <>
-              <div className="relative w-full md:w-64">
-                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <select
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
-                >
-                  <option value="all">Todos Usuários</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.nome}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              </div>
-
-              <div className="flex items-center gap-2 w-full lg:w-auto">
-                <div className="relative flex-1">
-                  <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <span className="text-slate-400 font-bold">→</span>
-                <div className="relative flex-1">
-                  <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                {(startDate || endDate) && (
-                  <button
-                    onClick={() => {
-                      setStartDate("");
-                      setEndDate("");
-                    }}
-                    className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 hover:bg-red-100 transition-colors"
-                    title="Limpar filtro de data"
+            {activeTab === "sistema" && (
+              <>
+                <div className="relative w-full md:w-64">
+                  <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
                   >
-                    <X size={16} />
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+                    <option value="all">Todos Usuários</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                </div>
+
+                <div className="flex items-center gap-2 w-full lg:w-auto">
+                  <div className="relative flex-1">
+                    <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <span className="text-slate-400 font-bold">→</span>
+                  <div className="relative flex-1">
+                    <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  {(startDate || endDate) && (
+                    <button
+                      onClick={() => {
+                        setStartDate("");
+                        setEndDate("");
+                      }}
+                      className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 hover:bg-red-100 transition-colors"
+                      title="Limpar filtro de data"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Logs List */}
       <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
