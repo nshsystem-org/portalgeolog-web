@@ -290,6 +290,72 @@ export default function LogsViewer() {
       );
     }
 
+    if (summary === "Ordem de Serviço adicionada com sucesso") {
+      return (
+        <div className="inline-flex items-center flex-wrap gap-1">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
+            <FileText size={12} />
+            Ordem de Serviço
+          </span>
+          {" "}adicionada com sucesso{" "}
+          <Check size={14} className="text-green-500" />
+        </div>
+      );
+    }
+
+    if (summary === "Ordem de Serviço atualizada com sucesso") {
+      return (
+        <div className="inline-flex items-center flex-wrap gap-1">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
+            <FileText size={12} />
+            Ordem de Serviço
+          </span>
+          {" "}atualizada com sucesso{" "}
+          <Check size={14} className="text-green-500" />
+        </div>
+      );
+    }
+
+    if (summary === "Status da Ordem de Serviço atualizado") {
+      return (
+        <div className="inline-flex items-center flex-wrap gap-1">
+          Status da{" "}
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
+            <FileText size={12} />
+            Ordem de Serviço
+          </span>
+          {" "}atualizado{" "}
+          <Check size={14} className="text-green-500" />
+        </div>
+      );
+    }
+
+    if (summary === "Ordem de Serviço excluída/arquivada") {
+      return (
+        <div className="inline-flex items-center flex-wrap gap-1">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
+            <FileText size={12} />
+            Ordem de Serviço
+          </span>
+          {" "}excluída/arquivada{" "}
+          <Check size={14} className="text-green-500" />
+        </div>
+      );
+    }
+
+    if (summary === "Ordem de Serviço desarquivada") {
+      return (
+        <div className="inline-flex items-center flex-wrap gap-1">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
+            <FileText size={12} />
+            Ordem de Serviço
+          </span>
+          {" "}desarquivada{" "}
+          <Check size={14} className="text-green-500" />
+        </div>
+      );
+    }
+
     if (summary.startsWith("Dados da página") && summary.endsWith("carregados com sucesso!")) {
       const pageNameMatch = summary.match(/Dados da página (.+) carregados com sucesso!/);
       const pageName = pageNameMatch ? pageNameMatch[1] : "Desconhecida";
