@@ -580,7 +580,7 @@ export default function OSOperationalPage() {
         .map(([key, value]) => `${key}: ${value}`)
         .join(", ");
 
-      logInfo("OS/Tabela", `Tabela carregada: página ${params.page}, ${result.totalCount} OS totais${filterDescription ? ` (filtros: ${filterDescription})` : ""}`, {
+      logInfo("OS/Tabela", `Modo Tabela: Acessou Página ${params.page}`, {
         page: params.page,
         pageSize: params.pageSize,
         searchTerm: params.searchTerm,

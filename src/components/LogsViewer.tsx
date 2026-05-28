@@ -14,6 +14,7 @@ import {
   User as UserIcon,
   Settings,
   LayoutDashboard,
+  LayoutGrid,
   FileText,
   DollarSign,
   Users,
@@ -438,26 +439,18 @@ export default function LogsViewer() {
     }
 
     // Formatar logs de tabela
-    if (summary.startsWith("Tabela carregada:")) {
-      const match = summary.match(/Tabela carregada: página (\d+), (\d+) OS totais(?: \(filtros: (.+)\))?/);
+    if (summary.startsWith("Modo Tabela:")) {
+      const match = summary.match(/Modo Tabela: Acessou Página (\d+)/);
       if (match) {
-        const [, page, total, filters] = match;
+        const [, page] = match;
 
         return (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">Tabela carregada:</span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md font-bold text-xs">
+          <div className="inline-flex items-center flex-wrap gap-1">
+            Modo Tabela: Acessou{" "}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-purple-50 text-purple-700">
+              <LayoutGrid size={12} />
               Página {page}
             </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-bold text-xs">
-              <FileText size={12} />
-              {total} OS
-            </span>
-            {filters && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold text-xs">
-                Filtros: {filters}
-              </span>
-            )}
           </div>
         );
       }
