@@ -281,60 +281,78 @@ export default function LogsViewer() {
       }
     }
 
-    if (summary === "Dados básicos carregados (empresas, solicitantes, motoristas, imposto)" && errorDetails) {
+    if (summary.startsWith("Dados da página") && summary.endsWith("carregados com sucesso!") && errorDetails) {
       const details = errorDetails as Record<string, unknown>;
+      const pageNameMatch = summary.match(/Dados da página (.+) carregados com sucesso!/);
+      const pageName = pageNameMatch ? pageNameMatch[1] : "Desconhecida";
+
       const clientes = typeof details.clientes === "number" ? details.clientes : 0;
       const solicitantes = typeof details.solicitantes === "number" ? details.solicitantes : 0;
       const drivers = typeof details.drivers === "number" ? details.drivers : 0;
       const impostoPercentual = typeof details.impostoPercentual === "number" ? details.impostoPercentual : 0;
+      const passageiros = typeof details.passageiros === "number" ? details.passageiros : 0;
+      const parceiros = typeof details.parceiros === "number" ? details.parceiros : 0;
+      const osCounts = details.osCounts as Record<string, number> | undefined;
+
+      const isAdmin = pageName === "Administrador";
+      const PageIcon = isAdmin ? Settings : FileText;
+      const pageColorClass = isAdmin ? "bg-slate-50 text-slate-700" : "bg-blue-50 text-blue-700";
 
       return (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-slate-700">Dados básicos carregados:</span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-cyan-50 text-cyan-700 rounded-md font-bold text-xs">
-            <Building2 size={12} />
-            {clientes} empresas
+          <span className="text-sm font-semibold text-slate-700">Dados da página</span>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider ${pageColorClass}`}>
+            <PageIcon size={12} />
+            {pageName}
           </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md font-bold text-xs">
-            <UserCheck size={12} />
-            {solicitantes} solicitantes
-          </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-bold text-xs">
-            <Users size={12} />
-            {drivers} motoristas
-          </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-md font-bold text-xs">
-            <Percent size={12} />
-            {impostoPercentual}% imposto
-          </span>
+          <span className="text-sm font-semibold text-slate-700">carregados com sucesso!</span>
+          <Check size={14} className="text-green-500" />
+          <div className="flex flex-wrap items-center gap-1 ml-2">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-cyan-50 text-cyan-700 rounded-md font-bold text-xs">
+              <Building2 size={12} />
+              {clientes} empresas
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md font-bold text-xs">
+              <UserCheck size={12} />
+              {solicitantes} solicitantes
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-bold text-xs">
+              <Users size={12} />
+              {drivers} motoristas
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-md font-bold text-xs">
+              <Percent size={12} />
+              {impostoPercentual}% imposto
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-50 text-orange-700 rounded-md font-bold text-xs">
+              <Users size={12} />
+              {passageiros} passageiros
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md font-bold text-xs">
+              <Handshake size={12} />
+              {parceiros} parceiros
+            </span>
+            {osCounts && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md font-bold text-xs">
+                <FileText size={12} />
+                {Object.values(osCounts).reduce((a, b) => a + b, 0)} OS
+              </span>
+            )}
+          </div>
         </div>
       );
     }
 
-    if (summary === "Dados da página Ordem de Serviço carregados com sucesso!") {
+    if (summary === "Falha ao carregar dados da página" && errorDetails) {
+      const details = errorDetails as Record<string, unknown>;
       return (
-        <div className="inline-flex items-center flex-wrap gap-1">
-          Dados da página{" "}
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
-            <FileText size={12} />
-            Ordem de Serviço
-          </span>
-          {" "}carregados com sucesso!{" "}
-          <Check size={14} className="text-green-500" />
-        </div>
-      );
-    }
-
-    if (summary === "Dados da página Administrador carregados com sucesso!") {
-      return (
-        <div className="inline-flex items-center flex-wrap gap-1">
-          Dados da página{" "}
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-slate-50 text-slate-700">
-            <Settings size={12} />
-            Administrador
-          </span>
-          {" "}carregados com sucesso!{" "}
-          <Check size={14} className="text-green-500" />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-red-700">Falha ao carregar dados da página:</span>
+          {Object.entries(details).map(([key, value]) => (
+            <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-700 rounded-md font-bold text-xs">
+              {key}: {typeof value === "number" ? value : "falhou"}
+            </span>
+          ))}
         </div>
       );
     }
