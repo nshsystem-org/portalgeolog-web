@@ -281,6 +281,15 @@ export default function LogsViewer() {
       }
     }
 
+    if (summary.startsWith("Dados básicos carregados")) {
+      return (
+        <div className="inline-flex items-center flex-wrap gap-1">
+          Dados básicos foram carregados{" "}
+          <Check size={14} className="text-green-500" />
+        </div>
+      );
+    }
+
     if (summary.startsWith("Dados da página") && summary.endsWith("carregados com sucesso!")) {
       const pageNameMatch = summary.match(/Dados da página (.+) carregados com sucesso!/);
       const pageName = pageNameMatch ? pageNameMatch[1] : "Desconhecida";
