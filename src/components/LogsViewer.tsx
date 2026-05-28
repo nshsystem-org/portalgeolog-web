@@ -700,23 +700,31 @@ export default function LogsViewer() {
 
   const baseLogs = activeTab === "whatsapp" ? normalizedWhatsappLogs : normalizedSystemLogs;
 
-  const isDataLog = (log: LogEntry): boolean => {
-    const dataPatterns = [
+  const isCarregamentoLog = (log: LogEntry): boolean => {
+    const carregamentoPatterns = [
       "Dados da página",
       "Dados básicos",
+    ];
+    const summary = (log.summary as string) || "";
+    return log.component === "DataContext" && carregamentoPatterns.some((p) => summary.startsWith(p));
+  };
+
+  const isDataLog = (log: LogEntry): boolean => {
+    const dataPatterns = [
       "Calendário carregado:",
       "Tabela carregada:",
       "Mudou visualização",
       "Navegou para",
     ];
     const summary = (log.summary as string) || "";
-    return log.component === "DataContext" || dataPatterns.some((p) => summary.startsWith(p));
+    return dataPatterns.some((p) => summary.startsWith(p));
   };
 
   const categoryFilteredLogs = baseLogs.filter((log) => {
     if (selectedCategory === "all") return true;
+    if (selectedCategory === "carregamento") return isCarregamentoLog(log);
     if (selectedCategory === "dados") return isDataLog(log);
-    if (selectedCategory === "operacao") return !isDataLog(log);
+    if (selectedCategory === "operacao") return !isCarregamentoLog(log) && !isDataLog(log);
     return true;
   });
 
@@ -843,6 +851,7 @@ export default function LogsViewer() {
                     <option value="all">Todas Categorias</option>
                     <option value="operacao">Operação</option>
                     <option value="dados">Dados</option>
+                    <option value="carregamento">Carregamento</option>
                   </select>
                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
