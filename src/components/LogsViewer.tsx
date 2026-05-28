@@ -165,9 +165,11 @@ export default function LogsViewer() {
     setLoading(true);
     try {
       if (targetTab === "sistema") {
-        const offset = (currentPage - 1) * PAGE_SIZE;
+        const hasFrontendFilter = selectedCategory !== "all" || selectedPage !== "all";
+        const batchLimit = hasFrontendFilter ? 200 : PAGE_SIZE;
+        const offset = hasFrontendFilter ? 0 : (currentPage - 1) * PAGE_SIZE;
         const systemParams = new URLSearchParams({
-          limit: PAGE_SIZE.toString(),
+          limit: batchLimit.toString(),
           offset: offset.toString(),
         });
 
@@ -724,6 +726,16 @@ export default function LogsViewer() {
       .includes(term);
   });
 
+  // Quando filtros frontend-only estão ativos, fazemos paginação no cliente
+  const hasFrontendFilter = selectedCategory !== "all" || selectedPage !== "all";
+  const displayTotal = hasFrontendFilter ? filteredLogs.length : totalRecords;
+  const displayTotalPages = Math.max(1, Math.ceil(displayTotal / PAGE_SIZE));
+  const displayStart = (currentPage - 1) * PAGE_SIZE + 1;
+  const displayEnd = Math.min(currentPage * PAGE_SIZE, displayTotal);
+  const paginatedLogs = hasFrontendFilter
+    ? filteredLogs.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+    : filteredLogs;
+
   const systemCount = systemLogs.length;
   const whatsappCount = whatsappLogs.length;
 
@@ -913,7 +925,7 @@ export default function LogsViewer() {
             <RefreshCw size={48} className="text-blue-500 animate-spin" />
             <p className="font-bold text-lg text-slate-500">Carregando logs...</p>
           </div>
-        ) : filteredLogs.length === 0 ? (
+        ) : paginatedLogs.length === 0 ? (
           <div className="p-16 flex flex-col items-center justify-center gap-4 text-slate-400">
             <AlertCircle size={64} className="text-slate-300" />
             <p className="font-bold text-lg">
@@ -926,7 +938,7 @@ export default function LogsViewer() {
             )}
           </div>
         ) : (
-          filteredLogs.map((log) => {
+          paginatedLogs.map((log) => {
             const levelConfig = log.level ? LEVEL_COLORS[log.level] : LEVEL_COLORS.info;
             const LevelIcon = levelConfig.icon;
             const isExpanded = expandedLogs.has(log.id);
@@ -1043,13 +1055,13 @@ export default function LogsViewer() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-xs text-slate-500">
               <span className="font-bold uppercase tracking-wider">
-                Total: {totalRecords} logs
+                Total: {displayTotal} logs
               </span>
               <span className="font-medium ml-2">
-                Página {currentPage} de {Math.ceil(totalRecords / PAGE_SIZE)}
+                Página {currentPage} de {displayTotalPages}
               </span>
               <span className="font-medium ml-2">
-                ({Math.min((currentPage - 1) * PAGE_SIZE + 1, totalRecords)}-{Math.min(currentPage * PAGE_SIZE, totalRecords)})
+                ({displayStart}-{displayEnd})
               </span>
             </div>
 
@@ -1063,16 +1075,15 @@ export default function LogsViewer() {
               </button>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, Math.ceil(totalRecords / PAGE_SIZE)) }, (_, i) => {
+                {Array.from({ length: Math.min(5, displayTotalPages) }, (_, i) => {
                   let pageNum;
-                  const totalPages = Math.ceil(totalRecords / PAGE_SIZE);
 
-                  if (totalPages <= 5) {
+                  if (displayTotalPages <= 5) {
                     pageNum = i + 1;
                   } else if (currentPage <= 3) {
                     pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
+                  } else if (currentPage >= displayTotalPages - 2) {
+                    pageNum = displayTotalPages - 4 + i;
                   } else {
                     pageNum = currentPage - 2 + i;
                   }
@@ -1095,8 +1106,8 @@ export default function LogsViewer() {
               </div>
 
               <button
-                onClick={() => setCurrentPage((prev) => Math.min(Math.ceil(totalRecords / PAGE_SIZE), prev + 1))}
-                disabled={currentPage === Math.ceil(totalRecords / PAGE_SIZE) || loading}
+                onClick={() => setCurrentPage((prev) => Math.min(displayTotalPages, prev + 1))}
+                disabled={currentPage === displayTotalPages || loading}
                 className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Próxima
@@ -1106,10 +1117,10 @@ export default function LogsViewer() {
         ) : (
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span className="font-bold uppercase tracking-wider">
-              Total: {activeTab === "whatsapp" ? whatsappCount : systemLogs.length} logs
+              Total: {displayTotal} logs
             </span>
             <span className="font-medium">
-              Exibindo: {filteredLogs.length} logs
+              Exibindo: {paginatedLogs.length} logs
             </span>
           </div>
         )}
