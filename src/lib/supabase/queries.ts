@@ -775,7 +775,7 @@ export async function updatePassageiroInDB(
   };
 }
 
-export async function deletePassageiroFromDB(id: string): Promise<void> {
+export async function archivePassageiroInDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("passageiros")
     .update({ arquivado: true })

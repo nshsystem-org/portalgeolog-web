@@ -469,7 +469,7 @@ const validarPlacaOS = (placa: string): boolean => {
 };
 
 export default function OSOperationalPage() {
-  const { passageiros } = usePassageiros();
+  const { passageiros, refresh: refreshPassageiros } = usePassageiros();
   const { parceiros } = useParceiros();
   const {
     osList,
@@ -3622,6 +3622,8 @@ export default function OSOperationalPage() {
         notificar: quickPassengerForm.notificar === "Sim",
         enderecos,
       });
+
+      await refreshPassageiros();
 
       const newWaypoints = [...formData.waypoints];
       const waypoint = { ...newWaypoints[quickPassengerTarget.waypointIndex] };

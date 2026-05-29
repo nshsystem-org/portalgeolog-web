@@ -24,7 +24,7 @@ import {
   updateClienteInDB,
   deleteClienteFromDB,
   updatePassageiroInDB,
-  deletePassageiroFromDB,
+  archivePassageiroInDB,
   updateVeiculoInDB,
   deleteVeiculoFromDB,
   insertSolicitante,
@@ -369,7 +369,7 @@ interface DataContextType {
     id: string,
     passageiro: NovoPassageiroInput,
   ) => Promise<Passageiro>;
-  deletePassageiro: (id: string) => void;
+  archivePassageiro: (id: string) => Promise<void>;
 
   addDriver: (name: string) => Promise<Driver>;
   updateVeiculo: (id: string, input: Partial<Vehicle>) => Promise<Vehicle>;
@@ -1001,16 +1001,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deletePassageiro = (id: string) => {
-    deletePassageiroFromDB(id)
-      .then(() => {
-        logInfo("DataContext", "Passageiro excluído com sucesso", { passageiroId: id });
-      })
-      .catch((error) => {
-        logErrorEntry("DataContext", "Falha ao excluir passageiro", error as Error, { passageiroId: id });
-        console.error("Error deletePassageiroFromDB:", error);
-        throw error;
-      });
+  const archivePassageiro = async (id: string): Promise<void> => {
+    try {
+      await archivePassageiroInDB(id);
+      logInfo("DataContext", "Passageiro arquivado com sucesso", { passageiroId: id });
+    } catch (error) {
+      logErrorEntry("DataContext", "Falha ao arquivar passageiro", error as Error, { passageiroId: id });
+      console.error("Error archivePassageiroInDB:", error);
+      throw error;
+    }
   };
 
   const addDriver = async (name: string): Promise<Driver> => {
@@ -1437,7 +1436,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         deleteSolicitante,
         addPassageiro,
         updatePassageiro,
-        deletePassageiro,
+        archivePassageiro,
         addDriver,
         updateVeiculo,
         deleteVeiculo,

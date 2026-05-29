@@ -6,7 +6,8 @@ import {
   Plus,
   Edit,
   Eye,
-  Trash2,
+  Archive,
+  X,
   Mail,
   Phone,
   MapPin,
@@ -58,7 +59,7 @@ const initialForm: NewPassengerForm = {
 };
 
 export default function PassageirosPage() {
-  const { addPassageiro, updatePassageiro, deletePassageiro } = useData();
+  const { addPassageiro, updatePassageiro, archivePassageiro } = useData();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -167,6 +168,7 @@ export default function PassageirosPage() {
           })),
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 300));
       await passengerTable.refresh();
       setFormData(initialForm);
       setIsModalOpen(false);
@@ -220,6 +222,7 @@ export default function PassageirosPage() {
         genero: formData.genero,
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 300));
       await passengerTable.refresh();
       setFormData(initialForm);
       setSelectedPassenger(null);
@@ -394,7 +397,7 @@ export default function PassageirosPage() {
             render: (value: unknown, item: Passageiro) => {
               void value;
 
-              const handleDelete = async () => {
+              const handleArchive = async () => {
                 const confirmed = await confirm({
                   title: "Arquivar Passageiro",
                   message: `Tem certeza que deseja arquivar o passageiro "${item.nomeCompleto}"? Ele não aparecerá mais na lista, mas poderá ser recuperado posteriormente.`,
@@ -404,7 +407,7 @@ export default function PassageirosPage() {
                 });
 
                 if (confirmed) {
-                  await deletePassageiro(item.id);
+                  await archivePassageiro(item.id);
                   await passengerTable.refresh();
                   toast.success("Passageiro arquivado com sucesso!");
                 }
@@ -450,11 +453,11 @@ export default function PassageirosPage() {
                     <Edit size={18} />
                   </button>
                   <button
-                    onClick={handleDelete}
+                    onClick={handleArchive}
                     className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                     title="Arquivar"
                   >
-                    <Trash2 size={18} />
+                    <Archive size={18} />
                   </button>
                 </div>
               );
@@ -712,7 +715,7 @@ export default function PassageirosPage() {
                             className="inline-flex items-center justify-center p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
                             aria-label="Remover endereço"
                           >
-                            <Trash2 size={16} />
+                            <X size={16} />
                           </button>
                         ) : (
                           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 pt-3">
@@ -1072,7 +1075,7 @@ export default function PassageirosPage() {
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Remover endereço"
                           >
-                            <Trash2 size={18} />
+                            <X size={18} />
                           </button>
                         ) : null}
                       </div>
