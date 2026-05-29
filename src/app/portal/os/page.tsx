@@ -5364,8 +5364,7 @@ export default function OSOperationalPage() {
                                                           id: p.id,
                                                           nome: p.nomeCompleto,
                                                           sublabel:
-                                                            p.enderecos?.[0]
-                                                              ?.rotulo ||
+                                                            p.celular ||
                                                             undefined,
                                                         }),
                                                       )}

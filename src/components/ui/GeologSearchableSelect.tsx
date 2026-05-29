@@ -4,6 +4,31 @@ import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Search, Plus } from "lucide-react";
 
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
+
+  if (local.length === 11) {
+    return `+55  ${local.slice(0, 2)}  ${local.slice(2, 7)}-${local.slice(7)}`;
+  }
+  if (local.length === 10) {
+    return `+55  ${local.slice(0, 2)}  ${local.slice(2, 6)}-${local.slice(6)}`;
+  }
+  return value;
+}
+
+function normalizeSearch(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizePhoneDigits(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length > 11) {
+    return digits.slice(2);
+  }
+  return digits;
+}
+
 interface Option {
   id: string;
   nome: string;
@@ -111,11 +136,26 @@ export default function GeologSearchableSelect({
     };
   }, [isOpen]);
 
+  const normalizedSearch = normalizeSearch(searchTerm);
+  const searchDigits = normalizePhoneDigits(searchTerm);
   const filteredOptions = options.filter(
-    (opt) =>
-      opt.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (opt.sublabel &&
-        opt.sublabel.toLowerCase().includes(searchTerm.toLowerCase())),
+    (opt) => {
+      const matchesText =
+        normalizeSearch(opt.nome).includes(normalizedSearch) ||
+        (opt.sublabel &&
+          normalizeSearch(opt.sublabel).includes(normalizedSearch));
+
+      if (matchesText) {
+        return true;
+      }
+
+      if (!searchDigits || !opt.sublabel) {
+        return false;
+      }
+
+      const optionDigits = normalizePhoneDigits(opt.sublabel);
+      return optionDigits.includes(searchDigits);
+    },
   );
 
   const dropdownContent = (
@@ -162,6 +202,11 @@ export default function GeologSearchableSelect({
               <span className="font-bold text-slate-900 text-sm">
                 {opt.nome}
               </span>
+              {opt.sublabel && (
+                <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-[11px] font-black text-blue-900">
+                  {formatPhone(opt.sublabel)}
+                </span>
+              )}
             </div>
           ))
         ) : (
@@ -192,7 +237,18 @@ export default function GeologSearchableSelect({
         <span
           className={`font-bold leading-none ${selectedOption ? "text-slate-900" : "text-slate-400"} ${triggerTextClass}`}
         >
-          {selectedOption ? selectedOption.nome : placeholder}
+          {selectedOption ? (
+            <>
+              {selectedOption.nome}
+              {selectedOption.sublabel && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-0.5 text-xs font-black text-blue-900">
+                  {formatPhone(selectedOption.sublabel)}
+                </span>
+              )}
+            </>
+          ) : (
+            placeholder
+          )}
         </span>
         <div className="flex items-center gap-1">
           {onQuickAdd && (
