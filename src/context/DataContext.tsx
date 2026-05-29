@@ -41,6 +41,7 @@ import {
   archiveOSFromDB,
   unarchiveOSFromDB,
   fetchParceiros,
+  fetchParceiroById,
   insertParceiro,
   updateParceiroInDB,
   toggleParceiroStatus,
@@ -298,6 +299,22 @@ const isUniqueConstraintError = (error: unknown): boolean => {
   );
 };
 
+const getPassageiroDuplicateMessage = (error: unknown): string | null => {
+  if (!isUniqueConstraintError(error)) return null;
+  const msg = (error as { message?: string }).message || "";
+  const lower = msg.toLowerCase();
+  if (lower.includes("passageiros_celular_unique_normalized")) {
+    return "Já existe um passageiro com este celular.";
+  }
+  if (lower.includes("passageiros_email_unique_normalized")) {
+    return "Já existe um passageiro com este e-mail.";
+  }
+  if (lower.includes("passageiros_cpf_unique_normalized")) {
+    return "Já existe um passageiro com este CPF.";
+  }
+  return "Já existe um passageiro com estes dados.";
+};
+
 const hasDuplicateRecord = <T extends { id: string }>(
   records: T[],
   candidateValue: string,
@@ -323,11 +340,9 @@ const hasDuplicateRecord = <T extends { id: string }>(
 interface DataContextType {
   clientes: Cliente[];
   solicitantes: Solicitante[];
-  passageiros: Passageiro[];
   osList: OrderService[];
   osCounts: OSStatusCounts;
   drivers: Driver[];
-  parceiros: ParceiroServico[];
   loading: boolean;
   heavyLoading: boolean;
   impostoPercentual: number;
@@ -419,12 +434,9 @@ function getPageName(pathname: string | null): string {
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const hasLoadedData = useRef(false);
-  const lastSuccessLogTime = useRef<number>(0);
-  const SUCCESS_LOG_THROTTLE_MS = 30_000; // 30 segundos
   const debounceTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [solicitantes, setSolicitantes] = useState<Solicitante[]>([]);
-  const [passageiros, setPassageiros] = useState<Passageiro[]>([]);
   const [osList, setOsList] = useState<OrderService[]>([]);
   const [osCounts, setOsCounts] = useState<OSStatusCounts>({
     Pendente: 0,
@@ -434,7 +446,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     Cancelado: 0,
   });
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [parceiros, setParceiros] = useState<ParceiroServico[]>([]);
   const [loading, setLoading] = useState(true);
   const [heavyLoading, setHeavyLoading] = useState(false);
   const [impostoPercentual, setImpostoPercentualState] = useState<number>(12);
@@ -445,8 +456,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Fetch functions wrapped for stability
   const dbFetchClientes = useCallback(async () => fetchClientes(), []);
   const dbFetchSolicitantes = useCallback(async () => fetchSolicitantes(), []);
-  const dbFetchPassageiros = useCallback(async () => fetchPassageiros(), []);
-  const dbFetchParceiros = useCallback(async () => fetchParceiros(), []);
   const dbFetchDrivers = useCallback(async () => fetchDrivers(), []);
 
   const upsertOSInState = useCallback((nextOS: OrderService) => {
@@ -518,37 +527,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setHeavyLoading(true);
       try {
         const results2 = await Promise.allSettled([
-          dbFetchPassageiros(),
-          dbFetchParceiros(),
           fetchOSStatusCounts(),
         ]);
 
-        const [passageirosRes, parceirosRes, osCountsRes] = results2;
-
-        if (passageirosRes.status === "fulfilled") setPassageiros(passageirosRes.value);
-        else logErrorEntry("DataContext", "dbFetchPassageiros falhou", passageirosRes.reason as Error);
-
-        if (parceirosRes.status === "fulfilled") setParceiros(parceirosRes.value);
-        else logErrorEntry("DataContext", "dbFetchParceiros falhou", parceirosRes.reason as Error);
+        const [osCountsRes] = results2;
 
         if (osCountsRes.status === "fulfilled") setOsCounts(osCountsRes.value);
         else logErrorEntry("DataContext", "fetchOSStatusCounts falhou", osCountsRes.reason as Error);
 
-        // Unificar log de sucesso - mostrar dados que carregaram corretamente
-        // Throttle: evita logs repetidos em menos de 30 segundos
-        const now = Date.now();
-        if (now - lastSuccessLogTime.current >= SUCCESS_LOG_THROTTLE_MS) {
-          lastSuccessLogTime.current = now;
-          logInfo("DataContext", `Dados da página ${getPageName(pathname)} carregados com sucesso!`, {
-            clientes: clientesRes.status === "fulfilled" ? clientesRes.value.length : 0,
-            solicitantes: solicitantesRes.status === "fulfilled" ? solicitantesRes.value.length : 0,
-            drivers: driversRes.status === "fulfilled" ? driversRes.value.length : 0,
-            impostoPercentual: impostoRes.status === "fulfilled" ? impostoRes.value : 0,
-            passageiros: passageirosRes.status === "fulfilled" ? passageirosRes.value.length : 0,
-            parceiros: parceirosRes.status === "fulfilled" ? parceirosRes.value.length : 0,
-            osCounts: osCountsRes.status === "fulfilled" ? osCountsRes.value : {},
-          });
-        }
+        // Não registramos logs de sucesso do carregamento global para evitar spam.
+        // Mantemos apenas logs de erro/falha de carregamento.
       } catch (heavyErr) {
         logErrorEntry("DataContext", "Erro inesperado ao processar dados pesados", heavyErr as Error);
       } finally {
@@ -563,10 +551,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [
     dbFetchClientes,
     dbFetchSolicitantes,
-    dbFetchPassageiros,
-    dbFetchParceiros,
     dbFetchDrivers,
-    pathname,
   ]);
 
   useEffect(() => {
@@ -737,31 +722,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "passageiros" },
-        () => {
-          debouncedFetch("passageiros", async () => {
-            const data = await dbFetchPassageiros();
-            setPassageiros(data);
-          });
-        },
-      )
-      .on(
-        "postgres_changes",
         { event: "*", schema: "public", table: "drivers" },
         () => {
           debouncedFetch("drivers", async () => {
             const data = await dbFetchDrivers();
             setDrivers(data);
-          });
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "parceiros_servico" },
-        () => {
-          debouncedFetch("parceiros", async () => {
-            const data = await dbFetchParceiros();
-            setParceiros(data);
           });
         },
       )
@@ -779,8 +744,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     authLoading,
     dbFetchClientes,
     dbFetchDrivers,
-    dbFetchParceiros,
-    dbFetchPassageiros,
     dbFetchSolicitantes,
     refreshOSById,
     removeOSFromState,
@@ -991,121 +954,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addPassageiro = async (
     passageiro: NovoPassageiroInput,
   ): Promise<Passageiro> => {
-    const cleanNome = passageiro.nomeCompleto.trim().toUpperCase();
-    const cleanEmail = passageiro.email?.trim() || "";
-    const cleanCelular = normalizePhoneValue(passageiro.celular.trim());
-    const cleanCpf = passageiro.cpf?.trim() || "";
-
-    if (!cleanNome) {
-      throw new Error("Informe o nome do passageiro.");
-    }
-
-    if (
-      cleanEmail &&
-      hasDuplicateRecord(
-        passageiros,
-        cleanEmail,
-        (item) => item.email || "",
-        normalizeTextValue,
-      )
-    ) {
-      throw new Error("Já existe um passageiro com este e-mail.");
-    }
-
-    if (
-      hasDuplicateRecord(
-        passageiros,
-        cleanCelular,
-        (item) => item.celular,
-        normalizePhoneValue,
-      )
-    ) {
-      throw new Error("Já existe um passageiro com este celular.");
-    }
-
-    if (
-      cleanCpf &&
-      hasDuplicateRecord(
-        passageiros,
-        cleanCpf,
-        (item) => item.cpf || "",
-        normalizeDigitsValue,
-      )
-    ) {
-      throw new Error("Já existe um passageiro com este CPF.");
-    }
-
-    const tempId = `temp-${Date.now()}`;
-    const optimistic: Passageiro = {
-      id: tempId,
-      nomeCompleto: cleanNome,
-      email: cleanEmail || undefined,
-      celular: cleanCelular,
-      cpf: cleanCpf || undefined,
-      enderecos: passageiro.enderecos.map((e, i) => ({
-        id: `temp-end-${i}`,
-        rotulo: e.rotulo?.trim() || `Endereço ${i + 1}`,
-        enderecoCompleto: e.enderecoCompleto.trim(),
-        referencia: e.referencia?.trim() || undefined,
-      })),
-    };
-
-    setPassageiros((prev) => [...prev, optimistic]);
-
     try {
-      const real = await insertPassageiro({
-        ...passageiro,
-        nomeCompleto: cleanNome,
-        email: cleanEmail || undefined,
-        celular: cleanCelular,
-        cpf: cleanCpf || undefined,
-      });
-
+      const real = await insertPassageiro(passageiro);
       logInfo("DataContext", "Passageiro adicionado com sucesso", {
         passageiroId: real.id,
-        nome: cleanNome,
+        nome: passageiro.nomeCompleto,
       });
-      setPassageiros((prev) => prev.map((p) => (p.id === tempId ? real : p)));
       return real;
     } catch (error) {
       logErrorEntry("DataContext", "Falha ao adicionar passageiro", error as Error, {
-        nome: cleanNome,
+        nome: passageiro.nomeCompleto,
       });
-      setPassageiros((prev) => prev.filter((p) => p.id !== tempId));
-
-      if (isUniqueConstraintError(error)) {
-        const duplicateMessage =
-          cleanEmail &&
-          hasDuplicateRecord(
-            passageiros,
-            cleanEmail,
-            (item) => item.email || "",
-            normalizeTextValue,
-          )
-            ? "Já existe um passageiro com este e-mail."
-            : hasDuplicateRecord(
-                  passageiros,
-                  cleanCelular,
-                  (item) => item.celular,
-                  normalizePhoneValue,
-                )
-              ? "Já existe um passageiro com este celular."
-              : cleanCpf &&
-                  hasDuplicateRecord(
-                    passageiros,
-                    cleanCpf,
-                    (item) => item.cpf || "",
-                    normalizeDigitsValue,
-                  )
-                ? "Já existe um passageiro com este CPF."
-                : "Não foi possível salvar o passageiro.";
-
-        throw new Error(duplicateMessage);
-      }
-
-      throw error instanceof Error
-        ? error
-        : new Error("Não foi possível salvar o passageiro.");
+      const duplicateMessage = getPassageiroDuplicateMessage(error);
+      throw new Error(
+        duplicateMessage ||
+          (error instanceof Error
+            ? error.message
+            : "Não foi possível salvar o passageiro."),
+      );
     }
   };
 
@@ -1113,140 +979,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     id: string,
     passageiro: NovoPassageiroInput,
   ): Promise<Passageiro> => {
-    const cleanNome = passageiro.nomeCompleto.trim().toUpperCase();
-    const cleanEmail = passageiro.email?.trim() || "";
-    const cleanCelular = normalizePhoneValue(passageiro.celular.trim());
-    const cleanCpf = passageiro.cpf?.trim() || "";
-
-    if (!cleanNome) {
-      throw new Error("Informe o nome do passageiro.");
-    }
-
-    // Verificar duplicatas excluindo o próprio passageiro
-    const otherPassageiros = passageiros.filter((p) => p.id !== id);
-
-    if (
-      cleanEmail &&
-      hasDuplicateRecord(
-        otherPassageiros,
-        cleanEmail,
-        (item) => item.email || "",
-        normalizeTextValue,
-      )
-    ) {
-      throw new Error("Já existe um passageiro com este e-mail.");
-    }
-
-    if (
-      hasDuplicateRecord(
-        otherPassageiros,
-        cleanCelular,
-        (item) => item.celular,
-        normalizePhoneValue,
-      )
-    ) {
-      throw new Error("Já existe um passageiro com este celular.");
-    }
-
-    if (
-      cleanCpf &&
-      hasDuplicateRecord(
-        otherPassageiros,
-        cleanCpf,
-        (item) => item.cpf || "",
-        normalizeDigitsValue,
-      )
-    ) {
-      throw new Error("Já existe um passageiro com este CPF.");
-    }
-
-    // Atualização otimista
-    const optimistic: Passageiro = {
-      id,
-      nomeCompleto: cleanNome,
-      email: cleanEmail || undefined,
-      celular: cleanCelular,
-      cpf: cleanCpf || undefined,
-      enderecos: passageiro.enderecos.map((e, i) => ({
-        id: `temp-end-${i}`,
-        rotulo: e.rotulo?.trim() || `Endereço ${i + 1}`,
-        enderecoCompleto: e.enderecoCompleto.trim(),
-        referencia: e.referencia?.trim() || undefined,
-      })),
-    };
-
-    const previousState = passageiros;
-    setPassageiros((prev) => prev.map((p) => (p.id === id ? optimistic : p)));
-
     try {
-      const real = await updatePassageiroInDB(id, {
-        ...passageiro,
-        nomeCompleto: cleanNome,
-        email: cleanEmail || undefined,
-        celular: cleanCelular,
-        cpf: cleanCpf || undefined,
-      });
-
+      const real = await updatePassageiroInDB(id, passageiro);
       logInfo("DataContext", "Passageiro atualizado com sucesso", {
         passageiroId: id,
-        nome: cleanNome,
+        nome: passageiro.nomeCompleto,
       });
-      setPassageiros((prev) => prev.map((p) => (p.id === id ? real : p)));
       return real;
     } catch (error) {
       logErrorEntry("DataContext", "Falha ao atualizar passageiro", error as Error, {
         passageiroId: id,
-        nome: cleanNome,
+        nome: passageiro.nomeCompleto,
       });
-      setPassageiros(previousState);
-
-      if (isUniqueConstraintError(error)) {
-        const duplicateMessage =
-          cleanEmail &&
-          hasDuplicateRecord(
-            otherPassageiros,
-            cleanEmail,
-            (item) => item.email || "",
-            normalizeTextValue,
-          )
-            ? "Já existe um passageiro com este e-mail."
-            : hasDuplicateRecord(
-                  otherPassageiros,
-                  cleanCelular,
-                  (item) => item.celular,
-                  normalizePhoneValue,
-                )
-              ? "Já existe um passageiro com este celular."
-              : cleanCpf &&
-                  hasDuplicateRecord(
-                    otherPassageiros,
-                    cleanCpf,
-                    (item) => item.cpf || "",
-                    normalizeDigitsValue,
-                  )
-                ? "Já existe um passageiro com este CPF."
-                : "Não foi possível atualizar o passageiro.";
-
-        throw new Error(duplicateMessage);
-      }
-
-      throw error instanceof Error
-        ? error
-        : new Error("Não foi possível atualizar o passageiro.");
+      const duplicateMessage = getPassageiroDuplicateMessage(error);
+      throw new Error(
+        duplicateMessage ||
+          (error instanceof Error
+            ? error.message
+            : "Não foi possível atualizar o passageiro."),
+      );
     }
   };
 
   const deletePassageiro = (id: string) => {
-    // Atualização otimista
-    const previousState = passageiros;
-    setPassageiros((prev) => prev.filter((p) => p.id !== id));
-
     deletePassageiroFromDB(id)
       .then(() => {
-        void refreshData();
+        logInfo("DataContext", "Passageiro excluído com sucesso", { passageiroId: id });
       })
       .catch((error) => {
-        setPassageiros(previousState);
+        logErrorEntry("DataContext", "Falha ao excluir passageiro", error as Error, { passageiroId: id });
         console.error("Error deletePassageiroFromDB:", error);
         throw error;
       });
@@ -1516,179 +1277,78 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [clientes],
   );
 
-  // ── Helpers de validação de parceiros ──────────────────
-  const findParceiroByDocumento = (
-    documento: string,
-    excludeId?: string,
-  ): ParceiroServico | undefined => {
-    const normalizedDoc = normalizeDigitsValue(documento);
-    return parceiros.find(
-      (p) =>
-        p.id !== excludeId &&
-        normalizeDigitsValue(p.documento) === normalizedDoc,
-    );
-  };
-
-  const findParceiroContatoByCelular = (
-    celular: string,
-    excludeParceiroId?: string,
-  ):
-    | {
-        parceiro: ParceiroServico;
-        contato: { setor: string; responsavel: string };
-      }
-    | undefined => {
-    const normalizedCell = normalizePhoneValue(celular);
-    for (const parceiro of parceiros) {
-      if (parceiro.id === excludeParceiroId) continue;
-      const contato = parceiro.contatos.find(
-        (c) => normalizePhoneValue(c.celular) === normalizedCell,
-      );
-      if (contato) return { parceiro, contato };
-    }
-    return undefined;
-  };
-
-  const findParceiroContatoByEmail = (
-    email: string,
-    excludeParceiroId?: string,
-  ):
-    | {
-        parceiro: ParceiroServico;
-        contato: { setor: string; responsavel: string };
-      }
-    | undefined => {
-    const normalizedEmail = normalizeTextValue(email);
-    for (const parceiro of parceiros) {
-      if (parceiro.id === excludeParceiroId) continue;
-      const contato = parceiro.contatos.find(
-        (c) => normalizeTextValue(c.email || "") === normalizedEmail,
-      );
-      if (contato) return { parceiro, contato };
-    }
-    return undefined;
-  };
-
   // Funções de Parceiros
   const addParceiro = async (
     parceiro: NovoParceiroInput,
   ): Promise<ParceiroServico> => {
-    const cleanDoc = normalizeDigitsValue(parceiro.documento);
-    if (cleanDoc) {
-      const existingDoc = findParceiroByDocumento(parceiro.documento);
-      if (existingDoc) {
-        throw new Error(
-          `CNPJ/CPF já está sendo usado pelo parceiro "${existingDoc.razaoSocialOuNomeCompleto}".`,
-        );
-      }
+    try {
+      const result = await insertParceiro(parceiro);
+      logInfo("DataContext", "Parceiro adicionado com sucesso", {
+        parceiroId: result.id,
+        nome: parceiro.razaoSocialOuNomeCompleto,
+      });
+      return result;
+    } catch (error) {
+      logErrorEntry("DataContext", "Falha ao adicionar parceiro", error as Error, {
+        nome: parceiro.razaoSocialOuNomeCompleto,
+      });
+      throw error instanceof Error
+        ? error
+        : new Error("Não foi possível salvar o parceiro.");
     }
-
-    for (const contato of parceiro.contatos) {
-      const cleanCell = normalizePhoneValue(contato.celular);
-      if (cleanCell) {
-        const existingCell = findParceiroContatoByCelular(contato.celular);
-        if (existingCell) {
-          throw new Error(
-            `Celular ${contato.celular} já está sendo usado no contato "${existingCell.contato.setor}" do parceiro "${existingCell.parceiro.razaoSocialOuNomeCompleto}".`,
-          );
-        }
-      }
-      const cleanEmail = normalizeTextValue(contato.email || "");
-      if (cleanEmail) {
-        const existingEmail = findParceiroContatoByEmail(contato.email || "");
-        if (existingEmail) {
-          throw new Error(
-            `E-mail ${contato.email} já está sendo usado no contato "${existingEmail.contato.setor}" do parceiro "${existingEmail.parceiro.razaoSocialOuNomeCompleto}".`,
-          );
-        }
-      }
-    }
-
-    const result = await insertParceiro(parceiro);
-    setParceiros((prev) =>
-      [...prev, result].sort((a, b) =>
-        a.razaoSocialOuNomeCompleto.localeCompare(
-          b.razaoSocialOuNomeCompleto,
-          "pt-BR",
-        ),
-      ),
-    );
-    return result;
   };
 
   const updateParceiro = async (
     id: string,
     parceiro: NovoParceiroInput,
   ): Promise<void> => {
-    const cleanDoc = normalizeDigitsValue(parceiro.documento);
-    if (cleanDoc) {
-      const existingDoc = findParceiroByDocumento(parceiro.documento, id);
-      if (existingDoc) {
-        throw new Error(
-          `CNPJ/CPF já está sendo usado pelo parceiro "${existingDoc.razaoSocialOuNomeCompleto}".`,
-        );
-      }
+    try {
+      await updateParceiroInDB(id, parceiro);
+      logInfo("DataContext", "Parceiro atualizado com sucesso", {
+        parceiroId: id,
+        nome: parceiro.razaoSocialOuNomeCompleto,
+      });
+    } catch (error) {
+      logErrorEntry("DataContext", "Falha ao atualizar parceiro", error as Error, {
+        parceiroId: id,
+        nome: parceiro.razaoSocialOuNomeCompleto,
+      });
+      throw error instanceof Error
+        ? error
+        : new Error("Não foi possível atualizar o parceiro.");
     }
-
-    for (const contato of parceiro.contatos) {
-      const cleanCell = normalizePhoneValue(contato.celular);
-      if (cleanCell) {
-        const existingCell = findParceiroContatoByCelular(contato.celular, id);
-        if (existingCell) {
-          throw new Error(
-            `Celular ${contato.celular} já está sendo usado no contato "${existingCell.contato.setor}" do parceiro "${existingCell.parceiro.razaoSocialOuNomeCompleto}".`,
-          );
-        }
-      }
-      const cleanEmail = normalizeTextValue(contato.email || "");
-      if (cleanEmail) {
-        const existingEmail = findParceiroContatoByEmail(
-          contato.email || "",
-          id,
-        );
-        if (existingEmail) {
-          throw new Error(
-            `E-mail ${contato.email} já está sendo usado no contato "${existingEmail.contato.setor}" do parceiro "${existingEmail.parceiro.razaoSocialOuNomeCompleto}".`,
-          );
-        }
-      }
-    }
-
-    const updatedParceiro = await updateParceiroInDB(id, parceiro);
-    setParceiros((prev) =>
-      prev.map((p) => (p.id === id ? updatedParceiro : p)),
-    );
   };
 
   const toggleParceiro = async (id: string): Promise<void> => {
-    const parceiro = parceiros.find((p) => p.id === id);
-    if (!parceiro) return;
-    await toggleParceiroStatus(id, parceiro.status);
-    setParceiros((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? { ...p, status: p.status === "ativo" ? "inativo" : "ativo" }
-          : p,
-      ),
-    );
-    void refreshData();
+    try {
+      const parceiro = await fetchParceiroById(id);
+      await toggleParceiroStatus(id, parceiro.status);
+      logInfo("DataContext", "Status do parceiro alterado", { parceiroId: id });
+    } catch (error) {
+      logErrorEntry("DataContext", "Falha ao alterar status do parceiro", error as Error, { parceiroId: id });
+      throw error;
+    }
   };
 
   const deleteParceiro = (id: string) => {
     deleteParceiroFromDB(id)
       .then(() => {
-        setParceiros((prev) => prev.filter((p) => p.id !== id));
-        void refreshData();
+        logInfo("DataContext", "Parceiro excluído com sucesso", { parceiroId: id });
       })
-      .catch((err) => console.error("Error deleteParceiroFromDB:", err));
+      .catch((err) => {
+        logErrorEntry("DataContext", "Falha ao excluir parceiro", err as Error, { parceiroId: id });
+        console.error("Error deleteParceiroFromDB:", err);
+      });
   };
 
   const unarchiveParceiro = async (id: string): Promise<void> => {
-    await unarchiveParceiroFromDB(id);
-    setParceiros((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, arquivado: false } : p)),
-    );
-    void refreshData();
+    try {
+      await unarchiveParceiroFromDB(id);
+      logInfo("DataContext", "Parceiro desarquivado com sucesso", { parceiroId: id });
+    } catch (error) {
+      logErrorEntry("DataContext", "Falha ao desarquivar parceiro", error as Error, { parceiroId: id });
+      throw error;
+    }
   };
 
   // Funções de Centros de Custo
@@ -1761,11 +1421,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       value={{
         clientes,
         solicitantes,
-        passageiros,
         osList,
         osCounts,
         drivers,
-        parceiros,
         loading,
         heavyLoading,
         impostoPercentual,

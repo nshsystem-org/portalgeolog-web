@@ -1071,7 +1071,7 @@ export async function fetchOSPage({
 
     if (likeTerm) {
       query = query.or(
-        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm},driver_id.ilike.${likeTerm}`,
+        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
       );
     }
 
@@ -1296,7 +1296,7 @@ export async function fetchOSFinancePage({
 
     if (likeTerm) {
       query = query.or(
-        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm},driver_id.ilike.${likeTerm}`,
+        `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
       );
     }
 

@@ -17,7 +17,10 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  CheckCircle2,
+  CircleDashed,
   Loader2,
+  Route,
   User,
 } from "lucide-react";
 import { logInfo } from "@/lib/frontend-logger";
@@ -49,6 +52,59 @@ interface OSCalendarProps {
   showArchivedOnly?: boolean;
   onRangeChange?: (from: string, to: string) => void;
 }
+
+type WeekStatus = "Pendente" | "Aguardando" | "Em Rota" | "Finalizado";
+
+const weekStatusOrder: WeekStatus[] = [
+  "Pendente",
+  "Aguardando",
+  "Em Rota",
+  "Finalizado",
+];
+
+const weekStatusMeta: Record<
+  WeekStatus,
+  {
+    label: string;
+    icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
+    color: string;
+    textColor: string;
+  }
+> = {
+  Pendente: {
+    label: "Pendente",
+    icon: Clock,
+    color: "#475569",
+    textColor: "#1e293b",
+  },
+  Aguardando: {
+    label: "Aguardando",
+    icon: CircleDashed,
+    color: "#6366f1",
+    textColor: "#312e81",
+  },
+  "Em Rota": {
+    label: "Em Rota",
+    icon: Route,
+    color: "#0ea5e9",
+    textColor: "#0c4a6e",
+  },
+  Finalizado: {
+    label: "Finalizado",
+    icon: CheckCircle2,
+    color: "#10b981",
+    textColor: "#064e3b",
+  },
+};
+
+type WeekStatusCounts = Record<WeekStatus, number>;
+
+const emptyWeekStatusCounts = (): WeekStatusCounts => ({
+  Pendente: 0,
+  Aguardando: 0,
+  "Em Rota": 0,
+  Finalizado: 0,
+});
 
 // Cores por status — backgrounds mais saturados para legibilidade no calendário
 const statusColors: Record<
@@ -165,6 +221,13 @@ const getItineraryLabel = (itineraryIndex: number): string => {
   }
 
   return `Itinerário ${itineraryIndex + 1}`;
+};
+
+const toDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 // Componente de Evento Customizado
@@ -493,6 +556,26 @@ export default function OSCalendar({
     return derivedEvents;
   }, [osList, clientes]);
 
+  const weekStatusCountsByDate = useMemo(() => {
+    const countsByDate: Record<string, WeekStatusCounts> = {};
+
+    events.forEach((event) => {
+      const status = event.extendedProps.status;
+      if (!weekStatusOrder.includes(status as WeekStatus)) {
+        return;
+      }
+
+      const dateKey = event.start.split("T")[0];
+      if (!countsByDate[dateKey]) {
+        countsByDate[dateKey] = emptyWeekStatusCounts();
+      }
+
+      countsByDate[dateKey][status as WeekStatus] += 1;
+    });
+
+    return countsByDate;
+  }, [events]);
+
   const handleEventClick = useCallback(
     (info: {
       jsEvent: MouseEvent;
@@ -522,12 +605,8 @@ export default function OSCalendar({
   ) => {
     setCurrentView(view);
     logInfo("OSCalendar", `Mudou visualização do calendário para ${viewLabelMap[view]}`);
-    const calendarApi = calendarRef.current?.getApi();
-    if (calendarApi) {
-      // Sempre resetar para data atual ao mudar de view
-      calendarApi.changeView(view);
-      calendarApi.today();
-    }
+    // We rely on the 'key={currentView}' on FullCalendar to force a clean re-mount
+    // This solves issues with DOM elements from one view persisting in another.
   };
 
   const goToPrev = () => {
@@ -602,6 +681,107 @@ export default function OSCalendar({
     );
   }, [clientes, showArchivedOnly, currentView]);
 
+  const renderMonthDayCellContent = useCallback((arg: {
+    date: Date;
+    dayNumberText: string;
+    view: { type: string };
+  }) => {
+    // Somente renderiza o resumo de chips no modo mês e garante limpeza absoluta em outros modos
+    if (arg.view.type !== "dayGridMonth") {
+      return <span className="fc-daygrid-day-number-simple">{arg.dayNumberText}</span>;
+    }
+
+    const dateKey = toDateKey(arg.date);
+    const counts = weekStatusCountsByDate[dateKey] ?? emptyWeekStatusCounts();
+    const isToday = dateKey === toDateKey(new Date());
+
+    return (
+      <div className="fc-os-month-cell" key={`month-cell-${dateKey}`}>
+        <span className="fc-os-month-cell__day-number">{arg.dayNumberText}</span>
+        <div className="fc-os-month-cell__status-row">
+          {weekStatusOrder.map((status) => {
+            const meta = weekStatusMeta[status];
+            const Icon = meta.icon;
+            const count = counts[status];
+
+            return (
+              <div
+                key={status}
+                className="fc-os-month-cell__status-chip"
+                title={`${meta.label}: ${count}`}
+                aria-label={`${meta.label}: ${count}`}
+                style={{
+                  color: meta.color,
+                  borderColor: isToday ? `${meta.color}66` : `${meta.color}33`,
+                  backgroundColor: isToday ? `${meta.color}26` : `${meta.color}12`,
+                  opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
+                }}
+              >
+                <Icon size={18} strokeWidth={2.5} />
+                <span style={{ color: meta.textColor }}>{count}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }, [weekStatusCountsByDate]);
+
+  const renderDayHeaderContent = useCallback((arg: {
+    date: Date;
+    text: string;
+    view: { type: string };
+  }) => {
+    if (
+      arg.view.type !== "dayGridWeek" &&
+      arg.view.type !== "dayGridDay"
+    ) {
+      return arg.text;
+    }
+
+    const dateKey = toDateKey(arg.date);
+    const counts = weekStatusCountsByDate[dateKey] ?? emptyWeekStatusCounts();
+    const headerVariant =
+      arg.view.type === "dayGridDay"
+        ? "day"
+        : "week";
+
+    const iconSize = headerVariant === "day" ? 16 : 12;
+    const iconStrokeWidth = headerVariant === "day" ? 2 : 2.5;
+    const isToday = arg.view.type === "dayGridWeek" && dateKey === toDateKey(new Date());
+
+    return (
+      <div className={`fc-os-header fc-os-header--${headerVariant}`} key={`header-${dateKey}-${headerVariant}`}>
+        <span className="fc-os-week-header__day">{arg.text}</span>
+        <div className="fc-os-week-header__status-row">
+          {weekStatusOrder.map((status) => {
+            const meta = weekStatusMeta[status];
+            const Icon = meta.icon;
+            const count = counts[status];
+
+            return (
+              <div
+                key={status}
+                className="fc-os-week-header__status-chip"
+                title={`${meta.label}: ${count}`}
+                aria-label={`${meta.label}: ${count}`}
+                style={{
+                  color: meta.color,
+                  borderColor: isToday ? `${meta.color}66` : `${meta.color}33`,
+                  backgroundColor: isToday ? `${meta.color}26` : `${meta.color}12`,
+                  opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
+                }}
+              >
+                <Icon size={iconSize} strokeWidth={iconStrokeWidth} />
+                <span style={{ color: meta.textColor }}>{count}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }, [weekStatusCountsByDate]);
+
   // Lógica de exibição baseada em hasLoaded
   const isInitialLoading = !hasLoaded && loading;
   // Mostrar overlay de loading sempre que estiver carregando, independente de ter dados anteriores
@@ -673,6 +853,7 @@ export default function OSCalendar({
         ) : (
           <>
             <FullCalendar
+              key={currentView}
               ref={calendarRef}
               plugins={[
                 dayGridPlugin,
@@ -694,6 +875,7 @@ export default function OSCalendar({
               } : false}
               titleFormat={{ year: 'numeric', month: 'long' }}
               eventContent={renderEventContent}
+              dayCellContent={renderMonthDayCellContent}
               dayCellClassNames={(dateInfo) => {
                 if (dateInfo.isOtherMonth) {
                   return 'fc-day-other-month';
@@ -723,6 +905,7 @@ export default function OSCalendar({
                 day: "numeric",
                 omitCommas: true,
               }}
+              dayHeaderContent={renderDayHeaderContent}
               slotMinTime="06:00:00"
               slotMaxTime="22:00:00"
               allDaySlot={true}
@@ -869,9 +1052,188 @@ export default function OSCalendar({
             flex-shrink: 0 !important;
           }
 
-          /* Esconder cabeçalho de dias no modo mês */
+          /* Ocultar cabeçalho padrão no modo mês */
           .fc-dayGridMonth-view .fc-col-header {
             display: none !important;
+          }
+
+          .fc-dayGridWeek-view .fc-col-header-cell {
+            vertical-align: top !important;
+          }
+
+          .fc-dayGridMonth-view .fc-col-header-cell,
+          .fc-dayGridDay-view .fc-col-header-cell {
+            vertical-align: top !important;
+          }
+
+          .fc-dayGridWeek-view .fc-col-header-cell.fc-day-today {
+            background-color: #feffd5 !important;
+          }
+
+          .fc-dayGridWeek-view .fc-col-header-cell.fc-day-today .fc-scrollgrid-sync-inner {
+            background-color: #feffd5 !important;
+          }
+
+          .fc-dayGridWeek-view .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+            background-color: #feffd5 !important;
+          }
+
+          .fc-dayGridWeek-view .fc-col-header-cell-cushion {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+            justify-content: flex-start !important;
+            gap: 8px !important;
+            padding: 10px 6px 0 !important;
+            min-height: 110px !important;
+            width: 100% !important;
+            text-decoration: none !important;
+          }
+
+          .fc-dayGridDay-view .fc-col-header-cell-cushion {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+            justify-content: flex-start !important;
+            gap: 10px !important;
+            padding: 12px 8px 0 !important;
+            min-height: 120px !important;
+            width: 100% !important;
+            text-decoration: none !important;
+          }
+
+          .fc-os-header {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+          }
+
+          .fc-os-header--day {
+            gap: 6px;
+          }
+
+          .fc-os-week-header__day {
+            text-align: center;
+            font-weight: 900;
+            text-transform: capitalize;
+            color: #0f172a;
+            line-height: 1.1;
+          }
+
+          .fc-os-header--day .fc-os-week-header__day {
+            font-size: 16px;
+          }
+
+          .fc-os-week-header__status-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
+            width: 100%;
+          }
+
+          .fc-os-header--day .fc-os-week-header__status-row {
+            gap: 4px;
+          }
+
+          .fc-os-week-header__status-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            min-width: 0;
+            padding: 4px 6px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            font-size: 10px;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: 0.02em;
+          }
+
+          .fc-os-header--month .fc-os-week-header__status-chip {
+            padding: 3px 5px;
+            font-size: 9px;
+            gap: 3px;
+          }
+
+          .fc-os-header--week .fc-os-week-header__status-chip {
+            padding: 5px 8px;
+            font-size: 12px;
+            gap: 5px;
+          }
+
+          .fc-os-header--week .fc-os-week-header__status-row {
+            gap: 7px;
+          }
+
+          .fc-os-header--day .fc-os-week-header__status-chip {
+            padding: 6px 10px;
+            font-size: 13px;
+            gap: 6px;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-day-top {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 0 !important;
+            padding: 0 !important;
+          }
+
+          .fc-dayGridMonth-view .fc-daygrid-day-number {
+            margin: 0 !important;
+            font-size: 14px !important;
+            line-height: 1 !important;
+            width: 100% !important;
+            padding: 10px !important;
+            display: block !important;
+            text-align: left !important;
+            float: none !important;
+            text-decoration: none !important;
+          }
+
+          .fc-os-month-cell {
+            display: none;
+          }
+
+          .fc-dayGridMonth-view .fc-os-month-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+          }
+
+          .fc-os-month-cell__day-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            font-weight: 900;
+            color: #0f172a;
+            font-size: 16px;
+            line-height: 1;
+          }
+
+          .fc-os-month-cell__status-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            width: 100%;
+          }
+
+          .fc-os-month-cell__status-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            font-size: 13px;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: 0.02em;
+            min-width: 0;
           }
 
           /* Capitalizar primeira letra do título do mês */
@@ -903,12 +1265,14 @@ export default function OSCalendar({
           }
 
           /* Cor de fundo do dia atual (exceto no modo Dia) */
-          .fc .fc-daygrid-day.fc-day-today {
+          .fc-dayGridWeek-view .fc-daygrid-day.fc-day-today,
+          .fc-dayGridMonth-view .fc-daygrid-day.fc-day-today {
             background-color: #feffd5 !important;
           }
 
           .fc-dayGridDay-view .fc-day-today,
-          .fc-view-dayGridDay .fc-day-today {
+          .fc-view-dayGridDay .fc-day-today,
+          .fc-dayGridDay-view .fc-daygrid-day.fc-day-today {
             background-color: #ffffff !important;
           }
 
@@ -917,9 +1281,11 @@ export default function OSCalendar({
             background-color: transparent !important;
           }
 
-          /* Hover/focus do dia atual */
-          .fc .fc-daygrid-day.fc-day-today:hover,
-          .fc .fc-daygrid-day.fc-day-today:focus {
+          /* Hover/focus do dia atual (exceto no modo Dia) */
+          .fc-dayGridWeek-view .fc-daygrid-day.fc-day-today:hover,
+          .fc-dayGridWeek-view .fc-daygrid-day.fc-day-today:focus,
+          .fc-dayGridMonth-view .fc-daygrid-day.fc-day-today:hover,
+          .fc-dayGridMonth-view .fc-daygrid-day.fc-day-today:focus {
             background-color: #feffd5 !important;
           }
 
@@ -939,7 +1305,8 @@ export default function OSCalendar({
             background-color: transparent !important;
           }
 
-          .fc .fc-daygrid-day.fc-day-today.fc-day-selected {
+          .fc-dayGridWeek-view .fc-daygrid-day.fc-day-today.fc-day-selected,
+          .fc-dayGridMonth-view .fc-daygrid-day.fc-day-today.fc-day-selected {
             background-color: #feffd5 !important;
           }
 

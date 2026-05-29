@@ -20,6 +20,12 @@ Sempre verifique o `package.json` antes de executar, mas prefira estes padrões:
 - **Fix:** `npm run lint -- --fix`
 - **Prettier:** `npx prettier --write .` (execute obrigatoriamente antes de cada commit).
 
+### Git & Commits (PRIORIDADE ABSOLUTA)
+
+- **NÃO FAÇA COMMITS automaticamente.** Só execute `git commit` quando o usuário pedir explicitamente no chat.
+- **NÃO FAÇA PUSH** sem autorização explícita do usuário.
+- **Regra de Ouro:** Build e lint são obrigatórios antes de qualquer commit, mas o commit em si só ocorre mediante solicitação direta.
+
 ### 🧪 Testes (Protocolo de Validação)
 
 - **Fluxo de Trabalho:** Modificar código -> Rodar Lint no arquivo -> Rodar Teste Unitário específico.

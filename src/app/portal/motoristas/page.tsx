@@ -36,6 +36,7 @@ import {
   type ParceiroServico,
   type NovoParceiroInput,
 } from "@/context/DataContext";
+import { useParceiros } from "@/hooks/useParceiros";
 import { formatBrazilPhone, normalizeBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
 import { fetchDriversPage } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
@@ -231,8 +232,8 @@ export default function MotoristasPage() {
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const supabase = createClient();
+  const { parceiros } = useParceiros();
   const {
-    parceiros,
     drivers: allDrivers,
     refreshData,
     addParceiro,

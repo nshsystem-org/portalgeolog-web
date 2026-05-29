@@ -32,6 +32,7 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { useData, type OrderService } from "@/context/DataContext";
+import { useParceiros } from "@/hooks/useParceiros";
 import { DataTable } from "@/components/ui/DataTable";
 import StandardModal from "@/components/StandardModal";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
@@ -248,7 +249,8 @@ function FinanceCard({
 
 export default function MedicaoFinanceiraPage() {
   const { profile } = useAuth();
-  const { clientes, drivers, parceiros, loading: dataLoading, lastOSUpdate } = useData();
+  const { parceiros } = useParceiros();
+  const { clientes, drivers, loading: dataLoading, lastOSUpdate } = useData();
   const now = new Date();
   const [dataInicio, setDataInicio] = useState(normalizeToInputDate(startOfWeek(now)));
   const [dataFim, setDataFim] = useState(normalizeToInputDate(endOfWeek(now)));

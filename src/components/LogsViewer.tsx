@@ -133,6 +133,18 @@ const PAGE_OPTIONS = [
   { value: "/portal/dashboard", label: "Dashboard" },
 ];
 
+const formatDateToBR = (isoDate: string): string => {
+  if (!isoDate) return "";
+  const [year, month, day] = isoDate.split("-");
+  return `${day}/${month}/${year}`;
+};
+
+const formatDateToISO = (brDate: string): string => {
+  if (!brDate) return "";
+  const [day, month, year] = brDate.split("/");
+  return `${year}-${month}-${day}`;
+};
+
 const LEVEL_COLORS = {
   info: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", icon: Info },
   warning: { bg: "bg-yellow-50", text: "text-yellow-700", border: "border-yellow-200", icon: AlertTriangle },
@@ -184,15 +196,15 @@ export default function LogsViewer() {
     setLoading(true);
     try {
       if (targetTab === "sistema") {
+        // Buscar mais logs do backend quando filtros frontend estão ativos
+        const hasSearchFilter = searchTerm.trim() !== "";
+        const hasFrontendFilters = hasSearchFilter || selectedCategory !== "all" || selectedPage !== "all";
+        const fetchLimit = hasSearchFilter ? 5000 : hasFrontendFilters ? 500 : PAGE_SIZE;
         const offset = (currentPage - 1) * PAGE_SIZE;
         const systemParams = new URLSearchParams({
-          limit: PAGE_SIZE.toString(),
+          limit: fetchLimit.toString(),
           offset: offset.toString(),
         });
-
-        if (searchTerm) {
-          systemParams.append("component", searchTerm);
-        }
 
         if (selectedUserId !== "all") {
           systemParams.append("userId", selectedUserId);
@@ -226,7 +238,7 @@ export default function LogsViewer() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, searchTerm, selectedUserId, currentPage, startDate, endDate, selectedLevel]);
+  }, [activeTab, searchTerm, selectedUserId, currentPage, startDate, endDate, selectedLevel, selectedCategory, selectedPage]);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -751,12 +763,12 @@ export default function LogsViewer() {
       .includes(term);
   });
 
-  const filteredTotal = filteredLogs.length;
+  const hasFrontendFilters = searchTerm.trim() !== "" || selectedCategory !== "all" || selectedPage !== "all";
+  const filteredTotal = hasFrontendFilters ? filteredLogs.length : totalRecords;
   const filteredTotalPages = Math.ceil(filteredTotal / PAGE_SIZE) || 1;
-  const paginatedLogs = filteredLogs.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
-  );
+  const paginatedLogs = hasFrontendFilters
+    ? filteredLogs.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+    : filteredLogs;
 
   const systemCount = systemLogs.length;
   const whatsappCount = whatsappLogs.length;
@@ -823,7 +835,7 @@ export default function LogsViewer() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input
                 type="text"
-                placeholder="Buscar por componente..."
+                placeholder="Buscar nos logs..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -921,29 +933,43 @@ export default function LogsViewer() {
               </div>
 
               <div className="flex items-center gap-2 w-full lg:w-auto">
-                <div className="relative flex-1">
+                <div className="relative flex-1 min-w-0">
                   <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
-                    type="date"
-                    value={startDate}
+                    type="text"
+                    placeholder="DD/MM/AAAA"
+                    value={formatDateToBR(startDate)}
                     onChange={(e) => {
-                      setStartDate(e.target.value);
-                      setQuickDateRange("all");
+                      const raw = e.target.value.replace(/\D/g, "");
+                      if (raw.length <= 8) {
+                        let formatted = raw;
+                        if (raw.length > 4) formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
+                        else if (raw.length > 2) formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
+                        setStartDate(formatDateToISO(formatted));
+                        setQuickDateRange("all");
+                      }
                     }}
-                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
                 <span className="text-slate-400 font-bold">→</span>
-                <div className="relative flex-1">
+                <div className="relative flex-1 min-w-0">
                   <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
-                    type="date"
-                    value={endDate}
+                    type="text"
+                    placeholder="DD/MM/AAAA"
+                    value={formatDateToBR(endDate)}
                     onChange={(e) => {
-                      setEndDate(e.target.value);
-                      setQuickDateRange("all");
+                      const raw = e.target.value.replace(/\D/g, "");
+                      if (raw.length <= 8) {
+                        let formatted = raw;
+                        if (raw.length > 4) formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
+                        else if (raw.length > 2) formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
+                        setEndDate(formatDateToISO(formatted));
+                        setQuickDateRange("all");
+                      }
                     }}
-                    className="w-full pl-12 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
                 {(startDate || endDate) && (
@@ -953,7 +979,7 @@ export default function LogsViewer() {
                       setEndDate("");
                       setQuickDateRange("all");
                     }}
-                    className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 hover:bg-red-100 transition-colors"
+                    className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 hover:bg-red-100 transition-colors shrink-0"
                     title="Limpar filtro de data"
                   >
                     <X size={16} />

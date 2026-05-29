@@ -13,6 +13,8 @@ import { createClient } from "@/lib/supabase/client";
 import StandardModal from "@/components/StandardModal";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
 import { logInfo } from "@/lib/frontend-logger";
+import { usePassageiros } from "@/hooks/usePassageiros";
+import { useParceiros } from "@/hooks/useParceiros";
 import {
   Plus,
   Minus,
@@ -467,14 +469,14 @@ const validarPlacaOS = (placa: string): boolean => {
 };
 
 export default function OSOperationalPage() {
+  const { passageiros } = usePassageiros();
+  const { parceiros } = useParceiros();
   const {
     osList,
     osCounts,
     clientes,
     solicitantes,
-    passageiros,
     drivers,
-    parceiros,
     addOS,
     updateOS,
     updateOSStatus,
@@ -580,7 +582,7 @@ export default function OSOperationalPage() {
         .map(([key, value]) => `${key}: ${value}`)
         .join(", ");
 
-      logInfo("OS/Tabela", `Modo Tabela: Acessou Página ${params.page}`, {
+      logInfo("OS/Tabela", `Tabela carregada: página ${params.page}, ${result.totalCount} OS totais${filterDescription ? ` (filtros: ${filterDescription})` : ""}`, {
         page: params.page,
         pageSize: params.pageSize,
         searchTerm: params.searchTerm,

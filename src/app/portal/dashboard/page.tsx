@@ -2,6 +2,7 @@
 
 import { useData, type OrderService } from "@/context/DataContext";
 import { useAuth } from "@/context/AuthContext";
+import { useParceiros } from "@/hooks/useParceiros";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { Building2, Truck, Landmark, Filter, RotateCcw } from "lucide-react";
 import { fetchOSFinanceOverview, type FinanceQueryFilters } from "@/lib/supabase/queries";
@@ -94,7 +95,8 @@ function MiniListPanel({
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const { drivers, clientes, parceiros, loading: dataLoading, lastOSUpdate } = useData();
+  const { parceiros } = useParceiros();
+  const { drivers, clientes, loading: dataLoading, lastOSUpdate } = useData();
   const [overviewRows, setOverviewRows] = useState<OrderService[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
   
@@ -247,10 +249,6 @@ export default function Dashboard() {
             </span>
             ! 👋
           </h2>
-          <p className="text-[var(--color-geolog-accent)] text-lg max-w-2xl leading-relaxed">
-            O Portal Geolog está pronto para decolar. Use o menu lateral para
-            gerenciar sua frota e acompanhar as viagens em tempo real.
-          </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16">
             <StatCard

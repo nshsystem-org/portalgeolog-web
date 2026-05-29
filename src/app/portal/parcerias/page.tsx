@@ -6,6 +6,7 @@ import {
   NovoParceiroInput,
   useData,
 } from "@/context/DataContext";
+import { useParceiros } from "@/hooks/useParceiros";
 import StandardModal from "@/components/StandardModal";
 import {
   Building2,
@@ -127,8 +128,8 @@ const initialForm = (): ParceiroFormData => ({
 });
 
 export default function ParceriasPage() {
+  const { parceiros, loading: parceirosLoading } = useParceiros();
   const {
-    parceiros,
     addParceiro,
     updateParceiro,
     deleteParceiro,
