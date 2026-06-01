@@ -77,6 +77,10 @@ export function useServerPaginatedTable<T>(
     [totalPages],
   );
 
+  const updateItems = useCallback((mapper: (prev: T[]) => T[]) => {
+    setItems(mapper);
+  }, []);
+
   const result = useMemo(
     () => ({
       items,
@@ -89,6 +93,7 @@ export function useServerPaginatedTable<T>(
       setSearchTerm: handleSearchChange,
       setPage: handlePageChange,
       refresh: loadPage,
+      updateItems,
       error,
     }),
     [
@@ -102,6 +107,7 @@ export function useServerPaginatedTable<T>(
       handleSearchChange,
       handlePageChange,
       loadPage,
+      updateItems,
       error,
     ],
   );

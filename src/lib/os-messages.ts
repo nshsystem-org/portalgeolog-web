@@ -217,66 +217,6 @@ export function buildOperationalCyclesFromWaypoints(
   });
 }
 
-export function normalizeOperationalCycles(value: unknown): OperationalCycle[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  const mapped: OperationalCycle[] = [];
-
-  for (const item of value) {
-    if (typeof item !== "object" || item === null) continue;
-
-    const record = item as Record<string, unknown>;
-    const itineraryIndex = Number(record.itineraryIndex);
-    const sequenceOrder = Number(record.sequenceOrder);
-    const ordinal = Number(record.ordinal);
-    const kind: OperationalCycleKind =
-      record.kind === "return" ? "return" : "itinerary";
-
-    if (
-      !Number.isFinite(itineraryIndex) ||
-      !Number.isFinite(sequenceOrder) ||
-      !Number.isFinite(ordinal)
-    ) {
-      continue;
-    }
-
-    mapped.push({
-      itineraryIndex,
-      sequenceOrder,
-      kind,
-      ordinal,
-      title:
-        typeof record.title === "string" && record.title.trim()
-          ? record.title
-          : getOperationalCycleTitle({ kind, ordinal }),
-      state: (record.state as OperationalCycleState) || "pending",
-      messageSentAt:
-        typeof record.messageSentAt === "string" ? record.messageSentAt : null,
-      acceptedAt:
-        typeof record.acceptedAt === "string" ? record.acceptedAt : null,
-      startedAt: typeof record.startedAt === "string" ? record.startedAt : null,
-      finishedAt:
-        typeof record.finishedAt === "string" ? record.finishedAt : null,
-      kmInitial:
-        typeof record.kmInitial === "number"
-          ? record.kmInitial
-          : Number.isFinite(Number(record.kmInitial))
-            ? Number(record.kmInitial)
-            : null,
-      kmFinal:
-        typeof record.kmFinal === "number"
-          ? record.kmFinal
-          : Number.isFinite(Number(record.kmFinal))
-            ? Number(record.kmFinal)
-            : null,
-    });
-  }
-
-  return mapped.sort((a, b) => a.sequenceOrder - b.sequenceOrder);
-}
-
 export function findOperationalCycleByIndex(
   cycles: OperationalCycle[],
   itineraryIndex: number,

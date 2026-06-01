@@ -1036,10 +1036,10 @@ export default function MotoristasPage() {
           toast.error("Motorista criado, mas houve erro ao vincular veículos.");
         }
 
-        void refreshData();
+        await refreshData();
         void driversTable.refresh();
       } else if (data) {
-        void refreshData();
+        await refreshData();
         void driversTable.refresh();
       }
 
@@ -1207,7 +1207,7 @@ export default function MotoristasPage() {
           );
         }
 
-        void refreshData();
+        await refreshData();
         void driversTable.refresh();
       }
 
@@ -1279,7 +1279,7 @@ export default function MotoristasPage() {
       console.error("Erro ao arquivar motorista:", error);
       toast.error("Erro ao arquivar motorista.");
     } else {
-      void refreshData();
+      await refreshData();
       void driversTable.refresh();
       toast.success("Motorista arquivado com sucesso!");
     }

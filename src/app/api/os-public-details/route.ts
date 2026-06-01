@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     const { data: os, error: osError } = await getAdmin()
       .from("ordens_servico")
       .select(
-        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, data, hora, driver_accepted_at, driver_km_initial, route_started_at, route_finished_at, route_finished_km, driver_operation_cycles, current_driver_cycle_index",
+        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, data, hora, driver_accepted_at, driver_km_initial, route_started_at, route_finished_at, route_finished_km",
       )
       .eq("id", osId)
       .single();

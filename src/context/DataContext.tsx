@@ -19,6 +19,7 @@ import {
   fetchSolicitantes,
   fetchPassageiros,
   fetchOSById,
+  fetchOSList,
   fetchDrivers,
   insertCliente,
   updateClienteInDB,
@@ -527,10 +528,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setHeavyLoading(true);
       try {
         const results2 = await Promise.allSettled([
+          fetchOSList(),
           fetchOSStatusCounts(),
         ]);
 
-        const [osCountsRes] = results2;
+        const [osListRes, osCountsRes] = results2;
+
+        if (osListRes.status === "fulfilled") setOsList(osListRes.value);
+        else logErrorEntry("DataContext", "fetchOSList falhou", osListRes.reason as Error);
 
         if (osCountsRes.status === "fulfilled") setOsCounts(osCountsRes.value);
         else logErrorEntry("DataContext", "fetchOSStatusCounts falhou", osCountsRes.reason as Error);
@@ -646,6 +651,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           const osId = getRecordId(change.new) || getRecordId(change.old);
           if (!osId) return;
 
+          const newRecord = change.new as Record<string, unknown> | null;
+          console.log("[DataContext] 🔄 Evento Realtime ordens_servico:", {
+            eventType: change.eventType,
+            osId,
+            status_operacional: newRecord?.status_operacional,
+          });
+
           if (change.eventType === "DELETE") {
             removeOSFromState(osId);
             setLastOSUpdate(Date.now());
@@ -657,13 +669,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
 
           setLastOSUpdate(Date.now());
-          debouncedFetch(`os-${osId}`, async () => {
-            await refreshOSById(osId);
-          });
-          debouncedFetch("os-counts", async () => {
-            const counts = await fetchOSStatusCounts();
-            setOsCounts(counts);
-          });
+          
+          // Se mudou para Finalizado, atualizar imediatamente sem debounce
+          const statusOperacional = newRecord?.status_operacional;
+          if (statusOperacional === "Finalizado") {
+            console.log("[DataContext] ⚡ Status mudou para Finalizado - refresh imediato");
+            void refreshOSById(osId);
+            void (async () => {
+              const counts = await fetchOSStatusCounts();
+              setOsCounts(counts);
+            })();
+          } else {
+            debouncedFetch(`os-${osId}`, async () => {
+              await refreshOSById(osId);
+            });
+            debouncedFetch("os-counts", async () => {
+              const counts = await fetchOSStatusCounts();
+              setOsCounts(counts);
+            });
+          }
         },
       )
       .on(
@@ -697,6 +721,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             debouncedFetch(`os-${osId}`, async () => {
               await refreshOSById(osId);
             });
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "os_operational_cycles" },
+        (payload) => {
+          const change = payload as RealtimeChangePayload;
+          const record = change.new || change.old;
+          const osId =
+            typeof record?.ordem_servico_id === "string"
+              ? record.ordem_servico_id
+              : null;
+
+          console.log("[DataContext] os_operational_cycles mudou:", {
+            eventType: change.eventType,
+            osId,
+            record,
+          });
+
+          if (!osId) return;
+
+          debouncedFetch(`os-${osId}`, async () => {
+            console.log("[DataContext] Atualizando OS após mudança em ciclos:", osId);
+            await refreshOSById(osId);
           });
         },
       )

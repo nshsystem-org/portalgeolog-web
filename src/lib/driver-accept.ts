@@ -6,11 +6,14 @@
 import { sendWhatsAppMessage } from "@/lib/meta";
 import {
   buildDriverNotificationMessage,
-  normalizeOperationalCycles,
   type OperationalCycle,
   type ItineraryGroup,
   type PassengerInfo,
 } from "@/lib/os-messages";
+import {
+  fetchOperationalCyclesForOS,
+  replaceOperationalCyclesForOS,
+} from "@/lib/operational-cycles-db";
 import { BASE_URL } from "@/lib/constants";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 import { createClient } from "@supabase/supabase-js";
@@ -25,8 +28,6 @@ interface OSDriverRouteRow {
   os_number?: string | null;
   data?: string | null;
   hora?: string | null;
-  driver_operation_cycles?: unknown;
-  current_driver_cycle_index?: number | null;
 }
 
 function getAdmin() {
@@ -58,29 +59,11 @@ const getFirstPendingOperationalCycle = (
   );
 
 const resolveCycle = (
-  os: OSDriverRouteRow,
+  cycles: OperationalCycle[],
   requestedCycleIndex: number | null,
 ): OperationalCycle | undefined => {
-  const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
-
   if (requestedCycleIndex !== null) {
     return findOperationalCycleByIndex(cycles, requestedCycleIndex);
-  }
-
-  if (
-    typeof os.current_driver_cycle_index === "number" &&
-    Number.isFinite(os.current_driver_cycle_index)
-  ) {
-    const currentCycle = cycles.find(
-      (cycle) => cycle.sequenceOrder === os.current_driver_cycle_index,
-    );
-    if (
-      currentCycle &&
-      currentCycle.state !== "completed" &&
-      currentCycle.state !== "cancelled"
-    ) {
-      return currentCycle;
-    }
   }
 
   return getFirstPendingOperationalCycle(cycles) || cycles[0];
@@ -525,7 +508,7 @@ export async function processDriverAccept(
   const { data: osRaw, error: findError } = await getAdmin()
     .from("ordens_servico")
     .select(
-      "id, status_operacional, motorista, veiculo_id, protocolo, os_number, data, hora, driver_operation_cycles, current_driver_cycle_index",
+      "id, status_operacional, motorista, veiculo_id, protocolo, os_number, data, hora",
     )
     .eq("id", osId)
     .single();
@@ -545,8 +528,8 @@ export async function processDriverAccept(
     return { success: false, error: "Ordem de serviço não encontrada." };
   }
 
-  const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
-  const cycle = resolveCycle(os, requestedCycleIndex ?? null);
+  const cycles = await fetchOperationalCyclesForOS(getAdmin(), osId);
+  const cycle = resolveCycle(cycles, requestedCycleIndex ?? null);
 
   if (!cycle) {
     return {
@@ -574,13 +557,13 @@ export async function processDriverAccept(
     messageSentAt: cycle.messageSentAt || now,
   });
 
+  await replaceOperationalCyclesForOS(getAdmin(), osId, updatedCycles);
+
   const { error: updateError } = await getAdmin()
     .from("ordens_servico")
     .update({
       status_operacional: "Aguardando",
       driver_accepted_at: now,
-      driver_operation_cycles: updatedCycles,
-      current_driver_cycle_index: cycle.sequenceOrder,
     })
     .eq("id", osId);
 

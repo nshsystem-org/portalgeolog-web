@@ -290,7 +290,7 @@ const EventContent = ({
       }}
     >
       {/* Status no canto superior direito */}
-      {statusColors[os.status.operacional] && (
+      {statusColors[status] && (
         <span
           style={{
             position: "absolute",

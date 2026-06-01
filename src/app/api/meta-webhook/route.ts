@@ -29,12 +29,15 @@ import { recordWhatsAppLog } from "@/lib/whatsapp-logs";
 import {
   buildPassengerDetailsMessage,
   getOperationalCycleTitle,
-  normalizeOperationalCycles,
   deriveCyclesOperationalStatus,
   type ItineraryGroup,
   type ItineraryStop,
   type OperationalCycleState,
 } from "@/lib/os-messages";
+import {
+  loadOperationalCycleContextForOS,
+  replaceOperationalCyclesForOS,
+} from "@/lib/operational-cycles-db";
 
 // Cache simples para deduplicação de mensagens (Wamids)
 // Em Cloudflare Workers, variáveis globais podem persistir entre requisições no mesmo isolate.
@@ -229,7 +232,7 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         getAdmin()
           .from("ordens_servico")
           .select(
-            "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id, driver_id, driver_operation_cycles",
+            "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id, driver_id",
           )
           .eq("id", osId)
           .maybeSingle()
@@ -439,9 +442,7 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
     // O template contem header (titulo do ciclo), body (nome do motorista)
     // e um botao de flow "INICIAR VIAGEM" onde o motorista digita o KM inicial
     try {
-      const rawCycles = (osRecord as Record<string, unknown> | null)
-        ?.driver_operation_cycles;
-      const cycles = normalizeOperationalCycles(rawCycles);
+      const { cycles } = await loadOperationalCycleContextForOS(getAdmin(), String((osRecord as Record<string, unknown> | null)?.id || osId));
       const pendingCycle = cycles.find(
         (c) => c.state !== "completed" && c.state !== "cancelled",
       );
@@ -484,7 +485,7 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         );
 
         if (templateResult.success && templateResult.messageId) {
-          // Atualizar messageSentAt no ciclo específico dentro de driver_operation_cycles
+          // Atualizar messageSentAt no ciclo específico na nova tabela
           const updatedCycles = cycles.map((cycle) => {
             if (cycle.itineraryIndex === targetCycle.itineraryIndex) {
               return {
@@ -502,9 +503,10 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
             // @ts-ignore
             .update({
               driver_flow_start_message_id: templateResult.messageId,
-              driver_operation_cycles: updatedCycles,
             })
             .eq("id", osId);
+
+          await replaceOperationalCyclesForOS(getAdmin(), osId, updatedCycles);
           console.log(
             "[meta-webhook] Template flow inicio_viagem_motorista enviado para",
             driverPhone,
@@ -552,7 +554,7 @@ async function sendNextCyclePreviewAndStartFlow(
       getAdmin()
         .from("ordens_servico")
         .select(
-          "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id, driver_operation_cycles, current_driver_cycle_index",
+          "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id",
         )
         .eq("id", osId)
         .maybeSingle(),
@@ -573,11 +575,11 @@ async function sendNextCyclePreviewAndStartFlow(
     }
 
     console.log(
-      "[meta-webhook] OS encontrada, driver_operation_cycles:",
-      osRecord.driver_operation_cycles,
+      "[meta-webhook] OS encontrada:",
+
     );
 
-    const cycles = normalizeOperationalCycles(osRecord.driver_operation_cycles);
+    const { cycles } = await loadOperationalCycleContextForOS(getAdmin(), osId, null);
     console.log(
       "[meta-webhook] Ciclos normalizados:",
       cycles.map((c) => ({
@@ -806,7 +808,7 @@ async function sendNextCyclePreviewAndStartFlow(
     );
 
     if (templateResult.success && templateResult.messageId) {
-      // Atualizar messageSentAt no ciclo específico dentro de driver_operation_cycles
+      // Atualizar messageSentAt no ciclo específico na nova tabela
       const currentCycles = cycles;
       const updatedCycles = currentCycles.map((cycle) => {
         if (cycle.itineraryIndex === targetCycleIndex) {
@@ -825,10 +827,10 @@ async function sendNextCyclePreviewAndStartFlow(
         // @ts-ignore
         .update({
           driver_flow_start_message_id: templateResult.messageId,
-          current_driver_cycle_index: targetCycle.sequenceOrder,
-          driver_operation_cycles: updatedCycles,
         })
         .eq("id", osId);
+
+      await replaceOperationalCyclesForOS(getAdmin(), osId, updatedCycles);
 
       console.log(
         "[meta-webhook] Próximo ciclo preparado com sucesso:",
@@ -895,7 +897,7 @@ async function handleFlowCompleted(
     const { data: osData } = await getAdmin()
       .from("ordens_servico")
       .select(
-        "id, motorista, driver_operation_cycles, driver_flow_start_message_id, driver_flow_finish_message_id",
+        "id, motorista, driver_flow_start_message_id, driver_flow_finish_message_id",
       )
       .or(
         `driver_flow_start_message_id.eq.${contextId},driver_flow_finish_message_id.eq.${contextId}`,
@@ -911,7 +913,7 @@ async function handleFlowCompleted(
     }
 
     const osRecord = osData as Record<string, unknown>;
-    const cycles = normalizeOperationalCycles(osRecord.driver_operation_cycles);
+    const { cycles } = await loadOperationalCycleContextForOS(getAdmin(), osId, null);
 
     if (osRecord.driver_flow_start_message_id === contextId) {
       // Flow de inicio: registra KM inicial, status "Em Rota", envia template de finalizar
@@ -940,11 +942,16 @@ async function handleFlowCompleted(
         await ordensServico
           .update({
             status_operacional: newStatus,
-            driver_operation_cycles: updatedCycles,
             route_started_at: new Date().toISOString(),
             route_started_km: kmValue,
           })
           .eq("id", osRecord.id as string);
+
+        await replaceOperationalCyclesForOS(
+          getAdmin(),
+          String(osRecord.id),
+          updatedCycles,
+        );
 
         console.log(
           "[meta-webhook] KM inicial registrado via flow:",
@@ -1102,11 +1109,16 @@ async function handleFlowCompleted(
         await ordensServico3
           .update({
             status_operacional: newStatus,
-            driver_operation_cycles: updatedCycles,
             route_finished_at: new Date().toISOString(),
             route_finished_km: kmValue,
           })
           .eq("id", osRecord.id as string);
+
+        await replaceOperationalCyclesForOS(
+          getAdmin(),
+          String(osRecord.id),
+          updatedCycles,
+        );
 
         console.log(
           "[meta-webhook] KM final registrado via flow:",

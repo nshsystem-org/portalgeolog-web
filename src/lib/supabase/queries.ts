@@ -16,9 +16,14 @@ import type {
 } from "@/context/DataContext";
 import {
   buildOperationalCyclesFromWaypoints,
-  normalizeOperationalCycles,
+  deriveCyclesOperationalStatus,
   type OperationalCycle,
 } from "@/lib/os-messages";
+import {
+  fetchOperationalCyclesForOSIds,
+  getFirstActiveOperationalCycle,
+  replaceOperationalCyclesForOS,
+} from "@/lib/operational-cycles-db";
 import {
   isFinanceStatusSettled,
   isLiberadoParaFaturamento,
@@ -219,8 +224,6 @@ type OSRow = {
   route_started_km: number | null;
   route_finished_at: string | null;
   route_finished_km: number | null;
-  driver_operation_cycles: OperationalCycle[] | null;
-  current_driver_cycle_index: number | null;
   created_at: string | null;
   created_by: string | null;
   created_by_name: string | null;
@@ -335,6 +338,7 @@ const mapOSRecord = (
   o: OSRow,
   wpRaw: OSWaypointRow[],
   wpPassRaw: OSWaypointPassengerRow[],
+  operationalCycles?: OperationalCycle[],
 ): OrderService => {
   const waypoints: Waypoint[] = wpRaw
     .filter((w) => w.ordem_servico_id === o.id)
@@ -354,6 +358,12 @@ const mapOSRecord = (
           nome: "",
         })),
     }));
+
+  const cycleSource =
+    operationalCycles && operationalCycles.length > 0
+      ? operationalCycles
+      : buildOperationalCyclesFromWaypoints(waypoints);
+  const operationalStatus = deriveCyclesOperationalStatus(cycleSource);
 
   return {
     id: o.id,
@@ -375,8 +385,7 @@ const mapOSRecord = (
     lucro: o.lucro !== null ? Number(o.lucro) : null,
     obsFinanceiras: o.obs_financeiras || "",
     status: {
-      operacional:
-        o.status_operacional as OrderService["status"]["operacional"],
+      operacional: operationalStatus,
       financeiro: o.status_financeiro as OrderService["status"]["financeiro"],
     },
     distancia: o.distancia ? Number(o.distancia) : undefined,
@@ -388,8 +397,9 @@ const mapOSRecord = (
     routeStartedKm: o.route_started_km ?? undefined,
     routeFinishedAt: o.route_finished_at ?? undefined,
     routeFinishedKm: o.route_finished_km ?? undefined,
-    operationalCycles: normalizeOperationalCycles(o.driver_operation_cycles),
-    currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
+    operationalCycles: cycleSource,
+    currentDriverCycleIndex:
+      getFirstActiveOperationalCycle(cycleSource)?.sequenceOrder ?? undefined,
     createdAt: o.created_at ?? undefined,
     createdBy: o.created_by ?? undefined,
     createdByName: undefined,
@@ -926,8 +936,6 @@ const OS_SELECT_COLUMNS = [
   "route_started_km",
   "route_finished_at",
   "route_finished_km",
-  "driver_operation_cycles",
-  "current_driver_cycle_index",
   "created_at",
   "created_by",
 ].join(",");
@@ -943,11 +951,16 @@ export async function fetchOSList(): Promise<OrderService[]> {
     if (error) throw error;
 
     const typedOrders = (osRaw || []) as unknown as OSRow[];
-    const { wpRaw, wpPassRaw } = await fetchWaypointsForOSIds(
-      typedOrders.map((o) => o.id),
+    const osIds = typedOrders.map((o) => o.id);
+    const { wpRaw, wpPassRaw } = await fetchWaypointsForOSIds(osIds);
+    const operationalCyclesByOS = await fetchOperationalCyclesForOSIds(
+      getSupabase(),
+      osIds,
     );
 
-    return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
+    return typedOrders.map((o) =>
+      mapOSRecord(o, wpRaw, wpPassRaw, operationalCyclesByOS[o.id]),
+    );
   });
 }
 
@@ -986,7 +999,17 @@ export async function fetchOSById(id: string): Promise<OrderService | null> {
       );
     }
 
-    return mapOSRecord(osRaw as unknown as OSRow, wpRaw, wpPassRaw);
+    const operationalCyclesByOS = await fetchOperationalCyclesForOSIds(
+      getSupabase(),
+      [id],
+    );
+
+    return mapOSRecord(
+      osRaw as unknown as OSRow,
+      wpRaw,
+      wpPassRaw,
+      operationalCyclesByOS[id],
+    );
   });
 }
 
@@ -1026,7 +1049,17 @@ export async function fetchOSByProtocolo(protocolo: string): Promise<OrderServic
       );
     }
 
-    return mapOSRecord(osRaw as unknown as OSRow, wpRaw, wpPassRaw);
+    const operationalCyclesByOS = await fetchOperationalCyclesForOSIds(
+      getSupabase(),
+      [osId],
+    );
+
+    return mapOSRecord(
+      osRaw as unknown as OSRow,
+      wpRaw,
+      wpPassRaw,
+      operationalCyclesByOS[osId],
+    );
   });
 }
 
@@ -1140,69 +1173,15 @@ export async function fetchOSPage({
       }
     }
 
-    return {
-      items: typedOrders.map((o) => {
-        const waypoints: Waypoint[] = wpRaw
-          .filter((w) => w.ordem_servico_id === o.id)
-          .map((w) => ({
-            label: w.label,
-            lat: w.lat,
-            lng: w.lng,
-            comment: w.comment || undefined,
-            itineraryIndex: w.itinerary_index ?? undefined,
-            hora: w.hora ?? undefined,
-            data: w.data ?? undefined,
-            passengers: wpPassRaw
-              .filter((p) => p.waypoint_id === w.id)
-              .map((p) => ({
-                id: p.id,
-                solicitanteId: p.passageiro_id || "",
-                nome: "",
-              })),
-          }));
+    const operationalCyclesByOS = await fetchOperationalCyclesForOSIds(
+      getSupabase(),
+      osIds,
+    );
 
-        return {
-          id: o.id,
-          protocolo: o.protocolo || "",
-          os: o.os_number || "",
-          data: o.data || "",
-          hora: o.hora || "",
-          horaExtra: o.hora_extra || "",
-          clienteId: o.cliente_id || "",
-          solicitante: o.solicitante || "",
-          solicitanteId: o.solicitante_id || undefined,
-          centroCustoId: o.centro_custo_id || o.centro_custo || "",
-          motorista: o.motorista || "",
-          driverId: o.driver_id || undefined,
-          veiculoId: o.veiculo_id || undefined,
-          valorBruto: Number(o.valor_bruto),
-          imposto: Number(o.imposto),
-          custo: Number(o.custo),
-          lucro: Number(o.lucro),
-          obsFinanceiras: o.obs_financeiras || "",
-          status: {
-            operacional:
-              o.status_operacional as OrderService["status"]["operacional"],
-            financeiro: o.status_financeiro as OrderService["status"]["financeiro"],
-          },
-          distancia: o.distancia ? Number(o.distancia) : undefined,
-          rota: waypoints.length > 0 ? { waypoints } : undefined,
-          driverMessageSentAt: o.driver_message_sent_at ?? undefined,
-          driverAcceptedAt: o.driver_accepted_at ?? undefined,
-          driverKmInitial: o.driver_km_initial ?? undefined,
-          routeStartedAt: o.route_started_at ?? undefined,
-          routeStartedKm: o.route_started_km ?? undefined,
-          routeFinishedAt: o.route_finished_at ?? undefined,
-          routeFinishedKm: o.route_finished_km ?? undefined,
-          operationalCycles: normalizeOperationalCycles(
-            o.driver_operation_cycles,
-          ),
-          currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
-          arquivado: o.arquivado ?? false,
-          financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
-          financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
-        };
-      }),
+    return {
+      items: typedOrders.map((o) =>
+        mapOSRecord(o, wpRaw, wpPassRaw, operationalCyclesByOS[o.id]),
+      ),
       totalCount: count ?? typedOrders.length,
     };
   });
@@ -1304,44 +1283,15 @@ export async function fetchOSFinancePage({
     if (error) throw error;
 
     const typedOrders = (osRaw || []) as unknown as OSRow[];
+    const operationalCyclesByOS = await fetchOperationalCyclesForOSIds(
+      getSupabase(),
+      typedOrders.map((o) => o.id),
+    );
 
     return {
-      items: typedOrders.map((o) => ({
-        id: o.id,
-        protocolo: o.protocolo || "",
-        os: o.os_number || "",
-        data: o.data || "",
-        hora: o.hora || "",
-        horaExtra: o.hora_extra || "",
-        clienteId: o.cliente_id || "",
-        solicitante: o.solicitante || "",
-        centroCustoId: o.centro_custo || "",
-        motorista: o.motorista || "",
-        veiculoId: o.veiculo_id || undefined,
-        valorBruto: o.valor_bruto !== null ? Number(o.valor_bruto) : null,
-        imposto: o.imposto !== null ? Number(o.imposto) : null,
-        custo: o.custo !== null ? Number(o.custo) : null,
-        lucro: o.lucro !== null ? Number(o.lucro) : null,
-        obsFinanceiras: o.obs_financeiras || "",
-        status: {
-          operacional:
-            o.status_operacional as OrderService["status"]["operacional"],
-          financeiro: o.status_financeiro as OrderService["status"]["financeiro"],
-        },
-        distancia: o.distancia ? Number(o.distancia) : undefined,
-        driverMessageSentAt: o.driver_message_sent_at ?? undefined,
-        driverAcceptedAt: o.driver_accepted_at ?? undefined,
-        driverKmInitial: o.driver_km_initial ?? undefined,
-        routeStartedAt: o.route_started_at ?? undefined,
-        routeStartedKm: o.route_started_km ?? undefined,
-        routeFinishedAt: o.route_finished_at ?? undefined,
-        routeFinishedKm: o.route_finished_km ?? undefined,
-        operationalCycles: normalizeOperationalCycles(o.driver_operation_cycles),
-        currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
-        financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
-        financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
-        financeiroAnexos: [],
-      })),
+      items: typedOrders.map((o) =>
+        mapOSRecord(o, [], [], operationalCyclesByOS[o.id]),
+      ),
       totalCount: count ?? typedOrders.length,
     };
   });
@@ -1399,46 +1349,14 @@ export async function fetchOSFinanceOverview(
     if (error) throw error;
 
     const typedOrders = (osRaw || []) as unknown as OSRow[];
-    return typedOrders.map((o) => ({
-      id: o.id,
-      protocolo: o.protocolo || "",
-      os: o.os_number || "",
-      data: o.data || "",
-      hora: o.hora,
-      horaExtra: o.hora_extra || "",
-      clienteId: o.cliente_id || "",
-      solicitante: o.solicitante || "",
-      solicitanteId: o.solicitante_id || undefined,
-      centroCustoId: o.centro_custo_id || o.centro_custo || "",
-      motorista: o.motorista || "",
-      driverId: o.driver_id || undefined,
-      veiculoId: o.veiculo_id || undefined,
-      valorBruto: o.valor_bruto !== null ? Number(o.valor_bruto) : null,
-      imposto: o.imposto !== null ? Number(o.imposto) : null,
-      custo: o.custo !== null ? Number(o.custo) : null,
-      lucro: o.lucro !== null ? Number(o.lucro) : null,
-      obsFinanceiras: o.obs_financeiras || "",
-      status: {
-        operacional:
-          o.status_operacional as OrderService["status"]["operacional"],
-        financeiro: o.status_financeiro as OrderService["status"]["financeiro"],
-      },
-      distancia: o.distancia ? Number(o.distancia) : undefined,
-      rota: undefined,
-      driverMessageSentAt: o.driver_message_sent_at ?? undefined,
-      driverAcceptedAt: o.driver_accepted_at ?? undefined,
-      driverKmInitial: o.driver_km_initial ?? undefined,
-      routeStartedAt: o.route_started_at ?? undefined,
-      routeStartedKm: o.route_started_km ?? undefined,
-      routeFinishedAt: o.route_finished_at ?? undefined,
-      routeFinishedKm: o.route_finished_km ?? undefined,
-      operationalCycles: normalizeOperationalCycles(o.driver_operation_cycles),
-      currentDriverCycleIndex: o.current_driver_cycle_index ?? undefined,
-      arquivado: o.arquivado ?? false,
-      financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
-      financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
-      financeiroAnexos: [],
-    }));
+    const operationalCyclesByOS = await fetchOperationalCyclesForOSIds(
+      getSupabase(),
+      typedOrders.map((o) => o.id),
+    );
+
+    return typedOrders.map((o) =>
+      mapOSRecord(o, [], [], operationalCyclesByOS[o.id]),
+    );
   });
 }
 
@@ -1581,13 +1499,11 @@ export async function insertOS(
   }
 
   if (operationalCycles.length > 0) {
-    await getSupabase()
-      .from("ordens_servico")
-      .update({
-        driver_operation_cycles: operationalCycles,
-        current_driver_cycle_index: 0,
-      })
-      .eq("id", osRow.id);
+    await replaceOperationalCyclesForOS(
+      getSupabase(),
+      osRow.id,
+      operationalCycles,
+    );
   }
 
   void insertOSLog(
@@ -1627,7 +1543,8 @@ export async function insertOS(
         : undefined,
     operationalCycles:
       operationalCycles.length > 0 ? operationalCycles : undefined,
-    currentDriverCycleIndex: operationalCycles.length > 0 ? 0 : undefined,
+    currentDriverCycleIndex:
+      getFirstActiveOperationalCycle(operationalCycles)?.sequenceOrder ?? undefined,
   };
 }
 
@@ -1650,30 +1567,55 @@ export async function updateOSInDB(
   const waypoints = osData.rota?.waypoints || [];
   
   // Buscar ciclos operacionais existentes para preservar status
-  const { data: existingOS } = await getSupabase()
-    .from("ordens_servico")
-    .select("driver_operation_cycles")
-    .eq("id", id)
-    .single();
-  
-  const existingCycles: OperationalCycle[] = 
-    existingOS?.driver_operation_cycles as OperationalCycle[] || [];
-  
-  // Criar mapa de ciclos existentes por itineraryIndex para preservação rápida
+  const { data: existingCyclesRaw } = await getSupabase()
+    .from("os_operational_cycles")
+    .select(
+      "itinerary_index, sequence_order, kind, ordinal, title, state, message_sent_at, accepted_at, started_at, finished_at, km_initial, km_final",
+    )
+    .eq("ordem_servico_id", id)
+    .order("sequence_order");
+
+  const existingCycles = (existingCyclesRaw || []) as {
+    itinerary_index: number;
+    sequence_order: number;
+    kind: OperationalCycle["kind"];
+    ordinal: number;
+    title: string;
+    state: OperationalCycle["state"];
+    message_sent_at: string | null;
+    accepted_at: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    km_initial: number | null;
+    km_final: number | null;
+  }[];
+
   const existingCyclesMap = new Map<number, OperationalCycle>();
-  existingCycles.forEach(cycle => {
-    existingCyclesMap.set(cycle.itineraryIndex, cycle);
+  existingCycles.forEach((cycle) => {
+    existingCyclesMap.set(cycle.itinerary_index, {
+      itineraryIndex: cycle.itinerary_index,
+      sequenceOrder: cycle.sequence_order,
+      kind: cycle.kind,
+      ordinal: cycle.ordinal,
+      title: cycle.title,
+      state: cycle.state,
+      messageSentAt: cycle.message_sent_at,
+      acceptedAt: cycle.accepted_at,
+      startedAt: cycle.started_at,
+      finishedAt: cycle.finished_at,
+      kmInitial: cycle.km_initial,
+      kmFinal: cycle.km_final,
+    });
   });
-  
+
   // Construir novos ciclos a partir dos waypoints
   const newCycles = buildOperationalCyclesFromWaypoints(waypoints);
-  
+
   // Mesclar: preservar status dos ciclos existentes, adicionar novos ciclos
-  const operationalCycles = newCycles.map(newCycle => {
+  const operationalCycles = newCycles.map((newCycle) => {
     const existingCycle = existingCyclesMap.get(newCycle.itineraryIndex);
-    
+
     if (existingCycle) {
-      // Preservar todos os campos de status do ciclo existente
       return {
         ...newCycle,
         state: existingCycle.state,
@@ -1685,8 +1627,7 @@ export async function updateOSInDB(
         kmFinal: existingCycle.kmFinal,
       };
     }
-    
-    // Ciclo novo: usar valores padrão
+
     return newCycle;
   });
 
@@ -1729,8 +1670,7 @@ export async function updateOSInDB(
     p_os_id: id,
     p_os_data: osPayload,
     p_waypoints: waypointsPayload,
-    p_driver_operation_cycles: operationalCycles,
-    p_current_driver_cycle_index: operationalCycles.length > 0 ? 0 : null,
+    p_operational_cycles: operationalCycles,
   });
 
   if (error) throw error;
@@ -2738,8 +2678,14 @@ export async function fetchOSCalendarRange({
     const { wpRaw, wpPassRaw } = await fetchWaypointsForOSIds(
       typedOrders.map((o) => o.id),
     );
+    const operationalCyclesByOS = await fetchOperationalCyclesForOSIds(
+      getSupabase(),
+      typedOrders.map((o) => o.id),
+    );
 
-    return typedOrders.map((o) => mapOSRecord(o, wpRaw, wpPassRaw));
+    return typedOrders.map((o) =>
+      mapOSRecord(o, wpRaw, wpPassRaw, operationalCyclesByOS[o.id]),
+    );
   });
 }
 

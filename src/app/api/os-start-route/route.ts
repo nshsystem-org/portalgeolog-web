@@ -5,12 +5,13 @@ import {
   sendWhatsAppTemplate,
 } from "@/lib/meta";
 import {
-  findOperationalCycleByIndex,
-  getFirstPendingOperationalCycle,
   getOperationalCycleBannerTitle,
-  normalizeOperationalCycles,
   type OperationalCycle,
 } from "@/lib/os-messages";
+import {
+  loadOperationalCycleContextForOS,
+  replaceOperationalCyclesForOS,
+} from "@/lib/operational-cycles-db";
 
 export const runtime = "edge";
 
@@ -32,8 +33,6 @@ type OSStartRow = {
   veiculo_id: string | null;
   protocolo: string | null;
   os_number: string | null;
-  driver_operation_cycles: OperationalCycle[] | null;
-  current_driver_cycle_index: number | null;
 };
 
 type OrdensServicoUpdateBuilder = {
@@ -46,34 +45,6 @@ const parseCycleIndex = (value: string | null): number | null => {
   if (value === null || value.trim() === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-};
-
-const resolveCycle = (
-  os: OSStartRow,
-  requestedCycleIndex: number | null,
-): OperationalCycle | undefined => {
-  const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
-  if (requestedCycleIndex !== null) {
-    return findOperationalCycleByIndex(cycles, requestedCycleIndex);
-  }
-
-  if (
-    typeof os.current_driver_cycle_index === "number" &&
-    Number.isFinite(os.current_driver_cycle_index)
-  ) {
-    const currentCycle = cycles.find(
-      (cycle) => cycle.sequenceOrder === os.current_driver_cycle_index,
-    );
-    if (
-      currentCycle &&
-      currentCycle.state !== "completed" &&
-      currentCycle.state !== "cancelled"
-    ) {
-      return currentCycle;
-    }
-  }
-
-  return getFirstPendingOperationalCycle(cycles) || cycles[0];
 };
 
 const updateCycleInList = (
@@ -103,7 +74,7 @@ export async function GET(request: Request) {
     const { data: osRaw, error: findError } = await getAdmin()
       .from("ordens_servico")
       .select(
-        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_operation_cycles, current_driver_cycle_index",
+        "id, status_operacional, motorista, veiculo_id, protocolo, os_number",
       )
       .eq("id", osId)
       .single();
@@ -116,7 +87,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const cycle = resolveCycle(os, requestedCycleIndex);
+    const { cycle } = await loadOperationalCycleContextForOS(getAdmin(), osId, requestedCycleIndex);
     const alreadyStarted = Boolean(
       cycle &&
       (cycle.state === "awaiting_finish" || cycle.state === "completed"),
@@ -178,7 +149,7 @@ export async function POST(request: Request) {
     const { data: osRaw, error: findError } = await getAdmin()
       .from("ordens_servico")
       .select(
-        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_operation_cycles, current_driver_cycle_index",
+        "id, status_operacional, motorista, veiculo_id, protocolo, os_number",
       )
       .eq("id", osId)
       .single();
@@ -191,8 +162,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
-    const cycle = resolveCycle(os, requestedCycleIndex);
+    const { cycles, cycle } = await loadOperationalCycleContextForOS(getAdmin(), osId, requestedCycleIndex);
 
     if (!cycle) {
       return NextResponse.json(
@@ -233,6 +203,8 @@ export async function POST(request: Request) {
       kmInitial,
     });
 
+    await replaceOperationalCyclesForOS(getAdmin(), osId, updatedCycles);
+
     const ordensServico = getAdmin().from(
       "ordens_servico",
     ) as unknown as OrdensServicoUpdateBuilder;
@@ -243,8 +215,6 @@ export async function POST(request: Request) {
         route_started_at: now,
         driver_km_initial: kmInitial,
         route_started_km: kmInitial,
-        driver_operation_cycles: updatedCycles,
-        current_driver_cycle_index: cycle.sequenceOrder,
       })
       .eq("id", osId);
 

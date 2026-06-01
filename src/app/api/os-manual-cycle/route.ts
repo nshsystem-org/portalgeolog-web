@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
-  normalizeOperationalCycles,
   type OperationalCycle,
   type OperationalCycleState,
 } from "@/lib/os-messages";
+import {
+  loadOperationalCycleContextForOS,
+  replaceOperationalCyclesForOS,
+} from "@/lib/operational-cycles-db";
 
 export const runtime = "edge";
 
@@ -12,7 +15,6 @@ type OSRow = {
   id: string;
   status_operacional: string;
   motorista: string | null;
-  driver_operation_cycles: OperationalCycle[] | null;
 };
 
 type OrdensServicoUpdateBuilder = {
@@ -108,7 +110,7 @@ export async function POST(request: Request) {
 
     const { data: osRaw, error: fetchError } = await getAdmin()
       .from("ordens_servico")
-      .select("id, status_operacional, motorista, driver_operation_cycles")
+      .select("id, status_operacional, motorista")
       .eq("id", os_id)
       .single();
 
@@ -120,7 +122,7 @@ export async function POST(request: Request) {
     }
 
     const os = osRaw as OSRow;
-    const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
+    const { cycles } = await loadOperationalCycleContextForOS(getAdmin(), os_id, null);
 
     // Caso especial: finalizar todos os ciclos de uma vez
     if (action === "finish_all") {
@@ -137,13 +139,15 @@ export async function POST(request: Request) {
             },
       );
 
+      await replaceOperationalCyclesForOS(getAdmin(), os_id, finishedCycles);
+
       const ordensServicoBulk = getAdmin().from(
         "ordens_servico",
       ) as unknown as OrdensServicoUpdateBuilder;
       const { error: bulkUpdateError } = await ordensServicoBulk
         .update({
-          driver_operation_cycles: finishedCycles,
           status_operacional: "Finalizado",
+          updated_at: new Date().toISOString(),
         })
         .eq("id", os_id);
 
@@ -242,20 +246,44 @@ export async function POST(request: Request) {
         );
     }
 
-    // Update the database
-    const ordensServico = getAdmin().from(
+    await replaceOperationalCyclesForOS(getAdmin(), os_id, updatedCycles);
+
+    console.log(
+      "[os-manual-cycle] Ciclos persistidos no banco:",
+      "os_id:",
+      os_id,
+      "total de ciclos:",
+      updatedCycles.length,
+      "ciclo modificado:",
+      updatedCycles.find((c) => c.itineraryIndex === (cycle_index as number)),
+    );
+
+    // Verificar se todos os ciclos estão concluídos/cancelados para atualizar status geral
+    const allCompletedOrCancelled = updatedCycles.every(
+      (c) => c.state === "completed" || c.state === "cancelled",
+    );
+
+    const ordensServicoBulk = getAdmin().from(
       "ordens_servico",
     ) as unknown as OrdensServicoUpdateBuilder;
-    const { error: updateError } = await ordensServico
-      .update({ driver_operation_cycles: updatedCycles })
-      .eq("id", os_id);
 
-    if (updateError) {
-      console.error("Erro ao atualizar ciclo manualmente:", updateError);
-      return NextResponse.json(
-        { success: false, error: "Erro ao atualizar banco de dados." },
-        { status: 500 },
+    if (allCompletedOrCancelled) {
+      await ordensServicoBulk
+        .update({
+          status_operacional: "Finalizado",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", os_id);
+      console.log(
+        "[os-manual-cycle] Todos os ciclos concluídos. Status da OS atualizado para Finalizado.",
       );
+    } else {
+      // Tocar a tabela ordens_servico para disparar evento Realtime
+      // (necessário porque a RPC replace_os_operational_cycles faz DELETE+INSERT
+      // e pode não disparar eventos Realtime corretamente)
+      await ordensServicoBulk
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", os_id);
     }
 
     // Validar que apenas o ciclo específico foi modificado

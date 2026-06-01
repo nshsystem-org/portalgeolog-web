@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
+import { replaceOperationalCyclesForOS } from "@/lib/operational-cycles-db";
 import StandardModal from "@/components/StandardModal";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
 import { logInfo } from "@/lib/frontend-logger";
@@ -993,10 +994,10 @@ export default function OSOperationalPage() {
   const calendarRangeRef = useRef<{ from: string; to: string } | null>(null);
 
   const handleCalendarRangeChange = useCallback(
-    async (from: string, to: string) => {
-      // Verificar se o range realmente mudou antes de recarregar
-      if (calendarRangeRef.current && 
-          calendarRangeRef.current.from === from && 
+    async (from: string, to: string, force = false) => {
+      // Verificar se o range realmente mudou antes de recarregar (salvo se force=true)
+      if (!force && calendarRangeRef.current &&
+          calendarRangeRef.current.from === from &&
           calendarRangeRef.current.to === to) {
         return; // Range não mudou, não recarregar
       }
@@ -1053,6 +1054,16 @@ export default function OSOperationalPage() {
     void handleCalendarRangeChange(from, to);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
+
+  // Sincronizar calendarOSList com mudanças do osList via Realtime
+  useEffect(() => {
+    setCalendarOSList((prev) =>
+      prev.map((item) => {
+        const updated = osList.find((os) => os.id === item.id);
+        return updated ? { ...item, ...updated } : item;
+      }),
+    );
+  }, [osList]);
 
   // Recarregar calendário quando filtro de arquivados mudar
   useEffect(() => {
@@ -1163,6 +1174,33 @@ export default function OSOperationalPage() {
     solicitante: false,
   });
   const [isSubmittingOS, setIsSubmittingOS] = useState(false);
+  const [osSubmissionMode, setOsSubmissionMode] = useState<
+    "create" | "update" | null
+  >(null);
+  const [isOpeningEditModal, setIsOpeningEditModal] = useState(false);
+  const [awaitingStatusOSId, setAwaitingStatusOSId] = useState<string | null>(
+    null,
+  );
+
+  // Monitorar quando o status da OS em conclusão foi refletido na UI
+  useEffect(() => {
+    if (!awaitingStatusOSId) return;
+
+    const isReflectedInTable = osTable.items.some(
+      (item) =>
+        item.id === awaitingStatusOSId &&
+        item.status.operacional === "Finalizado",
+    );
+    const isReflectedInCalendar = calendarOSList.some(
+      (item) =>
+        item.id === awaitingStatusOSId &&
+        item.status.operacional === "Finalizado",
+    );
+
+    if (isReflectedInTable || isReflectedInCalendar) {
+      setAwaitingStatusOSId(null);
+    }
+  }, [osTable.items, calendarOSList, awaitingStatusOSId]);
 
   // Estados para modal de veículo dentro do cadastro rápido de motorista
   type QuickVehicleMode =
@@ -1529,17 +1567,17 @@ export default function OSOperationalPage() {
     ],
   };
 
-  const resetMainModalState = () => {
+  const resetMainModalState = async () => {
     setIsModalOpen(false);
     setEditingOSId(null);
     setFormData(initialForm);
     setOpenWaypointComments({});
-    void refreshData();
+    await refreshData();
   };
 
-  const handleOpenCreateOSModal = () => {
+  const handleOpenCreateOSModal = async () => {
     logInfo("OS/Create", "Abriu modal para criar nova OS");
-    void refreshData();
+    await refreshData();
     setEditingOSId(null);
     setFormData(initialForm);
     setOpenWaypointComments({});
@@ -1613,10 +1651,12 @@ export default function OSOperationalPage() {
   };
 
   const handleEditOS = async (osId: string) => {
+    setIsOpeningEditModal(true);
     try {
       const targetOS = await fetchOSById(osId);
       if (!targetOS) {
         toast.error("OS não encontrada.");
+        setIsOpeningEditModal(false);
         return;
       }
 
@@ -1625,14 +1665,16 @@ export default function OSOperationalPage() {
         osId: targetOS.id,
       });
 
-      void refreshData();
       hydrateFormFromOS(targetOS);
       setOpenWaypointComments({});
       setEditingOSId(osId);
       setIsModalOpen(true);
       setOpenActionMenuId(null);
+      // Pequeno delay para garantir que o modal renderizou antes de remover o loader
+      setTimeout(() => setIsOpeningEditModal(false), 150);
     } catch {
       toast.error("Não foi possível carregar a OS para edição.");
+      setIsOpeningEditModal(false);
     }
   };
 
@@ -2005,7 +2047,7 @@ export default function OSOperationalPage() {
         [osData.id]: true,
       }));
 
-      // Atualizar apenas o ciclo específico em driver_operation_cycles
+      // Atualizar apenas o ciclo específico na tabela de ciclos operacionais
       try {
         const currentCycles = osData.operationalCycles || [];
         const updatedCycles = currentCycles.map((cycle) => {
@@ -2021,7 +2063,6 @@ export default function OSOperationalPage() {
 
         // Para o primeiro ciclo, também atualiza driver_template_message_id para compatibilidade com webhook
         const updateData: Record<string, unknown> = {
-          driver_operation_cycles: updatedCycles,
         };
 
         if (itineraryIndex === 0 && msgData.messageId) {
@@ -2032,13 +2073,15 @@ export default function OSOperationalPage() {
           .from("ordens_servico")
           .update(updateData)
           .eq("id", osData.id);
+
+        await replaceOperationalCyclesForOS(supabase, osData.id, updatedCycles);
       } catch (dbErr) {
         console.error(
           "[WhatsApp] Erro ao registrar timestamp de envio no ciclo:",
           dbErr,
         );
       }
-      void refreshData();
+      await refreshData();
     } catch (err) {
       console.error("[WhatsApp] Erro crítico:", err);
       toast.error("Erro ao conectar com a API de WhatsApp.");
@@ -2372,7 +2415,7 @@ export default function OSOperationalPage() {
 
       toast.success("Etapa finalizada com sucesso!");
       await syncViewingOS();
-      void refreshData();
+      await refreshData();
     } catch (error) {
       console.error("Erro ao finalizar ciclo manualmente:", error);
       toast.error("Erro ao finalizar etapa. Tente novamente.");
@@ -2400,7 +2443,7 @@ export default function OSOperationalPage() {
 
       toast.success("Status retornado para pendente!");
       await syncViewingOS();
-      void refreshData();
+      await refreshData();
     } catch (error) {
       console.error("Erro ao reverter aceite:", error);
       toast.error("Erro ao retornar status. Tente novamente.");
@@ -2431,7 +2474,7 @@ export default function OSOperationalPage() {
 
       toast.success("Status retornado para aceite!");
       await syncViewingOS();
-      void refreshData();
+      await refreshData();
     } catch (error) {
       console.error("Erro ao reverter para aceite:", error);
       toast.error("Erro ao retornar status. Tente novamente.");
@@ -3485,7 +3528,7 @@ export default function OSOperationalPage() {
               veiculoId: "",
             }));
           }
-          void refreshData();
+          await refreshData();
           break;
         }
         case "solicitante": {
@@ -3711,19 +3754,26 @@ export default function OSOperationalPage() {
     osData: PendingOSData,
     targetId?: string | null,
   ) => {
+    setOsSubmissionMode(targetId ? "update" : "create");
     setIsSubmittingOS(true);
     try {
       if (targetId) {
         await updateOS(targetId, osData);
-        await osTable.refresh();
+        // Desliga o loader imediatamente; refresh continua em background
+        setIsSubmittingOS(false);
+        setOsSubmissionMode(null);
+        void osTable.refresh();
         setShowNotificationConfirm(false);
-        resetMainModalState();
+        void resetMainModalState();
         toast.success("Atendimento atualizado com sucesso.");
       } else {
         const newOSId = await addOS(osData);
-        await osTable.refresh();
+        // Desliga o loader imediatamente; refresh continua em background
+        setIsSubmittingOS(false);
+        setOsSubmissionMode(null);
+        void osTable.refresh();
         setShowNotificationConfirm(false);
-        resetMainModalState();
+        void resetMainModalState();
         if (notificationConfig.auto) {
           void processAutoNotifications(newOSId.id);
         }
@@ -3736,7 +3786,6 @@ export default function OSOperationalPage() {
           console.error("Erro ao enviar email administrativo:", err),
         );
         // Enviar mensagem administrativa via WhatsApp para contato fixo
-        // Busca a OS completa do banco antes de enviar
         void (async () => {
           try {
             await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -3758,6 +3807,7 @@ export default function OSOperationalPage() {
       );
     } finally {
       setIsSubmittingOS(false);
+      setOsSubmissionMode(null);
     }
   };
 
@@ -3840,6 +3890,7 @@ export default function OSOperationalPage() {
     if (!pendingOSData || !editingOSId) return;
     await executeSaveOS(pendingOSData, editingOSId);
     if (markAsCompleted) {
+      setAwaitingStatusOSId(editingOSId);
       try {
         const response = await fetch("/api/os-manual-cycle", {
           method: "POST",
@@ -3852,14 +3903,31 @@ export default function OSOperationalPage() {
         const result = await response.json();
         if (!result.success) {
           toast.error(result.error || "Erro ao concluir todos os ciclos.");
+          setAwaitingStatusOSId(null);
           return;
         }
         toast.success("Atendimento concluído com sucesso!");
-        await osTable.refresh();
-        void refreshData();
+
+        // Atualizar apenas o card/linha da OS específica localmente
+        const updatedOS = await fetchOSById(editingOSId);
+        if (updatedOS) {
+          // Atualizar tabela server-side
+          osTable.updateItems((prev) =>
+            prev.map((item) =>
+              item.id === editingOSId ? updatedOS : item,
+            ),
+          );
+          // Atualizar calendário localmente
+          setCalendarOSList((prev) =>
+            prev.map((item) =>
+              item.id === editingOSId ? updatedOS : item,
+            ),
+          );
+        }
       } catch (error) {
         console.error("Erro ao finalizar todos os ciclos:", error);
         toast.error("Erro ao concluir o atendimento. Tente novamente.");
+        setAwaitingStatusOSId(null);
       }
     }
   };
@@ -4914,7 +4982,7 @@ export default function OSOperationalPage() {
                 form="nova-os-form"
                 className="px-12 py-4 bg-[var(--color-geolog-blue)] text-white font-black rounded-xl shadow-xl shadow-blue-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
               >
-                {editingOSId ? "Salvar Alterações" : "Confirmar OS"}
+                {editingOSId ? "Salvar e Continuar" : "Confirmar OS"}
               </button>
             </div>
           }
@@ -5801,10 +5869,10 @@ export default function OSOperationalPage() {
 
       {viewingOS && (
         <StandardModal
-          onClose={() => {
+          onClose={async () => {
             setViewingOSId(null);
             setViewingOSLoading(false);
-            void refreshData();
+            await refreshData();
           }}
           title={`Visão Operacional ${viewingOS.os || "Sem OS"}`}
           subtitle={`Protocolo ${viewingOS.protocolo}`}
@@ -8458,8 +8526,8 @@ export default function OSOperationalPage() {
           document.body,
         )}
 
-      {/* Loader overlay durante salvamento de OS */}
-      {isSubmittingOS && (
+      {/* Loader overlay unificado: abertura, salvamento ou aguardando status */}
+      {(isOpeningEditModal || isSubmittingOS || awaitingStatusOSId) && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-[#001C3A]/60 backdrop-blur-md">
           <div className="bg-white rounded-[2.5rem] p-10 flex flex-col items-center gap-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-300">
             <Loader2
@@ -8467,9 +8535,13 @@ export default function OSOperationalPage() {
               size={48}
             />
             <p className="text-sm font-black uppercase tracking-widest text-slate-600">
-              {editingOSId
-                ? "Salvando alterações..."
-                : "Criando atendimento..."}
+              {awaitingStatusOSId
+                ? "Atualizando status..."
+                : isOpeningEditModal
+                  ? "Carregando atendimento..."
+                  : osSubmissionMode === "update"
+                    ? "Salvando alterações..."
+                    : "Criando atendimento..."}
             </p>
           </div>
         </div>

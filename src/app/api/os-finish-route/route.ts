@@ -5,13 +5,14 @@ import {
   sendWhatsAppMessage,
 } from "@/lib/meta";
 import {
-  findOperationalCycleByIndex,
-  getFirstPendingOperationalCycle,
   getNextOperationalCycle,
   getOperationalCycleBannerTitle,
-  normalizeOperationalCycles,
   type OperationalCycle,
 } from "@/lib/os-messages";
+import {
+  loadOperationalCycleContextForOS,
+  replaceOperationalCyclesForOS,
+} from "@/lib/operational-cycles-db";
 
 export const runtime = "edge";
 
@@ -25,8 +26,6 @@ type OSFinishRow = {
   driver_km_initial: number | null;
   route_started_km: number | null;
   route_finished_at: string | null;
-  driver_operation_cycles: OperationalCycle[] | null;
-  current_driver_cycle_index: number | null;
 };
 
 let _supabaseAdmin: ReturnType<typeof createClient> | null = null;
@@ -44,34 +43,6 @@ const parseCycleIndex = (value: string | null): number | null => {
   if (value === null || value.trim() === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-};
-
-const resolveCycle = (
-  os: OSFinishRow,
-  requestedCycleIndex: number | null,
-): OperationalCycle | undefined => {
-  const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
-  if (requestedCycleIndex !== null) {
-    return findOperationalCycleByIndex(cycles, requestedCycleIndex);
-  }
-
-  if (
-    typeof os.current_driver_cycle_index === "number" &&
-    Number.isFinite(os.current_driver_cycle_index)
-  ) {
-    const currentCycle = cycles.find(
-      (cycle) => cycle.sequenceOrder === os.current_driver_cycle_index,
-    );
-    if (
-      currentCycle &&
-      currentCycle.state !== "completed" &&
-      currentCycle.state !== "cancelled"
-    ) {
-      return currentCycle;
-    }
-  }
-
-  return getFirstPendingOperationalCycle(cycles) || cycles[0];
 };
 
 const updateCycleInList = (
@@ -101,7 +72,7 @@ export async function GET(request: Request) {
     const { data: osRaw, error: findError } = await getAdmin()
       .from("ordens_servico")
       .select(
-        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_km_initial, route_started_km, route_finished_at, driver_operation_cycles, current_driver_cycle_index",
+        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_km_initial, route_started_km, route_finished_at",
       )
       .eq("id", osId)
       .single();
@@ -114,7 +85,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const cycle = resolveCycle(os, requestedCycleIndex);
+    const { cycle } = await loadOperationalCycleContextForOS(getAdmin(), osId, requestedCycleIndex);
     // Correção de inconsistência: ciclo pode estar "completed" no JSON mas
     // route_finished_at nulo (dados legados não atualizados). Permitir refinalizar.
     const alreadyFinished = Boolean(
@@ -186,7 +157,7 @@ export async function POST(request: Request) {
     const { data: osRaw, error: findError } = await getAdmin()
       .from("ordens_servico")
       .select(
-        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_km_initial, route_started_km, route_finished_at, driver_operation_cycles, current_driver_cycle_index",
+        "id, status_operacional, motorista, veiculo_id, protocolo, os_number, driver_km_initial, route_started_km, route_finished_at",
       )
       .eq("id", osId)
       .single();
@@ -199,8 +170,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const cycles = normalizeOperationalCycles(os.driver_operation_cycles);
-    const cycle = resolveCycle(os, requestedCycleIndex);
+    const { cycle } = await loadOperationalCycleContextForOS(getAdmin(), osId, requestedCycleIndex);
 
     if (!cycle) {
       return NextResponse.json(
@@ -261,16 +231,14 @@ export async function POST(request: Request) {
         })
       : updatedCycles;
 
+    await replaceOperationalCyclesForOS(getAdmin(), osId, nextCycles);
+
     const { error: updateError } = await getAdmin()
       .from("ordens_servico")
       .update({
         status_operacional: finalStatus,
         route_finished_at: now,
         route_finished_km: kmFinal,
-        driver_operation_cycles: nextCycles,
-        current_driver_cycle_index: nextCycle
-          ? nextCycle.sequenceOrder
-          : cycle.sequenceOrder,
       } as never)
       .eq("id", osId);
 
