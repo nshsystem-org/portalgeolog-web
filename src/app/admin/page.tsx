@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { Shield, ArrowLeft, LogOut, LayoutDashboard, Activity, Bell, Plus, Trash2, Edit2, Check, X } from "lucide-react";
+import DOMPurify from "dompurify";
 import LogsViewer from "@/components/LogsViewer";
 import RichTextEditor from "@/components/RichTextEditor";
 import { logInfo } from "@/lib/frontend-logger";
@@ -411,7 +412,7 @@ export default function AdminPage() {
                             )}
                             <div
                               className="text-sm text-slate-600 mb-2 prose prose-sm max-w-none"
-                              dangerouslySetInnerHTML={{ __html: announcement.message }}
+                              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(announcement.message) }}
                             />
                             <div className="flex items-center gap-4 text-xs text-slate-500">
                               <span>
