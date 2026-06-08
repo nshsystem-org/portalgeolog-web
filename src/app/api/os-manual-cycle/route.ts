@@ -353,6 +353,12 @@ export async function POST(request: Request) {
       console.log(
         "[os-manual-cycle] Todos os ciclos concluídos. Status da OS atualizado para Finalizado.",
       );
+
+      return NextResponse.json({
+        success: true,
+        message: "Todos os ciclos finalizados com sucesso.",
+        cycle_state: "completed",
+      });
     } else {
       // Tocar a tabela ordens_servico para disparar evento Realtime
       // (necessário porque a RPC replace_os_operational_cycles faz DELETE+INSERT

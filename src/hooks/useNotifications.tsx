@@ -6,10 +6,13 @@ import {
   X,
   Info,
   CheckCircle,
+  CircleCheckBig,
+  FilePlus,
   AlertTriangle,
   AlertCircle,
   Archive,
   RotateCcw,
+  RefreshCw,
 } from "lucide-react";
 
 // Função helper para formatar mensagem de notificação com protocolo em azul
@@ -86,7 +89,7 @@ const COOLDOWN_MS = 5000;
 
 function getNotificationIcon(notif: AppNotification) {
   // Casos específicos baseados no título
-  if (notif.title === "OS Arquivada") {
+  if (notif.title === "OS Arquivada" || notif.title === "Atendimento arquivado") {
     return {
       icon: <Archive size={20} className="text-red-500" />,
       bgClass: "bg-red-50",
@@ -96,13 +99,43 @@ function getNotificationIcon(notif: AppNotification) {
     };
   }
 
-  if (notif.title === "OS Reaberta") {
+  if (notif.title === "OS Reaberta" || notif.title === "Atendimento reaberto") {
     return {
-      icon: <RotateCcw size={20} className="text-emerald-500" />,
-      bgClass: "bg-emerald-50",
-      gradientClass: "from-emerald-500 to-emerald-600",
-      borderClass: "hover:border-emerald-200",
-      ringClass: "ring-emerald-100",
+      icon: <RotateCcw size={20} className="text-blue-500" />,
+      bgClass: "bg-blue-50",
+      gradientClass: "from-blue-500 to-blue-600",
+      borderClass: "hover:border-blue-200",
+      ringClass: "ring-blue-100",
+    };
+  }
+
+  if (notif.title === "Atendimento finalizado") {
+    return {
+      icon: <CircleCheckBig size={20} className="text-green-500" />,
+      bgClass: "bg-green-50",
+      gradientClass: "from-green-500 to-green-600",
+      borderClass: "hover:border-green-200",
+      ringClass: "ring-green-100",
+    };
+  }
+
+  if (notif.title === "Status do atendimento atualizado") {
+    return {
+      icon: <RefreshCw size={20} className="text-sky-400" />,
+      bgClass: "bg-sky-50",
+      gradientClass: "from-sky-400 to-sky-500",
+      borderClass: "hover:border-sky-200",
+      ringClass: "ring-sky-100",
+    };
+  }
+
+  if (notif.title === "Novo atendimento") {
+    return {
+      icon: <FilePlus size={20} className="text-green-500" />,
+      bgClass: "bg-green-50",
+      gradientClass: "from-green-500 to-green-600",
+      borderClass: "hover:border-green-200",
+      ringClass: "ring-green-100",
     };
   }
 
@@ -118,11 +151,11 @@ function getNotificationIcon(notif: AppNotification) {
       };
     case "warning":
       return {
-        icon: <AlertTriangle size={20} className="text-amber-500" />,
-        bgClass: "bg-amber-50",
-        gradientClass: "from-amber-500 to-amber-600",
-        borderClass: "hover:border-amber-200",
-        ringClass: "ring-amber-100",
+        icon: <AlertTriangle size={20} className="text-red-500" />,
+        bgClass: "bg-red-50",
+        gradientClass: "from-red-500 to-red-600",
+        borderClass: "hover:border-red-200",
+        ringClass: "ring-red-100",
       };
     case "error":
       return {

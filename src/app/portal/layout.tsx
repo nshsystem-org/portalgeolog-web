@@ -29,6 +29,8 @@ import {
   DollarSign,
   UserSquare2,
   CheckCircle,
+  CircleCheckBig,
+  FilePlus,
   Info,
   AlertTriangle,
   XCircle,
@@ -50,6 +52,15 @@ function extractNotificationProtocolo(message: string): {
   cleanMessage: string;
 } {
   let cleanMessage = message.replace(/\[OS_ID:[a-f0-9-]+\]/, "").trim();
+
+  // "OS 2026061284 finalizada com sucesso."
+  const osPrefixMatch = cleanMessage.match(/^OS\s+(\d{10})\b/);
+  if (osPrefixMatch) {
+    cleanMessage = cleanMessage
+      .replace(osPrefixMatch[1], "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
   // "A OS 2026051030 foi atualizada por..."
   const osMatch = cleanMessage.match(/A\s+OS\s+(\d+)/);
@@ -74,12 +85,42 @@ function extractNotificationProtocolo(message: string): {
     cleanMessage = cleanMessage[0].toUpperCase() + cleanMessage.slice(1);
   }
 
-  const protocolo = osMatch?.[1] ?? protocoloMatch?.[1] ?? quotesMatch?.[1] ?? null;
+  const protocolo =
+    osPrefixMatch?.[1] ??
+    osMatch?.[1] ??
+    protocoloMatch?.[1] ??
+    quotesMatch?.[1] ??
+    null;
   return { protocolo, cleanMessage };
 }
 
 function formatNotificationMessage(message: string): React.ReactNode {
   const { cleanMessage } = extractNotificationProtocolo(message);
+
+  // Destaca status operacionais em cinza escuro negrito
+  const statusValues = [
+    "Pendente",
+    "Aceite",
+    "Aguardando",
+    "Em Rota",
+    "Finalizado",
+    "Cancelado",
+  ];
+  for (const status of statusValues) {
+    const idx = cleanMessage.indexOf(status);
+    if (idx !== -1) {
+      const before = cleanMessage.slice(0, idx);
+      const after = cleanMessage.slice(idx + status.length);
+      return (
+        <>
+          {before}
+          <span className="text-slate-700 font-black">{status}</span>
+          {after}
+        </>
+      );
+    }
+  }
+
   return cleanMessage;
 }
 
@@ -116,7 +157,7 @@ export default function DashboardLayout({
     title: string;
   }) => {
     // Casos específicos baseados no título
-    if (notification.title === "OS Arquivada") {
+    if (notification.title === "OS Arquivada" || notification.title === "Atendimento arquivado") {
       return {
         icon: Archive,
         color: "text-red-500",
@@ -124,11 +165,35 @@ export default function DashboardLayout({
       };
     }
 
-    if (notification.title === "OS Reaberta") {
+    if (notification.title === "OS Reaberta" || notification.title === "Atendimento reaberto") {
       return {
         icon: RotateCcw,
-        color: "text-emerald-500",
-        bg: "bg-emerald-50",
+        color: "text-blue-500",
+        bg: "bg-blue-50",
+      };
+    }
+
+    if (notification.title === "Atendimento finalizado") {
+      return {
+        icon: CircleCheckBig,
+        color: "text-green-500",
+        bg: "bg-green-50",
+      };
+    }
+
+    if (notification.title === "Status do atendimento atualizado") {
+      return {
+        icon: RefreshCw,
+        color: "text-sky-400",
+        bg: "bg-sky-50",
+      };
+    }
+
+    if (notification.title === "Novo atendimento") {
+      return {
+        icon: FilePlus,
+        color: "text-green-500",
+        bg: "bg-green-50",
       };
     }
 
@@ -146,8 +211,8 @@ export default function DashboardLayout({
       },
       warning: {
         icon: AlertTriangle,
-        color: "text-amber-500",
-        bg: "bg-amber-50",
+        color: "text-red-500",
+        bg: "bg-red-50",
       },
       error: {
         icon: XCircle,
@@ -738,7 +803,7 @@ export default function DashboardLayout({
                               const osIdMatch = notification.message.match(
                                 /\[OS_ID:([a-f0-9-]+)\]/,
                               );
-                              // Extrair protocolo da mensagem de "Nova Ordem de Serviço"
+                              // Extrair protocolo da mensagem de "Novo atendimento"
                               const osProtocoloMatch =
                                 notification.message.match(/Protocolo #(\d+)/);
                               // Extrair protocolo entre aspas (OS arquivada/reaberta)
@@ -820,7 +885,19 @@ export default function DashboardLayout({
                                       );
                                     if (!protocolo) return null;
                                     return (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-100 text-blue-700 text-[10px] font-black uppercase tracking-wider">
+                                      <span
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-600 text-[8px] font-bold uppercase tracking-normal cursor-pointer hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(protocolo);
+                                          window.dispatchEvent(
+                                            new CustomEvent("os-search-protocolo", {
+                                              detail: { protocolo },
+                                            }),
+                                          );
+                                        }}
+                                        title="Copiar protocolo e filtrar"
+                                      >
                                         <Hash size={10} />
                                         {protocolo}
                                       </span>

@@ -143,18 +143,18 @@ const buildOSUpdateLogContext = (
     const simpleFields: Array<[string, unknown, unknown]> = [
       ["Data", previousOS.data, osData.data],
       ["Horário", previousOS.hora, osData.hora || null],
-      ["Horário extra", previousOS.horaExtra || "", osData.horaExtra || ""],
-      ["OS", previousOS.os, osData.os],
+      ["Hora Extra", previousOS.horaExtra || "", osData.horaExtra || ""],
+      ["Código OS", previousOS.os, osData.os],
       ["Cliente", previousOS.clienteId, osData.clienteId],
       ["Solicitante", previousOS.solicitante || "", upperText(osData.solicitante)],
-      ["Solicitante vinculado", previousOS.solicitanteId || null, osData.solicitanteId || null],
-      ["Centro de custo", previousOS.centroCustoId || null, osData.centroCustoId || null],
+      ["Solicitante Responsável", previousOS.solicitanteId || null, osData.solicitanteId || null],
+      ["Centro de Custo", previousOS.centroCustoId || null, osData.centroCustoId || null],
       ["Motorista", previousOS.motorista || "", upperText(osData.motorista)],
-      ["Motorista vinculado", previousOS.driverId || null, osData.driverId || null],
-      ["Veículo", previousOS.veiculoId || null, osData.veiculoId || null],
-      ["Valor bruto", previousOS.valorBruto ?? 0, osData.valorBruto ?? 0],
-      ["Custo", previousOS.custo ?? 0, osData.custo ?? 0],
-      ["Observações financeiras", previousOS.obsFinanceiras || "", osData.obsFinanceiras || ""],
+      ["Motorista Alocado", previousOS.driverId || null, osData.driverId || null],
+      ["Veículo de Uso", previousOS.veiculoId || null, osData.veiculoId || null],
+      ["Valor Bruto (R$)", previousOS.valorBruto ?? 0, osData.valorBruto ?? 0],
+      ["Custo Motorista (R$)", previousOS.custo ?? 0, osData.custo ?? 0],
+      ["Observações Financeiras", previousOS.obsFinanceiras || "", osData.obsFinanceiras || ""],
     ];
 
     for (const [label, prev, next] of simpleFields) {

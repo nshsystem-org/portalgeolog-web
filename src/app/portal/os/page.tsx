@@ -611,6 +611,36 @@ export default function OSOperationalPage() {
     "OS/Tabela",
   );
 
+  useEffect(() => {
+    const handleSearchProtocol = (event: Event) => {
+      const customEvent = event as CustomEvent<{ protocolo?: string }>;
+      const protocolo = customEvent.detail?.protocolo?.trim();
+      if (!protocolo) return;
+
+      if (protocolo !== osTable.searchTerm) {
+        osTable.setSearchTerm(protocolo);
+      }
+    };
+
+    window.addEventListener("os-search-protocolo", handleSearchProtocol);
+    return () => {
+      window.removeEventListener("os-search-protocolo", handleSearchProtocol);
+    };
+  }, [osTable]);
+
+  // Aplicar filtro de protocolo via URL imediatamente na montagem
+  const initialSearchSetRef = useRef(false);
+  useEffect(() => {
+    if (initialSearchSetRef.current) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const searchProtocoloParam = urlParams.get("search_protocolo");
+    if (searchProtocoloParam) {
+      osTable.setSearchTerm(searchProtocoloParam);
+      window.history.replaceState({}, "", "/portal/os");
+      initialSearchSetRef.current = true;
+    }
+  }, [osTable]);
+
   const getOperationalStatusForOS = useCallback(
     (os?: OrderService | null): CycleOperationalStatus => {
       if (!os) return "Pendente";
@@ -1046,7 +1076,7 @@ export default function OSOperationalPage() {
     return () => {
       window.removeEventListener("open-os-modal", handleOpenOSModal);
     };
-  }, [osList]);
+  }, [osList, osTable]);
 
   // Carregar calendário dinamicamente conforme range visível
   const calendarRangeRef = useRef<{ from: string; to: string } | null>(null);

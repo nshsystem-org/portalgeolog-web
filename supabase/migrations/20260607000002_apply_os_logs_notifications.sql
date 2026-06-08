@@ -26,6 +26,7 @@ declare
   v_avatar_url text;
   v_changed_sections text;
   v_updates text;
+  v_specific_update_messages text;
   v_action text;
   v_cycle_index integer;
   v_cycle_label text;
@@ -99,74 +100,120 @@ begin
     v_km_value := NEW.metadata->>'km_final';
   end if;
 
+  if NEW.type = 'update'
+     and NEW.metadata ? 'field_changes'
+     and jsonb_typeof(NEW.metadata->'field_changes') = 'array' then
+    select string_agg(phrase, ' | ' order by sort_order)
+      into v_specific_update_messages
+    from (
+      select phrase, min(sort_order) as sort_order
+      from (
+        select
+          case
+            when lower(coalesce(field_change->>'field', '')) in ('código os', 'os') then
+              'Código OS atualizado com sucesso.'
+            when lower(coalesce(field_change->>'field', '')) in ('solicitante responsável', 'solicitante vinculado', 'solicitante') then
+              'Solicitante atualizado com sucesso.'
+            when lower(coalesce(field_change->>'field', '')) = 'centro de custo' then
+              'Centro de Custo atualizado com sucesso.'
+            when lower(coalesce(field_change->>'field', '')) in ('motorista alocado', 'motorista vinculado', 'motorista') then
+              'Motorista atualizado com sucesso.'
+            when lower(coalesce(field_change->>'field', '')) = 'veículo de uso' then
+              'Veículo atualizado com sucesso.'
+            when lower(coalesce(field_change->>'field', '')) = 'valor bruto (r$)' then
+              'Valor atualizado com sucesso.'
+            when lower(coalesce(field_change->>'field', '')) = 'custo motorista (r$)' then
+              'Custo com Motorista atualizado com sucesso.'
+            when lower(coalesce(field_change->>'field', '')) = 'hora extra' then
+              'Hora Extra atualizado com sucesso.'
+            when lower(coalesce(field_change->>'field', '')) = 'observações financeiras' then
+              'Observações Financeiras atualizada com sucesso.'
+            else
+              null
+          end as phrase,
+          case
+            when lower(coalesce(field_change->>'field', '')) in ('código os', 'os') then 1
+            when lower(coalesce(field_change->>'field', '')) in ('solicitante responsável', 'solicitante vinculado', 'solicitante') then 2
+            when lower(coalesce(field_change->>'field', '')) = 'centro de custo' then 3
+            when lower(coalesce(field_change->>'field', '')) in ('motorista alocado', 'motorista vinculado', 'motorista') then 4
+            when lower(coalesce(field_change->>'field', '')) = 'veículo de uso' then 5
+            when lower(coalesce(field_change->>'field', '')) = 'valor bruto (r$)' then 6
+            when lower(coalesce(field_change->>'field', '')) = 'custo motorista (r$)' then 7
+            when lower(coalesce(field_change->>'field', '')) = 'hora extra' then 8
+            when lower(coalesce(field_change->>'field', '')) = 'observações financeiras' then 9
+            else 100
+          end as sort_order
+        from jsonb_array_elements(coalesce(NEW.metadata->'field_changes', '[]'::jsonb)) as field_change
+      ) mapped
+      where phrase is not null
+      group by phrase
+    ) phrases;
+  end if;
+
   case NEW.type
     when 'update' then
       v_title := 'Atendimento atualizado';
-      -- Notificação resumida no toast; detalhes completos ficam em os_logs (modal "Logs de Atendimento")
-      v_message := format(
-        'A OS %s foi atualizada por %s.',
-        coalesce(v_protocolo, NEW.os_id::text),
-        coalesce(NEW.actor_name, 'Sistema')
-      );
-      v_notification_type := 'info';
-    when 'status_change' then
-      v_title := 'Status do atendimento atualizado';
-      if v_action = 'finish_all' then
+      if v_specific_update_messages is not null then
         v_message := format(
-          'Todos os ciclos da OS %s foram finalizados por %s.',
+          'A OS %s %s',
+          coalesce(v_protocolo, NEW.os_id::text),
+          v_specific_update_messages
+        );
+      else
+        -- Notificação resumida no toast; detalhes completos ficam em os_logs (modal "Logs de Atendimento")
+        v_message := format(
+          'A OS %s foi atualizada por %s.',
           coalesce(v_protocolo, NEW.os_id::text),
           coalesce(NEW.actor_name, 'Sistema')
         );
-      elsif v_action = 'finish_cycle' then
+      end if;
+      v_notification_type := 'info';
+    when 'status_change' then
+      v_title := 'Status do atendimento atualizado';
+      if v_action = 'finish_all'
+         or coalesce(NEW.metadata->'updates'->>'operacional', '') = 'Finalizado'
+         or coalesce(NEW.metadata->>'status_operacional', '') = 'Finalizado' then
+        v_title := 'Atendimento finalizado';
         v_message := format(
-          'O ciclo da OS %s foi finalizado manualmente por %s%s.',
-          coalesce(v_protocolo, NEW.os_id::text),
-          coalesce(NEW.actor_name, 'Sistema'),
-          case when v_cycle_label is not null then format(' (%s)', v_cycle_label) else '' end
+          'A OS %s OS finalizada com sucesso.',
+          coalesce(v_protocolo, NEW.os_id::text)
         );
+        v_notification_type := 'success';
       elsif v_action = 'revert_to_pending' then
         v_message := format(
-          'O ciclo da OS %s foi revertido para pendente por %s%s.',
-          coalesce(v_protocolo, NEW.os_id::text),
-          coalesce(NEW.actor_name, 'Sistema'),
-          case when v_cycle_label is not null then format(' (%s)', v_cycle_label) else '' end
+          'A OS %s retornou para status Pendente.',
+          coalesce(v_protocolo, NEW.os_id::text)
         );
       elsif v_action = 'revert_to_accept' then
         v_message := format(
-          'O ciclo da OS %s voltou para aceite por %s%s.',
-          coalesce(v_protocolo, NEW.os_id::text),
-          coalesce(NEW.actor_name, 'Sistema'),
-          case when v_cycle_label is not null then format(' (%s)', v_cycle_label) else '' end
+          'A OS %s retornou para status Aceite.',
+          coalesce(v_protocolo, NEW.os_id::text)
         );
       elsif v_updates is not null then
         v_message := format(
-          'A OS %s foi atualizada por %s. Status: %s.',
+          'A OS %s teve o status atualizado: %s.',
           coalesce(v_protocolo, NEW.os_id::text),
-          coalesce(NEW.actor_name, 'Sistema'),
           v_updates
         );
       else
         v_message := format(
-          'A OS %s teve o status atualizado por %s.',
-          coalesce(v_protocolo, NEW.os_id::text),
-          coalesce(NEW.actor_name, 'Sistema')
+          'A OS %s teve o status atualizado.',
+          coalesce(v_protocolo, NEW.os_id::text)
         );
       end if;
       v_notification_type := 'warning';
     when 'archive' then
       v_title := 'Atendimento arquivado';
       v_message := format(
-        'A OS %s foi arquivada por %s.',
-        coalesce(v_protocolo, NEW.os_id::text),
-        coalesce(NEW.actor_name, 'Sistema')
+        'A OS %s foi arquivada com sucesso.',
+        coalesce(v_protocolo, NEW.os_id::text)
       );
       v_notification_type := 'warning';
     when 'unarchive' then
       v_title := 'Atendimento reaberto';
       v_message := format(
-        'A OS %s foi reaberta por %s.',
-        coalesce(v_protocolo, NEW.os_id::text),
-        coalesce(NEW.actor_name, 'Sistema')
+        'A OS %s foi reaberta com sucesso.',
+        coalesce(v_protocolo, NEW.os_id::text)
       );
       v_notification_type := 'success';
     when 'driver_accept' then
