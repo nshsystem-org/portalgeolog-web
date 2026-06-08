@@ -159,13 +159,23 @@ export interface ParceriasTranslations {
 const translations = {
   "pt-BR": {
     chat: () =>
-      import("@/locales/pt-BR/chat.json").then((m) => m.default as ChatTranslations),
+      import("@/locales/pt-BR/chat.json").then(
+        (m) => m.default as ChatTranslations,
+      ),
     parcerias: () =>
-      import("@/locales/pt-BR/parcerias.json").then((m) => m.default as ParceriasTranslations),
+      import("@/locales/pt-BR/parcerias.json").then(
+        (m) => m.default as ParceriasTranslations,
+      ),
   },
   en: {
-    chat: () => import("@/locales/en/chat.json").then((m) => m.default as ChatTranslations),
-    parcerias: () => import("@/locales/en/parcerias.json").then((m) => m.default as ParceriasTranslations),
+    chat: () =>
+      import("@/locales/en/chat.json").then(
+        (m) => m.default as ChatTranslations,
+      ),
+    parcerias: () =>
+      import("@/locales/en/parcerias.json").then(
+        (m) => m.default as ParceriasTranslations,
+      ),
   },
 };
 
@@ -187,8 +197,11 @@ export function useTranslation(locale: Locale = "pt-BR") {
 }
 
 // Versão síncrona simplificada para componentes que carregam as traduções
-export function useChatTranslation(locale: Locale = "pt-BR"): ChatTranslations | null {
-  const [localeTranslations, setLocaleTranslations] = useState<ChatTranslations | null>(null);
+export function useChatTranslation(
+  locale: Locale = "pt-BR",
+): ChatTranslations | null {
+  const [localeTranslations, setLocaleTranslations] =
+    useState<ChatTranslations | null>(null);
 
   useEffect(() => {
     translations[locale]
@@ -200,8 +213,11 @@ export function useChatTranslation(locale: Locale = "pt-BR"): ChatTranslations |
 }
 
 // Versão síncrona simplificada para componentes que carregam as traduções
-export function useParceriasTranslation(locale: Locale = "pt-BR"): ParceriasTranslations | null {
-  const [localeTranslations, setLocaleTranslations] = useState<ParceriasTranslations | null>(null);
+export function useParceriasTranslation(
+  locale: Locale = "pt-BR",
+): ParceriasTranslations | null {
+  const [localeTranslations, setLocaleTranslations] =
+    useState<ParceriasTranslations | null>(null);
 
   useEffect(() => {
     translations[locale]

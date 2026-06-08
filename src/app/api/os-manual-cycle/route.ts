@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import {
   type OperationalCycle,
   type OperationalCycleState,
@@ -10,12 +12,6 @@ import {
 } from "@/lib/operational-cycles-db";
 
 export const runtime = "edge";
-
-type OSRow = {
-  id: string;
-  status_operacional: string;
-  motorista: string | null;
-};
 
 type OrdensServicoUpdateBuilder = {
   update(values: Record<string, unknown>): {
@@ -36,6 +32,20 @@ const getAdmin = () => {
   }
   return _supabaseAdmin;
 };
+
+async function createAuthClient() {
+  const cookieStore = await cookies();
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: () => {},
+      },
+    },
+  );
+}
 
 const updateCycleInList = (
   cycles: OperationalCycle[],
@@ -82,6 +92,11 @@ const updateCycleInList = (
 
 export async function POST(request: Request) {
   try {
+    const authClient = await createAuthClient();
+    const {
+      data: { user },
+    } = await authClient.auth.getUser();
+
     const body = (await request.json()) as {
       os_id: string;
       cycle_index?: number;
@@ -108,6 +123,33 @@ export async function POST(request: Request) {
       );
     }
 
+    let actorName = "Sistema";
+    let actorId: string | null = null;
+    let actorAvatarUrl: string | null = null;
+
+    if (user) {
+      actorId = user.id;
+      const userMetadata = user.user_metadata as
+        | Record<string, unknown>
+        | undefined;
+      actorName =
+        (typeof userMetadata?.nome === "string" ? userMetadata.nome : null) ||
+        (typeof userMetadata?.full_name === "string"
+          ? userMetadata.full_name
+          : null) ||
+        user.email ||
+        "Sistema";
+
+      const { data: profile } = await getAdmin()
+        .from("user_roles")
+        .select("nome, avatar_url")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      actorName = profile?.nome || actorName;
+      actorAvatarUrl = profile?.avatar_url || null;
+    }
+
     const { data: osRaw, error: fetchError } = await getAdmin()
       .from("ordens_servico")
       .select("id, status_operacional, motorista")
@@ -121,8 +163,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const os = osRaw as OSRow;
-    const { cycles } = await loadOperationalCycleContextForOS(getAdmin(), os_id, null);
+    const { cycles } = await loadOperationalCycleContextForOS(
+      getAdmin(),
+      os_id,
+      null,
+    );
 
     // Caso especial: finalizar todos os ciclos de uma vez
     if (action === "finish_all") {
@@ -179,7 +224,9 @@ export async function POST(request: Request) {
       })),
     );
 
-    const cycle = cycles.find((c) => c.itineraryIndex === (cycle_index as number));
+    const cycle = cycles.find(
+      (c) => c.itineraryIndex === (cycle_index as number),
+    );
 
     if (!cycle) {
       console.error(
@@ -268,12 +315,41 @@ export async function POST(request: Request) {
     ) as unknown as OrdensServicoUpdateBuilder;
 
     if (allCompletedOrCancelled) {
-      await ordensServicoBulk
+      const { error: bulkUpdateError } = await ordensServicoBulk
         .update({
           status_operacional: "Finalizado",
           updated_at: new Date().toISOString(),
         })
         .eq("id", os_id);
+
+      if (bulkUpdateError) {
+        console.error("Erro ao finalizar todos os ciclos:", bulkUpdateError);
+        return NextResponse.json(
+          { success: false, error: "Erro ao atualizar banco de dados." },
+          { status: 500 },
+        );
+      }
+
+      const { error: logError } = await getAdmin()
+        .from("os_logs")
+        .insert({
+          os_id,
+          type: "status_change",
+          actor_name: actorName,
+          actor_id: actorId,
+          actor_avatar_url: actorAvatarUrl,
+          description: "Todos os ciclos finalizados manualmente",
+          metadata: {
+            action: "finish_all",
+            cycle_count: updatedCycles.length,
+            status_operacional: "Finalizado",
+          },
+        } as never);
+
+      if (logError) {
+        console.error("[os-manual-cycle] Erro ao registrar log:", logError);
+      }
+
       console.log(
         "[os-manual-cycle] Todos os ciclos concluídos. Status da OS atualizado para Finalizado.",
       );
@@ -318,6 +394,34 @@ export async function POST(request: Request) {
       "novo estado:",
       modifiedCycles[0].state,
     );
+
+    const actionDescriptions: Record<string, string> = {
+      finish_cycle: "Ciclo finalizado manualmente",
+      revert_to_pending: "Ciclo revertido para pendente",
+      revert_to_accept: "Ciclo revertido para aceitação",
+    };
+
+    const { error: logError } = await getAdmin()
+      .from("os_logs")
+      .insert({
+        os_id,
+        type: "status_change",
+        actor_name: actorName,
+        actor_id: actorId,
+        actor_avatar_url: actorAvatarUrl,
+        description:
+          actionDescriptions[action] || "Ciclo operacional atualizado",
+        metadata: {
+          action,
+          cycle_index: targetIndex,
+          cycle_title: cycle.title,
+          new_state: newState,
+        },
+      } as never);
+
+    if (logError) {
+      console.error("[os-manual-cycle] Erro ao registrar log:", logError);
+    }
 
     return NextResponse.json({
       success: true,

@@ -59,9 +59,10 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const osId = String(formData.get("osId") || "").trim();
     const file = formData.get("file");
-    const tipoDocumento = String(formData.get("tipoDocumento") || "comprovante")
-      .trim()
-      .toLowerCase() || "comprovante";
+    const tipoDocumento =
+      String(formData.get("tipoDocumento") || "comprovante")
+        .trim()
+        .toLowerCase() || "comprovante";
     const observacao = String(formData.get("observacao") || "").trim() || null;
 
     if (!osId) {

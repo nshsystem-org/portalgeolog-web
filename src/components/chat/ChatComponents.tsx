@@ -1,6 +1,14 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Send, X, MoreVertical, UserPlus, Search, MessageCircle, Loader2 } from "lucide-react";
+import {
+  Send,
+  X,
+  MoreVertical,
+  UserPlus,
+  Search,
+  MessageCircle,
+  Loader2,
+} from "lucide-react";
 import type { ChatConversation, ChatMessage } from "@/context/DataContext";
 import { useChatTranslation } from "@/hooks/useTranslation";
 
@@ -95,7 +103,9 @@ export function ConversationList({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-lg">{getConversationAvatar(conv)}</span>
+                    <span className="text-lg">
+                      {getConversationAvatar(conv)}
+                    </span>
                   )}
                 </div>
 
@@ -116,7 +126,8 @@ export function ConversationList({
                       <span className="text-xs text-blue-600 font-medium">
                         {conv.unreadCount}{" "}
                         {conv.unreadCount > 1
-                          ? t?.conversation_list.unread_messages_plural || "mensagens"
+                          ? t?.conversation_list.unread_messages_plural ||
+                            "mensagens"
                           : t?.conversation_list.unread_messages || "mensagem"}
                       </span>
                     </div>
@@ -163,16 +174,22 @@ export function MessageList({
 
   const isMessageRead = (message: ChatMessage): boolean => {
     if (!conversation || message.sender_id !== currentUserId) return false;
-    return conversation.participants?.some(
-      (p) => p.user_id !== currentUserId && p.last_read_at && new Date(p.last_read_at) >= new Date(message.created_at)
-    ) ?? false;
+    return (
+      conversation.participants?.some(
+        (p) =>
+          p.user_id !== currentUserId &&
+          p.last_read_at &&
+          new Date(p.last_read_at) >= new Date(message.created_at),
+      ) ?? false
+    );
   };
 
   return (
     <div className="flex-1 overflow-y-auto p-4 bg-slate-100">
       {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-          {t?.message_list.no_messages || "Nenhuma mensagem ainda. Comece a conversar!"}
+          {t?.message_list.no_messages ||
+            "Nenhuma mensagem ainda. Comece a conversar!"}
         </div>
       ) : (
         <div className="space-y-4">
@@ -215,8 +232,14 @@ export function MessageList({
                       }`}
                     >
                       <span>{formatMessageTime(message.created_at)}</span>
-                      {message.is_edited && <span>({t?.message_list.edited || "editada"})</span>}
-                      {isMessageRead(message) && <span>• {t?.message_list.visualized || "Visualizado"}</span>}
+                      {message.is_edited && (
+                        <span>({t?.message_list.edited || "editada"})</span>
+                      )}
+                      {isMessageRead(message) && (
+                        <span>
+                          • {t?.message_list.visualized || "Visualizado"}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -320,7 +343,10 @@ export function UserList({
         </div>
 
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            size={16}
+          />
           <input
             type="text"
             value={searchTerm}
@@ -334,7 +360,9 @@ export function UserList({
       <div className="flex-1 overflow-y-auto">
         {filteredUsers.length === 0 ? (
           <div className="p-4 text-center text-slate-500 text-sm">
-            {searchTerm ? "Nenhum usuário encontrado" : "Nenhum usuário disponível"}
+            {searchTerm
+              ? "Nenhum usuário encontrado"
+              : "Nenhum usuário disponível"}
           </div>
         ) : (
           filteredUsers.map((user) => (
@@ -377,4 +405,3 @@ export function UserList({
     </div>
   );
 }
-

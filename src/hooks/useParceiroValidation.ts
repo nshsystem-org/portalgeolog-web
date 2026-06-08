@@ -1,9 +1,6 @@
 import { useMemo } from "react";
 import { ParceiroServico } from "@/lib/supabase/queries";
-import {
-  normalizeBrazilPhone,
-  stripBrazilCountryCode,
-} from "@/lib/phone";
+import { normalizeBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
 import {
   validateCPF,
   validateCNPJ,
@@ -65,12 +62,16 @@ export function useParceiroValidation(parceiros: ParceiroServico[]) {
       });
     });
 
-    return { documentosIndex: docs, celularesIndex: cells, emailsIndex: emails };
+    return {
+      documentosIndex: docs,
+      celularesIndex: cells,
+      emailsIndex: emails,
+    };
   }, [parceiros]);
 
   const validateForm = (
     formData: ParceiroFormData,
-    editingParceiroId?: string
+    editingParceiroId?: string,
   ): ValidationError | null => {
     if (!formData.razaoSocialOuNomeCompleto.trim()) {
       return { message: "Razão Social/Nome completo é obrigatório" };
@@ -103,7 +104,7 @@ export function useParceiroValidation(parceiros: ParceiroServico[]) {
       const existingParceiro = parceiros.find(
         (p) =>
           p.id !== editingParceiroId &&
-          p.documento.replace(/\D/g, "") === documentoLimpo
+          p.documento.replace(/\D/g, "") === documentoLimpo,
       );
       if (existingParceiro) {
         return {
@@ -114,10 +115,16 @@ export function useParceiroValidation(parceiros: ParceiroServico[]) {
 
     const primeiroContato = formData.contatos[0];
     if (!primeiroContato.setor.trim()) {
-      return { field: "setor", message: "Setor do primeiro contato é obrigatório" };
+      return {
+        field: "setor",
+        message: "Setor do primeiro contato é obrigatório",
+      };
     }
     if (!primeiroContato.celular.trim()) {
-      return { field: "celular", message: "Celular do primeiro contato é obrigatório" };
+      return {
+        field: "celular",
+        message: "Celular do primeiro contato é obrigatório",
+      };
     }
     if (!primeiroContato.responsavel.trim()) {
       return {
@@ -139,7 +146,8 @@ export function useParceiroValidation(parceiros: ParceiroServico[]) {
 
     if (primeiroContato.email && primeiroContato.email.trim()) {
       // Regex mais robusto para validação de email
-      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+      const emailRegex =
+        /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
       if (!emailRegex.test(primeiroContato.email.trim())) {
         return { field: "email", message: "E-mail inválido" };
       }

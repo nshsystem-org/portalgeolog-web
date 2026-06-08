@@ -22,7 +22,9 @@ export function useAnnouncements() {
     try {
       setLoading(true);
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       if (!user) {
         const data = await fetchActiveAnnouncements();
@@ -69,7 +71,9 @@ export function useAnnouncements() {
   const dismissAnnouncement = useCallback(async (announcementId: string) => {
     try {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
       if (!user) return;
 
@@ -86,7 +90,7 @@ export function useAnnouncements() {
 
       // Atualizar estado local
       dismissedIdsRef.current.add(announcementId);
-      setAnnouncements(prev => prev.filter(a => a.id !== announcementId));
+      setAnnouncements((prev) => prev.filter((a) => a.id !== announcementId));
     } catch (error) {
       console.error("Erro ao dispensar aviso:", error);
     }
@@ -109,7 +113,7 @@ export function useAnnouncements() {
         () => {
           // Reload announcements on any change
           loadAnnouncements();
-        }
+        },
       )
       .subscribe();
 
@@ -118,5 +122,10 @@ export function useAnnouncements() {
     };
   }, [loadAnnouncements]);
 
-  return { announcements, loading, refetch: loadAnnouncements, dismissAnnouncement };
+  return {
+    announcements,
+    loading,
+    refetch: loadAnnouncements,
+    dismissAnnouncement,
+  };
 }

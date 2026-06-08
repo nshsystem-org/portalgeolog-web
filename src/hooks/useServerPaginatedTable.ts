@@ -8,12 +8,27 @@ export type ServerPaginatedFetch<T> = (params: {
   searchTerm: string;
 }) => Promise<PaginatedResult<T>>;
 
+export type UseServerPaginatedTableResult<T> = {
+  items: T[];
+  loading: boolean;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  searchTerm: string;
+  setSearchTerm: (value: string) => void;
+  setPage: (nextPage: number) => void;
+  refresh: () => Promise<void>;
+  updateItems: (mapper: (prev: T[]) => T[]) => void;
+  error: string | null;
+};
+
 export function useServerPaginatedTable<T>(
   fetchPage: ServerPaginatedFetch<T>,
   pageSize = 10,
   enabled = true,
   tableName = "Tabela",
-) {
+): UseServerPaginatedTableResult<T> {
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
   const [items, setItems] = useState<T[]>([]);

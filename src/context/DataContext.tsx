@@ -28,6 +28,8 @@ import {
   archivePassageiroInDB,
   updateVeiculoInDB,
   deleteVeiculoFromDB,
+  updateDriverInDB,
+  deleteDriverFromDB,
   insertSolicitante,
   updateSolicitanteInDB,
   deleteSolicitanteFromDB,
@@ -344,6 +346,8 @@ interface DataContextType {
   osList: OrderService[];
   osCounts: OSStatusCounts;
   drivers: Driver[];
+  passageiros: Passageiro[];
+  parceiros: ParceiroServico[];
   loading: boolean;
   heavyLoading: boolean;
   impostoPercentual: number;
@@ -372,7 +376,9 @@ interface DataContextType {
   ) => Promise<Passageiro>;
   archivePassageiro: (id: string) => Promise<void>;
 
-  addDriver: (name: string) => Promise<Driver>;
+  addDriver: (driver: Omit<Driver, "id" | "created_at">) => Promise<Driver>;
+  updateDriver: (id: string, updates: Partial<Driver>) => Promise<void>;
+  deleteDriver: (id: string) => Promise<void>;
   updateVeiculo: (id: string, input: Partial<Vehicle>) => Promise<Vehicle>;
   deleteVeiculo: (id: string) => Promise<void>;
 
@@ -415,7 +421,7 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 // Função auxiliar para obter o nome da página a partir do pathname
 function getPageName(pathname: string | null): string {
   if (!pathname) return "Desconhecida";
-  
+
   const pageMap: Record<string, string> = {
     "/portal/os": "Ordem de Serviço",
     "/portal/financeiro": "Medição Financeira",
@@ -447,6 +453,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     Cancelado: 0,
   });
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [passageiros, setPassageiros] = useState<Passageiro[]>([]);
+  const [parceiros, setParceiros] = useState<ParceiroServico[]>([]);
   const [loading, setLoading] = useState(true);
   const [heavyLoading, setHeavyLoading] = useState(false);
   const [impostoPercentual, setImpostoPercentualState] = useState<number>(12);
@@ -458,6 +466,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const dbFetchClientes = useCallback(async () => fetchClientes(), []);
   const dbFetchSolicitantes = useCallback(async () => fetchSolicitantes(), []);
   const dbFetchDrivers = useCallback(async () => fetchDrivers(), []);
+  const dbFetchPassageiros = useCallback(async () => fetchPassageiros(), []);
+  const dbFetchParceiros = useCallback(async () => fetchParceiros(), []);
 
   const upsertOSInState = useCallback((nextOS: OrderService) => {
     setOsList((prev) => {
@@ -502,25 +512,73 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         dbFetchClientes(),
         dbFetchSolicitantes(),
         dbFetchDrivers(),
+        dbFetchPassageiros(),
+        dbFetchParceiros(),
         getImpostoPercentual(),
       ]);
 
-      const [clientesRes, solicitantesRes, driversRes, impostoRes] = results1;
+      const [
+        clientesRes,
+        solicitantesRes,
+        driversRes,
+        passageirosRes,
+        parceirosRes,
+        impostoRes,
+      ] = results1;
 
       if (clientesRes.status === "fulfilled") setClientes(clientesRes.value);
-      else logErrorEntry("DataContext", "dbFetchClientes falhou", clientesRes.reason as Error);
+      else
+        logErrorEntry(
+          "DataContext",
+          "dbFetchClientes falhou",
+          clientesRes.reason as Error,
+        );
 
-      if (solicitantesRes.status === "fulfilled") setSolicitantes(solicitantesRes.value);
-      else logErrorEntry("DataContext", "dbFetchSolicitantes falhou", solicitantesRes.reason as Error);
+      if (solicitantesRes.status === "fulfilled")
+        setSolicitantes(solicitantesRes.value);
+      else
+        logErrorEntry(
+          "DataContext",
+          "dbFetchSolicitantes falhou",
+          solicitantesRes.reason as Error,
+        );
 
       if (driversRes.status === "fulfilled") setDrivers(driversRes.value);
-      else logErrorEntry("DataContext", "dbFetchDrivers falhou", driversRes.reason as Error);
+      else
+        logErrorEntry(
+          "DataContext",
+          "dbFetchDrivers falhou",
+          driversRes.reason as Error,
+        );
 
-      if (impostoRes.status === "fulfilled") setImpostoPercentualState(impostoRes.value);
-      else logErrorEntry("DataContext", "getImpostoPercentual falhou", impostoRes.reason as Error);
+      if (passageirosRes.status === "fulfilled")
+        setPassageiros(passageirosRes.value);
+      else
+        logErrorEntry(
+          "DataContext",
+          "dbFetchPassageiros falhou",
+          passageirosRes.reason as Error,
+        );
+
+      if (parceirosRes.status === "fulfilled") setParceiros(parceirosRes.value);
+      else
+        logErrorEntry(
+          "DataContext",
+          "dbFetchParceiros falhou",
+          parceirosRes.reason as Error,
+        );
+
+      if (impostoRes.status === "fulfilled")
+        setImpostoPercentualState(impostoRes.value);
+      else
+        logErrorEntry(
+          "DataContext",
+          "getImpostoPercentual falhou",
+          impostoRes.reason as Error,
+        );
 
       // Se todos os principais falharem, aí sim consideramos crítico
-      if (results1.every(r => r.status === "rejected")) {
+      if (results1.every((r) => r.status === "rejected")) {
         throw new Error("Todas as buscas da Fase 1 falharam.");
       }
 
@@ -535,29 +593,44 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const [osListRes, osCountsRes] = results2;
 
         if (osListRes.status === "fulfilled") setOsList(osListRes.value);
-        else logErrorEntry("DataContext", "fetchOSList falhou", osListRes.reason as Error);
+        else
+          logErrorEntry(
+            "DataContext",
+            "fetchOSList falhou",
+            osListRes.reason as Error,
+          );
 
         if (osCountsRes.status === "fulfilled") setOsCounts(osCountsRes.value);
-        else logErrorEntry("DataContext", "fetchOSStatusCounts falhou", osCountsRes.reason as Error);
+        else
+          logErrorEntry(
+            "DataContext",
+            "fetchOSStatusCounts falhou",
+            osCountsRes.reason as Error,
+          );
 
         // Não registramos logs de sucesso do carregamento global para evitar spam.
         // Mantemos apenas logs de erro/falha de carregamento.
       } catch (heavyErr) {
-        logErrorEntry("DataContext", "Erro inesperado ao processar dados pesados", heavyErr as Error);
+        logErrorEntry(
+          "DataContext",
+          "Erro inesperado ao processar dados pesados",
+          heavyErr as Error,
+        );
       } finally {
         setHeavyLoading(false);
       }
     } catch (err) {
-      logCritical("DataContext", "CRITICAL: Error refreshing global data", err as Error, {
-        phase: err instanceof Error ? err.message : String(err),
-      });
+      logCritical(
+        "DataContext",
+        "CRITICAL: Error refreshing global data",
+        err as Error,
+        {
+          phase: err instanceof Error ? err.message : String(err),
+        },
+      );
       toast.error("Erro ao sincronizar dados. Tente atualizar a página.");
     }
-  }, [
-    dbFetchClientes,
-    dbFetchSolicitantes,
-    dbFetchDrivers,
-  ]);
+  }, [dbFetchClientes, dbFetchSolicitantes, dbFetchDrivers]);
 
   useEffect(() => {
     if (authLoading || !user || hasLoadedData.current) {
@@ -669,11 +742,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
 
           setLastOSUpdate(Date.now());
-          
+
           // Se mudou para Finalizado, atualizar imediatamente sem debounce
           const statusOperacional = newRecord?.status_operacional;
           if (statusOperacional === "Finalizado") {
-            console.log("[DataContext] ⚡ Status mudou para Finalizado - refresh imediato");
+            console.log(
+              "[DataContext] ⚡ Status mudou para Finalizado - refresh imediato",
+            );
             void refreshOSById(osId);
             void (async () => {
               const counts = await fetchOSStatusCounts();
@@ -744,7 +819,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           if (!osId) return;
 
           debouncedFetch(`os-${osId}`, async () => {
-            console.log("[DataContext] Atualizando OS após mudança em ciclos:", osId);
+            console.log(
+              "[DataContext] Atualizando OS após mudança em ciclos:",
+              osId,
+            );
             await refreshOSById(osId);
           });
         },
@@ -776,6 +854,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           debouncedFetch("drivers", async () => {
             const data = await dbFetchDrivers();
             setDrivers(data);
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "passageiros" },
+        () => {
+          debouncedFetch("passageiros", async () => {
+            const data = await dbFetchPassageiros();
+            setPassageiros(data);
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "parceiros_servico" },
+        () => {
+          debouncedFetch("parceiros", async () => {
+            const data = await dbFetchParceiros();
+            setParceiros(data);
           });
         },
       )
@@ -833,9 +931,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       );
       return result;
     } catch (error) {
-      logErrorEntry("DataContext", "Falha ao adicionar empresa", error as Error, {
-        nome: cleanNome,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao adicionar empresa",
+        error as Error,
+        {
+          nome: cleanNome,
+        },
+      );
       if (isUniqueConstraintError(error)) {
         throw new Error("Já existe uma empresa com este nome.");
       }
@@ -908,7 +1011,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const deleteCliente = (id: string) => {
     deleteClienteFromDB(id)
       .then(() => {
-        logInfo("DataContext", "Empresa excluída com sucesso", { clienteId: id });
+        logInfo("DataContext", "Empresa excluída com sucesso", {
+          clienteId: id,
+        });
         setClientes((prev) => prev.filter((cliente) => cliente.id !== id));
         setSolicitantes((prev) =>
           prev.filter((solicitante) => solicitante.clienteId !== id),
@@ -1005,15 +1110,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   ): Promise<Passageiro> => {
     try {
       const real = await insertPassageiro(passageiro);
+      setPassageiros((prev) =>
+        [...prev, real].sort((a, b) =>
+          a.nomeCompleto.localeCompare(b.nomeCompleto, "pt-BR"),
+        ),
+      );
       logInfo("DataContext", "Passageiro adicionado com sucesso", {
         passageiroId: real.id,
         nome: passageiro.nomeCompleto,
       });
       return real;
     } catch (error) {
-      logErrorEntry("DataContext", "Falha ao adicionar passageiro", error as Error, {
-        nome: passageiro.nomeCompleto,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao adicionar passageiro",
+        error as Error,
+        {
+          nome: passageiro.nomeCompleto,
+        },
+      );
       const duplicateMessage = getPassageiroDuplicateMessage(error);
       throw new Error(
         duplicateMessage ||
@@ -1036,10 +1151,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       });
       return real;
     } catch (error) {
-      logErrorEntry("DataContext", "Falha ao atualizar passageiro", error as Error, {
-        passageiroId: id,
-        nome: passageiro.nomeCompleto,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao atualizar passageiro",
+        error as Error,
+        {
+          passageiroId: id,
+          nome: passageiro.nomeCompleto,
+        },
+      );
       const duplicateMessage = getPassageiroDuplicateMessage(error);
       throw new Error(
         duplicateMessage ||
@@ -1053,40 +1173,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const archivePassageiro = async (id: string): Promise<void> => {
     try {
       await archivePassageiroInDB(id);
-      logInfo("DataContext", "Passageiro arquivado com sucesso", { passageiroId: id });
+      logInfo("DataContext", "Passageiro arquivado com sucesso", {
+        passageiroId: id,
+      });
     } catch (error) {
-      logErrorEntry("DataContext", "Falha ao arquivar passageiro", error as Error, { passageiroId: id });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao arquivar passageiro",
+        error as Error,
+        { passageiroId: id },
+      );
       console.error("Error archivePassageiroInDB:", error);
       throw error;
     }
   };
 
-  const addDriver = async (name: string): Promise<Driver> => {
-    const cleanName = name.trim();
+  const addDriver = async (
+    driver: Omit<Driver, "id" | "created_at">,
+  ): Promise<Driver> => {
+    const cleanName = driver.name.trim();
 
     if (!cleanName) {
       throw new Error("Informe o nome do motorista.");
     }
 
     if (
-      hasDuplicateRecord(
-        drivers,
-        cleanName,
-        (driver) => driver.name,
-        normalizeTextValue,
-      )
+      hasDuplicateRecord(drivers, cleanName, (d) => d.name, normalizeTextValue)
     ) {
       throw new Error("Já existe um motorista com este nome.");
     }
 
     try {
-      const result = await insertDriver({
-        name: cleanName,
-        cpf: "",
-        cnh: "",
-        phone: "",
-        status: "active",
-      });
+      const result = await insertDriver(driver);
       setDrivers((prev) =>
         [...prev, result].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
       );
@@ -1099,6 +1217,58 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       throw error instanceof Error
         ? error
         : new Error("Não foi possível salvar o motorista.");
+    }
+  };
+
+  const updateDriver = async (
+    id: string,
+    updates: Partial<Driver>,
+  ): Promise<void> => {
+    try {
+      await updateDriverInDB(id, updates);
+      setDrivers((prev) =>
+        prev.map((driver) =>
+          driver.id === id ? { ...driver, ...updates } : driver,
+        ),
+      );
+      logInfo("DataContext", "Motorista atualizado com sucesso", {
+        driverId: id,
+        updates,
+      });
+    } catch (error) {
+      logErrorEntry(
+        "DataContext",
+        "Falha ao atualizar motorista",
+        error as Error,
+        {
+          driverId: id,
+        },
+      );
+      throw error instanceof Error
+        ? error
+        : new Error("Não foi possível atualizar o motorista.");
+    }
+  };
+
+  const deleteDriver = async (id: string): Promise<void> => {
+    try {
+      await deleteDriverFromDB(id);
+      setDrivers((prev) => prev.filter((driver) => driver.id !== id));
+      logInfo("DataContext", "Motorista arquivado com sucesso", {
+        driverId: id,
+      });
+    } catch (error) {
+      logErrorEntry(
+        "DataContext",
+        "Falha ao arquivar motorista",
+        error as Error,
+        {
+          driverId: id,
+        },
+      );
+      throw error instanceof Error
+        ? error
+        : new Error("Não foi possível arquivar o motorista.");
     }
   };
 
@@ -1154,10 +1324,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setOsList((prev) => prev.map((o) => (o.id === tempId ? real : o)));
       return real;
     } catch (err) {
-      logErrorEntry("DataContext", "Falha ao adicionar Ordem de Serviço", err as Error, {
-        actorName,
-        osData: osDataWithNumbers,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao adicionar Ordem de Serviço",
+        err as Error,
+        {
+          actorName,
+          osData: osDataWithNumbers,
+        },
+      );
       console.error("Error adding OS:", err);
       console.error("OS Data that failed:", osData);
       setOsList((prev) => prev.filter((o) => o.id !== tempId));
@@ -1202,17 +1377,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const actorName = profile?.nome || user?.email || "Sistema";
     const actorId = user?.id || null;
     try {
-      await updateOSInDB(id, osData, actorName, actorId);
+      await updateOSInDB(id, osData, actorName, actorId, currentOS);
       logInfo("DataContext", "Ordem de Serviço atualizada com sucesso", {
         osId: id,
         actorName,
         updates: osData,
       });
     } catch (err) {
-      logErrorEntry("DataContext", "Falha ao atualizar Ordem de Serviço", err as Error, {
-        osId: id,
-        actorName,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao atualizar Ordem de Serviço",
+        err as Error,
+        {
+          osId: id,
+          actorName,
+        },
+      );
       console.error("Error updateOSInDB:", err);
       throw err;
     }
@@ -1246,11 +1426,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         actorName,
       });
     } catch (err) {
-      logErrorEntry("DataContext", "Falha ao atualizar status da Ordem de Serviço", err as Error, {
-        osId: id,
-        updates,
-        actorName,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao atualizar status da Ordem de Serviço",
+        err as Error,
+        {
+          osId: id,
+          updates,
+          actorName,
+        },
+      );
       console.error("Error updateOSStatusInDB:", err);
       throw err;
     }
@@ -1263,16 +1448,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const actorName = profile?.nome || user?.email || "Sistema";
     const actorId = user?.id || null;
     try {
-      await archiveOSFromDB(id, actorName, actorId, currentOS?.protocolo || currentOS?.os || null);
+      await archiveOSFromDB(
+        id,
+        actorName,
+        actorId,
+        currentOS?.protocolo || currentOS?.os || null,
+      );
       logInfo("DataContext", "Ordem de Serviço excluída/arquivada", {
         osId: id,
         actorName,
       });
     } catch (err) {
-      logErrorEntry("DataContext", "Falha ao excluir/arquivar Ordem de Serviço", err as Error, {
-        osId: id,
-        actorName,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao excluir/arquivar Ordem de Serviço",
+        err as Error,
+        {
+          osId: id,
+          actorName,
+        },
+      );
       console.error("Error archiveOSFromDB:", err);
       throw err;
     }
@@ -1295,16 +1490,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const actorName = profile?.nome || user?.email || "Sistema";
     const actorId = user?.id || null;
     try {
-      await unarchiveOSFromDB(id, actorName, actorId, currentOS?.protocolo || currentOS?.os || null);
+      await unarchiveOSFromDB(
+        id,
+        actorName,
+        actorId,
+        currentOS?.protocolo || currentOS?.os || null,
+      );
       logInfo("DataContext", "Ordem de Serviço desarquivada", {
         osId: id,
         actorName,
       });
     } catch (err) {
-      logErrorEntry("DataContext", "Falha ao desarquivar Ordem de Serviço", err as Error, {
-        osId: id,
-        actorName,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao desarquivar Ordem de Serviço",
+        err as Error,
+        {
+          osId: id,
+          actorName,
+        },
+      );
       console.error("Error unarchiveOSFromDB:", err);
       throw err;
     }
@@ -1331,15 +1536,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   ): Promise<ParceiroServico> => {
     try {
       const result = await insertParceiro(parceiro);
+      setParceiros((prev) =>
+        [...prev, result].sort((a, b) =>
+          a.razaoSocialOuNomeCompleto.localeCompare(
+            b.razaoSocialOuNomeCompleto,
+            "pt-BR",
+          ),
+        ),
+      );
       logInfo("DataContext", "Parceiro adicionado com sucesso", {
         parceiroId: result.id,
         nome: parceiro.razaoSocialOuNomeCompleto,
       });
       return result;
     } catch (error) {
-      logErrorEntry("DataContext", "Falha ao adicionar parceiro", error as Error, {
-        nome: parceiro.razaoSocialOuNomeCompleto,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao adicionar parceiro",
+        error as Error,
+        {
+          nome: parceiro.razaoSocialOuNomeCompleto,
+        },
+      );
       throw error instanceof Error
         ? error
         : new Error("Não foi possível salvar o parceiro.");
@@ -1357,10 +1575,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         nome: parceiro.razaoSocialOuNomeCompleto,
       });
     } catch (error) {
-      logErrorEntry("DataContext", "Falha ao atualizar parceiro", error as Error, {
-        parceiroId: id,
-        nome: parceiro.razaoSocialOuNomeCompleto,
-      });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao atualizar parceiro",
+        error as Error,
+        {
+          parceiroId: id,
+          nome: parceiro.razaoSocialOuNomeCompleto,
+        },
+      );
       throw error instanceof Error
         ? error
         : new Error("Não foi possível atualizar o parceiro.");
@@ -1373,7 +1596,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await toggleParceiroStatus(id, parceiro.status);
       logInfo("DataContext", "Status do parceiro alterado", { parceiroId: id });
     } catch (error) {
-      logErrorEntry("DataContext", "Falha ao alterar status do parceiro", error as Error, { parceiroId: id });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao alterar status do parceiro",
+        error as Error,
+        { parceiroId: id },
+      );
       throw error;
     }
   };
@@ -1381,10 +1609,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const deleteParceiro = (id: string) => {
     deleteParceiroFromDB(id)
       .then(() => {
-        logInfo("DataContext", "Parceiro excluído com sucesso", { parceiroId: id });
+        logInfo("DataContext", "Parceiro excluído com sucesso", {
+          parceiroId: id,
+        });
       })
       .catch((err) => {
-        logErrorEntry("DataContext", "Falha ao excluir parceiro", err as Error, { parceiroId: id });
+        logErrorEntry(
+          "DataContext",
+          "Falha ao excluir parceiro",
+          err as Error,
+          { parceiroId: id },
+        );
         console.error("Error deleteParceiroFromDB:", err);
       });
   };
@@ -1392,9 +1627,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const unarchiveParceiro = async (id: string): Promise<void> => {
     try {
       await unarchiveParceiroFromDB(id);
-      logInfo("DataContext", "Parceiro desarquivado com sucesso", { parceiroId: id });
+      logInfo("DataContext", "Parceiro desarquivado com sucesso", {
+        parceiroId: id,
+      });
     } catch (error) {
-      logErrorEntry("DataContext", "Falha ao desarquivar parceiro", error as Error, { parceiroId: id });
+      logErrorEntry(
+        "DataContext",
+        "Falha ao desarquivar parceiro",
+        error as Error,
+        { parceiroId: id },
+      );
       throw error;
     }
   };
@@ -1472,6 +1714,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         osList,
         osCounts,
         drivers,
+        passageiros,
+        parceiros,
         loading,
         heavyLoading,
         impostoPercentual,
@@ -1487,6 +1731,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         updatePassageiro,
         archivePassageiro,
         addDriver,
+        updateDriver,
+        deleteDriver,
         updateVeiculo,
         deleteVeiculo,
         addParceiro,

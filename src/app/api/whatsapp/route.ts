@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { sendWhatsAppMessage, sendWhatsAppTemplate, sendWhatsAppButtonMessage } from "@/lib/meta";
+import {
+  sendWhatsAppMessage,
+  sendWhatsAppTemplate,
+  sendWhatsAppButtonMessage,
+} from "@/lib/meta";
 import { createClient as createSupabaseAuthClient } from "@/lib/supabase/server";
 
 export const runtime = "edge";

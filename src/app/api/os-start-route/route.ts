@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import {
-  normalizeWhatsAppPhone,
-  sendWhatsAppTemplate,
-} from "@/lib/meta";
+import { normalizeWhatsAppPhone, sendWhatsAppTemplate } from "@/lib/meta";
 import {
   getOperationalCycleBannerTitle,
   type OperationalCycle,
@@ -87,7 +84,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const { cycle } = await loadOperationalCycleContextForOS(getAdmin(), osId, requestedCycleIndex);
+    const { cycle } = await loadOperationalCycleContextForOS(
+      getAdmin(),
+      osId,
+      requestedCycleIndex,
+    );
     const alreadyStarted = Boolean(
       cycle &&
       (cycle.state === "awaiting_finish" || cycle.state === "completed"),
@@ -162,7 +163,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { cycles, cycle } = await loadOperationalCycleContextForOS(getAdmin(), osId, requestedCycleIndex);
+    const { cycles, cycle } = await loadOperationalCycleContextForOS(
+      getAdmin(),
+      osId,
+      requestedCycleIndex,
+    );
 
     if (!cycle) {
       return NextResponse.json(
@@ -288,7 +293,10 @@ export async function POST(request: Request) {
         }
       }
     } catch (notifyErr) {
-      console.error("Erro ao enviar template finalizar_rota_motorista:", notifyErr);
+      console.error(
+        "Erro ao enviar template finalizar_rota_motorista:",
+        notifyErr,
+      );
     }
 
     return NextResponse.json({

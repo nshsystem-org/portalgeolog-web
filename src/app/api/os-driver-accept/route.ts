@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import {
-  normalizeWhatsAppPhone,
-  sendWhatsAppMessage,
-} from "@/lib/meta";
+import { normalizeWhatsAppPhone, sendWhatsAppMessage } from "@/lib/meta";
 import { buildPostAcceptMessage } from "@/lib/driver-accept";
 import {
   getOperationalCycleBannerTitle,

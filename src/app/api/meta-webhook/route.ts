@@ -442,7 +442,10 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
     // O template contem header (titulo do ciclo), body (nome do motorista)
     // e um botao de flow "INICIAR VIAGEM" onde o motorista digita o KM inicial
     try {
-      const { cycles } = await loadOperationalCycleContextForOS(getAdmin(), String((osRecord as Record<string, unknown> | null)?.id || osId));
+      const { cycles } = await loadOperationalCycleContextForOS(
+        getAdmin(),
+        String((osRecord as Record<string, unknown> | null)?.id || osId),
+      );
       const pendingCycle = cycles.find(
         (c) => c.state !== "completed" && c.state !== "cancelled",
       );
@@ -574,12 +577,13 @@ async function sendNextCyclePreviewAndStartFlow(
       return;
     }
 
-    console.log(
-      "[meta-webhook] OS encontrada:",
+    console.log("[meta-webhook] OS encontrada:");
 
+    const { cycles } = await loadOperationalCycleContextForOS(
+      getAdmin(),
+      osId,
+      null,
     );
-
-    const { cycles } = await loadOperationalCycleContextForOS(getAdmin(), osId, null);
     console.log(
       "[meta-webhook] Ciclos normalizados:",
       cycles.map((c) => ({
@@ -886,10 +890,7 @@ async function handleFlowCompleted(
     }
 
     if (kmValue === null) {
-      console.warn(
-        "[meta-webhook] Valor de KM nao encontrado no flow:",
-        data,
-      );
+      console.warn("[meta-webhook] Valor de KM nao encontrado no flow:", data);
       return;
     }
 
@@ -913,7 +914,11 @@ async function handleFlowCompleted(
     }
 
     const osRecord = osData as Record<string, unknown>;
-    const { cycles } = await loadOperationalCycleContextForOS(getAdmin(), osId, null);
+    const { cycles } = await loadOperationalCycleContextForOS(
+      getAdmin(),
+      osId,
+      null,
+    );
 
     if (osRecord.driver_flow_start_message_id === contextId) {
       // Flow de inicio: registra KM inicial, status "Em Rota", envia template de finalizar
@@ -953,6 +958,27 @@ async function handleFlowCompleted(
           updatedCycles,
         );
 
+        const { error: logError } = await getAdmin()
+          .from("os_logs")
+          .insert({
+            os_id: String(osRecord.id),
+            type: "driver_start",
+            actor_name: String(osRecord.motorista || "Motorista"),
+            description: `KM inicial registrado via flow (KM: ${kmValue})`,
+            metadata: {
+              cycle_index: targetCycle.itineraryIndex,
+              km_initial: kmValue,
+              status_operacional: newStatus,
+            },
+          } as never);
+
+        if (logError) {
+          console.error(
+            "[meta-webhook] Erro ao registrar log de início:",
+            logError,
+          );
+        }
+
         console.log(
           "[meta-webhook] KM inicial registrado via flow:",
           kmValue,
@@ -986,9 +1012,10 @@ async function handleFlowCompleted(
           const ordensServico2 = getAdmin().from(
             "ordens_servico",
           ) as unknown as OrdensServicoUpdateBuilder;
-          await ordensServico2.update({
-            driver_flow_finish_message_id: finishResult.messageId,
-          })
+          await ordensServico2
+            .update({
+              driver_flow_finish_message_id: finishResult.messageId,
+            })
             .eq("id", osRecord.id as string);
           console.log(
             "[meta-webhook] Template flow finalizar_viagem_motoristas enviado para",
@@ -1006,11 +1033,14 @@ async function handleFlowCompleted(
     } else if (osRecord.driver_flow_finish_message_id === contextId) {
       // Flow de finalizacao: registra KM final, status "Finalizado" ou "Em Rota"
       const activeCycle = cycles.find(
-        (c) => c.state === "awaiting_finish" || c.state === "awaiting_km_finish",
+        (c) =>
+          c.state === "awaiting_finish" || c.state === "awaiting_km_finish",
       );
       const targetCycle =
         activeCycle ||
-        cycles.find((c) => c.state !== "completed" && c.state !== "cancelled") ||
+        cycles.find(
+          (c) => c.state !== "completed" && c.state !== "cancelled",
+        ) ||
         cycles[0];
 
       if (targetCycle) {
@@ -1119,6 +1149,27 @@ async function handleFlowCompleted(
           String(osRecord.id),
           updatedCycles,
         );
+
+        const { error: logError } = await getAdmin()
+          .from("os_logs")
+          .insert({
+            os_id: String(osRecord.id),
+            type: "driver_finish",
+            actor_name: String(osRecord.motorista || "Motorista"),
+            description: `KM final registrado via flow (KM: ${kmValue})`,
+            metadata: {
+              cycle_index: targetCycle.itineraryIndex,
+              km_final: kmValue,
+              status_operacional: newStatus,
+            },
+          } as never);
+
+        if (logError) {
+          console.error(
+            "[meta-webhook] Erro ao registrar log de finalização:",
+            logError,
+          );
+        }
 
         console.log(
           "[meta-webhook] KM final registrado via flow:",
@@ -1275,10 +1326,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    console.log(
-      "[meta-webhook] POST body completo:",
-      JSON.stringify(body),
-    );
+    console.log("[meta-webhook] POST body completo:", JSON.stringify(body));
 
     await recordWhatsAppLog({
       source: "meta-webhook",
@@ -1340,7 +1388,13 @@ export async function POST(request: Request) {
           // Tratamento de flow completado (interactive.type === "nfm_reply")
           const interactive = message?.interactive;
           const nfmReply = interactive?.nfm_reply;
-          if (interactive && nfmReply && nfmReply.response_json && contextId && phone) {
+          if (
+            interactive &&
+            nfmReply &&
+            nfmReply.response_json &&
+            contextId &&
+            phone
+          ) {
             console.log("[meta-webhook] Flow completado detectado:", {
               phone,
               contextId,
@@ -1364,10 +1418,7 @@ export async function POST(request: Request) {
                     nfmReply.response_json,
                   );
                 } catch (err) {
-                  console.error(
-                    "[meta-webhook] Erro ao processar flow:",
-                    err,
-                  );
+                  console.error("[meta-webhook] Erro ao processar flow:", err);
                 }
               })(),
             );
@@ -1428,7 +1479,9 @@ export async function POST(request: Request) {
           // Tratamento de quick reply de template (message.type === "button")
           if (msgType === "button") {
             const buttonPayload = String(message?.button?.payload || "");
-            const buttonText = String(message?.button?.text || "").toLowerCase();
+            const buttonText = String(
+              message?.button?.text || "",
+            ).toLowerCase();
             console.log("[meta-webhook] Quick reply de template:", {
               buttonPayload,
               buttonText,

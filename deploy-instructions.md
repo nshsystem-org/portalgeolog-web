@@ -10,7 +10,7 @@ Após o deploy, o site não funciona porque as variáveis de ambiente não estã
 
 **Arquivos modificados:**
 
-- `vite.config.ts` - Agora injeta todas as variáveis SUPABASE* e NEXT*PUBLIC* no build
+- `vite.config.ts` - Agora injeta todas as variáveis SUPABASE* e NEXT*PUBLIC\* no build
 - `worker/index.js` - Melhorado o Proxy para process.env que copia variáveis do Cloudflare env
 - `wrangler.toml` e `wrangler.workers.toml` - Adicionados placeholders para todas as variáveis necessárias
 
@@ -84,7 +84,7 @@ curl http://localhost:3000/api/test-env
 
 - NEXT_PUBLIC_SUPABASE_URL
 - NEXT_PUBLIC_SUPABASE_ANON_KEY
-**Supabase:**
+  **Supabase:**
 
 - SUPABASE_SERVICE_ROLE_KEY
 

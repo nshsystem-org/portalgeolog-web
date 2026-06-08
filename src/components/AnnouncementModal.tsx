@@ -12,11 +12,17 @@ interface AnnouncementModalProps {
   onStepChange?: (step: "intro" | "explanation" | "closed") => void;
 }
 
-export default function AnnouncementModal({ onOpenEmployeesDropdown, employeesButtonRef, onStepChange }: AnnouncementModalProps) {
+export default function AnnouncementModal({
+  onOpenEmployeesDropdown,
+  employeesButtonRef,
+  onStepChange,
+}: AnnouncementModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<"intro" | "explanation">("intro");
   const [modalPosition, setModalPosition] = useState({ top: 0, left: 0 });
-  const [buttonPosition, setButtonPosition] = useState<{ right: number } | null>(null);
+  const [buttonPosition, setButtonPosition] = useState<{
+    right: number;
+  } | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -118,7 +124,8 @@ export default function AnnouncementModal({ onOpenEmployeesDropdown, employeesBu
                             Funcionários Online
                           </h3>
                           <p className="text-sm text-slate-600">
-                            Clique no ícone de pessoas no cabeçalho para ver quem está ativo no momento
+                            Clique no ícone de pessoas no cabeçalho para ver
+                            quem está ativo no momento
                           </p>
                         </div>
                       </div>
@@ -133,7 +140,8 @@ export default function AnnouncementModal({ onOpenEmployeesDropdown, employeesBu
                             Última Atividade
                           </h3>
                           <p className="text-sm text-slate-600">
-                            Veja a última vez que cada funcionário esteve no portal
+                            Veja a última vez que cada funcionário esteve no
+                            portal
                           </p>
                         </div>
                       </div>

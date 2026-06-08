@@ -114,7 +114,9 @@ export function ChatWidget() {
             <div className="h-full bg-blue-600 text-white flex items-center justify-between px-4">
               <div className="flex items-center gap-2">
                 <MessageCircle size={20} />
-                <span className="font-semibold">{t?.widget.chat_title || "Chat"}</span>
+                <span className="font-semibold">
+                  {t?.widget.chat_title || "Chat"}
+                </span>
                 {unreadCount > 0 && (
                   <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                     {unreadCount > 9 ? "9+" : unreadCount}

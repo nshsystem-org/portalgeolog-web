@@ -10,21 +10,21 @@ import {
   fetchUsersByIds,
   findExistingDirectConversation,
 } from "@/lib/supabase/queries";
-import type {
-  ChatConversation,
-  ChatMessage,
-} from "@/context/DataContext";
+import type { ChatConversation, ChatMessage } from "@/context/DataContext";
 import { useAuth } from "@/context/AuthContext";
 
 function deduplicateDirectConversations(
   conversations: Array<ChatConversation & { unreadCount: number }>,
-  currentUserId: string
+  currentUserId: string,
 ): Array<ChatConversation & { unreadCount: number }> {
   const directConversations = conversations.filter((c) => c.type === "direct");
   const groupConversations = conversations.filter((c) => c.type === "group");
 
   // Criar mapa de conversas diretas pelos participantes
-  const conversationsByParticipants = new Map<string, ChatConversation & { unreadCount: number }>();
+  const conversationsByParticipants = new Map<
+    string,
+    ChatConversation & { unreadCount: number }
+  >();
 
   directConversations.forEach((conv) => {
     if (!conv.participants || conv.participants.length !== 2) return;
@@ -38,14 +38,21 @@ function deduplicateDirectConversations(
     const existing = conversationsByParticipants.get(participantIds);
 
     // Se não existe conversa com esses participantes, ou se a atual é mais recente
-    if (!existing || new Date(conv.updated_at) > new Date(existing.updated_at)) {
+    if (
+      !existing ||
+      new Date(conv.updated_at) > new Date(existing.updated_at)
+    ) {
       conversationsByParticipants.set(participantIds, conv);
     }
   });
 
   // Retornar conversas deduplicadas (diretas + grupos)
-  return [...Array.from(conversationsByParticipants.values()), ...groupConversations].sort(
-    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  return [
+    ...Array.from(conversationsByParticipants.values()),
+    ...groupConversations,
+  ].sort(
+    (a, b) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
   );
 }
 
@@ -55,9 +62,8 @@ export function useChat() {
   const [conversations, setConversations] = useState<
     (ChatConversation & { unreadCount: number })[]
   >([]);
-  const [activeConversation, setActiveConversation] = useState<
-    ChatConversation | null
-  >(null);
+  const [activeConversation, setActiveConversation] =
+    useState<ChatConversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -103,7 +109,7 @@ export function useChat() {
         // Deduplicar conversas diretas (mesmos participantes)
         const deduplicatedConversations = deduplicateDirectConversations(
           enrichedConversations,
-          user.id
+          user.id,
         );
 
         setConversations(deduplicatedConversations);
@@ -131,23 +137,26 @@ export function useChat() {
     }
   }, [user]);
 
-  const loadMessages = useCallback(async (conversationId: string) => {
-    try {
-      setLoading(true);
-      const data = await fetchChatMessages(conversationId);
-      setMessages(data);
+  const loadMessages = useCallback(
+    async (conversationId: string) => {
+      try {
+        setLoading(true);
+        const data = await fetchChatMessages(conversationId);
+        setMessages(data);
 
-      if (user) {
-        await updateChatParticipantLastRead(conversationId, user.id);
+        if (user) {
+          await updateChatParticipantLastRead(conversationId, user.id);
+        }
+
+        setTimeout(scrollToBottom, 100);
+      } catch (error) {
+        console.error("Erro ao carregar mensagens:", error);
+      } finally {
+        setLoading(false);
       }
-
-      setTimeout(scrollToBottom, 100);
-    } catch (error) {
-      console.error("Erro ao carregar mensagens:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [user, scrollToBottom]);
+    },
+    [user, scrollToBottom],
+  );
 
   const selectConversation = useCallback(
     (conversation: ChatConversation) => {
@@ -207,7 +216,9 @@ export function useChat() {
         }
 
         const updatedConversations = await loadConversations();
-        const newConversation = updatedConversations?.find((c) => c.id === conversationId);
+        const newConversation = updatedConversations?.find(
+          (c) => c.id === conversationId,
+        );
 
         if (newConversation) {
           selectConversation(newConversation);
@@ -267,7 +278,14 @@ export function useChat() {
         supabase.removeChannel(channel);
       };
     }
-  }, [user, activeConversation, loadConversations, loadAvailableUsers, scrollToBottom, supabase]);
+  }, [
+    user,
+    activeConversation,
+    loadConversations,
+    loadAvailableUsers,
+    scrollToBottom,
+    supabase,
+  ]);
 
   return {
     conversations,

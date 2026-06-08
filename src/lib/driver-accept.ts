@@ -249,7 +249,9 @@ export async function fetchOSDataForDriverMessage(
   // Se for 0 (primeiro ciclo), mostra todos
   // Se for diferente de 0, mostra apenas o ciclo específico
   if (itineraryIndex !== 0) {
-    sortedGroups = sortedGroups.filter((group) => group.index === itineraryIndex);
+    sortedGroups = sortedGroups.filter(
+      (group) => group.index === itineraryIndex,
+    );
   }
 
   let driverPhone = "Não informado";

@@ -14,7 +14,9 @@ async function getUserIdFromSession() {
       setAll: () => {},
     },
   });
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   return user?.id || null;
 }
 
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     const userId = await getUserIdFromSession();
-    
+
     // Usar service role para gravar o log (ignora RLS de escrita para logs)
     const { createClient } = await import("@supabase/supabase-js");
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -52,7 +54,10 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("Erro ao inserir log no Supabase:", error);
-      return NextResponse.json({ error: "Erro ao salvar log" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Erro ao salvar log" },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({ success: true });

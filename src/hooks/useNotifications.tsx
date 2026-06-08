@@ -2,18 +2,43 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { X, Info, CheckCircle, AlertTriangle, AlertCircle, Archive, RotateCcw } from "lucide-react";
+import {
+  X,
+  Info,
+  CheckCircle,
+  AlertTriangle,
+  AlertCircle,
+  Archive,
+  RotateCcw,
+} from "lucide-react";
 
 // Função helper para formatar mensagem de notificação com protocolo em azul
 function formatNotificationMessage(message: string): React.ReactNode {
   // Remove o [OS_ID:xxx] se existir
   let cleanMessage = message.replace(/\[OS_ID:[a-f0-9-]+\]/, "");
 
+  // Extrai o protocolo em mensagens novas ("A OS ...") e aplica formatação azul
+  const osRefMatch = cleanMessage.match(/\bA OS ([^\s.]+)/);
+  if (osRefMatch) {
+    const osRef = osRefMatch[1];
+    const parts = cleanMessage.split(`A OS ${osRef}`);
+    return (
+      <>
+        {parts[0]}
+        <span className="text-blue-600 font-semibold">A OS {osRef}</span>
+        {parts[1] || ""}
+      </>
+    );
+  }
+
   // Extrai o protocolo (com ou sem #) e aplica formatação azul
   const protocoloMatch = cleanMessage.match(/Protocolo #?(\d+)/);
   if (protocoloMatch) {
     const protocolo = protocoloMatch[1];
-    cleanMessage = cleanMessage.replace(/Protocolo #?\d+/, `Protocolo ${protocolo}`);
+    cleanMessage = cleanMessage.replace(
+      /Protocolo #?\d+/,
+      `Protocolo ${protocolo}`,
+    );
     // Divide a mensagem e destaca o protocolo em azul
     const parts = cleanMessage.split(`Protocolo ${protocolo}`);
     return (
@@ -210,7 +235,8 @@ function NotificationToastItem({
   };
 
   const initials = (notif.created_by_name || "S").charAt(0).toUpperCase();
-  const { icon, bgClass, gradientClass, borderClass, ringClass } = getNotificationIcon(notif);
+  const { icon, bgClass, gradientClass, borderClass, ringClass } =
+    getNotificationIcon(notif);
 
   return (
     <div
@@ -230,7 +256,9 @@ function NotificationToastItem({
       `}
     >
       {/* Indicador lateral colorido */}
-      <div className={`absolute left-0 top-4 bottom-4 w-1 rounded-full bg-gradient-to-b ${gradientClass}`} />
+      <div
+        className={`absolute left-0 top-4 bottom-4 w-1 rounded-full bg-gradient-to-b ${gradientClass}`}
+      />
 
       {/* Ícone do tipo de notificação */}
       <div className={`ml-1 flex-shrink-0 p-2 rounded-xl ${bgClass}`}>
@@ -304,10 +332,9 @@ export function useNotifications() {
   const knownIdsRef = useRef<Set<string>>(new Set());
 
   const showNotificationToast = (notif: AppNotification) => {
-    toast.custom(
-      (t) => <NotificationToastItem toastId={t} notif={notif} />,
-      { duration: Infinity },
-    );
+    toast.custom((t) => <NotificationToastItem toastId={t} notif={notif} />, {
+      duration: Infinity,
+    });
   };
 
   useEffect(() => {

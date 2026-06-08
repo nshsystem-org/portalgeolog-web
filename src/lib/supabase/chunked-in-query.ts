@@ -17,7 +17,10 @@ export async function fetchInChunks<T>(
   const results = await Promise.all(
     chunks.map(async (chunk) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let query = (client as any).from(table).select(selectColumns).in(column, chunk);
+      let query = (client as any)
+        .from(table)
+        .select(selectColumns)
+        .in(column, chunk);
       if (orderBy) {
         query = query.order(orderBy);
       }

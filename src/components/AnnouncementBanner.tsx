@@ -2,7 +2,13 @@
 
 import { useEffect, useState, type MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Megaphone, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
+import {
+  Check,
+  Megaphone,
+  ChevronDown,
+  ChevronUp,
+  ArrowRight,
+} from "lucide-react";
 import { useAnnouncements, type Announcement } from "@/hooks/useAnnouncements";
 import { logInfo } from "@/lib/frontend-logger";
 
@@ -98,10 +104,14 @@ function AnnouncementBannerCard({
   // Log de exibição do botão "clique aqui"
   useEffect(() => {
     if (!hasClicked) {
-      logInfo("AnnouncementBanner", `Botão "Clique aqui" exibido: ${announcement.title}`, {
-        announcementId: announcement.id,
-        type: announcement.type,
-      });
+      logInfo(
+        "AnnouncementBanner",
+        `Botão "Clique aqui" exibido: ${announcement.title}`,
+        {
+          announcementId: announcement.id,
+          type: announcement.type,
+        },
+      );
     }
   }, [hasClicked, announcement]);
 
@@ -130,14 +140,20 @@ function AnnouncementBannerCard({
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.8),transparent_48%)]" />
         <div className="relative h-full px-5 py-2.5 pr-10 flex items-center">
           <div className="flex items-center gap-3.5">
-            <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${style.iconBg}`}>
+            <div
+              className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${style.iconBg}`}
+            >
               <Megaphone size={18} className={style.icon} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className={`text-[9px] font-black uppercase tracking-[0.3em] ${style.text} leading-none mb-1`}>
+              <p
+                className={`text-[9px] font-black uppercase tracking-[0.3em] ${style.text} leading-none mb-1`}
+              >
                 Aviso importante
               </p>
-              <p className={`text-sm font-black leading-tight ${style.text} truncate`}>
+              <p
+                className={`text-sm font-black leading-tight ${style.text} truncate`}
+              >
                 {announcement.title}
               </p>
             </div>
@@ -167,20 +183,18 @@ function AnnouncementBannerCard({
               <div className="relative -mb-1">
                 <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-ping opacity-75" />
                 <div className="absolute top-0 left-0 w-2.5 h-2.5 bg-red-600 rounded-full shadow-[0_0_10px_rgba(220,38,38,0.9)]" />
-                
+
                 {/* Linha Conectora Curva ou Diagonal */}
                 <div className="absolute top-2 left-[5px] w-[20px] h-[30px] border-l-2 border-b-2 border-red-500/40 rounded-bl-2xl" />
               </div>
 
               {/* Botão/Span (Deslocado para a direita e para baixo) */}
-              <div 
-                className="group relative mt-6 ml-6 inline-flex items-center gap-2 bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white px-5 py-2.5 rounded-full shadow-[0_10px_25px_-5px_rgba(220,38,38,0.5)] border border-white/20 whitespace-nowrap transition-all hover:scale-105 hover:shadow-[0_15px_35px_-5px_rgba(220,38,38,0.6)]"
-              >
+              <div className="group relative mt-6 ml-6 inline-flex items-center gap-2 bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white px-5 py-2.5 rounded-full shadow-[0_10px_25px_-5px_rgba(220,38,38,0.5)] border border-white/20 whitespace-nowrap transition-all hover:scale-105 hover:shadow-[0_15px_35px_-5px_rgba(220,38,38,0.6)]">
                 <span className="text-[10px] font-black uppercase tracking-[0.2em]">
                   Clique aqui
                 </span>
                 <ArrowRight size={14} className="animate-pulse" />
-                
+
                 {/* Efeito de brilho */}
                 <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>

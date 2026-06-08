@@ -66,7 +66,11 @@ const weekStatusMeta: Record<
   WeekStatus,
   {
     label: string;
-    icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
+    icon: React.ComponentType<{
+      size?: number;
+      className?: string;
+      strokeWidth?: number;
+    }>;
     color: string;
     textColor: string;
   }
@@ -189,7 +193,9 @@ const formatCalendarDateTime = (
   if (!date) return null;
 
   const normalizedTime = time || null;
-  const [hours = "00", minutes = "00"] = normalizedTime ? normalizedTime.split(":") : ["00", "00"];
+  const [hours = "00", minutes = "00"] = normalizedTime
+    ? normalizedTime.split(":")
+    : ["00", "00"];
   return `${date}T${hours}:${minutes}:00`;
 };
 
@@ -243,10 +249,9 @@ const EventContent = ({
   isMonthView,
   isDayView,
 }: EventContentProps) => {
-  const colors =
-    showArchivedOnly
-      ? statusColors["Arquivado"]
-      : statusColors[status] || statusColors["Pendente"];
+  const colors = showArchivedOnly
+    ? statusColors["Arquivado"]
+    : statusColors[status] || statusColors["Pendente"];
   const clienteNome =
     clientes.find((c) => c.id === os.clienteId)?.nome || "N/A";
 
@@ -433,7 +438,7 @@ export default function OSCalendar({
           ? deriveCyclesOperationalStatus(os.operationalCycles)
           : os.status.operacional;
       const waypoints = os.rota?.waypoints || [];
-      
+
       const itineraries =
         waypoints.length > 0
           ? waypoints.reduce<
@@ -465,7 +470,9 @@ export default function OSCalendar({
         }
 
         const timeStr = os.hora;
-        const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
+        const [hours = "00", minutes = "00"] = timeStr
+          ? timeStr.split(":")
+          : ["00", "00"];
         const endHour = Math.min(Number(hours) + 1, 23);
         const endMinutes = Number(hours) >= 23 ? "59" : minutes;
         const endDateTime = `${os.data}T${String(endHour).padStart(2, "0")}:${endMinutes}:00`;
@@ -519,7 +526,9 @@ export default function OSCalendar({
             return;
           }
 
-          const [hours = "00", minutes = "00"] = timeStr ? timeStr.split(":") : ["00", "00"];
+          const [hours = "00", minutes = "00"] = timeStr
+            ? timeStr.split(":")
+            : ["00", "00"];
           const endHour = Math.min(Number(hours) + 1, 23);
           const endMinutes = Number(hours) >= 23 ? "59" : minutes;
           const endDateTime = `${dateStr}T${String(endHour).padStart(2, "0")}:${endMinutes}:00`;
@@ -600,17 +609,21 @@ export default function OSCalendar({
     dayGridDay: "Dia",
   };
 
-  const changeView = (
-    view: "dayGridMonth" | "dayGridWeek" | "dayGridDay",
-  ) => {
+  const changeView = (view: "dayGridMonth" | "dayGridWeek" | "dayGridDay") => {
     setCurrentView(view);
-    logInfo("OSCalendar", `Mudou visualização do calendário para ${viewLabelMap[view]}`);
+    logInfo(
+      "OSCalendar",
+      `Mudou visualização do calendário para ${viewLabelMap[view]}`,
+    );
     // We rely on the 'key={currentView}' on FullCalendar to force a clean re-mount
     // This solves issues with DOM elements from one view persisting in another.
   };
 
   const goToPrev = () => {
-    logInfo("OSCalendar", `Navegou para ${viewLabelMap[currentView] || "período"} anterior`);
+    logInfo(
+      "OSCalendar",
+      `Navegou para ${viewLabelMap[currentView] || "período"} anterior`,
+    );
     const calendarApi = calendarRef.current?.getApi();
     if (calendarApi) {
       calendarApi.prev();
@@ -618,7 +631,10 @@ export default function OSCalendar({
   };
 
   const goToNext = () => {
-    logInfo("OSCalendar", `Navegou para próximo ${viewLabelMap[currentView] || "período"}`);
+    logInfo(
+      "OSCalendar",
+      `Navegou para próximo ${viewLabelMap[currentView] || "período"}`,
+    );
     const calendarApi = calendarRef.current?.getApi();
     if (calendarApi) {
       calendarApi.next();
@@ -629,7 +645,7 @@ export default function OSCalendar({
     (dateInfo: { start: Date; end: Date; view: { type: string } }) => {
       // Remove day-bottom elements after calendar renders to eliminate empty space
       setTimeout(() => {
-        const dayBottoms = document.querySelectorAll('.fc-daygrid-day-bottom');
+        const dayBottoms = document.querySelectorAll(".fc-daygrid-day-bottom");
         dayBottoms.forEach((el) => {
           el.remove();
         });
@@ -651,136 +667,149 @@ export default function OSCalendar({
   );
 
   // Renderizador customizado de eventos
-  const renderEventContent = useCallback((eventInfo: {
-    timeText?: string;
-    event: {
-      startStr?: string;
-      extendedProps: {
-        os: OrderService;
-        status: CycleOperationalStatus;
-        itineraryLabel?: string;
-        displayDateTime?: string;
-        startTime?: string;
+  const renderEventContent = useCallback(
+    (eventInfo: {
+      timeText?: string;
+      event: {
+        startStr?: string;
+        extendedProps: {
+          os: OrderService;
+          status: CycleOperationalStatus;
+          itineraryLabel?: string;
+          displayDateTime?: string;
+          startTime?: string;
+        };
       };
-    };
-  }) => {
-    const os = eventInfo.event.extendedProps.os;
-    return (
-      <EventContent
-        os={os}
-        clientes={clientes}
-        status={eventInfo.event.extendedProps.status}
-        timeText={eventInfo.timeText}
-        eventStartStr={eventInfo.event.startStr}
-        displayDateTime={eventInfo.event.extendedProps.displayDateTime}
-        startTime={eventInfo.event.extendedProps.startTime}
-        showArchivedOnly={showArchivedOnly}
-        isMonthView={currentView === "dayGridMonth"}
-        isDayView={currentView === "dayGridDay"}
-      />
-    );
-  }, [clientes, showArchivedOnly, currentView]);
+    }) => {
+      const os = eventInfo.event.extendedProps.os;
+      return (
+        <EventContent
+          os={os}
+          clientes={clientes}
+          status={eventInfo.event.extendedProps.status}
+          timeText={eventInfo.timeText}
+          eventStartStr={eventInfo.event.startStr}
+          displayDateTime={eventInfo.event.extendedProps.displayDateTime}
+          startTime={eventInfo.event.extendedProps.startTime}
+          showArchivedOnly={showArchivedOnly}
+          isMonthView={currentView === "dayGridMonth"}
+          isDayView={currentView === "dayGridDay"}
+        />
+      );
+    },
+    [clientes, showArchivedOnly, currentView],
+  );
 
-  const renderMonthDayCellContent = useCallback((arg: {
-    date: Date;
-    dayNumberText: string;
-    view: { type: string };
-  }) => {
-    // Somente renderiza o resumo de chips no modo mês e garante limpeza absoluta em outros modos
-    if (arg.view.type !== "dayGridMonth") {
-      return <span className="fc-daygrid-day-number-simple">{arg.dayNumberText}</span>;
-    }
+  const renderMonthDayCellContent = useCallback(
+    (arg: { date: Date; dayNumberText: string; view: { type: string } }) => {
+      // Somente renderiza o resumo de chips no modo mês e garante limpeza absoluta em outros modos
+      if (arg.view.type !== "dayGridMonth") {
+        return (
+          <span className="fc-daygrid-day-number-simple">
+            {arg.dayNumberText}
+          </span>
+        );
+      }
 
-    const dateKey = toDateKey(arg.date);
-    const counts = weekStatusCountsByDate[dateKey] ?? emptyWeekStatusCounts();
-    const isToday = dateKey === toDateKey(new Date());
+      const dateKey = toDateKey(arg.date);
+      const counts = weekStatusCountsByDate[dateKey] ?? emptyWeekStatusCounts();
+      const isToday = dateKey === toDateKey(new Date());
 
-    return (
-      <div className="fc-os-month-cell" key={`month-cell-${dateKey}`}>
-        <span className="fc-os-month-cell__day-number">{arg.dayNumberText}</span>
-        <div className="fc-os-month-cell__status-row">
-          {weekStatusOrder.map((status) => {
-            const meta = weekStatusMeta[status];
-            const Icon = meta.icon;
-            const count = counts[status];
+      return (
+        <div className="fc-os-month-cell" key={`month-cell-${dateKey}`}>
+          <span className="fc-os-month-cell__day-number">
+            {arg.dayNumberText}
+          </span>
+          <div className="fc-os-month-cell__status-row">
+            {weekStatusOrder.map((status) => {
+              const meta = weekStatusMeta[status];
+              const Icon = meta.icon;
+              const count = counts[status];
 
-            return (
-              <div
-                key={status}
-                className="fc-os-month-cell__status-chip"
-                title={`${meta.label}: ${count}`}
-                aria-label={`${meta.label}: ${count}`}
-                style={{
-                  color: meta.color,
-                  borderColor: isToday ? `${meta.color}66` : `${meta.color}33`,
-                  backgroundColor: isToday ? `${meta.color}26` : `${meta.color}12`,
-                  opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
-                }}
-              >
-                <Icon size={18} strokeWidth={2.5} />
-                <span style={{ color: meta.textColor }}>{count}</span>
-              </div>
-            );
-          })}
+              return (
+                <div
+                  key={status}
+                  className="fc-os-month-cell__status-chip"
+                  title={`${meta.label}: ${count}`}
+                  aria-label={`${meta.label}: ${count}`}
+                  style={{
+                    color: meta.color,
+                    borderColor: isToday
+                      ? `${meta.color}66`
+                      : `${meta.color}33`,
+                    backgroundColor: isToday
+                      ? `${meta.color}26`
+                      : `${meta.color}12`,
+                    opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
+                  }}
+                >
+                  <Icon size={18} strokeWidth={2.5} />
+                  <span style={{ color: meta.textColor }}>{count}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
-    );
-  }, [weekStatusCountsByDate]);
+      );
+    },
+    [weekStatusCountsByDate],
+  );
 
-  const renderDayHeaderContent = useCallback((arg: {
-    date: Date;
-    text: string;
-    view: { type: string };
-  }) => {
-    if (
-      arg.view.type !== "dayGridWeek" &&
-      arg.view.type !== "dayGridDay"
-    ) {
-      return arg.text;
-    }
+  const renderDayHeaderContent = useCallback(
+    (arg: { date: Date; text: string; view: { type: string } }) => {
+      if (arg.view.type !== "dayGridWeek" && arg.view.type !== "dayGridDay") {
+        return arg.text;
+      }
 
-    const dateKey = toDateKey(arg.date);
-    const counts = weekStatusCountsByDate[dateKey] ?? emptyWeekStatusCounts();
-    const headerVariant =
-      arg.view.type === "dayGridDay"
-        ? "day"
-        : "week";
+      const dateKey = toDateKey(arg.date);
+      const counts = weekStatusCountsByDate[dateKey] ?? emptyWeekStatusCounts();
+      const headerVariant = arg.view.type === "dayGridDay" ? "day" : "week";
 
-    const iconSize = headerVariant === "day" ? 16 : 12;
-    const iconStrokeWidth = headerVariant === "day" ? 2 : 2.5;
-    const isToday = arg.view.type === "dayGridWeek" && dateKey === toDateKey(new Date());
+      const iconSize = headerVariant === "day" ? 16 : 12;
+      const iconStrokeWidth = headerVariant === "day" ? 2 : 2.5;
+      const isToday =
+        arg.view.type === "dayGridWeek" && dateKey === toDateKey(new Date());
 
-    return (
-      <div className={`fc-os-header fc-os-header--${headerVariant}`} key={`header-${dateKey}-${headerVariant}`}>
-        <span className="fc-os-week-header__day">{arg.text}</span>
-        <div className="fc-os-week-header__status-row">
-          {weekStatusOrder.map((status) => {
-            const meta = weekStatusMeta[status];
-            const Icon = meta.icon;
-            const count = counts[status];
+      return (
+        <div
+          className={`fc-os-header fc-os-header--${headerVariant}`}
+          key={`header-${dateKey}-${headerVariant}`}
+        >
+          <span className="fc-os-week-header__day">{arg.text}</span>
+          <div className="fc-os-week-header__status-row">
+            {weekStatusOrder.map((status) => {
+              const meta = weekStatusMeta[status];
+              const Icon = meta.icon;
+              const count = counts[status];
 
-            return (
-              <div
-                key={status}
-                className="fc-os-week-header__status-chip"
-                title={`${meta.label}: ${count}`}
-                aria-label={`${meta.label}: ${count}`}
-                style={{
-                  color: meta.color,
-                  borderColor: isToday ? `${meta.color}66` : `${meta.color}33`,
-                  backgroundColor: isToday ? `${meta.color}26` : `${meta.color}12`,
-                  opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
-                }}
-              >
-                <Icon size={iconSize} strokeWidth={iconStrokeWidth} />
-                <span style={{ color: meta.textColor }}>{count}</span>
-              </div>
-            );
-          })}
+              return (
+                <div
+                  key={status}
+                  className="fc-os-week-header__status-chip"
+                  title={`${meta.label}: ${count}`}
+                  aria-label={`${meta.label}: ${count}`}
+                  style={{
+                    color: meta.color,
+                    borderColor: isToday
+                      ? `${meta.color}66`
+                      : `${meta.color}33`,
+                    backgroundColor: isToday
+                      ? `${meta.color}26`
+                      : `${meta.color}12`,
+                    opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
+                  }}
+                >
+                  <Icon size={iconSize} strokeWidth={iconStrokeWidth} />
+                  <span style={{ color: meta.textColor }}>{count}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
-    );
-  }, [weekStatusCountsByDate]);
+      );
+    },
+    [weekStatusCountsByDate],
+  );
 
   // Lógica de exibição baseada em hasLoaded
   const isInitialLoading = !hasLoaded && loading;
@@ -855,11 +884,7 @@ export default function OSCalendar({
             <FullCalendar
               key={currentView}
               ref={calendarRef}
-              plugins={[
-                dayGridPlugin,
-                timeGridPlugin,
-                interactionPlugin,
-              ]}
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView={currentView}
               locale={ptBrLocale}
               firstDay={1}
@@ -868,19 +893,23 @@ export default function OSCalendar({
               selectable={true}
               select={handleDateSelect}
               datesSet={handleDatesSet}
-              headerToolbar={currentView === "dayGridMonth" ? {
-                left: "",
-                center: "title",
-                right: ""
-              } : false}
-              titleFormat={{ year: 'numeric', month: 'long' }}
+              headerToolbar={
+                currentView === "dayGridMonth"
+                  ? {
+                      left: "",
+                      center: "title",
+                      right: "",
+                    }
+                  : false
+              }
+              titleFormat={{ year: "numeric", month: "long" }}
               eventContent={renderEventContent}
               dayCellContent={renderMonthDayCellContent}
               dayCellClassNames={(dateInfo) => {
                 if (dateInfo.isOtherMonth) {
-                  return 'fc-day-other-month';
+                  return "fc-day-other-month";
                 }
-                return '';
+                return "";
               }}
               height="auto"
               contentHeight="auto"
@@ -1519,25 +1548,25 @@ export default function OSCalendar({
           }
         `}</style>
 
-        {/* Overlay de carregamento durante navegação */}
-        {showCalendarWithOverlay && (
-          <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-20 rounded-b-[2rem]">
-            <Loader2 size={48} className="text-blue-500 animate-spin" />
-            <p className="font-bold text-lg text-slate-500 mt-4">
-              Carregando ordens de serviço...
-            </p>
-          </div>
-        )}
+            {/* Overlay de carregamento durante navegação */}
+            {showCalendarWithOverlay && (
+              <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-20 rounded-b-[2rem]">
+                <Loader2 size={48} className="text-blue-500 animate-spin" />
+                <p className="font-bold text-lg text-slate-500 mt-4">
+                  Carregando ordens de serviço...
+                </p>
+              </div>
+            )}
 
-        {/* Overlay de Vazio - só mostrar se não estiver carregando */}
-        {isEmpty && (
-          <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center z-10 rounded-b-[2rem]">
-            <CalendarDays size={64} className="text-slate-300 mb-4" />
-            <p className="font-bold text-lg text-slate-400">
-              Nenhuma OS encontrada para exibir no calendário.
-            </p>
-          </div>
-        )}
+            {/* Overlay de Vazio - só mostrar se não estiver carregando */}
+            {isEmpty && (
+              <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center z-10 rounded-b-[2rem]">
+                <CalendarDays size={64} className="text-slate-300 mb-4" />
+                <p className="font-bold text-lg text-slate-400">
+                  Nenhuma OS encontrada para exibir no calendário.
+                </p>
+              </div>
+            )}
           </>
         )}
       </div>

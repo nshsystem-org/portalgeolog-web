@@ -6,7 +6,8 @@ import { ChevronDown, Search, Plus } from "lucide-react";
 
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "");
-  const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
+  const local =
+    digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
 
   if (local.length === 11) {
     return `+55  ${local.slice(0, 2)}  ${local.slice(2, 7)}-${local.slice(7)}`;
@@ -79,8 +80,16 @@ export default function GeologSearchableSelect({
 
   const selectedOption = options.find((opt) => opt.id === value);
   const triggerPaddingClass = compact ? "px-2 py-1.5" : "px-5 py-4";
-  const triggerTextClass = triggerClassName?.includes("text-") ? "" : (compact ? "text-sm" : "text-lg");
-  const triggerIconSize = triggerClassName?.includes("text-base") ? 18 : (compact ? 16 : 20);
+  const triggerTextClass = triggerClassName?.includes("text-")
+    ? ""
+    : compact
+      ? "text-sm"
+      : "text-lg";
+  const triggerIconSize = triggerClassName?.includes("text-base")
+    ? 18
+    : compact
+      ? 16
+      : 20;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -138,25 +147,23 @@ export default function GeologSearchableSelect({
 
   const normalizedSearch = normalizeSearch(searchTerm);
   const searchDigits = normalizePhoneDigits(searchTerm);
-  const filteredOptions = options.filter(
-    (opt) => {
-      const matchesText =
-        normalizeSearch(opt.nome).includes(normalizedSearch) ||
-        (opt.sublabel &&
-          normalizeSearch(opt.sublabel).includes(normalizedSearch));
+  const filteredOptions = options.filter((opt) => {
+    const matchesText =
+      normalizeSearch(opt.nome).includes(normalizedSearch) ||
+      (opt.sublabel &&
+        normalizeSearch(opt.sublabel).includes(normalizedSearch));
 
-      if (matchesText) {
-        return true;
-      }
+    if (matchesText) {
+      return true;
+    }
 
-      if (!searchDigits || !opt.sublabel) {
-        return false;
-      }
+    if (!searchDigits || !opt.sublabel) {
+      return false;
+    }
 
-      const optionDigits = normalizePhoneDigits(opt.sublabel);
-      return optionDigits.includes(searchDigits);
-    },
-  );
+    const optionDigits = normalizePhoneDigits(opt.sublabel);
+    return optionDigits.includes(searchDigits);
+  });
 
   const dropdownContent = (
     <div

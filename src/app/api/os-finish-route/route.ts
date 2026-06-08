@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import {
-  normalizeWhatsAppPhone,
-  sendWhatsAppMessage,
-} from "@/lib/meta";
+import { normalizeWhatsAppPhone, sendWhatsAppMessage } from "@/lib/meta";
 import {
   getNextOperationalCycle,
   getOperationalCycleBannerTitle,
@@ -85,7 +82,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const { cycle } = await loadOperationalCycleContextForOS(getAdmin(), osId, requestedCycleIndex);
+    const { cycle } = await loadOperationalCycleContextForOS(
+      getAdmin(),
+      osId,
+      requestedCycleIndex,
+    );
     // Correção de inconsistência: ciclo pode estar "completed" no JSON mas
     // route_finished_at nulo (dados legados não atualizados). Permitir refinalizar.
     const alreadyFinished = Boolean(
@@ -170,7 +171,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { cycle } = await loadOperationalCycleContextForOS(getAdmin(), osId, requestedCycleIndex);
+    const { cycle } = await loadOperationalCycleContextForOS(
+      getAdmin(),
+      osId,
+      requestedCycleIndex,
+    );
 
     if (!cycle) {
       return NextResponse.json(

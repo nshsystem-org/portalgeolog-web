@@ -146,10 +146,30 @@ const formatDateToISO = (brDate: string): string => {
 };
 
 const LEVEL_COLORS = {
-  info: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", icon: Info },
-  warning: { bg: "bg-yellow-50", text: "text-yellow-700", border: "border-yellow-200", icon: AlertTriangle },
-  error: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: XCircle },
-  critical: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200", icon: AlertCircle },
+  info: {
+    bg: "bg-blue-50",
+    text: "text-blue-700",
+    border: "border-blue-200",
+    icon: Info,
+  },
+  warning: {
+    bg: "bg-yellow-50",
+    text: "text-yellow-700",
+    border: "border-yellow-200",
+    icon: AlertTriangle,
+  },
+  error: {
+    bg: "bg-red-50",
+    text: "text-red-700",
+    border: "border-red-200",
+    icon: XCircle,
+  },
+  critical: {
+    bg: "bg-purple-50",
+    text: "text-purple-700",
+    border: "border-purple-200",
+    icon: AlertCircle,
+  },
 };
 
 export default function LogsViewer() {
@@ -191,54 +211,76 @@ export default function LogsViewer() {
     applyQuickDateRange(quickDateRange);
   }, [quickDateRange, applyQuickDateRange]);
 
-  const fetchLogs = useCallback(async (tab?: TabType) => {
-    const targetTab = tab || activeTab;
-    setLoading(true);
-    try {
-      if (targetTab === "sistema") {
-        // Buscar mais logs do backend quando filtros frontend estão ativos
-        const hasSearchFilter = searchTerm.trim() !== "";
-        const hasFrontendFilters = hasSearchFilter || selectedCategory !== "all" || selectedPage !== "all";
-        const fetchLimit = hasSearchFilter ? 5000 : hasFrontendFilters ? 500 : PAGE_SIZE;
-        const offset = (currentPage - 1) * PAGE_SIZE;
-        const systemParams = new URLSearchParams({
-          limit: fetchLimit.toString(),
-          offset: offset.toString(),
-        });
+  const fetchLogs = useCallback(
+    async (tab?: TabType) => {
+      const targetTab = tab || activeTab;
+      setLoading(true);
+      try {
+        if (targetTab === "sistema") {
+          // Buscar mais logs do backend quando filtros frontend estão ativos
+          const hasSearchFilter = searchTerm.trim() !== "";
+          const hasFrontendFilters =
+            hasSearchFilter ||
+            selectedCategory !== "all" ||
+            selectedPage !== "all";
+          const fetchLimit = hasSearchFilter
+            ? 5000
+            : hasFrontendFilters
+              ? 500
+              : PAGE_SIZE;
+          const offset = (currentPage - 1) * PAGE_SIZE;
+          const systemParams = new URLSearchParams({
+            limit: fetchLimit.toString(),
+            offset: offset.toString(),
+          });
 
-        if (selectedUserId !== "all") {
-          systemParams.append("userId", selectedUserId);
+          if (selectedUserId !== "all") {
+            systemParams.append("userId", selectedUserId);
+          }
+
+          if (startDate) {
+            systemParams.append("startDate", startDate);
+          }
+
+          if (endDate) {
+            systemParams.append("endDate", endDate);
+          }
+
+          if (selectedLevel && selectedLevel !== "all") {
+            systemParams.append("level", selectedLevel);
+          }
+
+          const systemResponse = await fetch(
+            `/api/frontend-logs/list?${systemParams}`,
+          );
+          const systemData: LogsResponse = await systemResponse.json();
+          setSystemLogs(systemData.logs || []);
+          setTotalRecords(systemData.total || 0);
+        } else if (targetTab === "whatsapp") {
+          const whatsappResponse = await fetch("/api/whatsapp-logs");
+          const whatsappData = (await whatsappResponse.json()) as
+            | WhatsAppLogEntry[]
+            | { error?: string };
+          setWhatsappLogs(Array.isArray(whatsappData) ? whatsappData : []);
         }
-
-        if (startDate) {
-          systemParams.append("startDate", startDate);
-        }
-
-        if (endDate) {
-          systemParams.append("endDate", endDate);
-        }
-
-        if (selectedLevel && selectedLevel !== "all") {
-          systemParams.append("level", selectedLevel);
-        }
-
-        const systemResponse = await fetch(`/api/frontend-logs/list?${systemParams}`);
-        const systemData: LogsResponse = await systemResponse.json();
-        setSystemLogs(systemData.logs || []);
-        setTotalRecords(systemData.total || 0);
-      } else if (targetTab === "whatsapp") {
-        const whatsappResponse = await fetch("/api/whatsapp-logs");
-        const whatsappData = (await whatsappResponse.json()) as
-          | WhatsAppLogEntry[]
-          | { error?: string };
-        setWhatsappLogs(Array.isArray(whatsappData) ? whatsappData : []);
+      } catch (error) {
+        console.error("Erro ao buscar logs:", error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Erro ao buscar logs:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeTab, searchTerm, selectedUserId, currentPage, startDate, endDate, selectedLevel, selectedCategory, selectedPage]);
+    },
+    [
+      activeTab,
+      searchTerm,
+      selectedUserId,
+      currentPage,
+      startDate,
+      endDate,
+      selectedLevel,
+      selectedCategory,
+      selectedPage,
+    ],
+  );
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -262,7 +304,14 @@ export default function LogsViewer() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedUserId, startDate, endDate, selectedLevel, selectedCategory]);
+  }, [
+    searchTerm,
+    selectedUserId,
+    startDate,
+    endDate,
+    selectedLevel,
+    selectedCategory,
+  ]);
 
   useEffect(() => {
     if (activeTab !== "sistema") return;
@@ -312,17 +361,59 @@ export default function LogsViewer() {
     });
   };
 
-  const formatSummary = (summary: string, errorDetails?: Record<string, unknown> | null): React.ReactNode => {
-    const pageMap: Record<string, { icon: React.ReactNode; name: string; color: string }> = {
-      "/portal/dashboard": { icon: <LayoutDashboard size={12} />, name: "Dashboard", color: "bg-purple-50 text-purple-700" },
-      "/portal/os": { icon: <FileText size={12} />, name: "Ordem de Serviço", color: "bg-blue-50 text-blue-700" },
-      "/portal/financeiro": { icon: <DollarSign size={12} />, name: "Medição Financeira", color: "bg-green-50 text-green-700" },
-      "/portal/motoristas": { icon: <Users size={12} />, name: "Motoristas", color: "bg-orange-50 text-orange-700" },
-      "/portal/veiculos": { icon: <Truck size={12} />, name: "Veículos", color: "bg-indigo-50 text-indigo-700" },
-      "/portal/passageiros": { icon: <UserSquare2 size={12} />, name: "Passageiros", color: "bg-pink-50 text-pink-700" },
-      "/portal/clientes": { icon: <Building size={12} />, name: "Clientes", color: "bg-cyan-50 text-cyan-700" },
-      "/portal/parcerias": { icon: <Handshake size={12} />, name: "Parceiros de Serviço", color: "bg-amber-50 text-amber-700" },
-      "/portal/config": { icon: <Settings size={12} />, name: "Configurações", color: "bg-slate-50 text-slate-700" },
+  const formatSummary = (
+    summary: string,
+    errorDetails?: Record<string, unknown> | null,
+  ): React.ReactNode => {
+    const pageMap: Record<
+      string,
+      { icon: React.ReactNode; name: string; color: string }
+    > = {
+      "/portal/dashboard": {
+        icon: <LayoutDashboard size={12} />,
+        name: "Dashboard",
+        color: "bg-purple-50 text-purple-700",
+      },
+      "/portal/os": {
+        icon: <FileText size={12} />,
+        name: "Ordem de Serviço",
+        color: "bg-blue-50 text-blue-700",
+      },
+      "/portal/financeiro": {
+        icon: <DollarSign size={12} />,
+        name: "Medição Financeira",
+        color: "bg-green-50 text-green-700",
+      },
+      "/portal/motoristas": {
+        icon: <Users size={12} />,
+        name: "Motoristas",
+        color: "bg-orange-50 text-orange-700",
+      },
+      "/portal/veiculos": {
+        icon: <Truck size={12} />,
+        name: "Veículos",
+        color: "bg-indigo-50 text-indigo-700",
+      },
+      "/portal/passageiros": {
+        icon: <UserSquare2 size={12} />,
+        name: "Passageiros",
+        color: "bg-pink-50 text-pink-700",
+      },
+      "/portal/clientes": {
+        icon: <Building size={12} />,
+        name: "Clientes",
+        color: "bg-cyan-50 text-cyan-700",
+      },
+      "/portal/parcerias": {
+        icon: <Handshake size={12} />,
+        name: "Parceiros de Serviço",
+        color: "bg-amber-50 text-amber-700",
+      },
+      "/portal/config": {
+        icon: <Settings size={12} />,
+        name: "Configurações",
+        color: "bg-slate-50 text-slate-700",
+      },
     };
 
     for (const [pathname, config] of Object.entries(pageMap)) {
@@ -330,7 +421,9 @@ export default function LogsViewer() {
         return (
           <>
             Acessou a página{" "}
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider ${config.color}`}>
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider ${config.color}`}
+            >
               {config.icon}
               {config.name}
             </span>
@@ -354,9 +447,8 @@ export default function LogsViewer() {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
             <FileText size={12} />
             Ordem de Serviço
-          </span>
-          {" "}adicionada com sucesso{" "}
-          <Check size={14} className="text-green-500" />
+          </span>{" "}
+          adicionada com sucesso <Check size={14} className="text-green-500" />
         </div>
       );
     }
@@ -367,9 +459,8 @@ export default function LogsViewer() {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
             <FileText size={12} />
             Ordem de Serviço
-          </span>
-          {" "}atualizada com sucesso{" "}
-          <Check size={14} className="text-green-500" />
+          </span>{" "}
+          atualizada com sucesso <Check size={14} className="text-green-500" />
         </div>
       );
     }
@@ -381,9 +472,8 @@ export default function LogsViewer() {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
             <FileText size={12} />
             Ordem de Serviço
-          </span>
-          {" "}atualizado{" "}
-          <Check size={14} className="text-green-500" />
+          </span>{" "}
+          atualizado <Check size={14} className="text-green-500" />
         </div>
       );
     }
@@ -394,9 +484,8 @@ export default function LogsViewer() {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
             <FileText size={12} />
             Ordem de Serviço
-          </span>
-          {" "}excluída/arquivada{" "}
-          <Check size={14} className="text-green-500" />
+          </span>{" "}
+          excluída/arquivada <Check size={14} className="text-green-500" />
         </div>
       );
     }
@@ -407,30 +496,37 @@ export default function LogsViewer() {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider bg-blue-50 text-blue-700">
             <FileText size={12} />
             Ordem de Serviço
-          </span>
-          {" "}desarquivada{" "}
-          <Check size={14} className="text-green-500" />
+          </span>{" "}
+          desarquivada <Check size={14} className="text-green-500" />
         </div>
       );
     }
 
-    if (summary.startsWith("Dados da página") && summary.endsWith("carregados com sucesso!")) {
-      const pageNameMatch = summary.match(/Dados da página (.+) carregados com sucesso!/);
+    if (
+      summary.startsWith("Dados da página") &&
+      summary.endsWith("carregados com sucesso!")
+    ) {
+      const pageNameMatch = summary.match(
+        /Dados da página (.+) carregados com sucesso!/,
+      );
       const pageName = pageNameMatch ? pageNameMatch[1] : "Desconhecida";
 
       const isAdmin = pageName === "Administrador";
       const PageIcon = isAdmin ? Settings : FileText;
-      const pageColorClass = isAdmin ? "bg-slate-50 text-slate-700" : "bg-blue-50 text-blue-700";
+      const pageColorClass = isAdmin
+        ? "bg-slate-50 text-slate-700"
+        : "bg-blue-50 text-blue-700";
 
       return (
         <div className="inline-flex items-center flex-wrap gap-1">
           Dados da página{" "}
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider ${pageColorClass}`}>
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider ${pageColorClass}`}
+          >
             <PageIcon size={12} />
             {pageName}
-          </span>
-          {" "}carregados com sucesso!{" "}
-          <Check size={14} className="text-green-500" />
+          </span>{" "}
+          carregados com sucesso! <Check size={14} className="text-green-500" />
         </div>
       );
     }
@@ -439,9 +535,14 @@ export default function LogsViewer() {
       const details = errorDetails as Record<string, unknown>;
       return (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-red-700">Falha ao carregar dados da página:</span>
+          <span className="text-sm font-semibold text-red-700">
+            Falha ao carregar dados da página:
+          </span>
           {Object.entries(details).map(([key, value]) => (
-            <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-700 rounded-md font-bold text-xs">
+            <span
+              key={key}
+              className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-700 rounded-md font-bold text-xs"
+            >
               {key}: {typeof value === "number" ? value : "falhou"}
             </span>
           ))}
@@ -463,7 +564,9 @@ export default function LogsViewer() {
 
     // Formatar logs de calendário
     if (summary.startsWith("Calendário carregado:")) {
-      const match = summary.match(/Calendário carregado: (\d+) OS no período ([\d-]+) a ([\d-]+)(?: \((.+)\))?/);
+      const match = summary.match(
+        /Calendário carregado: (\d+) OS no período ([\d-]+) a ([\d-]+)(?: \((.+)\))?/,
+      );
       if (match && errorDetails) {
         const [, count, from, to, extra] = match;
         const fromDate = new Date(from);
@@ -472,7 +575,9 @@ export default function LogsViewer() {
 
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">Calendário carregado:</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Calendário carregado:
+            </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-bold text-xs">
               <CalendarIcon size={12} />
               {count} OS
@@ -497,7 +602,9 @@ export default function LogsViewer() {
 
     // Formatar logs de tabela
     if (summary.startsWith("Tabela carregada:")) {
-      const match = summary.match(/Tabela carregada: página (\d+), \d+ OS totais(?: \(filtros: (.+)\))?/);
+      const match = summary.match(
+        /Tabela carregada: página (\d+), \d+ OS totais(?: \(filtros: (.+)\))?/,
+      );
       if (match) {
         const [, page, filters] = match;
 
@@ -507,7 +614,9 @@ export default function LogsViewer() {
               <LayoutGrid size={12} />
               Modo Tabela
             </span>
-            <span className="text-sm font-semibold text-slate-700">Acessou</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Acessou
+            </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md font-bold text-xs">
               Página {page}
             </span>
@@ -529,7 +638,9 @@ export default function LogsViewer() {
 
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">Abriu visualização da OS</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Abriu visualização da OS
+            </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-bold text-xs">
               <FileText size={12} />
               Protocolo {protocolo}
@@ -541,13 +652,17 @@ export default function LogsViewer() {
 
     // Formatar logs de visualização via notificação
     if (summary.startsWith("Abriu visualização via notificação")) {
-      const match = summary.match(/Abriu visualização via notificação: protocolo (\d+)/);
+      const match = summary.match(
+        /Abriu visualização via notificação: protocolo (\d+)/,
+      );
       if (match) {
         const [, protocolo] = match;
 
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">Visualização via notificação</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Visualização via notificação
+            </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-bold text-xs">
               <FileText size={12} />
               Protocolo {protocolo}
@@ -559,13 +674,17 @@ export default function LogsViewer() {
 
     // Formatar logs de visualização via URL
     if (summary.startsWith("Abriu visualização via URL")) {
-      const match = summary.match(/Abriu visualização via URL: protocolo (\d+)/);
+      const match = summary.match(
+        /Abriu visualização via URL: protocolo (\d+)/,
+      );
       if (match) {
         const [, protocolo] = match;
 
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">Visualização via URL</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Visualização via URL
+            </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-bold text-xs">
               <FileText size={12} />
               Protocolo {protocolo}
@@ -583,7 +702,9 @@ export default function LogsViewer() {
 
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">Abriu edição da OS</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Abriu edição da OS
+            </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md font-bold text-xs">
               <Edit2 size={12} />
               Protocolo {protocolo}
@@ -601,7 +722,9 @@ export default function LogsViewer() {
 
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">Arquivou OS</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Arquivou OS
+            </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-700 rounded-md font-bold text-xs">
               <Archive size={12} />
               Protocolo {protocolo}
@@ -618,7 +741,9 @@ export default function LogsViewer() {
 
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">Desarquivou OS</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Desarquivou OS
+            </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-md font-bold text-xs">
               <RotateCcw size={12} />
               Protocolo {protocolo}
@@ -649,7 +774,10 @@ export default function LogsViewer() {
     user_agent: log.user_agent,
   });
 
-  const getValue = (payload: Record<string, unknown>, keys: string[]): string => {
+  const getValue = (
+    payload: Record<string, unknown>,
+    keys: string[],
+  ): string => {
     let current: unknown = payload;
     for (const key of keys) {
       if (!current || typeof current !== "object" || Array.isArray(current)) {
@@ -692,7 +820,8 @@ export default function LogsViewer() {
       send_template_exception: `Exceção ao enviar template ${templateName || "não informado"}`,
     };
 
-    const title = log.source === "meta-webhook" ? "Webhook Meta" : "Envio WhatsApp";
+    const title =
+      log.source === "meta-webhook" ? "Webhook Meta" : "Envio WhatsApp";
 
     return {
       id: log.id,
@@ -701,8 +830,14 @@ export default function LogsViewer() {
       title,
       summary: summaryMap[eventType] || eventType,
       detail:
-        errorMessage || templateName || getValue(payload, ["contextId"]) || eventType,
-      result: eventType.includes("error") || eventType.includes("exception") ? "Erro" : "Info",
+        errorMessage ||
+        templateName ||
+        getValue(payload, ["contextId"]) ||
+        eventType,
+      result:
+        eventType.includes("error") || eventType.includes("exception")
+          ? "Erro"
+          : "Info",
       payload,
     };
   };
@@ -710,15 +845,16 @@ export default function LogsViewer() {
   const normalizedSystemLogs = systemLogs.map(formatSystemLog);
   const normalizedWhatsappLogs = whatsappLogs.map(formatWhatsAppLog);
 
-  const baseLogs = activeTab === "whatsapp" ? normalizedWhatsappLogs : normalizedSystemLogs;
+  const baseLogs =
+    activeTab === "whatsapp" ? normalizedWhatsappLogs : normalizedSystemLogs;
 
   const isCarregamentoLog = (log: LogEntry): boolean => {
-    const carregamentoPatterns = [
-      "Dados da página",
-      "Dados básicos",
-    ];
+    const carregamentoPatterns = ["Dados da página", "Dados básicos"];
     const summary = (log.summary as string) || "";
-    return log.component === "DataContext" && carregamentoPatterns.some((p) => summary.startsWith(p));
+    return (
+      log.component === "DataContext" &&
+      carregamentoPatterns.some((p) => summary.startsWith(p))
+    );
   };
 
   const isDataLog = (log: LogEntry): boolean => {
@@ -736,7 +872,8 @@ export default function LogsViewer() {
     if (selectedCategory === "all") return true;
     if (selectedCategory === "carregamento") return isCarregamentoLog(log);
     if (selectedCategory === "dados") return isDataLog(log);
-    if (selectedCategory === "operacao") return !isCarregamentoLog(log) && !isDataLog(log);
+    if (selectedCategory === "operacao")
+      return !isCarregamentoLog(log) && !isDataLog(log);
     return true;
   });
 
@@ -763,7 +900,10 @@ export default function LogsViewer() {
       .includes(term);
   });
 
-  const hasFrontendFilters = searchTerm.trim() !== "" || selectedCategory !== "all" || selectedPage !== "all";
+  const hasFrontendFilters =
+    searchTerm.trim() !== "" ||
+    selectedCategory !== "all" ||
+    selectedPage !== "all";
   const filteredTotal = hasFrontendFilters ? filteredLogs.length : totalRecords;
   const filteredTotalPages = Math.ceil(filteredTotal / PAGE_SIZE) || 1;
   const paginatedLogs = hasFrontendFilters
@@ -832,7 +972,10 @@ export default function LogsViewer() {
           {/* Row 1: Search, Level, Category */}
           <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
             <div className="relative flex-1 w-full">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <Search
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                size={18}
+              />
               <input
                 type="text"
                 placeholder="Buscar nos logs..."
@@ -845,7 +988,10 @@ export default function LogsViewer() {
             {activeTab === "sistema" && (
               <>
                 <div className="relative w-full md:w-56">
-                  <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <ShieldAlert
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={18}
+                  />
                   <select
                     value={selectedLevel}
                     onChange={(e) => setSelectedLevel(e.target.value)}
@@ -857,11 +1003,17 @@ export default function LogsViewer() {
                     <option value="error">Error</option>
                     <option value="critical">Critical</option>
                   </select>
-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  <ChevronDown
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                    size={16}
+                  />
                 </div>
 
                 <div className="relative w-full md:w-56">
-                  <Layers className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <Layers
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={18}
+                  />
                   <select
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
@@ -872,11 +1024,17 @@ export default function LogsViewer() {
                     <option value="dados">Dados</option>
                     <option value="carregamento">Carregamento</option>
                   </select>
-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  <ChevronDown
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                    size={16}
+                  />
                 </div>
 
                 <div className="relative w-full md:w-64">
-                  <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <Globe
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={18}
+                  />
                   <select
                     value={selectedPage}
                     onChange={(e) => setSelectedPage(e.target.value)}
@@ -889,7 +1047,10 @@ export default function LogsViewer() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  <ChevronDown
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                    size={16}
+                  />
                 </div>
               </>
             )}
@@ -899,7 +1060,10 @@ export default function LogsViewer() {
           {activeTab === "sistema" && (
             <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4">
               <div className="relative w-full md:w-64">
-                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <UserIcon
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={18}
+                />
                 <select
                   value={selectedUserId}
                   onChange={(e) => setSelectedUserId(e.target.value)}
@@ -912,11 +1076,17 @@ export default function LogsViewer() {
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                <ChevronDown
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                  size={16}
+                />
               </div>
 
               <div className="relative w-full md:w-64">
-                <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <CalendarIcon
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={18}
+                />
                 <select
                   value={quickDateRange}
                   onChange={(e) => setQuickDateRange(e.target.value)}
@@ -929,12 +1099,18 @@ export default function LogsViewer() {
                   <option value="30">Últimos 30 dias</option>
                   <option value="90">Últimos 90 dias</option>
                 </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                <ChevronDown
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                  size={16}
+                />
               </div>
 
               <div className="flex items-center gap-2 w-full lg:w-auto">
                 <div className="relative flex-1 min-w-0">
-                  <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <CalendarIcon
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={18}
+                  />
                   <input
                     type="text"
                     placeholder="DD/MM/AAAA"
@@ -943,8 +1119,10 @@ export default function LogsViewer() {
                       const raw = e.target.value.replace(/\D/g, "");
                       if (raw.length <= 8) {
                         let formatted = raw;
-                        if (raw.length > 4) formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
-                        else if (raw.length > 2) formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
+                        if (raw.length > 4)
+                          formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
+                        else if (raw.length > 2)
+                          formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
                         setStartDate(formatDateToISO(formatted));
                         setQuickDateRange("all");
                       }
@@ -954,7 +1132,10 @@ export default function LogsViewer() {
                 </div>
                 <span className="text-slate-400 font-bold">→</span>
                 <div className="relative flex-1 min-w-0">
-                  <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <CalendarIcon
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={18}
+                  />
                   <input
                     type="text"
                     placeholder="DD/MM/AAAA"
@@ -963,8 +1144,10 @@ export default function LogsViewer() {
                       const raw = e.target.value.replace(/\D/g, "");
                       if (raw.length <= 8) {
                         let formatted = raw;
-                        if (raw.length > 4) formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
-                        else if (raw.length > 2) formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
+                        if (raw.length > 4)
+                          formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}/${raw.slice(4)}`;
+                        else if (raw.length > 2)
+                          formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;
                         setEndDate(formatDateToISO(formatted));
                         setQuickDateRange("all");
                       }
@@ -996,23 +1179,31 @@ export default function LogsViewer() {
         {loading ? (
           <div className="p-16 flex flex-col items-center justify-center gap-4 text-slate-400">
             <RefreshCw size={48} className="text-blue-500 animate-spin" />
-            <p className="font-bold text-lg text-slate-500">Carregando logs...</p>
+            <p className="font-bold text-lg text-slate-500">
+              Carregando logs...
+            </p>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="p-16 flex flex-col items-center justify-center gap-4 text-slate-400">
             <AlertCircle size={64} className="text-slate-300" />
             <p className="font-bold text-lg">
-              Nenhum log {activeTab === "whatsapp" ? "de WhatsApp" : "de sistema"} encontrado.
+              Nenhum log{" "}
+              {activeTab === "whatsapp" ? "de WhatsApp" : "de sistema"}{" "}
+              encontrado.
             </p>
             {activeTab === "sistema" && (
               <p className="text-sm text-slate-500 max-w-md text-center">
-                Ainda não há logs de sistema gravados. Abra a aba Histórico, aguarde alguns segundos ou provoque uma ação no sistema para gerar eventos.
+                Ainda não há logs de sistema gravados. Abra a aba Histórico,
+                aguarde alguns segundos ou provoque uma ação no sistema para
+                gerar eventos.
               </p>
             )}
           </div>
         ) : (
           paginatedLogs.map((log) => {
-            const levelConfig = log.level ? LEVEL_COLORS[log.level] : LEVEL_COLORS.info;
+            const levelConfig = log.level
+              ? LEVEL_COLORS[log.level]
+              : LEVEL_COLORS.info;
             const LevelIcon = levelConfig.icon;
             const isExpanded = expandedLogs.has(log.id);
 
@@ -1062,10 +1253,10 @@ export default function LogsViewer() {
                     )}
 
                     <div className="flex items-center gap-4 text-xs text-slate-400">
-                      <span className="font-bold">{formatTimestamp(log.created_at)}</span>
-                      {log.url && (
-                        <span>{log.url}</span>
-                      )}
+                      <span className="font-bold">
+                        {formatTimestamp(log.created_at)}
+                      </span>
+                      {log.url && <span>{log.url}</span>}
                     </div>
                   </div>
 
@@ -1134,7 +1325,8 @@ export default function LogsViewer() {
                 Página {currentPage} de {filteredTotalPages}
               </span>
               <span className="font-medium ml-2">
-                ({Math.min((currentPage - 1) * PAGE_SIZE + 1, filteredTotal)}-{Math.min(currentPage * PAGE_SIZE, filteredTotal)})
+                ({Math.min((currentPage - 1) * PAGE_SIZE + 1, filteredTotal)}-
+                {Math.min(currentPage * PAGE_SIZE, filteredTotal)})
               </span>
             </div>
 
@@ -1148,39 +1340,46 @@ export default function LogsViewer() {
               </button>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, filteredTotalPages) }, (_, i) => {
-                  let pageNum;
-                  const totalPages = filteredTotalPages;
+                {Array.from(
+                  { length: Math.min(5, filteredTotalPages) },
+                  (_, i) => {
+                    let pageNum;
+                    const totalPages = filteredTotalPages;
 
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
 
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      disabled={loading}
-                      className={`w-10 h-10 rounded-lg text-sm font-bold transition-colors ${
-                        currentPage === pageNum
-                          ? "bg-[var(--color-geolog-blue)] text-white"
-                          : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        disabled={loading}
+                        className={`w-10 h-10 rounded-lg text-sm font-bold transition-colors ${
+                          currentPage === pageNum
+                            ? "bg-[var(--color-geolog-blue)] text-white"
+                            : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  },
+                )}
               </div>
 
               <button
-                onClick={() => setCurrentPage((prev) => Math.min(filteredTotalPages, prev + 1))}
+                onClick={() =>
+                  setCurrentPage((prev) =>
+                    Math.min(filteredTotalPages, prev + 1),
+                  )
+                }
                 disabled={currentPage === filteredTotalPages || loading}
                 className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1191,7 +1390,9 @@ export default function LogsViewer() {
         ) : (
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span className="font-bold uppercase tracking-wider">
-              Total: {activeTab === "whatsapp" ? whatsappCount : systemLogs.length} logs
+              Total:{" "}
+              {activeTab === "whatsapp" ? whatsappCount : systemLogs.length}{" "}
+              logs
             </span>
             <span className="font-medium">
               Exibindo: {filteredLogs.length} logs

@@ -9,6 +9,7 @@ interface GeologDateInputProps {
   onChange: (value: string) => void;
   type?: "date" | "month";
   className?: string;
+  labelClassName?: string;
 }
 
 const pad = (value: string): string => value.padStart(2, "0");
@@ -35,7 +36,8 @@ const maskDigits = (value: string, type: "date" | "month"): string => {
 
   const truncated = digits.slice(0, 8);
   if (truncated.length <= 2) return truncated;
-  if (truncated.length <= 4) return `${truncated.slice(0, 2)}/${truncated.slice(2)}`;
+  if (truncated.length <= 4)
+    return `${truncated.slice(0, 2)}/${truncated.slice(2)}`;
   return `${truncated.slice(0, 2)}/${truncated.slice(2, 4)}/${truncated.slice(4)}`;
 };
 
@@ -45,13 +47,23 @@ const parseDisplayToIso = (
 ): string | null => {
   if (type === "month") {
     const [monthRaw, yearRaw] = value.split("/");
-    if (!monthRaw || !yearRaw || monthRaw.length !== 2 || yearRaw.length !== 4) {
+    if (
+      !monthRaw ||
+      !yearRaw ||
+      monthRaw.length !== 2 ||
+      yearRaw.length !== 4
+    ) {
       return null;
     }
 
     const month = Number(monthRaw);
     const year = Number(yearRaw);
-    if (!Number.isInteger(month) || !Number.isInteger(year) || month < 1 || month > 12) {
+    if (
+      !Number.isInteger(month) ||
+      !Number.isInteger(year) ||
+      month < 1 ||
+      month > 12
+    ) {
       return null;
     }
 
@@ -93,9 +105,12 @@ export default function GeologDateInput({
   onChange,
   type = "date",
   className = "",
+  labelClassName = "",
 }: GeologDateInputProps) {
   const pickerRef = useRef<HTMLInputElement>(null);
-  const [displayValue, setDisplayValue] = useState(() => formatIsoToDisplay(value, type));
+  const [displayValue, setDisplayValue] = useState(() =>
+    formatIsoToDisplay(value, type),
+  );
 
   useEffect(() => {
     setDisplayValue(formatIsoToDisplay(value, type));
@@ -135,7 +150,9 @@ export default function GeologDateInput({
 
   return (
     <div className={`space-y-2 group ${className}`}>
-      <label className="ml-1 text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">
+      <label
+        className={`ml-1 text-[11px] font-black uppercase tracking-[0.25em] text-slate-400 ${labelClassName}`}
+      >
         {label}
       </label>
 
@@ -158,7 +175,10 @@ export default function GeologDateInput({
           className="absolute right-4 top-1/2 -translate-y-1/2 transition-colors hover:bg-blue-50 rounded-lg p-1 cursor-pointer"
           aria-label={`Abrir calendário de ${label}`}
         >
-          <Calendar size={18} className="text-slate-400 transition-colors hover:text-blue-500" />
+          <Calendar
+            size={18}
+            className="text-slate-400 transition-colors hover:text-blue-500"
+          />
         </button>
 
         <input

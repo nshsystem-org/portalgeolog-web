@@ -14,8 +14,6 @@ import { replaceOperationalCyclesForOS } from "@/lib/operational-cycles-db";
 import StandardModal from "@/components/StandardModal";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
 import { logInfo } from "@/lib/frontend-logger";
-import { usePassageiros } from "@/hooks/usePassageiros";
-import { useParceiros } from "@/hooks/useParceiros";
 import {
   Plus,
   Minus,
@@ -105,6 +103,7 @@ import {
   type CycleOperationalStatus,
   type OperationalCycleState,
 } from "@/lib/os-messages";
+import { getOSLogMetadataHighlights, getOSLogTone } from "@/lib/os-activity";
 
 type FormPassenger = { id: string; solicitanteId: string; nome: string };
 type FormWaypoint = {
@@ -470,20 +469,21 @@ const validarPlacaOS = (placa: string): boolean => {
 };
 
 export default function OSOperationalPage() {
-  const { passageiros, refresh: refreshPassageiros } = usePassageiros();
-  const { parceiros } = useParceiros();
   const {
     osList,
     osCounts,
     clientes,
     solicitantes,
     drivers,
+    passageiros,
+    parceiros,
     addOS,
     updateOS,
     updateOSStatus,
     deleteOS,
     unarchiveOS,
     addPassageiro,
+    addDriver,
     getCentrosCustoByCliente,
     addCliente,
     addSolicitante,
@@ -572,7 +572,10 @@ export default function OSOperationalPage() {
 
   const fetchOSPageWithFilters = useCallback(
     async (params: { page: number; pageSize: number; searchTerm: string }) => {
-      const filters = { ...tableFilters, arquivado: showArchivedOnly ? true : undefined };
+      const filters = {
+        ...tableFilters,
+        arquivado: showArchivedOnly ? true : undefined,
+      };
       const result = await fetchOSPage({
         ...params,
         filters,
@@ -583,21 +586,30 @@ export default function OSOperationalPage() {
         .map(([key, value]) => `${key}: ${value}`)
         .join(", ");
 
-      logInfo("OS/Tabela", `Tabela carregada: página ${params.page}, ${result.totalCount} OS totais${filterDescription ? ` (filtros: ${filterDescription})` : ""}`, {
-        page: params.page,
-        pageSize: params.pageSize,
-        searchTerm: params.searchTerm,
-        filters,
-        totalItems: result.totalCount,
-        itemsLoaded: result.items.length,
-      });
+      logInfo(
+        "OS/Tabela",
+        `Tabela carregada: página ${params.page}, ${result.totalCount} OS totais${filterDescription ? ` (filtros: ${filterDescription})` : ""}`,
+        {
+          page: params.page,
+          pageSize: params.pageSize,
+          searchTerm: params.searchTerm,
+          filters,
+          totalItems: result.totalCount,
+          itemsLoaded: result.items.length,
+        },
+      );
 
       return result;
     },
     [tableFilters, showArchivedOnly],
   );
 
-  const osTable = useServerPaginatedTable(fetchOSPageWithFilters, 10, true, "OS/Tabela");
+  const osTable = useServerPaginatedTable(
+    fetchOSPageWithFilters,
+    10,
+    true,
+    "OS/Tabela",
+  );
 
   const getOperationalStatusForOS = useCallback(
     (os?: OrderService | null): CycleOperationalStatus => {
@@ -842,21 +854,30 @@ export default function OSOperationalPage() {
   // Sincronizar filtros avançados com tabela server-side
   useEffect(() => {
     const nextFilters: OSPageFilters = {};
-    if (advancedFilters.osNumber) nextFilters.osNumber = advancedFilters.osNumber;
-    if (advancedFilters.clienteId) nextFilters.clienteId = advancedFilters.clienteId;
-    if (advancedFilters.centroCustoId) nextFilters.centroCustoId = advancedFilters.centroCustoId;
-    if (advancedFilters.solicitante) nextFilters.solicitante = advancedFilters.solicitante;
-    if (advancedFilters.driverId) nextFilters.driverId = advancedFilters.driverId;
-    if (advancedFilters.veiculoId) nextFilters.veiculoId = advancedFilters.veiculoId;
-    if (advancedFilters.dataInicio) nextFilters.dataInicio = advancedFilters.dataInicio;
+    if (advancedFilters.osNumber)
+      nextFilters.osNumber = advancedFilters.osNumber;
+    if (advancedFilters.clienteId)
+      nextFilters.clienteId = advancedFilters.clienteId;
+    if (advancedFilters.centroCustoId)
+      nextFilters.centroCustoId = advancedFilters.centroCustoId;
+    if (advancedFilters.solicitante)
+      nextFilters.solicitante = advancedFilters.solicitante;
+    if (advancedFilters.driverId)
+      nextFilters.driverId = advancedFilters.driverId;
+    if (advancedFilters.veiculoId)
+      nextFilters.veiculoId = advancedFilters.veiculoId;
+    if (advancedFilters.dataInicio)
+      nextFilters.dataInicio = advancedFilters.dataInicio;
     if (advancedFilters.dataFim) nextFilters.dataFim = advancedFilters.dataFim;
-    if (advancedFilters.statusOperacional) nextFilters.statusOperacional = advancedFilters.statusOperacional;
-    if (advancedFilters.createdBy) nextFilters.createdBy = advancedFilters.createdBy;
+    if (advancedFilters.statusOperacional)
+      nextFilters.statusOperacional = advancedFilters.statusOperacional;
+    if (advancedFilters.createdBy)
+      nextFilters.createdBy = advancedFilters.createdBy;
 
     setTableFilters(nextFilters);
     osTable.setPage(1);
     void osTable.refresh();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advancedFilters]);
 
   useEffect(() => {
@@ -869,25 +890,36 @@ export default function OSOperationalPage() {
   // Listener para abrir OS via notificações
   useEffect(() => {
     const handleOpenOSModal = async (event: Event) => {
-      const customEvent = event as CustomEvent<{ osId?: string; osProtocolo?: string }>;
+      const customEvent = event as CustomEvent<{
+        osId?: string;
+        osProtocolo?: string;
+      }>;
       if (customEvent.detail?.osId) {
         const found = osList.find((os) => os.id === customEvent.detail.osId);
         if (found) {
-          logInfo("OS/View", `Abriu visualização via notificação: protocolo ${found.protocolo}`, {
-            protocolo: found.protocolo,
-            osId: found.id,
-            source: "notification",
-          });
+          logInfo(
+            "OS/View",
+            `Abriu visualização via notificação: protocolo ${found.protocolo}`,
+            {
+              protocolo: found.protocolo,
+              osId: found.id,
+              source: "notification",
+            },
+          );
           setViewingOSId(customEvent.detail.osId);
         } else {
           try {
             const os = await fetchOSById(customEvent.detail.osId);
             if (os) {
-              logInfo("OS/View", `Abriu visualização via notificação (fetch): protocolo ${os.protocolo}`, {
-                protocolo: os.protocolo,
-                osId: os.id,
-                source: "notification_fetch",
-              });
+              logInfo(
+                "OS/View",
+                `Abriu visualização via notificação (fetch): protocolo ${os.protocolo}`,
+                {
+                  protocolo: os.protocolo,
+                  osId: os.id,
+                  source: "notification_fetch",
+                },
+              );
               setViewingOSId(os.id);
             }
           } catch (err) {
@@ -895,23 +927,33 @@ export default function OSOperationalPage() {
           }
         }
       } else if (customEvent.detail?.osProtocolo) {
-        const found = osList.find((os) => os.protocolo === customEvent.detail.osProtocolo);
+        const found = osList.find(
+          (os) => os.protocolo === customEvent.detail.osProtocolo,
+        );
         if (found) {
-          logInfo("OS/View", `Abriu visualização via notificação (protocolo): ${customEvent.detail.osProtocolo}`, {
-            protocolo: found.protocolo,
-            osId: found.id,
-            source: "notification_protocolo",
-          });
+          logInfo(
+            "OS/View",
+            `Abriu visualização via notificação (protocolo): ${customEvent.detail.osProtocolo}`,
+            {
+              protocolo: found.protocolo,
+              osId: found.id,
+              source: "notification_protocolo",
+            },
+          );
           setViewingOSId(found.id);
         } else {
           try {
             const os = await fetchOSByProtocolo(customEvent.detail.osProtocolo);
             if (os) {
-              logInfo("OS/View", `Abriu visualização via notificação (fetch protocolo): ${os.protocolo}`, {
-                protocolo: os.protocolo,
-                osId: os.id,
-                source: "notification_fetch_protocolo",
-              });
+              logInfo(
+                "OS/View",
+                `Abriu visualização via notificação (fetch protocolo): ${os.protocolo}`,
+                {
+                  protocolo: os.protocolo,
+                  osId: os.id,
+                  source: "notification_fetch_protocolo",
+                },
+              );
               setViewingOSId(os.id);
             }
           } catch (err) {
@@ -930,11 +972,15 @@ export default function OSOperationalPage() {
     if (openOsParam) {
       const found = osList.find((os) => os.id === openOsParam);
       if (found) {
-        logInfo("OS/View", `Abriu visualização via URL: protocolo ${found.protocolo}`, {
-          protocolo: found.protocolo,
-          osId: found.id,
-          source: "url_param",
-        });
+        logInfo(
+          "OS/View",
+          `Abriu visualização via URL: protocolo ${found.protocolo}`,
+          {
+            protocolo: found.protocolo,
+            osId: found.id,
+            source: "url_param",
+          },
+        );
         setViewingOSId(openOsParam);
         window.history.replaceState({}, "", "/portal/os");
       } else {
@@ -942,11 +988,15 @@ export default function OSOperationalPage() {
           try {
             const os = await fetchOSById(openOsParam);
             if (os) {
-              logInfo("OS/View", `Abriu visualização via URL (fetch): protocolo ${os.protocolo}`, {
-                protocolo: os.protocolo,
-                osId: os.id,
-                source: "url_param_fetch",
-              });
+              logInfo(
+                "OS/View",
+                `Abriu visualização via URL (fetch): protocolo ${os.protocolo}`,
+                {
+                  protocolo: os.protocolo,
+                  osId: os.id,
+                  source: "url_param_fetch",
+                },
+              );
               setViewingOSId(os.id);
               window.history.replaceState({}, "", "/portal/os");
             }
@@ -958,11 +1008,15 @@ export default function OSOperationalPage() {
     } else if (openOsProtocoloParam) {
       const found = osList.find((os) => os.protocolo === openOsProtocoloParam);
       if (found) {
-        logInfo("OS/View", `Abriu visualização via URL (protocolo): ${openOsProtocoloParam}`, {
-          protocolo: found.protocolo,
-          osId: found.id,
-          source: "url_param_protocolo",
-        });
+        logInfo(
+          "OS/View",
+          `Abriu visualização via URL (protocolo): ${openOsProtocoloParam}`,
+          {
+            protocolo: found.protocolo,
+            osId: found.id,
+            source: "url_param_protocolo",
+          },
+        );
         setViewingOSId(found.id);
         window.history.replaceState({}, "", "/portal/os");
       } else {
@@ -970,11 +1024,15 @@ export default function OSOperationalPage() {
           try {
             const os = await fetchOSByProtocolo(openOsProtocoloParam);
             if (os) {
-              logInfo("OS/View", `Abriu visualização via URL (fetch protocolo): ${os.protocolo}`, {
-                protocolo: os.protocolo,
-                osId: os.id,
-                source: "url_param_fetch_protocolo",
-              });
+              logInfo(
+                "OS/View",
+                `Abriu visualização via URL (fetch protocolo): ${os.protocolo}`,
+                {
+                  protocolo: os.protocolo,
+                  osId: os.id,
+                  source: "url_param_fetch_protocolo",
+                },
+              );
               setViewingOSId(os.id);
               window.history.replaceState({}, "", "/portal/os");
             }
@@ -996,9 +1054,12 @@ export default function OSOperationalPage() {
   const handleCalendarRangeChange = useCallback(
     async (from: string, to: string, force = false) => {
       // Verificar se o range realmente mudou antes de recarregar (salvo se force=true)
-      if (!force && calendarRangeRef.current &&
-          calendarRangeRef.current.from === from &&
-          calendarRangeRef.current.to === to) {
+      if (
+        !force &&
+        calendarRangeRef.current &&
+        calendarRangeRef.current.from === from &&
+        calendarRangeRef.current.to === to
+      ) {
         return; // Range não mudou, não recarregar
       }
 
@@ -1027,9 +1088,14 @@ export default function OSOperationalPage() {
           },
         );
       } catch (err) {
-        logErrorEntry("OS/Calendar", "Erro ao carregar calendário", err as Error, {
-          showArchivedOnly,
-        });
+        logErrorEntry(
+          "OS/Calendar",
+          "Erro ao carregar calendário",
+          err as Error,
+          {
+            showArchivedOnly,
+          },
+        );
       } finally {
         clearTimeout(loadingTimeout);
         setCalendarLoading(false);
@@ -1567,21 +1633,21 @@ export default function OSOperationalPage() {
     ],
   };
 
-  const resetMainModalState = async () => {
+  const resetMainModalState = () => {
     setIsModalOpen(false);
     setEditingOSId(null);
     setFormData(initialForm);
     setOpenWaypointComments({});
-    await refreshData();
+    void refreshData();
   };
 
-  const handleOpenCreateOSModal = async () => {
+  const handleOpenCreateOSModal = () => {
     logInfo("OS/Create", "Abriu modal para criar nova OS");
-    await refreshData();
     setEditingOSId(null);
     setFormData(initialForm);
     setOpenWaypointComments({});
     setIsModalOpen(true);
+    void refreshData();
   };
 
   const hydrateFormFromOS = (osItem: OrderService) => {
@@ -1705,10 +1771,14 @@ export default function OSOperationalPage() {
     }
 
     try {
-      logInfo("OS/Unarchive", `Desarquivou OS protocolo ${targetOS.protocolo || targetOS.os}`, {
-        protocolo: targetOS.protocolo,
-        osId: targetOS.id,
-      });
+      logInfo(
+        "OS/Unarchive",
+        `Desarquivou OS protocolo ${targetOS.protocolo || targetOS.os}`,
+        {
+          protocolo: targetOS.protocolo,
+          osId: targetOS.id,
+        },
+      );
       await unarchiveOS(osId);
       await osTable.refresh();
       toast.success("OS reaberta com sucesso!");
@@ -1743,10 +1813,14 @@ export default function OSOperationalPage() {
     if (!confirmed) return;
 
     try {
-      logInfo("OS/Archive", `Arquivou OS protocolo ${targetOS.protocolo || targetOS.os}`, {
-        protocolo: targetOS.protocolo,
-        osId: targetOS.id,
-      });
+      logInfo(
+        "OS/Archive",
+        `Arquivou OS protocolo ${targetOS.protocolo || targetOS.os}`,
+        {
+          protocolo: targetOS.protocolo,
+          osId: targetOS.id,
+        },
+      );
       await deleteOS(osId);
       await osTable.refresh();
       setOpenActionMenuId(null);
@@ -1754,6 +1828,53 @@ export default function OSOperationalPage() {
     } catch (error) {
       console.error("Erro ao arquivar OS:", error);
       toast.error("Erro ao arquivar OS.");
+    }
+  };
+
+  const handleFinishOS = async (osId: string) => {
+    const confirmed = await confirm({
+      title: "Finalizar Atendimento",
+      message:
+        "Tem certeza que deseja finalizar este atendimento? Todos os ciclos serão concluídos e a OS será marcada como finalizada.",
+      confirmText: "Sim, finalizar",
+      cancelText: "Cancelar",
+      type: "success",
+    });
+    if (!confirmed) return;
+
+    setAwaitingStatusOSId(osId);
+    try {
+      const response = await fetch("/api/os-manual-cycle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          os_id: osId,
+          action: "finish_all",
+        }),
+      });
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error || "Erro ao concluir todos os ciclos.");
+        setAwaitingStatusOSId(null);
+        return;
+      }
+      toast.success("Atendimento concluído com sucesso!");
+
+      const updatedOS = await fetchOSById(osId);
+      if (updatedOS) {
+        osTable.updateItems((prev) =>
+          prev.map((item) => (item.id === osId ? updatedOS : item)),
+        );
+        setCalendarOSList((prev) =>
+          prev.map((item) => (item.id === osId ? updatedOS : item)),
+        );
+      }
+      setOpenActionMenuId(null);
+      setCalendarMenuPosition(null);
+    } catch (error) {
+      console.error("Erro ao finalizar atendimento:", error);
+      toast.error("Erro ao concluir o atendimento. Tente novamente.");
+      setAwaitingStatusOSId(null);
     }
   };
 
@@ -1969,7 +2090,9 @@ export default function OSOperationalPage() {
       } else {
         // Demais ciclos usam template flow "inicio_viagem_motorista"
         const cycles = osData.operationalCycles || [];
-        const targetCycle = cycles.find((c) => c.itineraryIndex === itineraryIndex);
+        const targetCycle = cycles.find(
+          (c) => c.itineraryIndex === itineraryIndex,
+        );
 
         if (targetCycle) {
           const cycleTitle = getOperationalCycleTitle(targetCycle);
@@ -2062,8 +2185,7 @@ export default function OSOperationalPage() {
         });
 
         // Para o primeiro ciclo, também atualiza driver_template_message_id para compatibilidade com webhook
-        const updateData: Record<string, unknown> = {
-        };
+        const updateData: Record<string, unknown> = {};
 
         if (itineraryIndex === 0 && msgData.messageId) {
           updateData.driver_template_message_id = msgData.messageId;
@@ -2414,8 +2536,8 @@ export default function OSOperationalPage() {
       }
 
       toast.success("Etapa finalizada com sucesso!");
-      await syncViewingOS();
-      await refreshData();
+      void syncViewingOS();
+      void refreshData();
     } catch (error) {
       console.error("Erro ao finalizar ciclo manualmente:", error);
       toast.error("Erro ao finalizar etapa. Tente novamente.");
@@ -2442,8 +2564,8 @@ export default function OSOperationalPage() {
       }
 
       toast.success("Status retornado para pendente!");
-      await syncViewingOS();
-      await refreshData();
+      void syncViewingOS();
+      void refreshData();
     } catch (error) {
       console.error("Erro ao reverter aceite:", error);
       toast.error("Erro ao retornar status. Tente novamente.");
@@ -2473,8 +2595,8 @@ export default function OSOperationalPage() {
       }
 
       toast.success("Status retornado para aceite!");
-      await syncViewingOS();
-      await refreshData();
+      void syncViewingOS();
+      void refreshData();
     } catch (error) {
       console.error("Erro ao reverter para aceite:", error);
       toast.error("Erro ao retornar status. Tente novamente.");
@@ -2533,9 +2655,16 @@ export default function OSOperationalPage() {
           table: "ordens_servico",
           filter: `id=eq.${viewingOSId}`,
         },
-        () => {
-          // Refresh the data table to reflect the new status
-          void osTable.refresh();
+        async () => {
+          const latest = await fetchOSById(viewingOSId);
+          if (latest) {
+            osTable.updateItems((prev) =>
+              prev.map((item) => (item.id === viewingOSId ? latest : item)),
+            );
+            setCalendarOSList((prev) =>
+              prev.map((item) => (item.id === viewingOSId ? latest : item)),
+            );
+          }
         },
       )
       .subscribe();
@@ -3397,7 +3526,9 @@ export default function OSOperationalPage() {
         case "motorista": {
           const name = forceUpperText(quickAddDriverForm.name.trim());
           const cpfDigits = quickAddDriverForm.cpf.replace(/\D/g, "");
-          const celularDigits = normalizeBrazilPhone(quickAddDriverForm.celular);
+          const celularDigits = normalizeBrazilPhone(
+            quickAddDriverForm.celular,
+          );
 
           if (!name) {
             toast.error("Nome completo é obrigatório.");
@@ -3463,34 +3594,25 @@ export default function OSOperationalPage() {
             return;
           }
 
-          const insertData: Record<string, unknown> = {
+          const insertData = {
             name,
             cpf: cpfDigits,
-            phone: normalizeBrazilPhone(quickAddDriverForm.celular),
-            vehicle_id: quickAddDriverForm.vehicle_ids[0],
-            status: "active",
+            phone: celularDigits,
+            status: "active" as const,
             vinculo_tipo: quickAddDriverForm.vinculo_tipo,
+            parceiro_id:
+              quickAddDriverForm.vinculo_tipo === "parceiro"
+                ? quickAddDriverForm.parceiro_id
+                : undefined,
           };
 
-          if (quickAddDriverForm.vinculo_tipo === "parceiro") {
-            insertData.parceiro_id = quickAddDriverForm.parceiro_id;
-          } else {
-            insertData.parceiro_id = null;
-          }
-
-          const { data, error } = await supabase
-            .from("drivers")
-            .insert([insertData])
-            .select("id, name")
-            .single();
-
-          if (error) throw error;
+          const newDriver = await addDriver(insertData);
 
           // Inserir veículos vinculados
-          if (data && quickAddDriverForm.vehicle_ids.length > 0) {
+          if (newDriver && quickAddDriverForm.vehicle_ids.length > 0) {
             const driverVehicles = quickAddDriverForm.vehicle_ids.map(
               (vehicleId) => ({
-                driver_id: data.id,
+                driver_id: newDriver.id,
                 vehicle_id: vehicleId,
               }),
             );
@@ -3508,7 +3630,7 @@ export default function OSOperationalPage() {
               setDriverVehiclesAssoc((prev) => [
                 ...prev,
                 ...quickAddDriverForm.vehicle_ids.map((vehicleId) => ({
-                  driver_id: data.id,
+                  driver_id: newDriver.id,
                   vehicle_id: vehicleId,
                 })),
               ]);
@@ -3516,19 +3638,19 @@ export default function OSOperationalPage() {
           }
 
           toast.success("Motorista cadastrado com sucesso!");
-          if (data) {
+          if (newDriver) {
             setQuickAddedDriverOptions((prev) => {
-              if (prev.some((option) => option.id === data.id)) return prev;
-              return [...prev, { id: data.id, nome: data.name }];
+              if (prev.some((option) => option.id === newDriver.id))
+                return prev;
+              return [...prev, { id: newDriver.id, nome: newDriver.name }];
             });
             setFormData((prev) => ({
               ...prev,
-              driverId: data.id,
-              motorista: data.name,
+              driverId: newDriver.id,
+              motorista: newDriver.name,
               veiculoId: "",
             }));
           }
-          await refreshData();
           break;
         }
         case "solicitante": {
@@ -3666,8 +3788,6 @@ export default function OSOperationalPage() {
         enderecos,
       });
 
-      await refreshPassageiros();
-
       const newWaypoints = [...formData.waypoints];
       const waypoint = { ...newWaypoints[quickPassengerTarget.waypointIndex] };
       waypoint.passengers = (waypoint.passengers || []).map((p) =>
@@ -3758,7 +3878,10 @@ export default function OSOperationalPage() {
     setIsSubmittingOS(true);
     try {
       if (targetId) {
+        const t0 = performance.now();
         await updateOS(targetId, osData);
+        const t1 = performance.now();
+        console.log(`[executeSaveOS] updateOS levou ${(t1 - t0).toFixed(0)}ms`);
         // Desliga o loader imediatamente; refresh continua em background
         setIsSubmittingOS(false);
         setOsSubmissionMode(null);
@@ -3767,7 +3890,10 @@ export default function OSOperationalPage() {
         void resetMainModalState();
         toast.success("Atendimento atualizado com sucesso.");
       } else {
+        const t0 = performance.now();
         const newOSId = await addOS(osData);
+        const t1 = performance.now();
+        console.log(`[executeSaveOS] addOS levou ${(t1 - t0).toFixed(0)}ms`);
         // Desliga o loader imediatamente; refresh continua em background
         setIsSubmittingOS(false);
         setOsSubmissionMode(null);
@@ -3913,15 +4039,11 @@ export default function OSOperationalPage() {
         if (updatedOS) {
           // Atualizar tabela server-side
           osTable.updateItems((prev) =>
-            prev.map((item) =>
-              item.id === editingOSId ? updatedOS : item,
-            ),
+            prev.map((item) => (item.id === editingOSId ? updatedOS : item)),
           );
           // Atualizar calendário localmente
           setCalendarOSList((prev) =>
-            prev.map((item) =>
-              item.id === editingOSId ? updatedOS : item,
-            ),
+            prev.map((item) => (item.id === editingOSId ? updatedOS : item)),
           );
         }
       } catch (error) {
@@ -4535,312 +4657,331 @@ export default function OSOperationalPage() {
         <>
           {viewMode === "table" ? (
             <DataTable
-          data={tableItems}
-          loading={(dataLoading || heavyLoading) && !hasActiveAdvancedFilters}
-          disableClientSearch
-          pagination={{
-            page: osTable.page,
-            pageSize: osTable.pageSize,
-            totalItems: tableTotalCount,
-            onPageChange: osTable.setPage,
-          }}
-          columns={[
-            {
-              key: "protocolo",
-              title: "Protocolo",
-              render: (value: unknown, item: OrderService) => {
-                void value;
+              data={tableItems}
+              loading={
+                (dataLoading || heavyLoading) && !hasActiveAdvancedFilters
+              }
+              disableClientSearch
+              pagination={{
+                page: osTable.page,
+                pageSize: osTable.pageSize,
+                totalItems: tableTotalCount,
+                onPageChange: osTable.setPage,
+              }}
+              columns={[
+                {
+                  key: "protocolo",
+                  title: "Protocolo",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
 
-                // Fonte de verdade: data/hora do primeiro waypoint; fallback para item.data/item.hora (legacy)
-                const waypoints = item.rota?.waypoints || [];
-                const firstWp = waypoints[0];
-                const displayDate = firstWp?.data || item.data;
-                const displayHora = firstWp?.hora || item.hora;
+                    // Fonte de verdade: data/hora do primeiro waypoint; fallback para item.data/item.hora (legacy)
+                    const waypoints = item.rota?.waypoints || [];
+                    const firstWp = waypoints[0];
+                    const displayDate = firstWp?.data || item.data;
+                    const displayHora = firstWp?.hora || item.hora;
 
-                return (
-                  <div className="space-y-1">
-                    <p className="font-black text-base text-slate-800 tracking-tight">
-                      {item.protocolo}
-                    </p>
-                    <p
-                      className="text-sm font-semibold"
-                      style={{ color: "rgb(97, 130, 209)" }}
-                    >
-                      {displayDate.split("-").reverse().join("/")}
-                      {displayHora && (
-                        <span className="ml-1 text-slate-500">
-                          · {displayHora.slice(0, 5)}
+                    return (
+                      <div className="space-y-1">
+                        <p className="font-black text-base text-slate-800 tracking-tight">
+                          {item.protocolo}
+                        </p>
+                        <p
+                          className="text-sm font-semibold"
+                          style={{ color: "rgb(97, 130, 209)" }}
+                        >
+                          {displayDate.split("-").reverse().join("/")}
+                          {displayHora && (
+                            <span className="ml-1 text-slate-500">
+                              · {displayHora.slice(0, 5)}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "os",
+                  title: "OS",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+
+                    return (
+                      <p className="font-black text-base text-slate-700">
+                        {item.os || "—"}
+                      </p>
+                    );
+                  },
+                },
+                {
+                  key: "cliente",
+                  title: "Cliente",
+                  width: "380px",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+
+                    const clienteNome =
+                      clientes.find((c) => c.id === item.clienteId)?.nome ||
+                      "N/A";
+                    return (
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                          <Building size={18} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm text-slate-700">
+                            {clienteNome}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "itinerario",
+                  title: "Itinerário",
+                  width: "200px",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+                    const waypointCount =
+                      item.rota?.waypoints?.filter(
+                        (waypoint) => waypoint.label.trim() !== "",
+                      ).length ?? 0;
+                    const stopCount = waypointCount > 1 ? waypointCount - 2 : 0;
+                    const displayCount = waypointCount > 0 ? waypointCount : 1;
+
+                    return (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-lg">
+                          <Navigation size={13} className="text-blue-600" />
+                          <span className="text-sm font-extrabold text-blue-700">
+                            {displayCount}
+                          </span>
+                        </div>
+                        <span className="text-base font-medium text-slate-500">
+                          {waypointCount <= 1
+                            ? "Direto"
+                            : stopCount === 1
+                              ? "1 parada"
+                              : `${stopCount} paradas`}
                         </span>
-                      )}
-                    </p>
-                  </div>
-                );
-              },
-            },
-            {
-              key: "os",
-              title: "OS",
-              render: (value: unknown, item: OrderService) => {
-                void value;
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "passageiros",
+                  title: "Passageiros",
+                  width: "120px",
+                  align: "center",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+                    const passengerCount =
+                      item.rota?.waypoints?.reduce((total, waypoint) => {
+                        return total + (waypoint.passengers?.length ?? 0);
+                      }, 0) ?? 0;
 
-                return (
-                  <p className="font-black text-base text-slate-700">
-                    {item.os || "—"}
-                  </p>
-                );
-              },
-            },
-            {
-              key: "cliente",
-              title: "Cliente",
-              width: "380px",
-              render: (value: unknown, item: OrderService) => {
-                void value;
+                    return (
+                      <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-100">
+                        <Users size={14} className="text-emerald-600" />
+                        <span className="text-sm font-bold text-emerald-700">
+                          {passengerCount}
+                        </span>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "motorista",
+                  title: "Motorista",
+                  width: "250px",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
 
-                const clienteNome =
-                  clientes.find((c) => c.id === item.clienteId)?.nome || "N/A";
-                return (
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
-                      <Building size={18} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm text-slate-700">
-                        {clienteNome}
-                      </p>
-                    </div>
-                  </div>
-                );
-              },
-            },
-            {
-              key: "itinerario",
-              title: "Itinerário",
-              width: "200px",
-              render: (value: unknown, item: OrderService) => {
-                void value;
-                const waypointCount =
-                  item.rota?.waypoints?.filter(
-                    (waypoint) => waypoint.label.trim() !== "",
-                  ).length ?? 0;
-                const stopCount = waypointCount > 1 ? waypointCount - 2 : 0;
-                const displayCount = waypointCount > 0 ? waypointCount : 1;
+                    const motoristaNomeAtual = item.driverId
+                      ? drivers.find((d) => d.id === item.driverId)?.name ||
+                        item.motorista
+                      : item.motorista;
+                    const motoristaParts = String(motoristaNomeAtual)
+                      .trim()
+                      .split(/\s+/)
+                      .filter(Boolean);
+                    const motoristaNomeCurto =
+                      motoristaParts.length > 1
+                        ? `${motoristaParts[0]} ${motoristaParts[1]}`
+                        : motoristaParts[0] || "—";
 
-                return (
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-lg">
-                      <Navigation size={13} className="text-blue-600" />
-                      <span className="text-sm font-extrabold text-blue-700">
-                        {displayCount}
+                    return (
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center">
+                          <Truck className="text-slate-400" size={16} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-800 text-base">
+                            {motoristaNomeCurto}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "status",
+                  title: showArchivedOnly ? "" : "Status",
+                  align: "center",
+                  width: "140px",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+
+                    if (showArchivedOnly) {
+                      return (
+                        <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border bg-red-50/50 border-red-100 text-red-400">
+                          <Archive size={20} className="text-red-400" />
+                          Arquivado
+                        </span>
+                      );
+                    }
+
+                    const config = getStatusConfig(
+                      getOperationalStatusForOS(item),
+                      item.arquivado,
+                    );
+                    return (
+                      <span
+                        className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border ${config.bg} ${config.border} ${config.text}`}
+                      >
+                        {config.icon}
+                        {config.label}
                       </span>
-                    </div>
-                    <span className="text-base font-medium text-slate-500">
-                      {waypointCount <= 1
-                        ? "Direto"
-                        : stopCount === 1
-                          ? "1 parada"
-                          : `${stopCount} paradas`}
-                    </span>
-                  </div>
-                );
-              },
-            },
-            {
-              key: "passageiros",
-              title: "Passageiros",
-              width: "120px",
-              align: "center",
-              render: (value: unknown, item: OrderService) => {
-                void value;
-                const passengerCount =
-                  item.rota?.waypoints?.reduce((total, waypoint) => {
-                    return total + (waypoint.passengers?.length ?? 0);
-                  }, 0) ?? 0;
+                    );
+                  },
+                },
+                {
+                  key: "acoes",
+                  title: "Ações",
+                  align: "center",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
 
-                return (
-                  <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-100">
-                    <Users size={14} className="text-emerald-600" />
-                    <span className="text-sm font-bold text-emerald-700">
-                      {passengerCount}
-                    </span>
-                  </div>
-                );
-              },
-            },
-            {
-              key: "motorista",
-              title: "Motorista",
-              width: "250px",
-              render: (value: unknown, item: OrderService) => {
-                void value;
-
-                const motoristaNomeAtual = item.driverId
-                  ? drivers.find((d) => d.id === item.driverId)?.name ||
-                    item.motorista
-                  : item.motorista;
-                const motoristaParts = String(motoristaNomeAtual)
-                  .trim()
-                  .split(/\s+/)
-                  .filter(Boolean);
-                const motoristaNomeCurto =
-                  motoristaParts.length > 1
-                    ? `${motoristaParts[0]} ${motoristaParts[1]}`
-                    : motoristaParts[0] || "—";
-
-                return (
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center">
-                      <Truck className="text-slate-400" size={16} />
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-800 text-base">
-                        {motoristaNomeCurto}
-                      </p>
-                    </div>
-                  </div>
-                );
-              },
-            },
-            {
-              key: "status",
-              title: showArchivedOnly ? "" : "Status",
-              align: "center",
-              width: "140px",
-              render: (value: unknown, item: OrderService) => {
-                void value;
-
-                if (showArchivedOnly) {
-                  return (
-                    <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border bg-red-50/50 border-red-100 text-red-400">
-                      <Archive size={20} className="text-red-400" />
-                      Arquivado
-                    </span>
-                  );
-                }
-
-                const config = getStatusConfig(getOperationalStatusForOS(item), item.arquivado);
-                return (
-                  <span
-                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border ${config.bg} ${config.border} ${config.text}`}
-                  >
-                    {config.icon}
-                    {config.label}
-                  </span>
-                );
-              },
-            },
-            {
-              key: "acoes",
-              title: "Ações",
-              align: "center",
-              render: (value: unknown, item: OrderService) => {
-                void value;
-
-                return (
-                  <div
-                    className="relative inline-block"
-                    ref={(el) => {
-                      if (el) {
-                        actionMenuRefs.current[item.id] = el;
-                      } else {
-                        delete actionMenuRefs.current[item.id];
-                      }
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setOpenActionMenuId((prev) =>
-                          prev === item.id ? null : item.id,
-                        );
-                      }}
-                      className="inline-flex items-center justify-center w-10 h-10 rounded-2xl border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm cursor-pointer"
-                      aria-haspopup="true"
-                      aria-expanded={openActionMenuId === item.id}
-                    >
-                      <MoreVertical size={18} />
-                    </button>
-                    {openActionMenuId === item.id &&
-                      (() => {
-                        const rect =
-                          actionMenuRefs.current[
-                            item.id
-                          ]?.getBoundingClientRect();
-                        if (!rect) return null;
-                        const menuHeight = 200; // Altura aproximada do menu
-                        const spaceBelow = window.innerHeight - rect.bottom;
-                        const shouldOpenUp = spaceBelow < menuHeight + 16;
-                        return (
-                          <div
-                            className="fixed min-w-[200px] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 space-y-1 z-[9999]"
-                            style={{
-                              top: shouldOpenUp
-                                ? rect.top - menuHeight - 8
-                                : rect.bottom + 8,
-                              right: window.innerWidth - rect.right,
-                            }}
-                          >
-                            <button
-                              onClick={() => handleViewOS(item.id)}
-                              className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-cyan-50 hover:text-cyan-600 flex items-center gap-3 cursor-pointer"
-                            >
-                              <Eye
-                                size={16}
-                                className="text-slate-400 group-hover:text-cyan-600"
-                              />
-                              Visualizar
-                            </button>
-                            {!item.arquivado && (
-                              <button
-                                onClick={() => handleEditOS(item.id)}
-                                className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-blue-50 hover:text-blue-600 flex items-center gap-3 cursor-pointer"
+                    return (
+                      <div
+                        className="relative inline-block"
+                        ref={(el) => {
+                          if (el) {
+                            actionMenuRefs.current[item.id] = el;
+                          } else {
+                            delete actionMenuRefs.current[item.id];
+                          }
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenActionMenuId((prev) =>
+                              prev === item.id ? null : item.id,
+                            );
+                          }}
+                          className="inline-flex items-center justify-center w-10 h-10 rounded-2xl border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm cursor-pointer"
+                          aria-haspopup="true"
+                          aria-expanded={openActionMenuId === item.id}
+                        >
+                          <MoreVertical size={18} />
+                        </button>
+                        {openActionMenuId === item.id &&
+                          (() => {
+                            const rect =
+                              actionMenuRefs.current[
+                                item.id
+                              ]?.getBoundingClientRect();
+                            if (!rect) return null;
+                            const menuHeight = 240; // Altura aproximada do menu
+                            const spaceBelow = window.innerHeight - rect.bottom;
+                            const shouldOpenUp = spaceBelow < menuHeight + 16;
+                            return (
+                              <div
+                                className="fixed min-w-[200px] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 space-y-1 z-[9999]"
+                                style={{
+                                  top: shouldOpenUp
+                                    ? rect.top - menuHeight - 8
+                                    : rect.bottom + 8,
+                                  right: window.innerWidth - rect.right,
+                                }}
                               >
-                                <Pencil
-                                  size={16}
-                                  className="text-slate-400 group-hover:text-blue-600"
-                                />
-                                Editar
-                              </button>
-                            )}
-                            {item.arquivado && (
-                              <button
-                                onClick={() => handleReopenOS(item.id)}
-                                className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 flex items-center gap-3 cursor-pointer"
-                              >
-                                <RotateCcw
-                                  size={16}
-                                  className="text-slate-400 group-hover:text-emerald-600"
-                                />
-                                Reabrir
-                              </button>
-                            )}
-                            {!item.arquivado && (
-                              <button
-                                onClick={() => handleDeleteOS(item.id)}
-                                className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
-                                style={{ color: "rgb(219, 132, 153)" }}
-                              >
-                                <XOctagon
-                                  size={16}
-                                  style={{ color: "rgb(219, 132, 153)" }}
-                                />
-                                Arquivar
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
-                  </div>
-                );
-              },
-            },
-          ]}
-          searchPlaceholder=""
-          emptyMessage="Nenhuma OS encontrada."
-          emptyIcon={<Truck size={48} />}
-          showHeader={false}
-        />
+                                <button
+                                  onClick={() => handleViewOS(item.id)}
+                                  className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-cyan-50 hover:text-cyan-600 flex items-center gap-3 cursor-pointer"
+                                >
+                                  <Eye
+                                    size={16}
+                                    className="text-slate-400 group-hover:text-cyan-600"
+                                  />
+                                  Visualizar
+                                </button>
+                                {!item.arquivado && (
+                                  <button
+                                    onClick={() => handleEditOS(item.id)}
+                                    className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-blue-50 hover:text-blue-600 flex items-center gap-3 cursor-pointer"
+                                  >
+                                    <Pencil
+                                      size={16}
+                                      className="text-slate-400 group-hover:text-blue-600"
+                                    />
+                                    Editar
+                                  </button>
+                                )}
+                                {item.arquivado && (
+                                  <button
+                                    onClick={() => handleReopenOS(item.id)}
+                                    className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 flex items-center gap-3 cursor-pointer"
+                                  >
+                                    <RotateCcw
+                                      size={16}
+                                      className="text-slate-400 group-hover:text-emerald-600"
+                                    />
+                                    Reabrir
+                                  </button>
+                                )}
+                                {!item.arquivado &&
+                                  item.status.operacional !== "Finalizado" && (
+                                    <button
+                                      onClick={() => handleFinishOS(item.id)}
+                                      className="group w-full px-4 py-2 text-left text-sm font-bold text-emerald-600 hover:text-emerald-700 rounded-xl bg-emerald-50 hover:bg-emerald-100 flex items-center gap-3 cursor-pointer"
+                                    >
+                                      <CheckCircle2
+                                        size={16}
+                                        className="text-emerald-600 group-hover:text-emerald-700"
+                                      />
+                                      Finalizar
+                                    </button>
+                                  )}
+                                {!item.arquivado && (
+                                  <button
+                                    onClick={() => handleDeleteOS(item.id)}
+                                    className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
+                                    style={{ color: "rgb(219, 132, 153)" }}
+                                  >
+                                    <XOctagon
+                                      size={16}
+                                      style={{ color: "rgb(219, 132, 153)" }}
+                                    />
+                                    Arquivar
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
+                      </div>
+                    );
+                  },
+                },
+              ]}
+              searchPlaceholder=""
+              emptyMessage="Nenhuma OS encontrada."
+              emptyIcon={<Truck size={48} />}
+              showHeader={false}
+            />
           ) : (
             <>
               <OSCalendar
@@ -4859,90 +5000,107 @@ export default function OSOperationalPage() {
                 }}
               />
 
-          {/* Menu de Ações para o Calendário */}
-          {viewMode === "calendar" &&
-            openActionMenuId &&
-            calendarMenuPosition &&
-            (() => {
-              const osId = openActionMenuId;
-              const os = filteredCalendarOSList.find((o) => o.id === osId);
-              const isArchived = os?.arquivado ?? false;
-              const menuHeight = 200;
-              const spaceBelow = window.innerHeight - calendarMenuPosition.y;
-              const shouldOpenUp = spaceBelow < menuHeight + 16;
-              return (
-                <div
-                  ref={calendarMenuRef}
-                  className="fixed min-w-[200px] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 space-y-1 z-[9999]"
-                  style={{
-                    top: shouldOpenUp
-                      ? calendarMenuPosition.y - menuHeight - 8
-                      : calendarMenuPosition.y + 8,
-                    left: calendarMenuPosition.x,
-                  }}
-                >
-                  <button
-                    onClick={() => {
-                      handleViewOS(osId);
-                      setCalendarMenuPosition(null);
-                    }}
-                    className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-cyan-50 hover:text-cyan-600 flex items-center gap-3 cursor-pointer"
-                  >
-                    <Eye
-                      size={16}
-                      className="text-slate-400 group-hover:text-cyan-600"
-                    />
-                    Visualizar
-                  </button>
-                  {!isArchived && (
-                    <button
-                      onClick={() => {
-                        handleEditOS(osId);
-                        setCalendarMenuPosition(null);
+              {/* Menu de Ações para o Calendário */}
+              {viewMode === "calendar" &&
+                openActionMenuId &&
+                calendarMenuPosition &&
+                (() => {
+                  const osId = openActionMenuId;
+                  const os = filteredCalendarOSList.find((o) => o.id === osId);
+                  const isArchived = os?.arquivado ?? false;
+                  const menuHeight = 240;
+                  const spaceBelow =
+                    window.innerHeight - calendarMenuPosition.y;
+                  const shouldOpenUp = spaceBelow < menuHeight + 16;
+                  return (
+                    <div
+                      ref={calendarMenuRef}
+                      className="fixed min-w-[200px] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 space-y-1 z-[9999]"
+                      style={{
+                        top: shouldOpenUp
+                          ? calendarMenuPosition.y - menuHeight - 8
+                          : calendarMenuPosition.y + 8,
+                        left: calendarMenuPosition.x,
                       }}
-                      className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-blue-50 hover:text-blue-600 flex items-center gap-3 cursor-pointer"
                     >
-                      <Pencil
-                        size={16}
-                        className="text-slate-400 group-hover:text-blue-600"
-                      />
-                      Editar
-                    </button>
-                  )}
-                  {isArchived && (
-                    <button
-                      onClick={() => {
-                        handleReopenOS(osId);
-                        setCalendarMenuPosition(null);
-                      }}
-                      className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 flex items-center gap-3 cursor-pointer"
-                    >
-                      <RotateCcw
-                        size={16}
-                        className="text-slate-400 group-hover:text-emerald-600"
-                      />
-                      Reabrir
-                    </button>
-                  )}
-                  {!isArchived && (
-                    <button
-                      onClick={() => {
-                        handleDeleteOS(osId);
-                        setCalendarMenuPosition(null);
-                      }}
-                      className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
-                      style={{ color: "rgb(219, 132, 153)" }}
-                    >
-                      <XOctagon
-                        size={16}
-                        style={{ color: "rgb(219, 132, 153)" }}
-                      />
-                      Arquivar
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
+                      <button
+                        onClick={() => {
+                          handleViewOS(osId);
+                          setCalendarMenuPosition(null);
+                        }}
+                        className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-cyan-50 hover:text-cyan-600 flex items-center gap-3 cursor-pointer"
+                      >
+                        <Eye
+                          size={16}
+                          className="text-slate-400 group-hover:text-cyan-600"
+                        />
+                        Visualizar
+                      </button>
+                      {!isArchived && (
+                        <button
+                          onClick={() => {
+                            handleEditOS(osId);
+                            setCalendarMenuPosition(null);
+                          }}
+                          className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-blue-50 hover:text-blue-600 flex items-center gap-3 cursor-pointer"
+                        >
+                          <Pencil
+                            size={16}
+                            className="text-slate-400 group-hover:text-blue-600"
+                          />
+                          Editar
+                        </button>
+                      )}
+                      {isArchived && (
+                        <button
+                          onClick={() => {
+                            handleReopenOS(osId);
+                            setCalendarMenuPosition(null);
+                          }}
+                          className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 flex items-center gap-3 cursor-pointer"
+                        >
+                          <RotateCcw
+                            size={16}
+                            className="text-slate-400 group-hover:text-emerald-600"
+                          />
+                          Reabrir
+                        </button>
+                      )}
+                      {!isArchived &&
+                        os?.status.operacional !== "Finalizado" && (
+                          <button
+                            onClick={() => {
+                              handleFinishOS(osId);
+                              setCalendarMenuPosition(null);
+                            }}
+                            className="group w-full px-4 py-2 text-left text-sm font-bold text-emerald-600 hover:text-emerald-700 rounded-xl bg-emerald-50 hover:bg-emerald-100 flex items-center gap-3 cursor-pointer"
+                          >
+                            <CheckCircle2
+                              size={16}
+                              className="text-emerald-600 group-hover:text-emerald-700"
+                            />
+                            Finalizar
+                          </button>
+                        )}
+                      {!isArchived && (
+                        <button
+                          onClick={() => {
+                            handleDeleteOS(osId);
+                            setCalendarMenuPosition(null);
+                          }}
+                          className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
+                          style={{ color: "rgb(219, 132, 153)" }}
+                        >
+                          <XOctagon
+                            size={16}
+                            style={{ color: "rgb(219, 132, 153)" }}
+                          />
+                          Arquivar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
             </>
           )}
         </>
@@ -6019,7 +6177,12 @@ export default function OSOperationalPage() {
                                     : "text-slate-700"
                       }`}
                     >
-                      {getStatusConfig(effectiveOperationalStatus, viewingOS?.arquivado).label}
+                      {
+                        getStatusConfig(
+                          effectiveOperationalStatus,
+                          viewingOS?.arquivado,
+                        ).label
+                      }
                     </p>
                   </div>
                 </div>
@@ -6087,7 +6250,8 @@ export default function OSOperationalPage() {
                   <div className="flex items-center gap-3 rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-600">
                     <Archive size={20} className="text-rose-500 shrink-0" />
                     <p className="text-sm font-bold">
-                      Esta ordem de serviço está arquivada. As ações dos ciclos operacionais estão bloqueadas.
+                      Esta ordem de serviço está arquivada. As ações dos ciclos
+                      operacionais estão bloqueadas.
                     </p>
                   </div>
                 )}
@@ -6662,7 +6826,8 @@ export default function OSOperationalPage() {
                               <span className="text-slate-400 font-bold">
                                 Autor:
                               </span>{" "}
-                              {users.find((u) => u.id === viewingOS.createdBy)?.nome || "Não registrado"}
+                              {users.find((u) => u.id === viewingOS.createdBy)
+                                ?.nome || "Não registrado"}
                             </span>
                             <span>
                               <span className="text-slate-400 font-bold">
@@ -6683,74 +6848,90 @@ export default function OSOperationalPage() {
                         hour: "2-digit",
                         minute: "2-digit",
                       });
-                      const typeColors: Record<string, string> = {
-                        create:
-                          "bg-emerald-50 text-emerald-700 border-emerald-200",
-                        update: "bg-blue-50 text-blue-700 border-blue-200",
-                        status_change:
-                          "bg-amber-50 text-amber-700 border-amber-200",
-                        archive: "bg-slate-50 text-slate-700 border-slate-200",
-                        driver_accept:
-                          "bg-indigo-50 text-indigo-700 border-indigo-200",
-                        driver_start: "bg-sky-50 text-sky-700 border-sky-200",
-                        driver_finish:
-                          "bg-emerald-50 text-emerald-700 border-emerald-200",
-                        passenger_notify:
-                          "bg-purple-50 text-purple-700 border-purple-200",
-                        passenger_confirm:
-                          "bg-green-50 text-green-700 border-green-200",
-                        comment: "bg-slate-50 text-slate-700 border-slate-200",
-                      };
-                      const typeLabels: Record<string, string> = {
-                        create: "Criação",
-                        update: "Atualização",
-                        status_change: "Status",
-                        archive: "Arquivamento",
-                        driver_accept: "Visualização Motorista",
-                        driver_start: "Início Rota",
-                        driver_finish: "Finalização Rota",
-                        passenger_notify: "Notificação Passageiro",
-                        passenger_confirm: "Confirmação Passageiro",
-                        comment: "Comentário",
-                      };
+                      const tone = getOSLogTone(log.type);
+                      const highlights = getOSLogMetadataHighlights(
+                        log.type,
+                        log.metadata,
+                      );
+                      const fullActorName = log.actor_name || "Sistema";
+                      const actorParts =
+                        fullActorName.split(" ").filter(Boolean) || [];
+                      const actorLabel =
+                        actorParts.length <= 2
+                          ? fullActorName
+                          : `${actorParts[0]} ${actorParts[actorParts.length - 1]}`;
+                      const actorInitials = fullActorName
+                        .split(" ")
+                        .filter(Boolean)
+                        .map((part) => part[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase();
                       return (
                         <div
                           key={log.id}
-                          className="flex items-start gap-3 p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-white transition-colors"
+                          className="flex items-start gap-3 p-4 rounded-2xl border border-slate-100 bg-slate-50/60 hover:bg-white transition-colors"
                         >
                           <div
-                            className={`mt-0.5 w-2.5 h-2.5 rounded-full shrink-0 ${typeColors[log.type]?.split(" ")[0] || "bg-slate-100"}`}
+                            className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${tone.dotClass}`}
                           />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2 mb-1">
+                          <div className="flex-1 min-w-0 space-y-3">
+                            <div className="flex items-start justify-between gap-2">
                               <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${typeColors[log.type] || "bg-slate-50 text-slate-700 border-slate-200"}`}
+                                className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${tone.badgeClass}`}
                               >
-                                {typeLabels[log.type] || log.type}
+                                {tone.label}
                               </span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-bold text-slate-400 shrink-0">
+                              <div className="text-right">
+                                <span className="block text-[11px] font-bold text-slate-400 shrink-0">
                                   {timeStr}
                                 </span>
-                                <span className="text-[11px] font-medium text-slate-400">
+                                <span className="block text-[11px] font-medium text-slate-400">
                                   por{" "}
                                   <span className="font-bold">
-                                    {(() => {
-                                      const parts =
-                                        log.actor_name
-                                          ?.split(" ")
-                                          .filter(Boolean) || [];
-                                      if (parts.length <= 2)
-                                        return log.actor_name;
-                                      return `${parts[0]} ${parts[parts.length - 1]}`;
-                                    })()}
+                                    {actorLabel}
                                   </span>
                                 </span>
                               </div>
                             </div>
-                            <p className="text-sm font-semibold text-slate-700 leading-snug">
-                              {log.description}
-                            </p>
+                            <div className="flex items-start gap-3">
+                              <div className="flex-shrink-0">
+                                {log.actor_avatar_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={log.actor_avatar_url}
+                                    alt={fullActorName}
+                                    className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-md"
+                                  />
+                                ) : (
+                                  <span
+                                    className={`w-11 h-11 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white text-xs font-black flex items-center justify-center border-2 border-white shadow-md`}
+                                  >
+                                    {actorInitials || "S"}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1 space-y-2">
+                                <p className="text-sm font-black text-slate-800 leading-snug">
+                                  {fullActorName}
+                                </p>
+                                <p className="text-sm font-medium text-slate-600 leading-snug">
+                                  {log.description}
+                                </p>
+                                {highlights.length > 0 && (
+                                  <div className="flex flex-wrap gap-2">
+                                    {highlights.map((highlight) => (
+                                      <span
+                                        key={`${log.id}-${highlight}`}
+                                        className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500"
+                                      >
+                                        {highlight}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );
@@ -8319,8 +8500,8 @@ export default function OSOperationalPage() {
             <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
               <p className="text-sm text-slate-600 font-medium leading-relaxed">
                 Você pode marcar o atendimento como{" "}
-                <span className="font-black text-slate-800">concluído</span> agora
-                ou mantê-lo com o status atual.
+                <span className="font-black text-slate-800">concluído</span>{" "}
+                agora ou mantê-lo com o status atual.
               </p>
             </div>
 

@@ -18,6 +18,7 @@ Criados dois hooks especializados que só carregam dados quando realmente necess
 - **`useParceiros()`** (`src/hooks/useParceiros.ts`)
 
 **Características:**
+
 - ✅ Carregamento sob demanda (lazy loading)
 - ✅ Cache local com estado React
 - ✅ Realtime updates via Supabase
@@ -27,6 +28,7 @@ Criados dois hooks especializados que só carregam dados quando realmente necess
 ### 2. DataContext Simplificado
 
 **Removido do carregamento global:**
+
 - ❌ `passageiros` state
 - ❌ `parceiros` state
 - ❌ `dbFetchPassageiros()` no `refreshData()`
@@ -34,6 +36,7 @@ Criados dois hooks especializados que só carregam dados quando realmente necess
 - ❌ Listeners realtime de `passageiros` e `parceiros_servico`
 
 **Mantido no DataContext:**
+
 - ✅ Actions de CRUD (add/update/delete) - fazem chamadas diretas ao banco
 - ✅ Validações movidas para os componentes que usam os hooks
 
@@ -41,27 +44,30 @@ Criados dois hooks especializados que só carregam dados quando realmente necess
 
 Páginas que agora usam lazy loading:
 
-| Página | Hook Usado | Observação |
-|--------|-----------|------------|
-| `/portal/os` | `usePassageiros()` + `useParceiros()` | Selects de passageiros em waypoints |
-| `/portal/financeiro` | `useParceiros()` | Filtros de parceiros |
-| `/portal/dashboard` | `useParceiros()` | Agrupamento por parceiro |
-| `/portal/parcerias` | `useParceiros()` | Lista completa + validações |
-| `/portal/motoristas` | `useParceiros()` | Vinculação de motoristas |
-| `/portal/passageiros` | ❌ Não usa | Já usa paginação server-side |
+| Página                | Hook Usado                            | Observação                          |
+| --------------------- | ------------------------------------- | ----------------------------------- |
+| `/portal/os`          | `usePassageiros()` + `useParceiros()` | Selects de passageiros em waypoints |
+| `/portal/financeiro`  | `useParceiros()`                      | Filtros de parceiros                |
+| `/portal/dashboard`   | `useParceiros()`                      | Agrupamento por parceiro            |
+| `/portal/parcerias`   | `useParceiros()`                      | Lista completa + validações         |
+| `/portal/motoristas`  | `useParceiros()`                      | Vinculação de motoristas            |
+| `/portal/passageiros` | ❌ Não usa                            | Já usa paginação server-side        |
 
 ## Benefícios
 
 ### Performance
+
 - **Redução de 40% no tempo de carregamento inicial** (não carrega passageiros/parceiros se não for necessário)
 - **Menor uso de memória** no cliente (dados só existem onde são usados)
 - **Requests paralelos** (cada hook carrega independentemente)
 
 ### Escalabilidade
+
 - **Preparado para crescimento**: Se passageiros/parceiros crescerem para milhares, o impacto é localizado
 - **Fácil migração para paginação**: Basta trocar `fetchPassageiros()` por `fetchPassageirosPage()` no hook
 
 ### Manutenibilidade
+
 - **Separação de responsabilidades**: DataContext cuida de dados globais leves, hooks cuidam de dados pesados
 - **Realtime isolado**: Cada hook gerencia seus próprios listeners
 - **Testabilidade**: Hooks podem ser testados independentemente

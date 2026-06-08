@@ -43,7 +43,10 @@ type CreateAppNotificationBody = {
 export async function GET() {
   try {
     const authClient = await createAuthClient();
-    const { data: { user }, error: userError } = await authClient.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
 
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
@@ -61,10 +64,10 @@ export async function GET() {
 
     // 2. Buscar notificações e autores em uma única query (JOIN)
     // Nota: O join user_roles!created_by assume que existe uma FK ou que o nome da coluna é explícito
-    // Como app_notifications(created_by) -> auth.users(id) e user_roles(id) -> auth.users(id), 
+    // Como app_notifications(created_by) -> auth.users(id) e user_roles(id) -> auth.users(id),
     // o PostgREST pode precisar de ajuda se não houver FK direta entre app_notifications e user_roles.
     // Usaremos a abordagem otimizada de dois passos se o JOIN falhar ou for complexo, mas com cache.
-    
+
     const { data: notifications, error: notifError } = await adminClient
       .from("app_notifications")
       .select("*")
@@ -79,15 +82,13 @@ export async function GET() {
     // 3. Buscar nomes e avatares atuais dos autores de forma eficiente
     const uniqueCreatorIds = Array.from(
       new Set(
-        notifs
-          .map((n) => n.created_by)
-          .filter((id): id is string => !!id),
+        notifs.map((n) => n.created_by).filter((id): id is string => !!id),
       ),
     );
 
     const currentNames: Record<string, string> = {};
     const currentAvatars: Record<string, string | null> = {};
-    
+
     if (uniqueCreatorIds.length > 0) {
       const { data: usersData } = await adminClient
         .from("user_roles")
@@ -122,7 +123,6 @@ export async function GET() {
   }
 }
 
-
 export async function POST(request: Request) {
   try {
     const authClient = await createAuthClient();
@@ -152,7 +152,9 @@ export async function POST(request: Request) {
     const adminClient = getAdminClient();
 
     // Buscar nome e avatar do usuário se não estiver no metadata
-    const userMetadata = user.user_metadata as Record<string, unknown> | undefined;
+    const userMetadata = user.user_metadata as
+      | Record<string, unknown>
+      | undefined;
     let authorName: string | null =
       (typeof userMetadata?.nome === "string" ? userMetadata.nome : null) ||
       (typeof userMetadata?.full_name === "string"

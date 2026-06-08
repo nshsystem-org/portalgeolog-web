@@ -301,6 +301,7 @@ Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir
 **IMPORTANTE:** NUNCA executar `npx @cloudflare/next-on-pages@1` nem buildar via Cloudflare Pages. Use sempre o build interno do Next.js e faça o deploy direto para Workers.
 
 **Secrets Obrigatórios:** O sistema requer 5 secrets configurados (todos relacionados à META):
+
 - `SUPABASE_SERVICE_ROLE_KEY` - Chave de serviço do Supabase
 - `RESEND_API_KEY` - Chave da API Resend para e-mails
 - `META_WHATSAPP_ACCESS_TOKEN` - Token de acesso da Meta WhatsApp

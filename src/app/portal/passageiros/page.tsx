@@ -326,7 +326,9 @@ export default function PassageirosPage() {
                   )}
                   <div className="flex items-center gap-2 text-slate-600">
                     <Phone size={14} className="text-blue-500" />
-                    <span className="font-medium">{formatPhone(item.celular)}</span>
+                    <span className="font-medium">
+                      {formatPhone(item.celular)}
+                    </span>
                   </div>
                   {item.cpf && (
                     <div className="flex items-center gap-2 text-slate-600">
