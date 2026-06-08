@@ -95,8 +95,16 @@ const normalizeCycleComparison = (cycles: OperationalCycle[] = []) =>
     kmFinal: cycle.kmFinal ?? null,
   }));
 
+type OSFieldChange = {
+  field: string;
+  from?: string;
+  to?: string;
+  action?: "added" | "removed" | "changed";
+};
+
 type OSUpdateLogContext = {
   changedSections: string[];
+  fieldChanges: OSFieldChange[];
   metadata: Record<string, unknown>;
 };
 
@@ -107,6 +115,8 @@ const buildOSUpdateLogContext = (
   operationalCycles: OperationalCycle[],
 ): OSUpdateLogContext => {
   const changedFieldsBySection: Record<string, string[]> = {};
+  const fieldChanges: OSFieldChange[] = [];
+
   const markChange = (
     section: string,
     label: string,
@@ -118,102 +128,174 @@ const buildOSUpdateLogContext = (
     changedFieldsBySection[section].push(label);
   };
 
-  if (previousOS) {
-    markChange("Dados básicos", "Data", previousOS.data, osData.data);
-    markChange(
-      "Dados básicos",
-      "Horário",
-      previousOS.hora,
-      osData.hora || null,
-    );
-    markChange(
-      "Dados básicos",
-      "Horário extra",
-      previousOS.horaExtra || "",
-      osData.horaExtra || "",
-    );
-    markChange("Dados básicos", "OS", previousOS.os, osData.os);
-    markChange(
-      "Dados básicos",
-      "Cliente",
-      previousOS.clienteId,
-      osData.clienteId,
-    );
-    markChange(
-      "Dados básicos",
-      "Solicitante",
-      previousOS.solicitante || "",
-      upperText(osData.solicitante),
-    );
-    markChange(
-      "Dados básicos",
-      "Solicitante vinculado",
-      previousOS.solicitanteId || null,
-      osData.solicitanteId || null,
-    );
-    markChange(
-      "Dados básicos",
-      "Centro de custo",
-      previousOS.centroCustoId || null,
-      osData.centroCustoId || null,
-    );
-    markChange(
-      "Dados básicos",
-      "Motorista",
-      previousOS.motorista || "",
-      upperText(osData.motorista),
-    );
-    markChange(
-      "Dados básicos",
-      "Motorista vinculado",
-      previousOS.driverId || null,
-      osData.driverId || null,
-    );
-    markChange(
-      "Dados básicos",
-      "Veículo",
-      previousOS.veiculoId || null,
-      osData.veiculoId || null,
-    );
-    markChange(
-      "Dados básicos",
-      "Valor bruto",
-      previousOS.valorBruto ?? 0,
-      osData.valorBruto ?? 0,
-    );
-    markChange(
-      "Dados básicos",
-      "Custo",
-      previousOS.custo ?? 0,
-      osData.custo ?? 0,
-    );
-    markChange(
-      "Dados básicos",
-      "Observações financeiras",
-      previousOS.obsFinanceiras || "",
-      osData.obsFinanceiras || "",
-    );
+  const addFieldChange = (change: OSFieldChange) => {
+    fieldChanges.push(change);
+  };
 
-    markChange(
-      "Rota",
-      "Waypoints",
-      normalizeWaypointComparison(previousOS.rota?.waypoints || []),
-      normalizeWaypointComparison(waypoints),
-    );
-    markChange(
-      "Ciclos operacionais",
-      "Ciclos",
+  const fmt = (v: unknown): string => {
+    if (v == null) return "";
+    if (typeof v === "string") return v.trim() || "";
+    if (typeof v === "number") return String(v);
+    return "";
+  };
+
+  if (previousOS) {
+    const simpleFields: Array<[string, unknown, unknown]> = [
+      ["Data", previousOS.data, osData.data],
+      ["Horário", previousOS.hora, osData.hora || null],
+      ["Horário extra", previousOS.horaExtra || "", osData.horaExtra || ""],
+      ["OS", previousOS.os, osData.os],
+      ["Cliente", previousOS.clienteId, osData.clienteId],
+      ["Solicitante", previousOS.solicitante || "", upperText(osData.solicitante)],
+      ["Solicitante vinculado", previousOS.solicitanteId || null, osData.solicitanteId || null],
+      ["Centro de custo", previousOS.centroCustoId || null, osData.centroCustoId || null],
+      ["Motorista", previousOS.motorista || "", upperText(osData.motorista)],
+      ["Motorista vinculado", previousOS.driverId || null, osData.driverId || null],
+      ["Veículo", previousOS.veiculoId || null, osData.veiculoId || null],
+      ["Valor bruto", previousOS.valorBruto ?? 0, osData.valorBruto ?? 0],
+      ["Custo", previousOS.custo ?? 0, osData.custo ?? 0],
+      ["Observações financeiras", previousOS.obsFinanceiras || "", osData.obsFinanceiras || ""],
+    ];
+
+    for (const [label, prev, next] of simpleFields) {
+      if (!isDeepEqual(prev, next)) {
+        markChange("Dados básicos", label, prev, next);
+        addFieldChange({
+          field: label,
+          from: fmt(prev),
+          to: fmt(next),
+          action: "changed",
+        });
+      }
+    }
+
+    const prevWaypoints = previousOS.rota?.waypoints || [];
+    const nextWaypoints = waypoints;
+
+    if (!isDeepEqual(
+      normalizeWaypointComparison(prevWaypoints),
+      normalizeWaypointComparison(nextWaypoints),
+    )) {
+      markChange("Rota", "Waypoints", normalizeWaypointComparison(prevWaypoints), normalizeWaypointComparison(nextWaypoints));
+
+      const maxLen = Math.max(prevWaypoints.length, nextWaypoints.length);
+      for (let i = 0; i < maxLen; i++) {
+        const prevWp = prevWaypoints[i];
+        const nextWp = nextWaypoints[i];
+        const idxLabel = `Parada ${i + 1}`;
+
+        if (!prevWp && nextWp) {
+          addFieldChange({
+            field: idxLabel,
+            to: nextWp.label,
+            action: "added",
+          });
+          continue;
+        }
+
+        if (prevWp && !nextWp) {
+          addFieldChange({
+            field: idxLabel,
+            from: prevWp.label,
+            action: "removed",
+          });
+          continue;
+        }
+
+        if (prevWp && nextWp) {
+          if (prevWp.label !== nextWp.label) {
+            addFieldChange({
+              field: `${idxLabel} — Endereço`,
+              from: prevWp.label,
+              to: nextWp.label,
+              action: "changed",
+            });
+          }
+
+          if ((prevWp.comment?.trim() || "") !== (nextWp.comment?.trim() || "")) {
+            addFieldChange({
+              field: `${idxLabel} — Comentário`,
+              from: prevWp.comment?.trim() || "",
+              to: nextWp.comment?.trim() || "",
+              action: "changed",
+            });
+          }
+
+          if (prevWp.hora?.trim() !== nextWp.hora?.trim()) {
+            addFieldChange({
+              field: `${idxLabel} — Horário`,
+              from: prevWp.hora?.trim() || "",
+              to: nextWp.hora?.trim() || "",
+              action: "changed",
+            });
+          }
+
+          if (prevWp.data !== nextWp.data) {
+            addFieldChange({
+              field: `${idxLabel} — Data`,
+              from: prevWp.data || "",
+              to: nextWp.data || "",
+              action: "changed",
+            });
+          }
+
+          const prevPax = prevWp.passengers || [];
+          const nextPax = nextWp.passengers || [];
+          const prevIds = new Set(prevPax.map((p) => p.solicitanteId || p.id));
+          const nextIds = new Set(nextPax.map((p) => p.solicitanteId || p.id));
+
+          const added = nextPax.filter((p) => !prevIds.has(p.solicitanteId || p.id));
+          const removed = prevPax.filter((p) => !nextIds.has(p.solicitanteId || p.id));
+
+          for (const p of added) {
+            addFieldChange({
+              field: `${idxLabel} — Passageiro`,
+              to: p.nome || p.id,
+              action: "added",
+            });
+          }
+          for (const p of removed) {
+            addFieldChange({
+              field: `${idxLabel} — Passageiro`,
+              from: p.nome || p.id,
+              action: "removed",
+            });
+          }
+        }
+      }
+    }
+
+    if (!isDeepEqual(
       normalizeCycleComparison(previousOS.operationalCycles || []),
       normalizeCycleComparison(operationalCycles),
-    );
+    )) {
+      markChange(
+        "Ciclos operacionais",
+        "Ciclos",
+        normalizeCycleComparison(previousOS.operationalCycles || []),
+        normalizeCycleComparison(operationalCycles),
+      );
+      addFieldChange({
+        field: "Ciclos operacionais",
+        action: "changed",
+      });
+    }
   }
 
   const changedSections = Object.keys(changedFieldsBySection);
+
+  console.log("[buildOSUpdateLogContext] previousOS exists:", !!previousOS, "changedSections:", changedSections, "fieldChanges count:", fieldChanges.length);
+  if (fieldChanges.length > 0) {
+    console.log("[buildOSUpdateLogContext] fieldChanges:", fieldChanges);
+  }
+
   return {
     changedSections,
+    fieldChanges,
     metadata: {
       changed_sections: changedSections,
       changed_fields_by_section: changedFieldsBySection,
+      field_changes: fieldChanges,
     },
   };
 };
@@ -1873,6 +1955,7 @@ export async function updateOSInDB(
   if (error) throw error;
 
   try {
+    console.log("[updateOSInDB] Inserting OS log for", id, "with metadata:", updateLogContext.metadata);
     await insertOSLog(
       id,
       "update",
@@ -1881,8 +1964,9 @@ export async function updateOSInDB(
       actorId,
       updateLogContext.metadata,
     );
+    console.log("[updateOSInDB] OS log inserted successfully for", id);
   } catch (logError) {
-    console.error("Erro ao inserir log de OS:", logError);
+    console.error("[updateOSInDB] Erro ao inserir log de OS:", logError);
   }
 }
 

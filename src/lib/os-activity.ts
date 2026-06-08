@@ -117,6 +117,38 @@ export const getOSLogMetadataHighlights = (
   if (!metadata || typeof metadata !== "object") return [];
 
   if (type === "update") {
+    const fieldChanges = Array.isArray(metadata.field_changes)
+      ? metadata.field_changes
+      : [];
+
+    if (fieldChanges.length > 0) {
+      return fieldChanges
+        .map((change) => {
+          if (!change || typeof change !== "object") return null;
+          const c = change as Record<string, unknown>;
+          const field = typeof c.field === "string" ? c.field : "";
+          const from = typeof c.from === "string" ? c.from : "";
+          const to = typeof c.to === "string" ? c.to : "";
+          const action = typeof c.action === "string" ? c.action : "";
+
+          if (!field) return null;
+
+          if (action === "added") {
+            return to ? `${field}: ${to} adicionado` : `${field} adicionado`;
+          }
+          if (action === "removed") {
+            return from
+              ? `${field}: ${from} removido`
+              : `${field} removido`;
+          }
+          if (from && to) {
+            return `${field}: ${from} → ${to}`;
+          }
+          return `${field} alterado`;
+        })
+        .filter((s): s is string => Boolean(s));
+    }
+
     const sections = Array.isArray(metadata.changed_sections)
       ? metadata.changed_sections.filter(
           (section): section is string =>

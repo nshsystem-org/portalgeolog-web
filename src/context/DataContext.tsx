@@ -1347,7 +1347,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       "id" | "lucro" | "imposto" | "status" | "protocolo"
     >,
   ): Promise<void> => {
-    const currentOS = osList.find((os) => os.id === id);
+    let currentOS = osList.find((os) => os.id === id);
+
+    // Fallback: se a OS não estiver no estado local (ex: filtro, paginação),
+    // buscar do banco para garantir que o diff de mudanças seja calculado
+    if (!currentOS) {
+      try {
+        currentOS = await fetchOSById(id);
+        console.log(
+          `[DataContext] updateOS: OS ${id} buscada do banco para diff`,
+        );
+      } catch (fetchErr) {
+        console.warn(
+          `[DataContext] updateOS: falha ao buscar OS ${id} do banco para diff:`,
+          fetchErr,
+        );
+      }
+    }
 
     const taxa = impostoPercentual / 100;
     const vBruto = osData.valorBruto ?? 0;
