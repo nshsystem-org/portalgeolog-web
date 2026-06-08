@@ -38,50 +38,48 @@ import {
   Archive,
   RotateCcw,
   RefreshCw,
+  Hash,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import { ChatWidget } from "@/components/chat/ChatWidget";
 
-// Função helper para formatar mensagem de notificação com protocolo em azul
-function formatNotificationMessage(message: string): React.ReactNode {
-  // Remove o [OS_ID:xxx] se existir
-  let cleanMessage = message.replace(/\[OS_ID:[a-f0-9-]+\]/, "");
+function extractNotificationProtocolo(message: string): {
+  protocolo: string | null;
+  cleanMessage: string;
+} {
+  let cleanMessage = message.replace(/\[OS_ID:[a-f0-9-]+\]/, "").trim();
 
-  // Extrai o protocolo (com ou sem #) e aplica formatação azul
-  const protocoloMatch = cleanMessage.match(/Protocolo #?(\d+)/);
+  // "A OS 2026051030 foi atualizada por..."
+  const osMatch = cleanMessage.match(/A\s+OS\s+(\d+)/);
+  if (osMatch) {
+    cleanMessage = cleanMessage.replace(osMatch[0], "").trim();
+  }
+
+  // "Protocolo #2026061274 foi gerado."
+  const protocoloMatch = cleanMessage.match(/Protocolo\s+#?(\d+)/);
   if (protocoloMatch) {
-    const protocolo = protocoloMatch[1];
-    cleanMessage = cleanMessage.replace(
-      /Protocolo #?\d+/,
-      `Protocolo ${protocolo}`,
-    );
-    // Divide a mensagem e destaca o protocolo em azul
-    const parts = cleanMessage.split(`Protocolo ${protocolo}`);
-    return (
-      <>
-        {parts[0]}
-        <span className="text-blue-600 font-semibold">{protocolo}</span>
-        {parts[1] || ""}
-      </>
-    );
+    cleanMessage = cleanMessage.replace(protocoloMatch[0], "").trim();
   }
 
-  // Extrai protocolo entre aspas para OS arquivada/reaberta
-  const quotesProtocoloMatch = cleanMessage.match(/"(\d{10})"/);
-  if (quotesProtocoloMatch) {
-    const protocolo = quotesProtocoloMatch[1];
-    const parts = cleanMessage.split(`"${protocolo}"`);
-    return (
-      <>
-        {parts[0]}
-        <span className="text-blue-600 font-semibold">{protocolo}</span>
-        {parts[1] || ""}
-      </>
-    );
+  // "2026061117" entre aspas
+  const quotesMatch = cleanMessage.match(/"(\d{10})"/);
+  if (quotesMatch) {
+    cleanMessage = cleanMessage.replace(quotesMatch[0], "").trim();
   }
 
+  // Capitaliza primeira letra se necessario
+  if (cleanMessage.length > 0 && cleanMessage[0] === cleanMessage[0].toLowerCase()) {
+    cleanMessage = cleanMessage[0].toUpperCase() + cleanMessage.slice(1);
+  }
+
+  const protocolo = osMatch?.[1] ?? protocoloMatch?.[1] ?? quotesMatch?.[1] ?? null;
+  return { protocolo, cleanMessage };
+}
+
+function formatNotificationMessage(message: string): React.ReactNode {
+  const { cleanMessage } = extractNotificationProtocolo(message);
   return cleanMessage;
 }
 
@@ -815,6 +813,19 @@ export default function DashboardLayout({
                                   )}
                                 </p>
                                 <div className="flex items-center gap-2 mt-2">
+                                  {(() => {
+                                    const { protocolo } =
+                                      extractNotificationProtocolo(
+                                        notification.message,
+                                      );
+                                    if (!protocolo) return null;
+                                    return (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-100 text-blue-700 text-[10px] font-black uppercase tracking-wider">
+                                        <Hash size={10} />
+                                        {protocolo}
+                                      </span>
+                                    );
+                                  })()}
                                   <p className="text-xs text-slate-400">
                                     {new Date(
                                       notification.created_at,
