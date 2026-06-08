@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
@@ -44,8 +46,52 @@ function createResendClient() {
   return apiKey ? new Resend(apiKey) : null;
 }
 
+async function createAuthClient() {
+  const cookieStore = await cookies();
+  return createServerClient(
+    getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll() {},
+      },
+    },
+  );
+}
+
+async function requireAdmin(): Promise<{ userId: string } | NextResponse> {
+  const authClient = await createAuthClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await authClient.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  }
+
+  const supabaseAdmin = createSupabaseAdminClient();
+  const { data: role } = await supabaseAdmin
+    .from("user_roles")
+    .select("categoria")
+    .eq("id", user.id)
+    .single();
+
+  if (!role || role.categoria !== "admin") {
+    return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+  }
+
+  return { userId: user.id };
+}
+
 export async function GET() {
   try {
+    const authResult = await requireAdmin();
+    if (authResult instanceof NextResponse) return authResult;
+
     const supabaseAdmin = createSupabaseAdminClient();
 
     // 1. Busca os perfis (roles)
@@ -93,6 +139,9 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const authResult = await requireAdmin();
+    if (authResult instanceof NextResponse) return authResult;
+
     const supabaseAdmin = createSupabaseAdminClient();
 
     const { id, updates } = await request.json();
@@ -120,13 +169,16 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const authResult = await requireAdmin();
+    if (authResult instanceof NextResponse) return authResult;
+
     const supabaseAdmin = createSupabaseAdminClient();
     const resend = createResendClient();
 
     const { email, nome, tipo_usuario, categoria } = await request.json();
 
     // 1. Criar o usuário no Auth (Admin)
-    const passwordDefault = "12345678";
+    const passwordDefault = crypto.randomUUID().slice(0, 12);
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email,
@@ -212,6 +264,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const authResult = await requireAdmin();
+    if (authResult instanceof NextResponse) return authResult;
+
     const supabaseAdmin = createSupabaseAdminClient();
 
     const { searchParams } = new URL(request.url);

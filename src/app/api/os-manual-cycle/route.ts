@@ -90,12 +90,35 @@ const updateCycleInList = (
   return updated;
 };
 
+async function createAuthClient() {
+  const cookieStore = await cookies();
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: () => {},
+      },
+    },
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const authClient = await createAuthClient();
     const {
       data: { user },
+      error: userError,
     } = await authClient.auth.getUser();
+
+    if (userError || !user) {
+      return NextResponse.json(
+        { success: false, error: "Não autenticado." },
+        { status: 401 },
+      );
+    }
+
 
     const body = (await request.json()) as {
       os_id: string;

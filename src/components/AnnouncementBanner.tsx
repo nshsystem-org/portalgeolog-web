@@ -9,6 +9,7 @@ import {
   ChevronUp,
   ArrowRight,
 } from "lucide-react";
+import DOMPurify from "dompurify";
 import { useAnnouncements, type Announcement } from "@/hooks/useAnnouncements";
 import { logInfo } from "@/lib/frontend-logger";
 
@@ -223,7 +224,7 @@ function AnnouncementBannerCard({
             <div className="px-6 py-5 bg-white">
               <div
                 className="prose prose-sm max-w-none text-slate-700"
-                dangerouslySetInnerHTML={{ __html: announcement.message }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(announcement.message) }}
               />
 
               <div className="mt-5 flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-xs font-medium text-slate-500">
