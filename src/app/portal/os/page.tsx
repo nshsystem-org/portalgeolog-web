@@ -3892,7 +3892,7 @@ export default function OSOperationalPage() {
     try {
       if (targetId) {
         const t0 = performance.now();
-        await updateOS(targetId, osData);
+        const result = await updateOS(targetId, osData);
         const t1 = performance.now();
         console.log(`[executeSaveOS] updateOS levou ${(t1 - t0).toFixed(0)}ms`);
         // Desliga o loader imediatamente; refresh continua em background
@@ -3901,7 +3901,11 @@ export default function OSOperationalPage() {
         void osTable.refresh();
         setShowNotificationConfirm(false);
         void resetMainModalState();
-        toast.success("Atendimento atualizado com sucesso.");
+
+        if (result.changed) {
+          toast.success("Atendimento atualizado com sucesso.");
+        }
+        // Se changed === false, o DataContext ja exibiu toast informativo
       } else {
         const t0 = performance.now();
         const newOSId = await addOS(osData);

@@ -406,7 +406,7 @@ interface DataContextType {
       OrderService,
       "id" | "lucro" | "imposto" | "status" | "protocolo"
     >,
-  ) => Promise<void>;
+  ) => Promise<{ changed: boolean }>;
   updateOSStatus: (id: string, updates: Partial<OSStatus>) => Promise<void>;
   deleteOS: (id: string) => Promise<void>;
   unarchiveOS: (id: string) => Promise<void>;
@@ -1346,7 +1346,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       OrderService,
       "id" | "lucro" | "imposto" | "status" | "protocolo"
     >,
-  ): Promise<void> => {
+  ): Promise<{ changed: boolean }> => {
     let currentOS = osList.find((os) => os.id === id);
 
     // Fallback: se a OS não estiver no estado local (ex: filtro, paginação),
@@ -1354,14 +1354,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!currentOS) {
       try {
         currentOS = await fetchOSById(id);
-        console.log(
-          `[DataContext] updateOS: OS ${id} buscada do banco para diff`,
-        );
-      } catch (fetchErr) {
-        console.warn(
-          `[DataContext] updateOS: falha ao buscar OS ${id} do banco para diff:`,
-          fetchErr,
-        );
+      } catch {
+        // Falha silenciosa — updateOSInDB vai lidar sem previousOS
       }
     }
 
@@ -1393,12 +1387,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const actorName = profile?.nome || user?.email || "Sistema";
     const actorId = user?.id || null;
     try {
-      await updateOSInDB(id, osData, actorName, actorId, currentOS);
+      const result = await updateOSInDB(id, osData, actorName, actorId, currentOS);
+
+      if (!result.changed) {
+        logInfo("DataContext", "Nenhuma alteração real detectada na OS", {
+          osId: id,
+          actorName,
+        });
+        toast.info("Nenhuma alteração detectada.");
+        return { changed: false };
+      }
+
       logInfo("DataContext", "Ordem de Serviço atualizada com sucesso", {
         osId: id,
         actorName,
         updates: osData,
       });
+      return { changed: true };
     } catch (err) {
       logErrorEntry(
         "DataContext",

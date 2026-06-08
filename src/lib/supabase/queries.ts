@@ -1815,7 +1815,7 @@ export async function updateOSInDB(
   actorName?: string,
   actorId?: string | null,
   previousOS?: OrderService | null,
-): Promise<void> {
+): Promise<{ changed: boolean }> {
   const impostoPercentual = await getImpostoPercentualForDate(osData.data);
   const vBruto = osData.valorBruto ?? 0;
   const vCusto = osData.custo ?? 0;
@@ -1893,6 +1893,18 @@ export async function updateOSInDB(
     return newCycle;
   });
 
+  const updateLogContext = buildOSUpdateLogContext(
+    previousOS,
+    osData,
+    waypoints,
+    operationalCycles,
+  );
+
+  // Fonte de verdade: sem diff real, nao salva no banco e nao gera log/notificacao
+  if (updateLogContext.changedSections.length === 0) {
+    return { changed: false };
+  }
+
   const osPayload = {
     data: osData.data,
     hora: osData.hora || null,
@@ -1928,16 +1940,8 @@ export async function updateOSInDB(
     })),
   }));
 
-  const updateLogContext = buildOSUpdateLogContext(
-    previousOS,
-    osData,
-    waypoints,
-    operationalCycles,
-  );
   const updateDescription =
-    updateLogContext.changedSections.length > 0
-      ? `Atualização da OS: ${formatPortugueseList(updateLogContext.changedSections)}`
-      : "Atualização da OS";
+    `Atualização da OS: ${formatPortugueseList(updateLogContext.changedSections)}`;
 
   const { error } = await getSupabase().rpc("update_os_atomic", {
     p_os_id: id,
@@ -1948,20 +1952,20 @@ export async function updateOSInDB(
 
   if (error) throw error;
 
-  if (updateLogContext.changedSections.length > 0) {
-    try {
-      await insertOSLog(
-        id,
-        "update",
-        updateDescription,
-        actorName || "Sistema",
-        actorId,
-        updateLogContext.metadata,
-      );
-    } catch (logError) {
-      console.error("Erro ao inserir log de OS:", logError);
-    }
+  try {
+    await insertOSLog(
+      id,
+      "update",
+      updateDescription,
+      actorName || "Sistema",
+      actorId,
+      updateLogContext.metadata,
+    );
+  } catch (logError) {
+    console.error("Erro ao inserir log de OS:", logError);
   }
+
+  return { changed: true };
 }
 
 export async function updateOSStatusInDB(
