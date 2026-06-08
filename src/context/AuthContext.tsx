@@ -108,31 +108,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: string, session: Session | null) => {
-      if (!session) {
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
-
-      void (async () => {
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser();
-
-        if (error || !user) {
+    } = supabase.auth.onAuthStateChange(
+      (_event: string, session: Session | null) => {
+        if (!session) {
           setUser(null);
           setProfile(null);
           setLoading(false);
           return;
         }
 
-        setUser(user);
-        await fetchProfile(user.id);
-      })();
-    });
+        void (async () => {
+          const {
+            data: { user },
+            error,
+          } = await supabase.auth.getUser();
+
+          if (error || !user) {
+            setUser(null);
+            setProfile(null);
+            setLoading(false);
+            return;
+          }
+
+          setUser(user);
+          await fetchProfile(user.id);
+        })();
+      },
+    );
 
     return () => {
       subscription.unsubscribe();
@@ -163,16 +165,35 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
 
           // Verificar mudanças nas permissões específicas
-          if (profile && profile.specific_permissions !== newProfile.specific_permissions) {
-            const oldPerms = (profile.specific_permissions || {}) as Record<string, unknown>;
-            const newPerms = (newProfile.specific_permissions || {}) as Record<string, unknown>;
+          if (
+            profile &&
+            profile.specific_permissions !== newProfile.specific_permissions
+          ) {
+            const oldPerms = (profile.specific_permissions || {}) as Record<
+              string,
+              unknown
+            >;
+            const newPerms = (newProfile.specific_permissions || {}) as Record<
+              string,
+              unknown
+            >;
 
             // Verificar se perdeu acesso à página financeira
-            const oldFinanceiroAccess = (oldPerms.financeiro as { page_access?: boolean })?.page_access;
-            const newFinanceiroAccess = (newPerms.financeiro as { page_access?: boolean })?.page_access;
+            const oldFinanceiroAccess = (
+              oldPerms.financeiro as { page_access?: boolean }
+            )?.page_access;
+            const newFinanceiroAccess = (
+              newPerms.financeiro as { page_access?: boolean }
+            )?.page_access;
 
-            if (oldFinanceiroAccess && !newFinanceiroAccess && pathname === "/portal/financeiro") {
-              toast.warning("Seu acesso à página financeira foi revogado. Redirecionando...");
+            if (
+              oldFinanceiroAccess &&
+              !newFinanceiroAccess &&
+              pathname === "/portal/financeiro"
+            ) {
+              toast.warning(
+                "Seu acesso à página financeira foi revogado. Redirecionando...",
+              );
               router.push("/portal/dashboard");
             }
 

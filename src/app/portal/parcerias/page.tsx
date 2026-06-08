@@ -37,13 +37,8 @@ import {
   checkParceiroVinculos,
 } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
-import {
-  formatBrazilPhone,
-  normalizeBrazilPhone,
-} from "@/lib/phone";
-import {
-  formatDocument,
-} from "@/lib/document-validator";
+import { formatBrazilPhone, normalizeBrazilPhone } from "@/lib/phone";
+import { formatDocument } from "@/lib/document-validator";
 
 const PESSOA_TIPO_OPTIONS = [
   { id: "juridica", nome: "Pessoa jurídica" },
@@ -54,11 +49,17 @@ const TABLE_PAGE_SIZE = 10;
 
 // Helper functions para eliminar código duplicado
 const getPessoaTipoLabels = (pessoaTipo: "fisica" | "juridica") => ({
-  razaoSocialLabel: pessoaTipo === "juridica" ? "Razão social" : "Nome completo",
+  razaoSocialLabel:
+    pessoaTipo === "juridica" ? "Razão social" : "Nome completo",
   documentoLabel: pessoaTipo === "juridica" ? "CNPJ" : "CPF",
-  documentoPlaceholder: pessoaTipo === "juridica" ? "00.000.000/0001-00" : "000.000.000-00",
-  razaoSocialPlaceholder: pessoaTipo === "juridica" ? "Ex: Silva Logística LTDA" : "Ex: João da Silva",
-  pessoaTipoLabel: pessoaTipo === "juridica" ? "Pessoa Jurídica" : "Pessoa Física",
+  documentoPlaceholder:
+    pessoaTipo === "juridica" ? "00.000.000/0001-00" : "000.000.000-00",
+  razaoSocialPlaceholder:
+    pessoaTipo === "juridica"
+      ? "Ex: Silva Logística LTDA"
+      : "Ex: João da Silva",
+  pessoaTipoLabel:
+    pessoaTipo === "juridica" ? "Pessoa Jurídica" : "Pessoa Física",
 });
 
 const formatPhone = (value: string): string => formatBrazilPhone(value);
@@ -129,12 +130,8 @@ const initialForm = (): ParceiroFormData => ({
 
 export default function ParceriasPage() {
   const { parceiros, loading: parceirosLoading } = useParceiros();
-  const {
-    addParceiro,
-    updateParceiro,
-    deleteParceiro,
-    unarchiveParceiro,
-  } = useData();
+  const { addParceiro, updateParceiro, deleteParceiro, unarchiveParceiro } =
+    useData();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const { validateForm } = useParceiroValidation(parceiros);
   const t = useParceriasTranslation("pt-BR");
@@ -147,7 +144,7 @@ export default function ParceriasPage() {
   const [showArchivedOnly, setShowArchivedOnly] = useState(false);
   const [isArchivedFilterLoading, setIsArchivedFilterLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Ref para evitar re-renders desnecessários no refresh da tabela
   const parceirosLengthRef = useRef(parceiros.length);
   const prevParceirosLengthRef = useRef(parceiros.length);
@@ -161,7 +158,10 @@ export default function ParceriasPage() {
     [showArchivedOnly],
   );
 
-  const parceiroTable = useServerPaginatedTable(fetchParceirosPageWithFilters, TABLE_PAGE_SIZE);
+  const parceiroTable = useServerPaginatedTable(
+    fetchParceirosPageWithFilters,
+    TABLE_PAGE_SIZE,
+  );
   const searchTerm = parceiroTable.searchTerm;
 
   // Monitorar loading do filtro de arquivados
@@ -177,7 +177,7 @@ export default function ParceriasPage() {
   // Otimizado com refs para evitar re-renders excessivos
   useEffect(() => {
     parceirosLengthRef.current = parceiros.length;
-    
+
     // Apenas refresh se o comprimento realmente mudou
     if (parceirosLengthRef.current !== prevParceirosLengthRef.current) {
       void parceiroTable.refresh();
@@ -345,7 +345,9 @@ export default function ParceriasPage() {
     try {
       if (editingParceiro) {
         await updateParceiro(editingParceiro.id, cleanForm);
-        toast.success(t?.sucesso?.atualizado ?? "Parceiro atualizado com sucesso!");
+        toast.success(
+          t?.sucesso?.atualizado ?? "Parceiro atualizado com sucesso!",
+        );
       } else {
         await addParceiro(cleanForm);
         toast.success(t?.sucesso?.criado ?? "Parceiro cadastrado com sucesso!");
@@ -355,15 +357,25 @@ export default function ParceriasPage() {
 
       handleCloseModal();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+      const errorMessage =
+        error instanceof Error ? error.message : "Erro desconhecido";
       console.error("Erro ao salvar parceiro:", error);
-      
+
       // Tratamento específico para diferentes tipos de erro
-      if (errorMessage.includes("duplicate") || errorMessage.includes("já existe")) {
+      if (
+        errorMessage.includes("duplicate") ||
+        errorMessage.includes("já existe")
+      ) {
         toast.error("Já existe um parceiro com esses dados.");
-      } else if (errorMessage.includes("permission") || errorMessage.includes("permissão")) {
+      } else if (
+        errorMessage.includes("permission") ||
+        errorMessage.includes("permissão")
+      ) {
         toast.error("Você não tem permissão para realizar esta ação.");
-      } else if (errorMessage.includes("network") || errorMessage.includes("rede")) {
+      } else if (
+        errorMessage.includes("network") ||
+        errorMessage.includes("rede")
+      ) {
         toast.error("Erro de conexão. Verifique sua internet.");
       } else {
         toast.error(t?.erros?.salvar ?? "Não foi possível salvar o parceiro.");
@@ -506,7 +518,6 @@ export default function ParceriasPage() {
             key: "contatos",
             title: "Contatos",
             render: (_value: unknown, item: ParceiroServico) => {
-
               return (
                 <div className="text-sm">
                   {item.contatos.slice(0, 1).map((contato) => (
@@ -520,7 +531,10 @@ export default function ParceriasPage() {
                       <div className="flex items-center gap-4 text-xs text-slate-500 font-medium whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
                           <Phone size={12} className="text-blue-500 shrink-0" />{" "}
-                          {highlightText(formatPhone(contato.celular), searchTerm)}
+                          {highlightText(
+                            formatPhone(contato.celular),
+                            searchTerm,
+                          )}
                         </span>
                         {contato.email && (
                           <span className="inline-flex items-center gap-1">
@@ -555,7 +569,6 @@ export default function ParceriasPage() {
             key: "filiais",
             title: "Filiais",
             render: (_value: unknown, item: ParceiroServico) => {
-
               return (
                 <div className="space-y-2">
                   {item.filiais.slice(0, 1).map((filial) => (
@@ -724,7 +737,10 @@ export default function ParceriasPage() {
                         event.target.value,
                       )
                     }
-                    placeholder={getPessoaTipoLabels(formData.pessoaTipo).razaoSocialPlaceholder}
+                    placeholder={
+                      getPessoaTipoLabels(formData.pessoaTipo)
+                        .razaoSocialPlaceholder
+                    }
                     className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm mt-[2px]"
                   />
                 </div>
@@ -738,7 +754,10 @@ export default function ParceriasPage() {
                     onChange={(event) =>
                       handleInputChange("documento", event.target.value)
                     }
-                    placeholder={getPessoaTipoLabels(formData.pessoaTipo).documentoPlaceholder}
+                    placeholder={
+                      getPessoaTipoLabels(formData.pessoaTipo)
+                        .documentoPlaceholder
+                    }
                     className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />
                 </div>
@@ -980,7 +999,11 @@ export default function ParceriasPage() {
                 disabled={isSubmitting}
                 className="px-12 py-4 bg-[var(--color-geolog-blue)] text-white font-black rounded-xl shadow-xl shadow-blue-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                {isSubmitting ? "Salvando..." : (editingParceiro ? "Salvar alterações" : "Salvar parceiro")}
+                {isSubmitting
+                  ? "Salvando..."
+                  : editingParceiro
+                    ? "Salvar alterações"
+                    : "Salvar parceiro"}
               </button>
             </div>
           </form>

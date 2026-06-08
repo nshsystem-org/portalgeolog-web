@@ -84,10 +84,30 @@ function getMetaMessageType(payload: Record<string, unknown>): string | null {
 function getMetaButtonText(payload: Record<string, unknown>): string | null {
   return (
     getFromPayload<string>(payload, [
-      ["entry", "0", "changes", "0", "value", "messages", "0", "button", "text"],
+      [
+        "entry",
+        "0",
+        "changes",
+        "0",
+        "value",
+        "messages",
+        "0",
+        "button",
+        "text",
+      ],
     ]) ||
     getFromPayload<string>(payload, [
-      ["entry", "0", "changes", "0", "value", "messages", "0", "button", "payload"],
+      [
+        "entry",
+        "0",
+        "changes",
+        "0",
+        "value",
+        "messages",
+        "0",
+        "button",
+        "payload",
+      ],
     ])
   );
 }
@@ -100,7 +120,18 @@ function getMetaStatus(payload: Record<string, unknown>): string | null {
 
 function getMetaErrorMessage(payload: Record<string, unknown>): string | null {
   return getFromPayload<string>(payload, [
-    ["entry", "0", "changes", "0", "value", "statuses", "0", "errors", "0", "title"],
+    [
+      "entry",
+      "0",
+      "changes",
+      "0",
+      "value",
+      "statuses",
+      "0",
+      "errors",
+      "0",
+      "title",
+    ],
     ["entry", "0", "changes", "0", "value", "errors", "0", "title"],
     ["error", "message"],
   ]);
@@ -108,7 +139,18 @@ function getMetaErrorMessage(payload: Record<string, unknown>): string | null {
 
 function getMetaErrorCode(payload: Record<string, unknown>): string | null {
   return getFromPayload<string>(payload, [
-    ["entry", "0", "changes", "0", "value", "statuses", "0", "errors", "0", "code"],
+    [
+      "entry",
+      "0",
+      "changes",
+      "0",
+      "value",
+      "statuses",
+      "0",
+      "errors",
+      "0",
+      "code",
+    ],
     ["error", "code"],
   ]);
 }
@@ -275,7 +317,10 @@ function buildDestination(payload: Record<string, unknown>): string {
   return "";
 }
 
-function buildResult(eventType: string, payload: Record<string, unknown>): string {
+function buildResult(
+  eventType: string,
+  payload: Record<string, unknown>,
+): string {
   if (eventType.includes("success")) return "Sucesso";
   if (eventType.includes("error") || eventType.includes("exception"))
     return "Erro";
@@ -296,13 +341,16 @@ function getSourceLabel(source: string): string {
 }
 
 function getSourceTone(source: string): string {
-  if (source === "meta-webhook") return "bg-blue-50 text-blue-700 border-blue-200";
-  if (source === "whatsapp") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (source === "meta-webhook")
+    return "bg-blue-50 text-blue-700 border-blue-200";
+  if (source === "whatsapp")
+    return "bg-emerald-50 text-emerald-700 border-emerald-200";
   return "bg-slate-50 text-slate-700 border-slate-200";
 }
 
 function getResultTone(result: string): string {
-  if (result === "Sucesso") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (result === "Sucesso")
+    return "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (result === "Erro") return "bg-rose-50 text-rose-700 border-rose-200";
   return "bg-slate-50 text-slate-700 border-slate-200";
 }
@@ -350,7 +398,11 @@ export function WhatsAppLogsPanel() {
       setLogs(items);
       setLastUpdatedAt(new Date().toISOString());
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Erro inesperado ao carregar logs.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro inesperado ao carregar logs.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -396,7 +448,11 @@ export function WhatsAppLogsPanel() {
             <span
               className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-black uppercase tracking-[0.2em] ${getSourceTone(source)}`}
             >
-              {source === "whatsapp" ? <Send size={12} /> : <MessageCircle size={12} />}
+              {source === "whatsapp" ? (
+                <Send size={12} />
+              ) : (
+                <MessageCircle size={12} />
+              )}
               {getSourceLabel(source)}
             </span>
           );
@@ -423,7 +479,8 @@ export function WhatsAppLogsPanel() {
         title: "Resumo",
         render: (value: unknown, item: WhatsAppLogView) => {
           const detail =
-            item.event_type === "sem_evento" || item.event_type === "webhook_payload"
+            item.event_type === "sem_evento" ||
+            item.event_type === "webhook_payload"
               ? buildOldWebhookDetail(item.payload)
               : item.payload.templateName
                 ? `Template: ${String(item.payload.templateName)}`
@@ -434,7 +491,9 @@ export function WhatsAppLogsPanel() {
                     : "Sem detalhe adicional";
           return (
             <div className="space-y-1">
-              <div className="font-bold text-slate-800">{String(value || "")}</div>
+              <div className="font-bold text-slate-800">
+                {String(value || "")}
+              </div>
               {detail && detail !== "Sem detalhe adicional" && (
                 <div className="text-xs font-medium text-slate-500">
                   {detail}
@@ -491,25 +550,33 @@ export function WhatsAppLogsPanel() {
             <p className="text-[11px] font-black uppercase tracking-[0.35em] text-slate-400">
               Total
             </p>
-            <p className="mt-2 text-2xl font-black text-slate-900">{stats.total}</p>
+            <p className="mt-2 text-2xl font-black text-slate-900">
+              {stats.total}
+            </p>
           </div>
           <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
             <p className="text-[11px] font-black uppercase tracking-[0.35em] text-blue-500">
               Webhooks
             </p>
-            <p className="mt-2 text-2xl font-black text-blue-700">{stats.incoming}</p>
+            <p className="mt-2 text-2xl font-black text-blue-700">
+              {stats.incoming}
+            </p>
           </div>
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
             <p className="text-[11px] font-black uppercase tracking-[0.35em] text-emerald-500">
               Envios
             </p>
-            <p className="mt-2 text-2xl font-black text-emerald-700">{stats.outgoing}</p>
+            <p className="mt-2 text-2xl font-black text-emerald-700">
+              {stats.outgoing}
+            </p>
           </div>
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
             <p className="text-[11px] font-black uppercase tracking-[0.35em] text-rose-500">
               Erros
             </p>
-            <p className="mt-2 text-2xl font-black text-rose-700">{stats.errors}</p>
+            <p className="mt-2 text-2xl font-black text-rose-700">
+              {stats.errors}
+            </p>
           </div>
           {lastUpdatedAt && (
             <p className="col-span-full text-xs font-black uppercase tracking-[0.3em] text-slate-400">

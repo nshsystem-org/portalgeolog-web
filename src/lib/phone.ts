@@ -20,7 +20,8 @@ export function normalizeBrazilPhone(phone: string): string {
   const digits = onlyDigits(phone);
 
   if (!digits) return "";
-  if (digits.startsWith(BRAZIL_COUNTRY_CODE) && digits.length > 11) return digits;
+  if (digits.startsWith(BRAZIL_COUNTRY_CODE) && digits.length > 11)
+    return digits;
 
   const localDigits = stripBrazilCountryCode(phone);
   if (localDigits.length <= 11) {

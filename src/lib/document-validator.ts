@@ -1,6 +1,6 @@
 export function formatDocument(
   value: string,
-  pessoaTipo: "fisica" | "juridica"
+  pessoaTipo: "fisica" | "juridica",
 ): string {
   const digits = value
     .replace(/\D/g, "")

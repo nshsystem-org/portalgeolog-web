@@ -75,31 +75,37 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("Erro ao buscar logs:", error);
-      return NextResponse.json({ error: "Erro ao buscar logs" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Erro ao buscar logs" },
+        { status: 500 },
+      );
     }
 
     // Buscar informações dos usuários separadamente
-    const userIds = data?.map(log => log.user_id).filter(Boolean) as string[];
+    const userIds = data?.map((log) => log.user_id).filter(Boolean) as string[];
     let usersMap: Record<string, { nome: string }> = {};
-    
+
     if (userIds.length > 0) {
       const { data: users, error: usersError } = await supabase
         .from("user_roles")
         .select("id, nome")
         .in("id", userIds);
-      
+
       if (!usersError && users) {
-        usersMap = users.reduce((acc, user) => {
-          acc[user.id] = { nome: user.nome };
-          return acc;
-        }, {} as Record<string, { nome: string }>);
+        usersMap = users.reduce(
+          (acc, user) => {
+            acc[user.id] = { nome: user.nome };
+            return acc;
+          },
+          {} as Record<string, { nome: string }>,
+        );
       }
     }
 
     // Combinar logs com informações de usuários
-    const logsWithUsers = (data || []).map(log => ({
+    const logsWithUsers = (data || []).map((log) => ({
       ...log,
-      user: log.user_id ? usersMap[log.user_id] : null
+      user: log.user_id ? usersMap[log.user_id] : null,
     }));
 
     return NextResponse.json({

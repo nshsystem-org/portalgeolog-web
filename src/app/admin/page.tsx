@@ -3,13 +3,30 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
-import { Shield, ArrowLeft, LogOut, LayoutDashboard, Activity, Bell, Plus, Trash2, Edit2, Check, X } from "lucide-react";
+import {
+  Shield,
+  ArrowLeft,
+  LogOut,
+  LayoutDashboard,
+  Activity,
+  Bell,
+  Plus,
+  Trash2,
+  Edit2,
+  Check,
+  X,
+} from "lucide-react";
 import DOMPurify from "dompurify";
 import LogsViewer from "@/components/LogsViewer";
 import RichTextEditor from "@/components/RichTextEditor";
 import { logInfo } from "@/lib/frontend-logger";
 import Link from "next/link";
-import { fetchAllAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from "@/lib/supabase/queries";
+import {
+  fetchAllAnnouncements,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
+} from "@/lib/supabase/queries";
 import { toast } from "sonner";
 
 type AdminTab = "logs" | "dashboard" | "avisos";
@@ -33,7 +50,8 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("logs");
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
-  const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
+  const [editingAnnouncement, setEditingAnnouncement] =
+    useState<Announcement | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [announcementsLoading, setAnnouncementsLoading] = useState(false);
 
@@ -91,7 +109,7 @@ export default function AdminPage() {
         formData.message,
         formData.type,
         formData.expires_at || undefined,
-        user?.id
+        user?.id,
       );
       toast.success("Aviso criado com sucesso!");
       setIsAnnouncementModalOpen(false);
@@ -183,7 +201,9 @@ export default function AdminPage() {
       subtitle: announcement.subtitle || "",
       message: announcement.message,
       type: announcement.type,
-      expires_at: announcement.expires_at ? announcement.expires_at.split("T")[0] : "",
+      expires_at: announcement.expires_at
+        ? announcement.expires_at.split("T")[0]
+        : "",
     });
     setIsAnnouncementModalOpen(true);
   };
@@ -269,7 +289,9 @@ export default function AdminPage() {
             {/* Right side - User and Logout */}
             <div className="flex items-center gap-4">
               <div className="text-right">
-                <p className="text-sm font-bold text-slate-900">{profile?.nome}</p>
+                <p className="text-sm font-bold text-slate-900">
+                  {profile?.nome}
+                </p>
                 <p className="text-xs text-slate-500">Administrador</p>
               </div>
               <button
@@ -322,8 +344,8 @@ export default function AdminPage() {
                     Dashboard em desenvolvimento
                   </h2>
                   <p className="text-slate-500 max-w-md">
-                    Esta funcionalidade estará disponível em breve. Por enquanto,
-                    utilize a aba de Logs para monitorar o sistema.
+                    Esta funcionalidade estará disponível em breve. Por
+                    enquanto, utilize a aba de Logs para monitorar o sistema.
                   </p>
                 </div>
               </div>
@@ -412,20 +434,22 @@ export default function AdminPage() {
                             )}
                             <div
                               className="text-sm text-slate-600 mb-2 prose prose-sm max-w-none"
-                              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(announcement.message) }}
+                              dangerouslySetInnerHTML={{
+                                __html: DOMPurify.sanitize(announcement.message),
+                              }}
                             />
                             <div className="flex items-center gap-4 text-xs text-slate-500">
                               <span>
                                 Criado em{" "}
                                 {new Date(
-                                  announcement.created_at
+                                  announcement.created_at,
                                 ).toLocaleDateString("pt-BR")}
                               </span>
                               {announcement.expires_at && (
                                 <span>
                                   Expira em{" "}
                                   {new Date(
-                                    announcement.expires_at
+                                    announcement.expires_at,
                                   ).toLocaleDateString("pt-BR")}
                                 </span>
                               )}
@@ -436,7 +460,7 @@ export default function AdminPage() {
                               onClick={() =>
                                 handleToggleActive(
                                   announcement.id,
-                                  announcement.is_active
+                                  announcement.is_active,
                                 )
                               }
                               className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
@@ -489,7 +513,9 @@ export default function AdminPage() {
                 </div>
                 <form
                   onSubmit={
-                    editingAnnouncement ? handleEditAnnouncement : handleCreateAnnouncement
+                    editingAnnouncement
+                      ? handleEditAnnouncement
+                      : handleCreateAnnouncement
                   }
                   className="p-6 space-y-4"
                 >
@@ -526,7 +552,9 @@ export default function AdminPage() {
                     </label>
                     <RichTextEditor
                       content={formData.message}
-                      onChange={(content) => setFormData({ ...formData, message: content })}
+                      onChange={(content) =>
+                        setFormData({ ...formData, message: content })
+                      }
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -539,7 +567,11 @@ export default function AdminPage() {
                         onChange={(e) =>
                           setFormData({
                             ...formData,
-                            type: e.target.value as "info" | "warning" | "error" | "success",
+                            type: e.target.value as
+                              | "info"
+                              | "warning"
+                              | "error"
+                              | "success",
                           })
                         }
                         className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"

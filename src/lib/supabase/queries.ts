@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/client";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 import { normalizeBrazilPhone } from "@/lib/phone";
 import type {
@@ -24,11 +23,11 @@ import {
   getFirstActiveOperationalCycle,
   replaceOperationalCyclesForOS,
 } from "@/lib/operational-cycles-db";
+import { formatPortugueseList } from "@/lib/os-activity";
 import {
   isFinanceStatusSettled,
   isLiberadoParaFaturamento,
 } from "@/lib/financeiro";
-import type { AppDatabase } from "@/lib/supabase/app-database";
 
 let _supabase: ReturnType<typeof createClient> | null = null;
 const getSupabase = () => {
@@ -36,18 +35,188 @@ const getSupabase = () => {
   return _supabase;
 };
 
-let _adminClient: ReturnType<typeof createSupabaseClient<AppDatabase>> | null = null;
-const getAdminClient = () => {
-  if (!_adminClient) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    _adminClient = createSupabaseClient<AppDatabase>(url, key);
-  }
-  return _adminClient;
-};
-
 const trimText = (value?: string): string => value?.trim() ?? "";
 const upperText = (value?: string): string => trimText(value).toUpperCase();
+
+const normalizeForComparison = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeForComparison(item));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+        .map(([key, nestedValue]) => [
+          key,
+          normalizeForComparison(nestedValue),
+        ]),
+    );
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  return value ?? null;
+};
+
+const isDeepEqual = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(normalizeForComparison(left)) ===
+  JSON.stringify(normalizeForComparison(right));
+
+const normalizeWaypointComparison = (waypoints: Waypoint[] = []) =>
+  waypoints.map((waypoint) => ({
+    label: waypoint.label,
+    lat: waypoint.lat ?? null,
+    lng: waypoint.lng ?? null,
+    comment: waypoint.comment?.trim() || "",
+    itineraryIndex: waypoint.itineraryIndex ?? null,
+    hora: waypoint.hora?.trim() || null,
+    data: waypoint.data || null,
+    passengers: (waypoint.passengers || [])
+      .map((passenger) => passenger.solicitanteId || passenger.id || "")
+      .sort(),
+  }));
+
+const normalizeCycleComparison = (cycles: OperationalCycle[] = []) =>
+  cycles.map((cycle) => ({
+    itineraryIndex: cycle.itineraryIndex,
+    sequenceOrder: cycle.sequenceOrder,
+    kind: cycle.kind,
+    ordinal: cycle.ordinal,
+    title: cycle.title,
+    state: cycle.state,
+    messageSentAt: cycle.messageSentAt || null,
+    acceptedAt: cycle.acceptedAt || null,
+    startedAt: cycle.startedAt || null,
+    finishedAt: cycle.finishedAt || null,
+    kmInitial: cycle.kmInitial ?? null,
+    kmFinal: cycle.kmFinal ?? null,
+  }));
+
+type OSUpdateLogContext = {
+  changedSections: string[];
+  metadata: Record<string, unknown>;
+};
+
+const buildOSUpdateLogContext = (
+  previousOS: OrderService | null | undefined,
+  osData: OSInput,
+  waypoints: Waypoint[],
+  operationalCycles: OperationalCycle[],
+): OSUpdateLogContext => {
+  const changedFieldsBySection: Record<string, string[]> = {};
+  const markChange = (
+    section: string,
+    label: string,
+    previousValue: unknown,
+    nextValue: unknown,
+  ) => {
+    if (isDeepEqual(previousValue, nextValue)) return;
+    if (!changedFieldsBySection[section]) changedFieldsBySection[section] = [];
+    changedFieldsBySection[section].push(label);
+  };
+
+  if (previousOS) {
+    markChange("Dados básicos", "Data", previousOS.data, osData.data);
+    markChange(
+      "Dados básicos",
+      "Horário",
+      previousOS.hora,
+      osData.hora || null,
+    );
+    markChange(
+      "Dados básicos",
+      "Horário extra",
+      previousOS.horaExtra || "",
+      osData.horaExtra || "",
+    );
+    markChange("Dados básicos", "OS", previousOS.os, osData.os);
+    markChange(
+      "Dados básicos",
+      "Cliente",
+      previousOS.clienteId,
+      osData.clienteId,
+    );
+    markChange(
+      "Dados básicos",
+      "Solicitante",
+      previousOS.solicitante || "",
+      upperText(osData.solicitante),
+    );
+    markChange(
+      "Dados básicos",
+      "Solicitante vinculado",
+      previousOS.solicitanteId || null,
+      osData.solicitanteId || null,
+    );
+    markChange(
+      "Dados básicos",
+      "Centro de custo",
+      previousOS.centroCustoId || null,
+      osData.centroCustoId || null,
+    );
+    markChange(
+      "Dados básicos",
+      "Motorista",
+      previousOS.motorista || "",
+      upperText(osData.motorista),
+    );
+    markChange(
+      "Dados básicos",
+      "Motorista vinculado",
+      previousOS.driverId || null,
+      osData.driverId || null,
+    );
+    markChange(
+      "Dados básicos",
+      "Veículo",
+      previousOS.veiculoId || null,
+      osData.veiculoId || null,
+    );
+    markChange(
+      "Dados básicos",
+      "Valor bruto",
+      previousOS.valorBruto ?? 0,
+      osData.valorBruto ?? 0,
+    );
+    markChange(
+      "Dados básicos",
+      "Custo",
+      previousOS.custo ?? 0,
+      osData.custo ?? 0,
+    );
+    markChange(
+      "Dados básicos",
+      "Observações financeiras",
+      previousOS.obsFinanceiras || "",
+      osData.obsFinanceiras || "",
+    );
+
+    markChange(
+      "Rota",
+      "Waypoints",
+      normalizeWaypointComparison(previousOS.rota?.waypoints || []),
+      normalizeWaypointComparison(waypoints),
+    );
+    markChange(
+      "Ciclos operacionais",
+      "Ciclos",
+      normalizeCycleComparison(previousOS.operationalCycles || []),
+      normalizeCycleComparison(operationalCycles),
+    );
+  }
+
+  const changedSections = Object.keys(changedFieldsBySection);
+  return {
+    changedSections,
+    metadata: {
+      changed_sections: changedSections,
+      changed_fields_by_section: changedFieldsBySection,
+    },
+  };
+};
 
 /**
  * Utilitário para retry de operações assíncronas
@@ -61,17 +230,18 @@ async function withRetry<T>(
     return await fn();
   } catch (error) {
     if (retries <= 0) throw error;
-    
+
     // Só tenta de novo se for erro de rede (Failed to fetch) ou 5xx
-    const isNetworkError = error instanceof TypeError && error.message === "Failed to fetch";
+    const isNetworkError =
+      error instanceof TypeError && error.message === "Failed to fetch";
     // @ts-expect-error - Supabase error object has status property but TypeScript doesn't recognize it
     const isServerError = error?.status >= 500;
-    
+
     if (isNetworkError || isServerError) {
       await new Promise((resolve) => setTimeout(resolve, delay));
       return withRetry(fn, retries - 1, delay * 2);
     }
-    
+
     throw error;
   }
 }
@@ -461,7 +631,9 @@ export async function fetchClientes(): Promise<Cliente[]> {
   return withRetry(async () => {
     const { data: clientesRaw, error } = await getSupabase()
       .from("clientes")
-      .select("id, nome, contato, centros_custo(id, nome, cliente_id, arquivado)")
+      .select(
+        "id, nome, contato, centros_custo(id, nome, cliente_id, arquivado)",
+      )
       .eq("arquivado", false)
       .order("nome");
 
@@ -1013,7 +1185,9 @@ export async function fetchOSById(id: string): Promise<OrderService | null> {
   });
 }
 
-export async function fetchOSByProtocolo(protocolo: string): Promise<OrderService | null> {
+export async function fetchOSByProtocolo(
+  protocolo: string,
+): Promise<OrderService | null> {
   return withRetry(async () => {
     const { data: osRaw, error } = await getSupabase()
       .from("ordens_servico")
@@ -1109,7 +1283,10 @@ export async function fetchOSPage({
     }
 
     if (filters.osNumber) {
-      query = query.ilike("os_number", `%${sanitizeSearchTerm(filters.osNumber)}%`);
+      query = query.ilike(
+        "os_number",
+        `%${sanitizeSearchTerm(filters.osNumber)}%`,
+      );
     }
     if (filters.clienteId) {
       query = query.eq("cliente_id", filters.clienteId);
@@ -1329,10 +1506,13 @@ export async function fetchOSFinanceOverview(
     if (dataFim) query = query.lte("data", dataFim);
     if (clienteId) query = query.eq("cliente_id", clienteId);
     if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
-    if (motorista) query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
+    if (motorista)
+      query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
     if (driverId) query = query.eq("driver_id", driverId);
-    if (statusOperacional) query = query.eq("status_operacional", statusOperacional);
-    if (statusFinanceiro) query = query.eq("status_financeiro", statusFinanceiro);
+    if (statusOperacional)
+      query = query.eq("status_operacional", statusOperacional);
+    if (statusFinanceiro)
+      query = query.eq("status_financeiro", statusFinanceiro);
     if (parceiroId) {
       const { data: driverRows, error: driverError } = await getSupabase()
         .from("drivers")
@@ -1506,13 +1686,17 @@ export async function insertOS(
     );
   }
 
-  void insertOSLog(
-    osRow.id,
-    "create",
-    "Dados de cadastro do atendimento",
-    actorName || "Sistema",
-    actorId,
-  );
+  try {
+    await insertOSLog(
+      osRow.id,
+      "create",
+      "Dados de cadastro do atendimento",
+      actorName || "Sistema",
+      actorId,
+    );
+  } catch (logError) {
+    console.error("Erro ao inserir log de OS:", logError);
+  }
 
   return {
     id: osRow.id,
@@ -1544,7 +1728,8 @@ export async function insertOS(
     operationalCycles:
       operationalCycles.length > 0 ? operationalCycles : undefined,
     currentDriverCycleIndex:
-      getFirstActiveOperationalCycle(operationalCycles)?.sequenceOrder ?? undefined,
+      getFirstActiveOperationalCycle(operationalCycles)?.sequenceOrder ??
+      undefined,
   };
 }
 
@@ -1553,6 +1738,7 @@ export async function updateOSInDB(
   osData: OSInput,
   actorName?: string,
   actorId?: string | null,
+  previousOS?: OrderService | null,
 ): Promise<void> {
   const impostoPercentual = await getImpostoPercentualForDate(osData.data);
   const vBruto = osData.valorBruto ?? 0;
@@ -1565,7 +1751,7 @@ export async function updateOSInDB(
     "";
 
   const waypoints = osData.rota?.waypoints || [];
-  
+
   // Buscar ciclos operacionais existentes para preservar status
   const { data: existingCyclesRaw } = await getSupabase()
     .from("os_operational_cycles")
@@ -1666,6 +1852,17 @@ export async function updateOSInDB(
     })),
   }));
 
+  const updateLogContext = buildOSUpdateLogContext(
+    previousOS,
+    osData,
+    waypoints,
+    operationalCycles,
+  );
+  const updateDescription =
+    updateLogContext.changedSections.length > 0
+      ? `Atualização da OS: ${formatPortugueseList(updateLogContext.changedSections)}`
+      : "Atualização da OS";
+
   const { error } = await getSupabase().rpc("update_os_atomic", {
     p_os_id: id,
     p_os_data: osPayload,
@@ -1675,13 +1872,18 @@ export async function updateOSInDB(
 
   if (error) throw error;
 
-  void insertOSLog(
-    id,
-    "update",
-    `OS atualizada${osData.os ? ` (nº ${osData.os})` : ""}${osData.motorista ? ` — Motorista: ${osData.motorista}` : ""}`,
-    actorName || "Sistema",
-    actorId,
-  );
+  try {
+    await insertOSLog(
+      id,
+      "update",
+      updateDescription,
+      actorName || "Sistema",
+      actorId,
+      updateLogContext.metadata,
+    );
+  } catch (logError) {
+    console.error("Erro ao inserir log de OS:", logError);
+  }
 }
 
 export async function updateOSStatusInDB(
@@ -1709,46 +1911,18 @@ export async function updateOSStatusInDB(
     parts.push(`Status financeiro alterado para "${updates.financeiro}"`);
 
   if (parts.length > 0) {
-    void insertOSLog(
-      id,
-      "status_change",
-      parts.join(" | "),
-      actorName || "Sistema",
-      actorId,
-    );
-  }
-}
-
-// Função helper para inserir notificações diretamente no banco (usando service role)
-async function insertAppNotification(
-  type: "success" | "info" | "warning" | "error",
-  title: string,
-  message: string,
-  targetAudience: "interno" | "gestor" | "all" = "all",
-  targetUserId?: string | null,
-  createdById?: string | null,
-  createdByName?: string | null,
-  createdByAvatarUrl?: string | null,
-): Promise<void> {
-  try {
-    const adminClient = getAdminClient();
-    const { error } = await adminClient.from("app_notifications").insert({
-      type,
-      title,
-      message,
-      target_audience: targetAudience,
-      target_user_id: targetUserId || null,
-      empresa_id: null,
-      created_by: createdById || null,
-      created_by_name: createdByName || null,
-      created_by_avatar_url: createdByAvatarUrl || null,
-    });
-
-    if (error) {
-      console.error("Erro ao inserir notificação no banco:", error);
+    try {
+      await insertOSLog(
+        id,
+        "status_change",
+        parts.join(" | "),
+        actorName || "Sistema",
+        actorId,
+        { updates },
+      );
+    } catch (logError) {
+      console.error("Erro ao inserir log de OS:", logError);
     }
-  } catch (error) {
-    console.error("Erro ao inserir notificação no banco:", error);
   }
 }
 
@@ -1758,24 +1932,6 @@ export async function archiveOSFromDB(
   actorId?: string | null,
   osLabel?: string | null,
 ): Promise<void> {
-  const fallbackLabel = osLabel?.trim() || null;
-  // Buscar dados da OS para notificação usando admin client
-  const { data: osData, error: fetchError } = await getAdminClient()
-    .from("ordens_servico")
-    .select("protocolo, os_number")
-    .eq("id", id)
-    .single();
-
-  if (fetchError) {
-    console.error("Erro ao buscar dados da OS para notificação:", fetchError);
-  }
-
-  const osRow = osData as
-    | { protocolo?: string | null; os_number?: string | null }
-    | null;
-  const protocolo =
-    fallbackLabel || osRow?.protocolo || osRow?.os_number || `OS ${id.slice(0, 8)}`;
-
   const { error } = await getSupabase()
     .from("ordens_servico")
     .update({ arquivado: true })
@@ -1783,30 +1939,18 @@ export async function archiveOSFromDB(
 
   if (error) throw error;
 
-  void insertOSLog(id, "archive", "OS arquivada", actorName || "Sistema", actorId);
-
-  // Buscar avatar do usuário para notificação
-  let avatarUrl: string | null = null;
-  if (actorId) {
-    const { data: userData } = await getAdminClient()
-      .from("user_roles")
-      .select("avatar_url")
-      .eq("id", actorId)
-      .single();
-    avatarUrl = userData?.avatar_url || null;
+  try {
+    await insertOSLog(
+      id,
+      "archive",
+      `OS arquivada${osLabel?.trim() ? ` — ${osLabel.trim()}` : ""}`,
+      actorName || "Sistema",
+      actorId,
+      { action: "archive" },
+    );
+  } catch (logError) {
+    console.error("Erro ao inserir log de OS:", logError);
   }
-
-  // Gerar notificação
-  void insertAppNotification(
-    "info",
-    "OS Arquivada",
-    `A OS "${protocolo}" foi arquivada por ${actorName || "Sistema"}. [OS_ID:${id}]`,
-    "all",
-    null,
-    actorId,
-    actorName,
-    avatarUrl,
-  );
 }
 
 export async function unarchiveOSFromDB(
@@ -1815,24 +1959,6 @@ export async function unarchiveOSFromDB(
   actorId?: string | null,
   osLabel?: string | null,
 ): Promise<void> {
-  const fallbackLabel = osLabel?.trim() || null;
-  // Buscar dados da OS para notificação usando admin client
-  const { data: osData, error: fetchError } = await getAdminClient()
-    .from("ordens_servico")
-    .select("protocolo, os_number")
-    .eq("id", id)
-    .single();
-
-  if (fetchError) {
-    console.error("Erro ao buscar dados da OS para notificação:", fetchError);
-  }
-
-  const osRow = osData as
-    | { protocolo?: string | null; os_number?: string | null }
-    | null;
-  const protocolo =
-    fallbackLabel || osRow?.protocolo || osRow?.os_number || `OS ${id.slice(0, 8)}`;
-
   const { error } = await getSupabase()
     .from("ordens_servico")
     .update({ arquivado: false, status_operacional: "Pendente" })
@@ -1840,30 +1966,18 @@ export async function unarchiveOSFromDB(
 
   if (error) throw error;
 
-  void insertOSLog(id, "unarchive", "OS reaberta", actorName || "Sistema", actorId);
-
-  // Buscar avatar do usuário para notificação
-  let avatarUrl: string | null = null;
-  if (actorId) {
-    const { data: userData } = await getAdminClient()
-      .from("user_roles")
-      .select("avatar_url")
-      .eq("id", actorId)
-      .single();
-    avatarUrl = userData?.avatar_url || null;
+  try {
+    await insertOSLog(
+      id,
+      "unarchive",
+      `OS reaberta${osLabel?.trim() ? ` — ${osLabel.trim()}` : ""}`,
+      actorName || "Sistema",
+      actorId,
+      { action: "unarchive" },
+    );
+  } catch (logError) {
+    console.error("Erro ao inserir log de OS:", logError);
   }
-
-  // Gerar notificação
-  void insertAppNotification(
-    "success",
-    "OS Reaberta",
-    `A OS "${protocolo}" foi reaberta por ${actorName || "Sistema"}. [OS_ID:${id}]`,
-    "all",
-    null,
-    actorId,
-    actorName,
-    avatarUrl,
-  );
 }
 
 // ── Centros de Custo ──────────────────────────────────────
@@ -2142,10 +2256,7 @@ const buildParceiroSearchIndex = (
       contato.email || "",
       contato.responsavel,
     ]),
-    ...filiais.flatMap((filial) => [
-      filial.rotulo,
-      filial.enderecoCompleto,
-    ]),
+    ...filiais.flatMap((filial) => [filial.rotulo, filial.enderecoCompleto]),
   ];
 
   return tokens.join(" ").toLowerCase();
@@ -2527,7 +2638,9 @@ export async function getImpostoPercentual(): Promise<number> {
   return withRetry(async () => {
     const raw = await getAppSetting("imposto_percentual");
     const parsed = parseFloat(raw || "");
-    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 12;
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100
+      ? parsed
+      : 12;
   });
 }
 
@@ -2550,7 +2663,9 @@ export async function getImpostoPercentualForDate(
     }
 
     const parsed = parseFloat(data.value || "");
-    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 12;
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100
+      ? parsed
+      : 12;
   });
 }
 
@@ -2618,6 +2733,7 @@ export interface OSLog {
   type: string;
   actor_name: string;
   actor_id: string | null;
+  actor_avatar_url: string | null;
   description: string;
   metadata: Record<string, unknown>;
   created_at: string;
@@ -2631,6 +2747,22 @@ export async function insertOSLog(
   actorId?: string | null,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
+  let actorAvatarUrl: string | null = null;
+
+  if (actorId) {
+    try {
+      const { data: profile } = await getSupabase()
+        .from("user_roles")
+        .select("avatar_url")
+        .eq("id", actorId)
+        .maybeSingle();
+
+      actorAvatarUrl = profile?.avatar_url ?? null;
+    } catch {
+      actorAvatarUrl = null;
+    }
+  }
+
   const { error } = await getSupabase()
     .from("os_logs")
     .insert({
@@ -2639,12 +2771,11 @@ export async function insertOSLog(
       description,
       actor_name: actorName,
       actor_id: actorId || null,
+      actor_avatar_url: actorAvatarUrl,
       metadata: metadata || {},
     });
 
-  if (error) {
-    console.error("Erro ao inserir log de OS:", error);
-  }
+  if (error) throw error;
 }
 
 export async function fetchOSCalendarRange({
@@ -2669,7 +2800,8 @@ export async function fetchOSCalendarRange({
       query = query.eq("arquivado", false);
     }
 
-    const { data: osRaw, error } = await query.order("data", { ascending: true })
+    const { data: osRaw, error } = await query
+      .order("data", { ascending: true })
       .order("hora", { ascending: true });
 
     if (error) throw error;
@@ -2823,10 +2955,13 @@ export async function fetchOSFinanceStats(
     if (dataFim) query = query.lte("data", dataFim);
     if (clienteId) query = query.eq("cliente_id", clienteId);
     if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
-    if (motorista) query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
+    if (motorista)
+      query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
     if (driverId) query = query.eq("driver_id", driverId);
-    if (statusOperacional) query = query.eq("status_operacional", statusOperacional);
-    if (statusFinanceiro) query = query.eq("status_financeiro", statusFinanceiro);
+    if (statusOperacional)
+      query = query.eq("status_operacional", statusOperacional);
+    if (statusFinanceiro)
+      query = query.eq("status_financeiro", statusFinanceiro);
     if (parceiroId) {
       const { data: driverRows, error: driverError } = await getSupabase()
         .from("drivers")
@@ -2869,7 +3004,13 @@ export async function fetchOSFinanceStats(
       repasse_pago: boolean | null;
     }>;
 
-    const driverIds = [...new Set(rows.map((row) => row.driver_id).filter((id): id is string => id !== null))];
+    const driverIds = [
+      ...new Set(
+        rows
+          .map((row) => row.driver_id)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
 
     const { data: driversData, error: driversError } = await getSupabase()
       .from("drivers")
@@ -2879,7 +3020,7 @@ export async function fetchOSFinanceStats(
     if (driversError) throw driversError;
 
     const driverMap = new Map(
-      (driversData || []).map((driver) => [driver.id, driver.parceiro_id])
+      (driversData || []).map((driver) => [driver.id, driver.parceiro_id]),
     );
 
     const summary = rows.reduce(
@@ -2905,7 +3046,8 @@ export async function fetchOSFinanceStats(
         }
         if (statusFinanceiro === "Faturado") acc.totalFaturado += bruto;
 
-        if (isFinanceStatusSettled(statusFinanceiro)) acc.totalRecebido += bruto;
+        if (isFinanceStatusSettled(statusFinanceiro))
+          acc.totalRecebido += bruto;
         if (statusFinanceiro === "Pendente") acc.totalPendente += bruto;
 
         if (driverId) {
@@ -2961,23 +3103,72 @@ export async function fetchOSLogs(osId: string): Promise<OSLog[]> {
     const { data, error } = await getSupabase()
       .from("os_logs")
       .select(
-        "id, os_id, type, actor_name, actor_id, description, metadata, created_at",
+        "id, os_id, type, actor_name, actor_id, actor_avatar_url, description, metadata, created_at",
       )
       .eq("os_id", osId)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
 
-    return (data || []).map((row) => ({
-      id: row.id,
-      os_id: row.os_id,
-      type: row.type,
-      actor_name: row.actor_name,
-      actor_id: row.actor_id,
-      description: row.description,
-      metadata: (row.metadata as Record<string, unknown>) || {},
-      created_at: row.created_at,
-    }));
+    const rows = (data || []) as Array<{
+      id: string;
+      os_id: string;
+      type: string;
+      actor_name: string;
+      actor_id: string | null;
+      actor_avatar_url: string | null;
+      description: string;
+      metadata: Record<string, unknown> | null;
+      created_at: string;
+    }>;
+
+    const uniqueActorIds = [
+      ...new Set(
+        rows.map((row) => row.actor_id).filter((id): id is string => !!id),
+      ),
+    ];
+
+    let profileMap = new Map<
+      string,
+      { nome: string | null; avatar_url: string | null }
+    >();
+
+    if (uniqueActorIds.length > 0) {
+      try {
+        const { data: profiles } = await getSupabase()
+          .from("user_roles")
+          .select("id, nome, avatar_url")
+          .in("id", uniqueActorIds);
+
+        profileMap = new Map(
+          (profiles || []).map((profile) => [
+            profile.id,
+            {
+              nome: profile.nome ?? null,
+              avatar_url: profile.avatar_url ?? null,
+            },
+          ]),
+        );
+      } catch {
+        profileMap = new Map();
+      }
+    }
+
+    return rows.map((row) => {
+      const profile = row.actor_id ? profileMap.get(row.actor_id) : undefined;
+
+      return {
+        id: row.id,
+        os_id: row.os_id,
+        type: row.type,
+        actor_name: profile?.nome || row.actor_name,
+        actor_id: row.actor_id,
+        actor_avatar_url: profile?.avatar_url ?? row.actor_avatar_url,
+        description: row.description,
+        metadata: row.metadata || {},
+        created_at: row.created_at,
+      };
+    });
   });
 }
 
@@ -3022,7 +3213,8 @@ export async function fetchChatConversations(): Promise<
   return withRetry(async () => {
     const { data, error } = await getSupabase()
       .from("chat_conversations")
-      .select(`
+      .select(
+        `
         id,
         type,
         title,
@@ -3037,7 +3229,8 @@ export async function fetchChatConversations(): Promise<
           last_read_at,
           is_admin
         )
-      `)
+      `,
+      )
       .order("updated_at", { ascending: false });
 
     if (error) throw error;
@@ -3137,10 +3330,12 @@ export async function findExistingDirectConversation(
   return withRetry(async () => {
     const { data, error } = await getSupabase()
       .from("chat_conversations")
-      .select(`
+      .select(
+        `
         id,
         chat_participants(user_id)
-      `)
+      `,
+      )
       .eq("type", "direct")
       .order("updated_at", { ascending: false });
 
@@ -3150,7 +3345,9 @@ export async function findExistingDirectConversation(
     for (const conv of conversations) {
       const participants = conv.chat_participants || [];
       if (participants.length === 2) {
-        const participantIds = participants.map((p: { user_id: string }) => p.user_id);
+        const participantIds = participants.map(
+          (p: { user_id: string }) => p.user_id,
+        );
         if (
           participantIds.includes(userId1) &&
           participantIds.includes(userId2)
@@ -3353,7 +3550,9 @@ export async function fetchActiveAnnouncements(): Promise<
   return withRetry(async () => {
     const { data, error } = await getSupabase()
       .from("system_announcements")
-      .select("id, title, subtitle, message, type, created_at, updated_at, expires_at")
+      .select(
+        "id, title, subtitle, message, type, created_at, updated_at, expires_at",
+      )
       .eq("is_active", true)
       .or("expires_at.is.null,expires_at.gte.now()")
       .order("created_at", { ascending: false });
@@ -3414,7 +3613,7 @@ export async function createAnnouncement(
   message: string,
   type: "info" | "warning" | "error" | "success" = "info",
   expiresAt?: string,
-  createdBy?: string
+  createdBy?: string,
 ): Promise<{ id: string }> {
   const { data, error } = await getSupabase()
     .from("system_announcements")
@@ -3442,7 +3641,7 @@ export async function updateAnnouncement(
     type?: "info" | "warning" | "error" | "success";
     is_active?: boolean;
     expires_at?: string | null;
-  }
+  },
 ): Promise<void> {
   const { error } = await getSupabase()
     .from("system_announcements")

@@ -480,6 +480,7 @@ export default function DashboardLayout({
                 ref={employeesButtonRef}
                 onClick={(e) => {
                   e.stopPropagation();
+                  setShowNotifications(false);
                   setShowEmployees(!showEmployees);
                 }}
                 className="p-3 text-slate-400 hover:bg-slate-100 hover:text-[var(--color-geolog-blue)] rounded-xl relative transition-all border border-slate-100 cursor-pointer"
@@ -612,7 +613,11 @@ export default function DashboardLayout({
 
             <div className="relative">
               <button
-                onClick={() => setShowNotifications(!showNotifications)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowEmployees(false);
+                  setShowNotifications(!showNotifications);
+                }}
                 className="p-3 text-slate-400 hover:bg-slate-100 hover:text-[var(--color-geolog-blue)] rounded-xl relative transition-all border border-slate-100 cursor-pointer"
                 title={`Notificações ${realtimeConnected ? "✅" : "⏳"}`}
               >

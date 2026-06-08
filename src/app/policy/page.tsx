@@ -8,7 +8,13 @@ export default function PrivacyPolicy() {
       {/* Navbar */}
       <nav className="flex justify-between items-center py-6 px-8 max-w-7xl mx-auto border-b border-slate-100">
         <Link href="/" className="flex items-center gap-3">
-          <Image src="/logo.png" alt="Geolog Logo" width={40} height={40} className="h-10 w-auto" />
+          <Image
+            src="/logo.png"
+            alt="Geolog Logo"
+            width={40}
+            height={40}
+            className="h-10 w-auto"
+          />
           <span className="text-2xl font-bold tracking-tight text-[var(--color-geolog-blue)]">
             Portal Geolog
           </span>
@@ -45,10 +51,11 @@ export default function PrivacyPolicy() {
               1. Introdução
             </h2>
             <p className="text-slate-600 leading-relaxed">
-              A Transportadora Geolog (&quot;nós&quot;, &quot;nosso&quot;) respeita sua privacidade
-              e está comprometida em proteger seus dados pessoais. Esta política
-              de privacidade descreve como coletamos, usamos e protegemos suas
-              informações quando você utiliza o Portal Geolog.
+              A Transportadora Geolog (&quot;nós&quot;, &quot;nosso&quot;)
+              respeita sua privacidade e está comprometida em proteger seus
+              dados pessoais. Esta política de privacidade descreve como
+              coletamos, usamos e protegemos suas informações quando você
+              utiliza o Portal Geolog.
             </p>
           </section>
 

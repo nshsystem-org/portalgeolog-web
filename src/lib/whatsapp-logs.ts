@@ -29,7 +29,9 @@ function getAdminClient(): SupabaseClient<AppDatabase> {
   return _adminClient;
 }
 
-export async function recordWhatsAppLog(entry: WhatsAppLogEntry): Promise<void> {
+export async function recordWhatsAppLog(
+  entry: WhatsAppLogEntry,
+): Promise<void> {
   try {
     await getAdminClient().from("webhook_logs").insert({
       source: entry.source,

@@ -5,7 +5,10 @@ import { useAuth } from "@/context/AuthContext";
 import { useParceiros } from "@/hooks/useParceiros";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { Building2, Truck, Landmark, Filter, RotateCcw } from "lucide-react";
-import { fetchOSFinanceOverview, type FinanceQueryFilters } from "@/lib/supabase/queries";
+import {
+  fetchOSFinanceOverview,
+  type FinanceQueryFilters,
+} from "@/lib/supabase/queries";
 
 type GroupSummary = {
   id: string;
@@ -41,17 +44,21 @@ function MiniListPanel({
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500 shadow-sm">
             {icon}
           </div>
-          <h3 className="text-lg font-black tracking-tight text-slate-900">{title}</h3>
+          <h3 className="text-lg font-black tracking-tight text-slate-900">
+            {title}
+          </h3>
         </div>
         <div className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
           Top 5
         </div>
       </div>
-      
+
       {loading ? (
         <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-100 bg-slate-50/50 px-4 py-12 text-center">
           <RotateCcw className="mb-3 h-8 w-8 animate-spin text-slate-300" />
-          <p className="text-sm font-black uppercase tracking-widest text-slate-400">Carregando dados...</p>
+          <p className="text-sm font-black uppercase tracking-widest text-slate-400">
+            Carregando dados...
+          </p>
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-100 bg-slate-50/50 px-4 py-12 text-center text-sm font-semibold text-slate-400">
@@ -63,8 +70,8 @@ function MiniListPanel({
       ) : (
         <div className="space-y-3">
           {rows.map((row, index) => (
-            <div 
-              key={row.id} 
+            <div
+              key={row.id}
               className="group flex items-center justify-between gap-4 rounded-[1.5rem] border border-slate-100 bg-slate-50/30 p-4 transition-all hover:border-blue-100 hover:bg-blue-50/50"
             >
               <div className="flex min-w-0 items-center gap-3">
@@ -72,16 +79,24 @@ function MiniListPanel({
                   {index + 1}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-slate-800">{row.label}</p>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{row.count} OS executadas</p>
+                  <p className="truncate text-sm font-black text-slate-800">
+                    {row.label}
+                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    {row.count} OS executadas
+                  </p>
                 </div>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-sm font-black text-slate-800 tabular-nums">{formatCurrency(row.total)}</p>
+                <p className="text-sm font-black text-slate-800 tabular-nums">
+                  {formatCurrency(row.total)}
+                </p>
                 <div className="h-1 w-full rounded-full bg-slate-100 mt-1 overflow-hidden">
-                  <div 
-                    className="h-full bg-blue-500 transition-all duration-500" 
-                    style={{ width: `${(row.total / (rows[0]?.total || 1)) * 100}%` }}
+                  <div
+                    className="h-full bg-blue-500 transition-all duration-500"
+                    style={{
+                      width: `${(row.total / (rows[0]?.total || 1)) * 100}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -99,7 +114,7 @@ export default function Dashboard() {
   const { drivers, clientes, loading: dataLoading, lastOSUpdate } = useData();
   const [overviewRows, setOverviewRows] = useState<OrderService[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
-  
+
   const stats = useMemo(
     () => ({
       trips: 0,
@@ -168,31 +183,34 @@ export default function Dashboard() {
     return map;
   }, [parceiros]);
 
-  const sumGroup = useCallback((
-    rows: OrderService[],
-    keyFn: (row: OrderService) => string,
-    labelFn: (row: OrderService) => string,
-    valueFn: (row: OrderService) => number,
-  ): GroupSummary[] => {
-    const groups = new Map<string, { total: number; count: number }>();
-    rows.forEach((row) => {
-      const key = keyFn(row);
-      if (!key) return;
-      const current = groups.get(key) || { total: 0, count: 0 };
-      groups.set(key, {
-        total: current.total + valueFn(row),
-        count: current.count + 1,
+  const sumGroup = useCallback(
+    (
+      rows: OrderService[],
+      keyFn: (row: OrderService) => string,
+      labelFn: (row: OrderService) => string,
+      valueFn: (row: OrderService) => number,
+    ): GroupSummary[] => {
+      const groups = new Map<string, { total: number; count: number }>();
+      rows.forEach((row) => {
+        const key = keyFn(row);
+        if (!key) return;
+        const current = groups.get(key) || { total: 0, count: 0 };
+        groups.set(key, {
+          total: current.total + valueFn(row),
+          count: current.count + 1,
+        });
       });
-    });
-    return Array.from(groups.entries())
-      .map(([id, data]) => ({
-        id,
-        label: labelFn(rows.find((r) => keyFn(r) === id) || rows[0]),
-        total: data.total,
-        count: data.count,
-      }))
-      .sort((a, b) => b.total - a.total);
-  }, []);
+      return Array.from(groups.entries())
+        .map(([id, data]) => ({
+          id,
+          label: labelFn(rows.find((r) => keyFn(r) === id) || rows[0]),
+          total: data.total,
+          count: data.count,
+        }))
+        .sort((a, b) => b.total - a.total);
+    },
+    [],
+  );
 
   const topCustomers = useMemo(
     () =>
@@ -211,9 +229,16 @@ export default function Dashboard() {
         overviewRows,
         (row) => row.driverId || row.motorista || "",
         (row) => {
-          const driverName = row.driverId ? driverMap.get(row.driverId) : undefined;
+          const driverName = row.driverId
+            ? driverMap.get(row.driverId)
+            : undefined;
           const partnerName = row.driverId
-            ? parceiros.find((partner) => partner.id === drivers.find((driver) => driver.id === row.driverId)?.parceiro_id)?.razaoSocialOuNomeCompleto
+            ? parceiros.find(
+                (partner) =>
+                  partner.id ===
+                  drivers.find((driver) => driver.id === row.driverId)
+                    ?.parceiro_id,
+              )?.razaoSocialOuNomeCompleto
             : undefined;
           return driverName || row.motorista || partnerName || "Sem motorista";
         },

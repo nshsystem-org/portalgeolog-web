@@ -58,8 +58,12 @@ export default function StandardModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby={`modal-title-${title.replace(/\s+/g, '-').toLowerCase()}`}
-        aria-describedby={subtitle ? `modal-subtitle-${title.replace(/\s+/g, '-').toLowerCase()}` : undefined}
+        aria-labelledby={`modal-title-${title.replace(/\s+/g, "-").toLowerCase()}`}
+        aria-describedby={
+          subtitle
+            ? `modal-subtitle-${title.replace(/\s+/g, "-").toLowerCase()}`
+            : undefined
+        }
         className={`relative bg-white w-full ${maxWidthClassName} max-h-[92vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200 modal-content ${containerClassName}`}
         style={{ textRendering: "geometricPrecision" }}
       >
@@ -74,7 +78,7 @@ export default function StandardModal({
             </div>
             <div>
               <h2
-                id={`modal-title-${title.replace(/\s+/g, '-').toLowerCase()}`}
+                id={`modal-title-${title.replace(/\s+/g, "-").toLowerCase()}`}
                 className="text-2xl md:text-3xl font-black text-white tracking-tight"
                 style={{ lineHeight: "1.2", marginBottom: "0.25rem" }}
               >
@@ -82,7 +86,7 @@ export default function StandardModal({
               </h2>
               {subtitle && (
                 <p
-                  id={`modal-subtitle-${title.replace(/\s+/g, '-').toLowerCase()}`}
+                  id={`modal-subtitle-${title.replace(/\s+/g, "-").toLowerCase()}`}
                   className="text-blue-300/80 text-[11px] font-bold uppercase tracking-[0.2em]"
                   style={{ lineHeight: "1.3" }}
                 >

@@ -27,14 +27,21 @@ interface ToolbarButtonProps {
   title: string;
 }
 
-function ToolbarButton({ onClick, isActive, children, title }: ToolbarButtonProps) {
+function ToolbarButton({
+  onClick,
+  isActive,
+  children,
+  title,
+}: ToolbarButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
       className={`p-2 rounded-lg transition-colors ${
-        isActive ? "bg-blue-100 text-blue-600" : "hover:bg-slate-100 text-slate-600"
+        isActive
+          ? "bg-blue-100 text-blue-600"
+          : "hover:bg-slate-100 text-slate-600"
       }`}
     >
       {children}
@@ -42,7 +49,10 @@ function ToolbarButton({ onClick, isActive, children, title }: ToolbarButtonProp
   );
 }
 
-export default function RichTextEditor({ content, onChange }: RichTextEditorProps) {
+export default function RichTextEditor({
+  content,
+  onChange,
+}: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -66,7 +76,8 @@ export default function RichTextEditor({ content, onChange }: RichTextEditorProp
     },
     editorProps: {
       attributes: {
-        class: "prose prose-sm max-w-none focus:outline-none min-h-[120px] px-3 py-2",
+        class:
+          "prose prose-sm max-w-none focus:outline-none min-h-[120px] px-3 py-2",
       },
     },
   });

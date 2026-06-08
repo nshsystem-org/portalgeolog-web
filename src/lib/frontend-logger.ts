@@ -21,8 +21,12 @@ interface LogEntry {
  */
 export async function logError(entry: LogEntry): Promise<void> {
   try {
-    const url = entry.url || (typeof window !== "undefined" ? window.location.href : undefined);
-    const userAgent = entry.userAgent || (typeof navigator !== "undefined" ? navigator.userAgent : undefined);
+    const url =
+      entry.url ||
+      (typeof window !== "undefined" ? window.location.href : undefined);
+    const userAgent =
+      entry.userAgent ||
+      (typeof navigator !== "undefined" ? navigator.userAgent : undefined);
 
     await fetch("/api/frontend-logs", {
       method: "POST",
@@ -57,7 +61,11 @@ export function logErrorAsync(entry: LogEntry): void {
 /**
  * Log de nível INFO
  */
-export function logInfo(component: string, message: string, details?: Record<string, unknown>): void {
+export function logInfo(
+  component: string,
+  message: string,
+  details?: Record<string, unknown>,
+): void {
   logErrorAsync({
     errorLevel: "info",
     component,
@@ -69,7 +77,11 @@ export function logInfo(component: string, message: string, details?: Record<str
 /**
  * Log de nível WARNING
  */
-export function logWarning(component: string, message: string, details?: Record<string, unknown>): void {
+export function logWarning(
+  component: string,
+  message: string,
+  details?: Record<string, unknown>,
+): void {
   logErrorAsync({
     errorLevel: "warning",
     component,
@@ -81,7 +93,12 @@ export function logWarning(component: string, message: string, details?: Record<
 /**
  * Log de nível ERROR
  */
-export function logErrorEntry(component: string, message: string, error?: Error, details?: Record<string, unknown>): void {
+export function logErrorEntry(
+  component: string,
+  message: string,
+  error?: Error,
+  details?: Record<string, unknown>,
+): void {
   logErrorAsync({
     errorLevel: "error",
     component,
@@ -98,7 +115,12 @@ export function logErrorEntry(component: string, message: string, error?: Error,
 /**
  * Log de nível CRITICAL
  */
-export function logCritical(component: string, message: string, error?: Error, details?: Record<string, unknown>): void {
+export function logCritical(
+  component: string,
+  message: string,
+  error?: Error,
+  details?: Record<string, unknown>,
+): void {
   logErrorAsync({
     errorLevel: "critical",
     component,
@@ -115,7 +137,10 @@ export function logCritical(component: string, message: string, error?: Error, d
 /**
  * Log de acesso à página
  */
-export function logPageView(pathname: string, details?: Record<string, unknown>): void {
+export function logPageView(
+  pathname: string,
+  details?: Record<string, unknown>,
+): void {
   logErrorAsync({
     errorLevel: "info",
     component: "Navigation",

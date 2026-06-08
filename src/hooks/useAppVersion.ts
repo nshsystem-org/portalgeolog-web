@@ -48,8 +48,9 @@ export function useAppVersion() {
     const pendingRaw = window.sessionStorage.getItem(PENDING_RELOAD_KEY);
     if (!pendingRaw) return;
 
-    const navigationEntry =
-      window.performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    const navigationEntry = window.performance.getEntriesByType(
+      "navigation",
+    )[0] as PerformanceNavigationTiming | undefined;
     const isReloadNavigation = navigationEntry?.type === "reload";
 
     if (!isReloadNavigation) return;

@@ -37,7 +37,11 @@ import {
   type NovoParceiroInput,
 } from "@/context/DataContext";
 import { useParceiros } from "@/hooks/useParceiros";
-import { formatBrazilPhone, normalizeBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
+import {
+  formatBrazilPhone,
+  normalizeBrazilPhone,
+  stripBrazilCountryCode,
+} from "@/lib/phone";
 import { fetchDriversPage } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 
@@ -237,6 +241,7 @@ export default function MotoristasPage() {
     drivers: allDrivers,
     refreshData,
     addParceiro,
+    deleteDriver,
   } = useData();
   const driversTable = useServerPaginatedTable(fetchDriversPage, 10);
 
@@ -1270,18 +1275,13 @@ export default function MotoristasPage() {
 
     if (!confirmed) return;
 
-    const { error } = await supabase
-      .from("drivers")
-      .update({ status: "inactive" })
-      .eq("id", id);
-
-    if (error) {
-      console.error("Erro ao arquivar motorista:", error);
-      toast.error("Erro ao arquivar motorista.");
-    } else {
-      await refreshData();
+    try {
+      await deleteDriver(id);
       void driversTable.refresh();
       toast.success("Motorista arquivado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao arquivar motorista:", error);
+      toast.error("Erro ao arquivar motorista.");
     }
   };
 

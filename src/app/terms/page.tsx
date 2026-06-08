@@ -8,7 +8,13 @@ export default function TermsOfService() {
       {/* Navbar */}
       <nav className="flex justify-between items-center py-6 px-8 max-w-7xl mx-auto border-b border-slate-100">
         <Link href="/" className="flex items-center gap-3">
-          <Image src="/logo.png" alt="Geolog Logo" width={40} height={40} className="h-10 w-auto" />
+          <Image
+            src="/logo.png"
+            alt="Geolog Logo"
+            width={40}
+            height={40}
+            className="h-10 w-auto"
+          />
           <span className="text-2xl font-bold tracking-tight text-[var(--color-geolog-blue)]">
             Portal Geolog
           </span>
@@ -125,11 +131,11 @@ export default function TermsOfService() {
               5. Limitação de Responsabilidade
             </h2>
             <p className="text-slate-600 leading-relaxed">
-              O Portal Geolog é fornecido &quot;como está&quot; e &quot;conforme disponível&quot;.
-              Não garantimos que o serviço será ininterrupto, seguro ou livre de
-              erros. A Transportadora Geolog não será responsável por danos
-              diretos, indiretos, incidentais ou consequentes decorrentes do uso
-              ou incapacidade de usar o serviço.
+              O Portal Geolog é fornecido &quot;como está&quot; e &quot;conforme
+              disponível&quot;. Não garantimos que o serviço será ininterrupto,
+              seguro ou livre de erros. A Transportadora Geolog não será
+              responsável por danos diretos, indiretos, incidentais ou
+              consequentes decorrentes do uso ou incapacidade de usar o serviço.
             </p>
           </section>
 

@@ -44,7 +44,9 @@ const OPERATIONAL_CYCLE_COLUMNS = [
   "km_final",
 ].join(", ");
 
-const mapRowToOperationalCycle = (row: OperationalCycleRow): OperationalCycle => ({
+const mapRowToOperationalCycle = (
+  row: OperationalCycleRow,
+): OperationalCycle => ({
   itineraryIndex: row.itinerary_index,
   sequenceOrder: row.sequence_order,
   kind: row.kind,
@@ -68,7 +70,8 @@ const isMissingOperationalCyclesTableError = (error: unknown): boolean => {
 
   return (
     typedError.code === "PGRST205" ||
-    typedError.message === "Could not find the table 'public.os_operational_cycles' in the schema cache" ||
+    typedError.message ===
+      "Could not find the table 'public.os_operational_cycles' in the schema cache" ||
     messageMatches
   );
 };
@@ -76,7 +79,9 @@ const isMissingOperationalCyclesTableError = (error: unknown): boolean => {
 export const getFirstActiveOperationalCycle = (
   cycles: OperationalCycle[],
 ): OperationalCycle | undefined =>
-  cycles.find((cycle) => cycle.state !== "completed" && cycle.state !== "cancelled");
+  cycles.find(
+    (cycle) => cycle.state !== "completed" && cycle.state !== "cancelled",
+  );
 
 export const resolveOperationalCycleFromList = (
   cycles: OperationalCycle[],
@@ -165,7 +170,7 @@ export async function fetchOperationalCyclesForOS(
   return builtCycles;
 }
 
-const chunkArray = <T,>(arr: T[], size: number): T[][] => {
+const chunkArray = <T>(arr: T[], size: number): T[][] => {
   const chunks: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
     chunks.push(arr.slice(i, i + size));

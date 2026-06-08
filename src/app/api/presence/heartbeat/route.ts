@@ -35,8 +35,11 @@ async function createAuthClient() {
 export async function POST() {
   try {
     const authClient = await createAuthClient();
-    
-    const { data: { user }, error: userError } = await authClient.auth.getUser();
+
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
 
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
