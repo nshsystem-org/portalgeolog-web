@@ -1233,6 +1233,8 @@ export default function OSOperationalPage() {
   const [pendingOSData, setPendingOSData] = useState<PendingOSData | null>(
     null,
   );
+  const [originalFormSnapshot, setOriginalFormSnapshot] =
+    useState<PendingOSData | null>(null);
   const [notificationConfig, setNotificationConfig] = useState({
     auto: false,
     motorista: true,
@@ -1638,6 +1640,7 @@ export default function OSOperationalPage() {
     setEditingOSId(null);
     setFormData(initialForm);
     setOpenWaypointComments({});
+    setOriginalFormSnapshot(null);
     void refreshData();
   };
 
@@ -1675,7 +1678,7 @@ export default function OSOperationalPage() {
         }))
       : initialForm.waypoints;
 
-    setFormData({
+    const nextFormData: OSFormData = {
       data: osItem.data,
       hora: osItem.hora || "",
       horaExtra: osItem.horaExtra || "",
@@ -1691,7 +1694,17 @@ export default function OSOperationalPage() {
       custo: osItem.custo,
       obsFinanceiras: osItem.obsFinanceiras || "",
       waypoints: hydratedWaypoints,
-    });
+    };
+
+    setFormData(nextFormData);
+
+    // Snapshot dos dados originais para detectar mudancas reais no submit
+    const snapshot: PendingOSData = {
+      ...nextFormData,
+      hora: null,
+      rota: { waypoints: hydratedWaypoints },
+    };
+    setOriginalFormSnapshot(snapshot);
 
     setOpenWaypointComments(
       hydratedWaypoints.reduce<Record<number, boolean>>(
@@ -3995,10 +4008,36 @@ export default function OSOperationalPage() {
       rota: { waypoints: formData.waypoints },
     };
 
+    // Se estiver editando e nao houver mudancas reais, apenas fecha o modal
+    if (editingOSId && originalFormSnapshot) {
+      const normalizeForCompare = (v: unknown): unknown => {
+        if (Array.isArray(v)) return v.map(normalizeForCompare);
+        if (v && typeof v === "object") {
+          return Object.fromEntries(
+            Object.entries(v as Record<string, unknown>)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, val]) => [k, normalizeForCompare(val)]),
+          );
+        }
+        if (typeof v === "string") return v.trim();
+        return v ?? null;
+      };
+      const isSame =
+        JSON.stringify(normalizeForCompare(finalData)) ===
+        JSON.stringify(normalizeForCompare(originalFormSnapshot));
+      if (isSame) {
+        toast.info("Nenhuma alteracao detectada.");
+        setIsModalOpen(false);
+        setEditingOSId(null);
+        setOriginalFormSnapshot(null);
+        return;
+      }
+    }
+
     setPendingOSData(finalData);
 
     if (editingOSId) {
-      // Editar Atendimento: abre modal perguntando se deseja marcar como concluído
+      // Editar Atendimento: abre modal perguntando se deseja marcar como concluido
       setShowCompletionConfirm(true);
       return;
     }

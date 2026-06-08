@@ -283,12 +283,6 @@ const buildOSUpdateLogContext = (
   }
 
   const changedSections = Object.keys(changedFieldsBySection);
-
-  console.log("[buildOSUpdateLogContext] previousOS exists:", !!previousOS, "changedSections:", changedSections, "fieldChanges count:", fieldChanges.length);
-  if (fieldChanges.length > 0) {
-    console.log("[buildOSUpdateLogContext] fieldChanges:", fieldChanges);
-  }
-
   return {
     changedSections,
     fieldChanges,
@@ -1954,19 +1948,19 @@ export async function updateOSInDB(
 
   if (error) throw error;
 
-  try {
-    console.log("[updateOSInDB] Inserting OS log for", id, "with metadata:", updateLogContext.metadata);
-    await insertOSLog(
-      id,
-      "update",
-      updateDescription,
-      actorName || "Sistema",
-      actorId,
-      updateLogContext.metadata,
-    );
-    console.log("[updateOSInDB] OS log inserted successfully for", id);
-  } catch (logError) {
-    console.error("[updateOSInDB] Erro ao inserir log de OS:", logError);
+  if (updateLogContext.changedSections.length > 0) {
+    try {
+      await insertOSLog(
+        id,
+        "update",
+        updateDescription,
+        actorName || "Sistema",
+        actorId,
+        updateLogContext.metadata,
+      );
+    } catch (logError) {
+      console.error("Erro ao inserir log de OS:", logError);
+    }
   }
 }
 
