@@ -103,8 +103,25 @@ export async function GET() {
       });
     }
 
+    // 4. Buscar quais notificações o usuário atual já leu
+    const { data: readsData } = await adminClient
+      .from("app_notification_reads")
+      .select("notification_id")
+      .eq("user_id", user.id)
+      .in(
+        "notification_id",
+        notifs.map((n) => n.id),
+      );
+
+    const readIds = new Set(
+      ((readsData ?? []) as { notification_id: string }[]).map(
+        (r) => r.notification_id,
+      ),
+    );
+
     const enriched = notifs.map((n) => ({
       ...n,
+      read: readIds.has(n.id),
       created_by_name:
         n.created_by && currentNames[n.created_by]
           ? currentNames[n.created_by]
@@ -187,6 +204,74 @@ export async function POST(request: Request) {
 
     if (error) {
       throw error;
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const authClient = await createAuthClient();
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
+
+    if (userError || !user) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
+    const body = (await request.json()) as {
+      notificationIds?: string[];
+      markAll?: boolean;
+    };
+
+    const adminClient = getAdminClient();
+
+    if (body.markAll) {
+      // Marcar todas as notificações visíveis pelo usuário como lidas
+      const { data: roleRow } = await adminClient
+        .from("user_roles")
+        .select("tipo_usuario")
+        .eq("id", user.id)
+        .single();
+
+      const tipoUsuario = roleRow?.tipo_usuario ?? "interno";
+
+      const { data: allNotifs } = await adminClient
+        .from("app_notifications")
+        .select("id")
+        .in("target_audience", [tipoUsuario, "all"])
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      const notifIds = (allNotifs ?? []).map((n) => n.id);
+      if (notifIds.length > 0) {
+        const rows = notifIds.map((id) => ({
+          notification_id: id,
+          user_id: user.id,
+          read_at: new Date().toISOString(),
+        }));
+        await adminClient.from("app_notification_reads").upsert(rows, {
+          onConflict: "notification_id,user_id",
+          ignoreDuplicates: true,
+        });
+      }
+    } else if (body.notificationIds && body.notificationIds.length > 0) {
+      const rows = body.notificationIds.map((id) => ({
+        notification_id: id,
+        user_id: user.id,
+        read_at: new Date().toISOString(),
+      }));
+      await adminClient.from("app_notification_reads").upsert(rows, {
+        onConflict: "notification_id,user_id",
+        ignoreDuplicates: true,
+      });
     }
 
     return NextResponse.json({ success: true });

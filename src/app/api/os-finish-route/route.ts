@@ -171,7 +171,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { cycle } = await loadOperationalCycleContextForOS(
+    const { cycles, cycle } = await loadOperationalCycleContextForOS(
       getAdmin(),
       osId,
       requestedCycleIndex,
@@ -258,12 +258,17 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (getAdmin().from("os_logs") as any).insert({
         os_id: osId,
-        type: "driver_finish",
+        type: finalStatus === "Finalizado" ? "status_change" : "driver_finish",
         actor_name: os.motorista || "Motorista",
-        description: `Rota finalizada${cycle ? ` — ${getOperationalCycleBannerTitle(cycle)}` : ""} (KM: ${kmFinal})`,
+        description:
+          finalStatus === "Finalizado"
+            ? `Atendimento finalizado${cycle ? ` — ${getOperationalCycleBannerTitle(cycle)}` : ""} (KM: ${kmFinal})`
+            : `Rota finalizada${cycle ? ` — ${getOperationalCycleBannerTitle(cycle)}` : ""} (KM: ${kmFinal})`,
         metadata: {
           cycle_index: cycle?.itineraryIndex ?? null,
           km_final: kmFinal,
+          status_operacional: finalStatus,
+          action: finalStatus === "Finalizado" ? "finish_all" : "driver_finish",
         },
       });
     } catch (logErr) {

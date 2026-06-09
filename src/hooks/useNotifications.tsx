@@ -82,6 +82,7 @@ export interface AppNotification {
   created_by_name: string | null;
   created_by_avatar_url: string | null;
   created_at: string;
+  read?: boolean;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -433,15 +434,47 @@ export function useNotifications() {
     };
   }, [user, supabase]);
 
+  const markAsRead = async (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+    );
+    try {
+      await fetch("/api/app-notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notificationIds: [id] }),
+      });
+    } catch {
+      // Silencioso: se falhar, o estado local já está atualizado
+    }
+  };
+
+  const markAllAsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await fetch("/api/app-notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markAll: true }),
+      });
+    } catch {
+      // Silencioso
+    }
+  };
+
   const dismiss = (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
   const dismissAll = () => setNotifications([]);
 
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
   return {
     notifications,
-    unreadCount: notifications.length,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
     dismiss,
     dismissAll,
     realtimeConnected,

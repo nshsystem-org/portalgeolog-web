@@ -133,7 +133,7 @@ begin
       v_title := 'Atendimento atualizado';
       if coalesce(jsonb_array_length(v_changed_fields_list), 0) > 0 then
         v_message := format(
-          'Protocolo #%s — Atualizações realizadas:',
+          'Protocolo #%s Atualizações realizadas:',
           coalesce(v_protocolo, NEW.os_id::text)
         );
       elsif v_changed_sections is not null then

@@ -10,6 +10,7 @@ import {
   cloneElement,
   ReactElement,
   useCallback,
+  useMemo,
 } from "react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useUserPresence } from "@/hooks/useUserPresence";
@@ -28,19 +29,16 @@ import {
   ShieldCheck,
   DollarSign,
   UserSquare2,
+  Handshake,
+  RefreshCw,
+  Info,
   CheckCircle,
   CircleCheckBig,
   FilePlus,
-  Info,
   AlertTriangle,
   XCircle,
-  Briefcase,
-  User,
-  Handshake,
   Archive,
   RotateCcw,
-  RefreshCw,
-  Hash,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
@@ -94,34 +92,16 @@ function extractNotificationProtocolo(message: string): {
   return { protocolo, cleanMessage };
 }
 
-function formatNotificationMessage(message: string): React.ReactNode {
-  const { cleanMessage } = extractNotificationProtocolo(message);
-
-  // Destaca status operacionais em cinza escuro negrito
-  const statusValues = [
-    "Pendente",
-    "Aceite",
-    "Aguardando",
-    "Em Rota",
-    "Finalizado",
-    "Cancelado",
-  ];
-  for (const status of statusValues) {
-    const idx = cleanMessage.indexOf(status);
-    if (idx !== -1) {
-      const before = cleanMessage.slice(0, idx);
-      const after = cleanMessage.slice(idx + status.length);
-      return (
-        <>
-          {before}
-          <span className="text-slate-700 font-black">{status}</span>
-          {after}
-        </>
-      );
-    }
-  }
-
-  return cleanMessage;
+function timeAgo(date: string): string {
+  const diff = Date.now() - new Date(date).getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (minutes < 1) return "Agora";
+  if (minutes < 60) return `${minutes} min`;
+  if (hours < 24) return `${hours} h`;
+  if (days === 1) return "Ontem";
+  return `${days} d`;
 }
 
 export default function DashboardLayout({
@@ -130,14 +110,28 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, profile, loading, logout } = useAuth();
-  const { unreadCount, notifications, dismiss, dismissAll, realtimeConnected } =
-    useNotifications();
+  const {
+    unreadCount,
+    notifications,
+    markAsRead,
+    markAllAsRead,
+    realtimeConnected,
+  } = useNotifications();
   const { currentVersion, updateAvailable, updateCountdown } = useAppVersion();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<"all" | "unread" | "read">("all");
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const filteredNotifications = useMemo(() => {
+    if (notificationFilter === "unread") return notifications.filter((n) => !n.read);
+    if (notificationFilter === "read") return notifications.filter((n) => n.read);
+    return notifications;
+  }, [notifications, notificationFilter]);
   const [showEmployees, setShowEmployees] = useState(false);
   const [announcementStep, setAnnouncementStep] = useState<
     "intro" | "explanation" | "closed"
   >("closed");
+  const notificationsDropdownRef = useRef<HTMLDivElement>(null);
+  const notificationSettingsRef = useRef<HTMLDivElement>(null);
   const employeesButtonRef = useRef<HTMLButtonElement>(null);
   const {
     users: presenceUsers,
@@ -150,81 +144,6 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
-
-  // Função helper para obter ícone de notificação
-  const getNotificationIcon = (notification: {
-    type: string;
-    title: string;
-  }) => {
-    // Casos específicos baseados no título
-    if (notification.title === "OS Arquivada" || notification.title === "Atendimento arquivado") {
-      return {
-        icon: Archive,
-        color: "text-red-500",
-        bg: "bg-red-50",
-      };
-    }
-
-    if (notification.title === "OS Reaberta" || notification.title === "Atendimento reaberto") {
-      return {
-        icon: RotateCcw,
-        color: "text-blue-500",
-        bg: "bg-blue-50",
-      };
-    }
-
-    if (notification.title === "Atendimento finalizado") {
-      return {
-        icon: CircleCheckBig,
-        color: "text-green-500",
-        bg: "bg-green-50",
-      };
-    }
-
-    if (notification.title === "Status do atendimento atualizado") {
-      return {
-        icon: RefreshCw,
-        color: "text-sky-400",
-        bg: "bg-sky-50",
-      };
-    }
-
-    if (notification.title === "Novo atendimento") {
-      return {
-        icon: FilePlus,
-        color: "text-green-500",
-        bg: "bg-green-50",
-      };
-    }
-
-    // Mapeamento padrão baseado no tipo
-    const iconConfig = {
-      success: {
-        icon: CheckCircle,
-        color: "text-green-500",
-        bg: "bg-green-50",
-      },
-      info: {
-        icon: Info,
-        color: "text-blue-500",
-        bg: "bg-blue-50",
-      },
-      warning: {
-        icon: AlertTriangle,
-        color: "text-red-500",
-        bg: "bg-red-50",
-      },
-      error: {
-        icon: XCircle,
-        color: "text-red-500",
-        bg: "bg-red-50",
-      },
-    };
-    return (
-      iconConfig[notification.type as keyof typeof iconConfig] ||
-      iconConfig.info
-    );
-  };
 
   useEffect(() => {
     if (!loading && !user) {
@@ -275,12 +194,23 @@ export default function DashboardLayout({
   }, [profile, loading, pathname, router, hasPageAccess]);
 
   useEffect(() => {
-    const handleClickOutside = () => {
+    const handleClickOutside = (e: MouseEvent) => {
       if (announcementStep === "explanation") {
         return; // Bloqueia cliques fora durante explicação
       }
-      if (showNotifications) {
+      if (
+        showNotifications &&
+        notificationsDropdownRef.current &&
+        !notificationsDropdownRef.current.contains(e.target as Node)
+      ) {
         setShowNotifications(false);
+      }
+      if (
+        showNotificationSettings &&
+        notificationSettingsRef.current &&
+        !notificationSettingsRef.current.contains(e.target as Node)
+      ) {
+        setShowNotificationSettings(false);
       }
       if (showEmployees) {
         setShowEmployees(false);
@@ -289,7 +219,7 @@ export default function DashboardLayout({
 
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
-  }, [showNotifications, showEmployees, announcementStep]);
+  }, [showNotifications, showNotificationSettings, showEmployees, announcementStep]);
 
   // Forçar dropdown aberto durante explicação
   useEffect(() => {
@@ -714,112 +644,110 @@ export default function DashboardLayout({
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 mt-2 w-[480px] bg-white border border-slate-200 rounded-2xl shadow-2xl z-[9999] overflow-hidden">
-                  <div className="p-4 border-b border-slate-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-black text-slate-800">
-                          Notificações
-                        </h3>
-                        <div
-                          className={`w-2 h-2 rounded-full ${
-                            realtimeConnected
-                              ? "bg-green-500"
-                              : "bg-yellow-500 animate-pulse"
-                          }`}
-                        ></div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500">
-                          {realtimeConnected ? "Tempo real" : "Conectando..."}
-                        </span>
-                        {unreadCount > 0 && (
+                <div ref={notificationsDropdownRef} className="absolute right-0 mt-2 w-[400px] bg-white rounded-2xl shadow-2xl z-[9999] overflow-hidden border border-slate-100">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <h3 className="font-black text-lg text-slate-800">
+                      Notificações
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+                        {(["all", "unread", "read"] as const).map((f) => (
                           <button
-                            onClick={dismissAll}
-                            className="text-xs text-blue-600 hover:text-blue-700 font-black"
+                            key={f}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setNotificationFilter(f);
+                            }}
+                            className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                              notificationFilter === f
+                                ? "bg-white text-slate-800 shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                            }`}
                           >
-                            Limpar todas
+                            {f === "all" ? "Todas" : f === "unread" ? "Não lidas" : "Lidas"}
                           </button>
+                        ))}
+                      </div>
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setShowNotificationSettings(!showNotificationSettings);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                          title="Opções"
+                        >
+                          <Settings size={16} />
+                        </button>
+                        {showNotificationSettings && (
+                          <div ref={notificationSettingsRef} className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-[10000]">
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                markAllAsRead();
+                                setShowNotificationSettings(false);
+                              }}
+                              disabled={unreadCount === 0}
+                              className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Marcar todos como lidos
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
                   </div>
-                  <div className="max-h-[520px] overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <div className="p-8 text-center text-slate-400">
-                        <Bell size={32} className="mx-auto mb-2 opacity-50" />
+
+                  {/* Lista */}
+                  <div className="max-h-[520px] overflow-y-auto py-2 space-y-1">
+                    {filteredNotifications.length === 0 ? (
+                      <div className="py-10 text-center text-slate-400">
+                        <Bell size={28} className="mx-auto mb-3 opacity-40" />
                         <p className="text-sm">Nenhuma notificação</p>
                       </div>
                     ) : (
-                      notifications.map((notification) => {
-                        const config = getNotificationIcon(notification);
-                        const IconComponent = config.icon;
+                      filteredNotifications.map((notification) => {
+                        const { protocolo } = extractNotificationProtocolo(
+                          notification.message,
+                        );
 
-                        // Detectar tipo de entidade pelo conteúdo
-                        const content = (
-                          notification.title +
-                          " " +
-                          notification.message
-                        ).toLowerCase();
-                        let EntityIcon = Info;
-                        let entityColor = "text-slate-400";
+                        const actionText =
+                          notification.title === "Novo atendimento"
+                            ? "cadastrou um novo atendimento"
+                            : notification.title === "Atendimento atualizado"
+                              ? "atualizou um atendimento"
+                              : notification.title === "Atendimento finalizado"
+                                ? "finalizou um atendimento"
+                                : notification.title === "Atendimento arquivado"
+                                  ? "arquivou um atendimento"
+                                  : notification.title === "Atendimento reaberto"
+                                    ? "reabriu um atendimento"
+                                    : notification.title.toLowerCase();
 
-                        if (
-                          content.includes("os") ||
-                          content.includes("ordem de serviço") ||
-                          content.includes("serviço")
-                        ) {
-                          EntityIcon = FileText;
-                          entityColor = "text-blue-400";
-                        } else if (content.includes("cliente")) {
-                          EntityIcon = Building;
-                          entityColor = "text-indigo-400";
-                        } else if (content.includes("parceiro")) {
-                          EntityIcon = ShieldCheck;
-                          entityColor = "text-purple-400";
-                        } else if (content.includes("motorista")) {
-                          EntityIcon = Truck;
-                          entityColor = "text-orange-400";
-                        } else if (content.includes("passageiro")) {
-                          EntityIcon = User;
-                          entityColor = "text-teal-400";
-                        } else if (
-                          content.includes("veículo") ||
-                          content.includes("veiculo") ||
-                          content.includes("frota")
-                        ) {
-                          EntityIcon = Truck;
-                          entityColor = "text-cyan-400";
-                        } else if (
-                          content.includes("financeiro") ||
-                          content.includes("fatura") ||
-                          content.includes("pagamento")
-                        ) {
-                          EntityIcon = DollarSign;
-                          entityColor = "text-emerald-400";
-                        } else if (
-                          content.includes("serviço") ||
-                          content.includes("servico")
-                        ) {
-                          EntityIcon = Briefcase;
-                          entityColor = "text-pink-400";
-                        }
+                        const chips = notification.metadata?.changed_fields_list;
+                        const hasChips =
+                          Array.isArray(chips) && chips.length > 0;
 
                         return (
                           <div
                             key={notification.id}
-                            className="p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
+                            className={`
+                              relative flex items-start gap-3 p-3 mx-2 rounded-xl cursor-pointer transition-colors
+                              ${notification.read ? "hover:bg-slate-50" : "bg-gradient-to-r from-blue-100/50 to-white/50 hover:from-blue-100/70 hover:to-white/70"}
+                            `}
                             onClick={() => {
-                              dismiss(notification.id);
+                              markAsRead(notification.id);
 
-                              // Extrair ID da OS da mensagem se existir (archive/reopen)
+                              // Extrair ID da OS da mensagem se existir
                               const osIdMatch = notification.message.match(
                                 /\[OS_ID:([a-f0-9-]+)\]/,
                               );
-                              // Extrair protocolo da mensagem de "Novo atendimento"
                               const osProtocoloMatch =
                                 notification.message.match(/Protocolo #(\d+)/);
-                              // Extrair protocolo entre aspas (OS arquivada/reaberta)
                               const osProtocoloQuotesMatch =
                                 notification.message.match(/"(\d{10})"/);
 
@@ -866,112 +794,112 @@ export default function DashboardLayout({
                               }
                             }}
                           >
-                            <div className="flex items-start gap-3">
-                              <div
-                                className={`p-2 rounded-xl ${config.bg} flex-shrink-0`}
-                              >
-                                <IconComponent
-                                  size={20}
-                                  className={config.color}
-                                />
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <EntityIcon
-                                    size={14}
-                                    className={`${entityColor} flex-shrink-0`}
-                                  />
-                                  <p className="font-black text-sm text-slate-800">
-                                    {notification.title}
-                                  </p>
-                                </div>
-                                <p className="text-sm text-slate-600 mt-1 leading-relaxed">
-                                  {formatNotificationMessage(
-                                    notification.message,
-                                  )}
-                                </p>
-                                {(() => {
-                                  const chips =
-                                    notification.metadata
-                                      ?.changed_fields_list;
-                                  if (
-                                    !Array.isArray(chips) ||
-                                    chips.length === 0
-                                  )
-                                    return null;
-                                  return (
-                                    <div className="flex flex-wrap gap-1.5 mt-2">
-                                      {chips.map((chip) => (
-                                        <span
-                                          key={String(chip)}
-                                          className="inline-flex items-center px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 text-[11px] font-bold border border-sky-100"
-                                        >
-                                          {String(chip)}
-                                        </span>
-                                      ))}
+                            {/* Avatar com badge de tipo */}
+                            {(() => {
+                              const badgeConfig = (() => {
+                                const t = notification.title;
+                                if (t === "Novo atendimento")
+                                  return { icon: FilePlus, bg: "bg-green-500", text: "text-white" };
+                                if (t === "Atendimento atualizado" || t === "Status do atendimento atualizado")
+                                  return { icon: Info, bg: "bg-blue-500", text: "text-white" };
+                                if (t === "Atendimento finalizado")
+                                  return { icon: CircleCheckBig, bg: "bg-emerald-500", text: "text-white" };
+                                if (t === "Atendimento arquivado" || t === "OS Arquivada")
+                                  return { icon: Archive, bg: "bg-red-500", text: "text-white" };
+                                if (t === "Atendimento reaberto" || t === "OS Reaberta")
+                                  return { icon: RotateCcw, bg: "bg-blue-500", text: "text-white" };
+                                switch (notification.type) {
+                                  case "success":
+                                    return { icon: CheckCircle, bg: "bg-green-500", text: "text-white" };
+                                  case "warning":
+                                    return { icon: AlertTriangle, bg: "bg-red-500", text: "text-white" };
+                                  case "error":
+                                    return { icon: XCircle, bg: "bg-red-500", text: "text-white" };
+                                  default:
+                                    return { icon: Info, bg: "bg-blue-500", text: "text-white" };
+                                }
+                              })();
+                              const BadgeIcon = badgeConfig.icon;
+                              return (
+                                <div className="relative flex-shrink-0">
+                                  {notification.created_by_avatar_url ? (
+                                    <img
+                                      src={notification.created_by_avatar_url}
+                                      alt={notification.created_by_name || ""}
+                                      className="w-14 h-14 rounded-full object-cover border border-slate-200"
+                                    />
+                                  ) : (
+                                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white text-lg font-black flex items-center justify-center">
+                                      {notification.created_by_name?.charAt(0).toUpperCase() || "?"}
                                     </div>
-                                  );
-                                })()}
-                                <div className="flex items-center gap-2 mt-2">
-                                  {(() => {
-                                    const { protocolo } =
-                                      extractNotificationProtocolo(
-                                        notification.message,
-                                      );
-                                    if (!protocolo) return null;
-                                    return (
-                                      <span
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-600 text-[8px] font-bold uppercase tracking-normal cursor-pointer hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-colors"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          navigator.clipboard.writeText(protocolo);
-                                          window.dispatchEvent(
-                                            new CustomEvent("os-search-protocolo", {
-                                              detail: { protocolo },
-                                            }),
-                                          );
-                                        }}
-                                        title="Copiar protocolo e filtrar"
-                                      >
-                                        <Hash size={10} />
-                                        {protocolo}
-                                      </span>
-                                    );
-                                  })()}
-                                  <p className="text-xs text-slate-400">
-                                    {new Date(
-                                      notification.created_at,
-                                    ).toLocaleString("pt-BR")}
-                                  </p>
-                                  {notification.created_by_name && (
-                                    <>
-                                      <span className="text-xs text-slate-300">
-                                        •
-                                      </span>
-                                      {notification.created_by_avatar_url ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={
-                                            notification.created_by_avatar_url
-                                          }
-                                          alt={notification.created_by_name}
-                                          className="w-6 h-6 rounded-full object-cover border border-slate-200"
-                                        />
-                                      ) : (
-                                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center">
-                                          {notification.created_by_name
-                                            .charAt(0)
-                                            .toUpperCase()}
-                                        </span>
-                                      )}
-                                      <p className="text-xs text-slate-500 font-medium">
-                                        {notification.created_by_name}
-                                      </p>
-                                    </>
                                   )}
+                                  <span className={`absolute -bottom-0.5 -right-0.5 w-6 h-6 ${badgeConfig.bg} ${badgeConfig.text} rounded-full flex items-center justify-center border-2 border-white shadow-sm`}>
+                                    <BadgeIcon size={12} strokeWidth={2.5} />
+                                  </span>
                                 </div>
+                              );
+                            })()}
+
+                            {/* Content */}
+                            <div className="flex-1 min-w-0">
+                              <p className="leading-snug">
+                                {notification.created_by_name && (
+                                  <span
+                                    className={`text-sm font-bold ${
+                                      !notification.read
+                                        ? "text-slate-900"
+                                        : "text-slate-400"
+                                    }`}
+                                  >
+                                    {notification.created_by_name}
+                                  </span>
+                                )}
+                                {" "}
+                                <span className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}>{actionText}</span>
+                              </p>
+
+                              {/* Chips */}
+                              {hasChips && (
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                  {chips.map((chip) => (
+                                    <span
+                                      key={String(chip)}
+                                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${!notification.read ? "bg-sky-100/70 text-sky-700" : "bg-slate-100/70 text-slate-400"}`}
+                                    >
+                                      {String(chip)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Meta */}
+                              <div className="flex items-center gap-1.5 mt-1.5">
+                                <span className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}>
+                                  {timeAgo(notification.created_at)}
+                                </span>
+                                <span className="text-slate-300">•</span>
+                                <span className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"} capitalize`}>
+                                  {notification.type === "success"
+                                    ? "Cadastro"
+                                    : notification.type === "info"
+                                      ? "Atualização"
+                                      : "Alerta"}
+                                </span>
+                                {protocolo && (
+                                  <>
+                                    <span className="text-slate-300">•</span>
+                                    <span className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}>
+                                      {protocolo}
+                                    </span>
+                                  </>
+                                )}
                               </div>
                             </div>
+
+                            {/* Unread dot */}
+                            {!notification.read && (
+                              <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0 mt-1.5" />
+                            )}
                           </div>
                         );
                       })
