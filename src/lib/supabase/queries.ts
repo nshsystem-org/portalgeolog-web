@@ -21,7 +21,6 @@ import {
 import {
   fetchOperationalCyclesForOSIds,
   getFirstActiveOperationalCycle,
-  replaceOperationalCyclesForOS,
 } from "@/lib/operational-cycles-db";
 import { formatPortugueseList } from "@/lib/os-activity";
 import {
@@ -1637,181 +1636,64 @@ export async function insertOS(
   actorName?: string,
   actorId?: string | null,
 ): Promise<OrderService> {
-  const impostoPercentual = await getImpostoPercentualForDate(osData.data);
-  const vBruto = osData.valorBruto ?? 0;
-  const vCusto = osData.custo ?? 0;
-  const imposto = vBruto * (impostoPercentual / 100);
-  const lucro = vBruto - imposto - vCusto;
+  const waypoints = osData.rota?.waypoints || [];
+  const operationalCycles = buildOperationalCyclesFromWaypoints(waypoints);
   const centroCusto =
     (osData as OSInput & { centroCusto?: string }).centroCusto ??
     osData.centroCustoId ??
     "";
 
-  const { data: osRow, error: osError } = await getSupabase()
-    .from("ordens_servico")
-    .insert({
-      protocolo: "", // trigger will generate
-      data: osData.data,
-      hora: osData.hora || null,
-      hora_extra: osData.horaExtra || "",
-      os_number: osData.os || "",
-      cliente_id: osData.clienteId || null,
-      solicitante: upperText(osData.solicitante),
-      solicitante_id:
-        (osData as OSInput & { solicitanteId?: string }).solicitanteId || null,
-      centro_custo: centroCusto,
-      centro_custo_id: centroCusto || null,
-      motorista: upperText(osData.motorista),
-      driver_id: (osData as OSInput & { driverId?: string }).driverId || null,
-      veiculo_id:
-        (osData as OSInput & { veiculoId?: string }).veiculoId || null,
-      valor_bruto: osData.valorBruto ?? 0,
-      obs_financeiras:
-        (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
-      imposto,
-      custo: osData.custo ?? 0,
-      lucro,
-      status_operacional: "Pendente",
-      status_financeiro: "Pendente",
-      created_by: actorId || null,
-      created_by_name: actorName || null,
-    })
-    .select("*")
-    .single();
-
-  if (osError) throw osError;
-
-  // Insert waypoints
-  const waypoints = osData.rota?.waypoints || [];
-  const operationalCycles = buildOperationalCyclesFromWaypoints(waypoints);
-  const insertedWaypoints: Waypoint[] = [];
-
-  for (let i = 0; i < waypoints.length; i++) {
-    const wp = waypoints[i];
-    const { data: wpRow, error: wpError } = await getSupabase()
-      .from("os_waypoints")
-      .insert({
-        ordem_servico_id: osRow.id,
-        position: i,
-        label: wp.label,
-        lat: wp.lat || null,
-        lng: wp.lng || null,
-        comment: wp.comment?.trim() || "",
-        itinerary_index: wp.itineraryIndex ?? null,
-        hora: wp.hora?.trim() || null,
-        data: normalizeWaypointDateForDb(wp.data),
-      })
-      .select("id")
-      .single();
-
-    if (wpError) {
-      throw wpError;
-    }
-
-    const passengers = wp.passengers || [];
-    const insertedPassengers: {
-      id: string;
-      solicitanteId: string;
-      nome: string;
-    }[] = [];
-
-    if (passengers.length > 0) {
-      const { data: passRows } = await getSupabase()
-        .from("os_waypoint_passengers")
-        .insert(
-          passengers.map((p) => ({
-            waypoint_id: wpRow.id,
-            passageiro_id: p.solicitanteId || null,
-          })),
-        )
-        .select("id, passageiro_id");
-
-      if (passRows) {
-        (passRows as OSWaypointPassengerRow[]).forEach((pr) =>
-          insertedPassengers.push({
-            id: pr.id,
-            solicitanteId: pr.passageiro_id || "",
-            nome: "",
-          }),
-        );
-      }
-    }
-
-    const cleanComment = wp.comment?.trim() || "";
-    if (cleanComment) {
-      await getSupabase().from("os_waypoint_comments").insert({
-        ordem_servico_id: osRow.id,
-        waypoint_position: i,
-        waypoint_label: wp.label,
-        comment: cleanComment,
-      });
-    }
-
-    insertedWaypoints.push({
-      label: wp.label,
-      lat: wp.lat,
-      lng: wp.lng,
-      comment: wp.comment?.trim() || undefined,
-      itineraryIndex: wp.itineraryIndex ?? undefined,
-      hora: wp.hora?.trim() || undefined,
-      data: formatWaypointDateForUi(wp.data),
-      passengers: insertedPassengers,
-    });
-  }
-
-  if (operationalCycles.length > 0) {
-    await replaceOperationalCyclesForOS(
-      getSupabase(),
-      osRow.id,
-      operationalCycles,
-    );
-  }
-
-  try {
-    await insertOSLog(
-      osRow.id,
-      "create",
-      "Dados de cadastro do atendimento",
-      actorName || "Sistema",
-      actorId,
-    );
-  } catch (logError) {
-    console.error("Erro ao inserir log de OS:", logError);
-  }
-
-  return {
-    id: osRow.id,
-    protocolo: osRow.protocolo,
-    data: osRow.data,
-    hora: osRow.hora,
-    horaExtra: osRow.hora_extra || "",
-    os: osRow.os_number || "",
-    clienteId: osRow.cliente_id || "",
-    solicitante: osRow.solicitante || "",
-    centroCustoId: osRow.centro_custo || "",
-    motorista: osRow.motorista || "",
-    veiculoId: osRow.veiculo_id || undefined,
-    valorBruto: Number(osRow.valor_bruto),
-    imposto: Number(osRow.imposto),
-    custo: Number(osRow.custo),
-    lucro: Number(osRow.lucro),
-    obsFinanceiras: osRow.obs_financeiras || "",
-    status: {
-      operacional:
-        osRow.status_operacional as OrderService["status"]["operacional"],
-      financeiro:
-        osRow.status_financeiro as OrderService["status"]["financeiro"],
-    },
-    rota:
-      insertedWaypoints.length > 0
-        ? { waypoints: insertedWaypoints }
-        : undefined,
-    operationalCycles:
-      operationalCycles.length > 0 ? operationalCycles : undefined,
-    currentDriverCycleIndex:
-      getFirstActiveOperationalCycle(operationalCycles)?.sequenceOrder ??
-      undefined,
+  const osPayload = {
+    data: osData.data,
+    hora: osData.hora || "",
+    hora_extra: osData.horaExtra || "",
+    os_number: osData.os || "",
+    cliente_id: osData.clienteId || "",
+    solicitante: upperText(osData.solicitante),
+    solicitante_id:
+      (osData as OSInput & { solicitanteId?: string }).solicitanteId || "",
+    centro_custo: centroCusto,
+    centro_custo_id: centroCusto,
+    motorista: upperText(osData.motorista),
+    driver_id: (osData as OSInput & { driverId?: string }).driverId || "",
+    veiculo_id: (osData as OSInput & { veiculoId?: string }).veiculoId || "",
+    valor_bruto: osData.valorBruto ?? 0,
+    obs_financeiras:
+      (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
+    custo: osData.custo ?? 0,
   };
+
+  const waypointsPayload = waypoints.map((wp) => ({
+    label: wp.label,
+    lat: wp.lat ?? null,
+    lng: wp.lng ?? null,
+    comment: wp.comment?.trim() || "",
+    itinerary_index: wp.itineraryIndex ?? null,
+    hora: wp.hora?.trim() || null,
+    data: normalizeWaypointDateForDb(wp.data),
+    passengers: (wp.passengers || []).map((p) => ({
+      solicitante_id: p.solicitanteId || null,
+    })),
+  }));
+
+  const { data: osId, error } = await getSupabase().rpc("insert_os_atomic", {
+    p_os_data: osPayload,
+    p_waypoints: waypointsPayload,
+    p_operational_cycles: operationalCycles,
+    p_actor_name: actorName || "Sistema",
+    p_actor_id: actorId || null,
+  });
+
+  if (error || !osId) {
+    throw error || new Error("Falha ao criar OS via RPC");
+  }
+
+  const latest = await fetchOSById(osId);
+  if (!latest) {
+    throw new Error("OS criada mas não pôde ser recuperada");
+  }
+
+  return latest;
 }
 
 export async function updateOSInDB(

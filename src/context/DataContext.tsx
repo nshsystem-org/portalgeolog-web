@@ -506,8 +506,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const refreshOSCounts = useCallback(async () => {
     try {
+      const startedAt = performance.now();
       const counts = await fetchOSStatusCounts();
       setOsCounts(counts);
+      console.log(
+        `[Perf][DataContext] refreshOSCounts ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
     } catch (error) {
       logErrorEntry(
         "DataContext",
@@ -518,12 +522,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshData = useCallback(async () => {
+    const startedAt = performance.now();
     try {
       // Counts são leves e independentes, então saem do caminho crítico.
       void refreshOSCounts();
 
       // Fase 1: Dados leves — liberam a UI rapidamente
       // Usamos Promise.all mas com catches individuais para não quebrar todo o fluxo se um falhar
+      const phase1StartedAt = performance.now();
       const results1 = await Promise.allSettled([
         dbFetchClientes(),
         dbFetchSolicitantes(),
@@ -597,12 +603,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (results1.every((r) => r.status === "rejected")) {
         throw new Error("Todas as buscas da Fase 1 falharam.");
       }
+      console.log(
+        `[Perf][DataContext] refreshData phase1 ${(performance.now() - phase1StartedAt).toFixed(0)}ms`,
+      );
 
       // Fase 2: Dados pesados — carregam em background sem bloquear a UI
       setHeavyLoading(true);
       try {
+        const phase2StartedAt = performance.now();
         const osList = await fetchOSList();
         setOsList(osList);
+        console.log(
+          `[Perf][DataContext] refreshData phase2 ${(performance.now() - phase2StartedAt).toFixed(0)}ms`,
+        );
 
         // Não registramos logs de sucesso do carregamento global para evitar spam.
         // Mantemos apenas logs de erro/falha de carregamento.
@@ -625,6 +638,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         },
       );
       toast.error("Erro ao sincronizar dados. Tente atualizar a página.");
+    } finally {
+      console.log(
+        `[Perf][DataContext] refreshData total ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
     }
   }, [
     dbFetchClientes,
@@ -1289,6 +1306,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       "id" | "lucro" | "imposto" | "status" | "protocolo"
     >,
   ): Promise<OrderService> => {
+    const startedAt = performance.now();
     const taxa = impostoPercentual / 100;
     const vBruto = osData.valorBruto ?? 0;
     const vCusto = osData.custo ?? 0;
@@ -1319,6 +1337,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         actorName,
       });
       setOsList((prev) => prev.map((o) => (o.id === tempId ? real : o)));
+      console.log(
+        `[Perf][DataContext] addOS total ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
       return real;
     } catch (err) {
       logErrorEntry(
@@ -1333,6 +1354,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.error("Error adding OS:", err);
       console.error("OS Data that failed:", osData);
       setOsList((prev) => prev.filter((o) => o.id !== tempId));
+      console.log(
+        `[Perf][DataContext] addOS failed after ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
       throw err;
     }
   };
@@ -1344,6 +1368,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       "id" | "lucro" | "imposto" | "status" | "protocolo"
     >,
   ): Promise<{ changed: boolean }> => {
+    const startedAt = performance.now();
     let currentOS: OrderService | null | undefined =
       osList.find((os) => os.id === id);
 
@@ -1393,6 +1418,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           actorName,
         });
         toast.info("Nenhuma alteração detectada.");
+        console.log(
+          `[Perf][DataContext] updateOS no-op ${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
         return { changed: false };
       }
 
@@ -1401,6 +1429,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         actorName,
         updates: osData,
       });
+      console.log(
+        `[Perf][DataContext] updateOS total ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
       return { changed: true };
     } catch (err) {
       logErrorEntry(
@@ -1413,6 +1444,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         },
       );
       console.error("Error updateOSInDB:", err);
+      console.log(
+        `[Perf][DataContext] updateOS failed after ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
       throw err;
     }
   };
@@ -1421,6 +1455,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     id: string,
     updates: Partial<OSStatus>,
   ): Promise<void> => {
+    const startedAt = performance.now();
     setOsList((prev) =>
       prev.map((os) =>
         os.id === id
@@ -1444,6 +1479,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         updates,
         actorName,
       });
+      console.log(
+        `[Perf][DataContext] updateOSStatus total ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
     } catch (err) {
       logErrorEntry(
         "DataContext",
@@ -1456,6 +1494,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         },
       );
       console.error("Error updateOSStatusInDB:", err);
+      console.log(
+        `[Perf][DataContext] updateOSStatus failed after ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
       throw err;
     }
   };

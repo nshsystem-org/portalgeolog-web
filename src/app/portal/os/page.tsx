@@ -489,7 +489,6 @@ export default function OSOperationalPage() {
     addSolicitante,
     addCentroCusto,
     addParceiro,
-    refreshData,
     impostoPercentual,
     loading: dataLoading,
     heavyLoading,
@@ -762,6 +761,36 @@ export default function OSOperationalPage() {
       console.error("Erro ao sincronizar OS aberta:", error);
     }
   }, [viewingOSId]);
+
+  const updateOSItems = osTable.updateItems;
+
+  const syncOSSnapshot = useCallback(
+    async (osId: string) => {
+      const startedAt = performance.now();
+      try {
+        const latest = await fetchOSById(osId);
+        if (!latest) return;
+
+        updateOSItems((prev) =>
+          prev.map((item) => (item.id === osId ? latest : item)),
+        );
+        setCalendarOSList((prev) =>
+          prev.map((item) => (item.id === osId ? latest : item)),
+        );
+
+        if (viewingOSId === osId) {
+          setViewingOSLive(latest);
+        }
+
+        console.log(
+          `[Perf][OS] syncOSSnapshot(${osId}) ${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
+      } catch (error) {
+        console.error("Erro ao sincronizar snapshot da OS:", error);
+      }
+    },
+    [updateOSItems, viewingOSId],
+  );
 
   const syncOSLogs = useCallback(async () => {
     if (!viewingOSId) return;
@@ -1671,7 +1700,6 @@ export default function OSOperationalPage() {
     setFormData(initialForm);
     setOpenWaypointComments({});
     setOriginalFormSnapshot(null);
-    void refreshData();
   };
 
   const handleOpenCreateOSModal = () => {
@@ -1680,7 +1708,6 @@ export default function OSOperationalPage() {
     setFormData(initialForm);
     setOpenWaypointComments({});
     setIsModalOpen(true);
-    void refreshData();
   };
 
   const hydrateFormFromOS = (osItem: OrderService) => {
@@ -1779,8 +1806,7 @@ export default function OSOperationalPage() {
       setEditingOSId(osId);
       setIsModalOpen(true);
       setOpenActionMenuId(null);
-      // Pequeno delay para garantir que o modal renderizou antes de remover o loader
-      setTimeout(() => setIsOpeningEditModal(false), 150);
+      requestAnimationFrame(() => setIsOpeningEditModal(false));
     } catch {
       toast.error("Não foi possível carregar a OS para edição.");
       setIsOpeningEditModal(false);
@@ -1885,6 +1911,7 @@ export default function OSOperationalPage() {
     });
     if (!confirmed) return;
 
+    const startedAt = performance.now();
     setAwaitingStatusOSId(osId);
     try {
       const response = await fetch("/api/os-manual-cycle", {
@@ -1895,6 +1922,9 @@ export default function OSOperationalPage() {
           action: "finish_all",
         }),
       });
+      console.log(
+        `[Perf][OS] handleFinishOS request ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
       const result = await response.json();
       if (!result.success) {
         toast.error(result.error || "Erro ao concluir todos os ciclos.");
@@ -1903,21 +1933,20 @@ export default function OSOperationalPage() {
       }
       toast.success("Atendimento concluído com sucesso!");
 
-      const updatedOS = await fetchOSById(osId);
-      if (updatedOS) {
-        osTable.updateItems((prev) =>
-          prev.map((item) => (item.id === osId ? updatedOS : item)),
-        );
-        setCalendarOSList((prev) =>
-          prev.map((item) => (item.id === osId ? updatedOS : item)),
-        );
-      }
+      await syncOSSnapshot(osId);
+      setAwaitingStatusOSId(null);
       setOpenActionMenuId(null);
       setCalendarMenuPosition(null);
+      console.log(
+        `[Perf][OS] handleFinishOS total ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
     } catch (error) {
       console.error("Erro ao finalizar atendimento:", error);
       toast.error("Erro ao concluir o atendimento. Tente novamente.");
       setAwaitingStatusOSId(null);
+      console.log(
+        `[Perf][OS] handleFinishOS failed ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
     }
   };
 
@@ -2067,6 +2096,7 @@ export default function OSOperationalPage() {
     osData: OrderService,
     itineraryIndex: number,
   ) => {
+    const startedAt = performance.now();
     if (!osData.motorista) {
       toast.error("Motorista não atribuído a esta OS.");
       return;
@@ -2109,6 +2139,9 @@ export default function OSOperationalPage() {
 
       console.log(
         `[WhatsApp] Enviando notificação para ${osData.motorista} (${phone}) - Ciclo ${itineraryIndex}`,
+      );
+      console.log(
+        `[Perf][WhatsApp] start os=${osData.id} itinerary=${itineraryIndex}`,
       );
 
       let msgResponse: Response;
@@ -2203,6 +2236,9 @@ export default function OSOperationalPage() {
         toast.error(
           `Falha ao enviar mensagem: ${msgData.error || "Erro na API"}`,
         );
+        console.log(
+          `[Perf][WhatsApp] failed os=${osData.id} ${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
         setNotifyLoadingKey(null);
         return;
       }
@@ -2246,10 +2282,16 @@ export default function OSOperationalPage() {
           dbErr,
         );
       }
-      await refreshData();
+      void syncOSSnapshot(osData.id);
+      console.log(
+        `[Perf][WhatsApp] total os=${osData.id} itinerary=${itineraryIndex} ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
     } catch (err) {
       console.error("[WhatsApp] Erro crítico:", err);
       toast.error("Erro ao conectar com a API de WhatsApp.");
+      console.log(
+        `[Perf][WhatsApp] error os=${osData.id} ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
     } finally {
       setNotifyLoadingKey(null);
     }
@@ -2579,8 +2621,7 @@ export default function OSOperationalPage() {
       }
 
       toast.success("Etapa finalizada com sucesso!");
-      void syncViewingOS();
-      void refreshData();
+      void syncOSSnapshot(osId);
     } catch (error) {
       console.error("Erro ao finalizar ciclo manualmente:", error);
       toast.error("Erro ao finalizar etapa. Tente novamente.");
@@ -2607,8 +2648,7 @@ export default function OSOperationalPage() {
       }
 
       toast.success("Status retornado para pendente!");
-      void syncViewingOS();
-      void refreshData();
+      void syncOSSnapshot(osId);
     } catch (error) {
       console.error("Erro ao reverter aceite:", error);
       toast.error("Erro ao retornar status. Tente novamente.");
@@ -2638,8 +2678,7 @@ export default function OSOperationalPage() {
       }
 
       toast.success("Status retornado para aceite!");
-      void syncViewingOS();
-      void refreshData();
+      void syncOSSnapshot(osId);
     } catch (error) {
       console.error("Erro ao reverter para aceite:", error);
       toast.error("Erro ao retornar status. Tente novamente.");
@@ -3858,31 +3897,36 @@ export default function OSOperationalPage() {
 
   const processAutoNotifications = async (osIdParam: string) => {
     const osIdParamStr = String(osIdParam || "");
-    console.log("[AutoNotif] Starting with osIdParam:", osIdParamStr);
-    // Pequeno delay para garantir que os dados estão disponíveis no Supabase
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const startedAt = performance.now();
+    console.log("[Perf][AutoNotif] Starting with osIdParam:", osIdParamStr);
+    if (!notificationConfig.motorista && !notificationConfig.passageiros) {
+      console.log(
+        `[Perf][AutoNotif] skipped in ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
+      return;
+    }
+    const latestOS = await fetchOSById(String(osIdParam));
+    if (!latestOS) {
+      console.log(
+        `[Perf][AutoNotif] OS not found ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
+      return;
+    }
 
     // 1. Notificar Motorista
     if (notificationConfig.motorista) {
       try {
-        const latestOS = await fetchOSById(String(osIdParam));
-        if (latestOS) {
-          // Notificar o primeiro ciclo (itineraryIndex: 0)
-          await sendWhatsAppNotification(latestOS, 0);
-        }
+        // Notificar o primeiro ciclo (itineraryIndex: 0)
+        await sendWhatsAppNotification(latestOS, 0);
       } catch (err) {
         console.error("Erro ao notificar motorista automaticamente:", err);
       }
     }
 
-    // Pequeno delay entre notificações para evitar bloqueios
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
     // 2. Notificar Passageiros
     if (notificationConfig.passageiros) {
       try {
-        const latestOS = await fetchOSById(String(osIdParam));
-        if (latestOS && latestOS.rota?.waypoints) {
+        if (latestOS.rota?.waypoints) {
           for (const wp of latestOS.rota.waypoints) {
             for (const p of wp.passengers) {
               const passRecord = passageiros.find(
@@ -3901,8 +3945,6 @@ export default function OSOperationalPage() {
                   },
                   "whatsapp",
                 );
-                // Delay entre passageiros
-                await new Promise((resolve) => setTimeout(resolve, 500));
               }
             }
           }
@@ -3911,6 +3953,10 @@ export default function OSOperationalPage() {
         console.error("Erro ao notificar passageiros automaticamente:", err);
       }
     }
+
+    console.log(
+      `[Perf][AutoNotif] finished in ${(performance.now() - startedAt).toFixed(0)}ms`,
+    );
   };
 
   const executeSaveOS = async (
@@ -3928,7 +3974,12 @@ export default function OSOperationalPage() {
         // Desliga o loader imediatamente; refresh continua em background
         setIsSubmittingOS(false);
         setOsSubmissionMode(null);
-        void osTable.refresh();
+        const refreshStartedAt = performance.now();
+        void osTable.refresh().finally(() => {
+          console.log(
+            `[Perf][OS] osTable.refresh(update) ${(performance.now() - refreshStartedAt).toFixed(0)}ms`,
+          );
+        });
         setShowNotificationConfirm(false);
         void resetMainModalState();
 
@@ -3944,7 +3995,12 @@ export default function OSOperationalPage() {
         // Desliga o loader imediatamente; refresh continua em background
         setIsSubmittingOS(false);
         setOsSubmissionMode(null);
-        void osTable.refresh();
+        const refreshStartedAt = performance.now();
+        void osTable.refresh().finally(() => {
+          console.log(
+            `[Perf][OS] osTable.refresh(create) ${(performance.now() - refreshStartedAt).toFixed(0)}ms`,
+          );
+        });
         setShowNotificationConfirm(false);
         void resetMainModalState();
         if (notificationConfig.auto) {
@@ -3961,11 +4017,14 @@ export default function OSOperationalPage() {
         // Enviar mensagem administrativa via WhatsApp para contato fixo
         void (async () => {
           try {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+            const startedAt = performance.now();
             const latestOS = await fetchOSById(newOSId.id);
             if (latestOS) {
               await sendAdminGroupMessage(latestOS);
             }
+            console.log(
+              `[Perf][AdminGroup] ${newOSId.id} ${(performance.now() - startedAt).toFixed(0)}ms`,
+            );
           } catch (err) {
             console.error("[AdminGroup] Erro ao buscar OS para envio:", err);
           }
@@ -4087,6 +4146,7 @@ export default function OSOperationalPage() {
 
   const executeEditOS = async (markAsCompleted: boolean) => {
     if (!pendingOSData || !editingOSId) return;
+    const startedAt = performance.now();
     await executeSaveOS(pendingOSData, editingOSId);
     if (markAsCompleted) {
       setAwaitingStatusOSId(editingOSId);
@@ -4099,6 +4159,9 @@ export default function OSOperationalPage() {
             action: "finish_all",
           }),
         });
+        console.log(
+          `[Perf][OS] executeEditOS finish_all request ${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
         const result = await response.json();
         if (!result.success) {
           toast.error(result.error || "Erro ao concluir todos os ciclos.");
@@ -4107,22 +4170,18 @@ export default function OSOperationalPage() {
         }
         toast.success("Atendimento concluído com sucesso!");
 
-        // Atualizar apenas o card/linha da OS específica localmente
-        const updatedOS = await fetchOSById(editingOSId);
-        if (updatedOS) {
-          // Atualizar tabela server-side
-          osTable.updateItems((prev) =>
-            prev.map((item) => (item.id === editingOSId ? updatedOS : item)),
-          );
-          // Atualizar calendário localmente
-          setCalendarOSList((prev) =>
-            prev.map((item) => (item.id === editingOSId ? updatedOS : item)),
-          );
-        }
+        await syncOSSnapshot(editingOSId);
+        setAwaitingStatusOSId(null);
+        console.log(
+          `[Perf][OS] executeEditOS total ${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
       } catch (error) {
         console.error("Erro ao finalizar todos os ciclos:", error);
         toast.error("Erro ao concluir o atendimento. Tente novamente.");
         setAwaitingStatusOSId(null);
+        console.log(
+          `[Perf][OS] executeEditOS failed ${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
       }
     }
   };
@@ -6100,10 +6159,9 @@ export default function OSOperationalPage() {
 
       {viewingOS && (
         <StandardModal
-          onClose={async () => {
+          onClose={() => {
             setViewingOSId(null);
             setViewingOSLoading(false);
-            await refreshData();
           }}
           title={`Visão Operacional ${viewingOS.os || "Sem OS"}`}
           subtitle={`Protocolo ${viewingOS.protocolo}`}

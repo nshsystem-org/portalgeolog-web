@@ -19,6 +19,11 @@ type OrdensServicoUpdateBuilder = {
   };
 };
 
+type UserRoleRow = {
+  nome: string | null;
+  avatar_url: string | null;
+};
+
 let _supabaseAdmin: ReturnType<typeof createClient> | null = null;
 const getAdmin = () => {
   if (!_supabaseAdmin) {
@@ -91,6 +96,7 @@ const updateCycleInList = (
 };
 
 export async function POST(request: Request) {
+  const startedAt = performance.now();
   try {
     const authClient = await createAuthClient();
     const {
@@ -144,7 +150,10 @@ export async function POST(request: Request) {
         .from("user_roles")
         .select("nome, avatar_url")
         .eq("id", user.id)
-        .maybeSingle();
+        .maybeSingle() as unknown as {
+        data: UserRoleRow | null;
+        error: Error | null;
+      };
 
       actorName = profile?.nome || actorName;
       actorAvatarUrl = profile?.avatar_url || null;
@@ -203,6 +212,10 @@ export async function POST(request: Request) {
           { status: 500 },
         );
       }
+
+      console.log(
+        `[Perf][os-manual-cycle] finish_all ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
 
       return NextResponse.json({
         success: true,
@@ -353,6 +366,9 @@ export async function POST(request: Request) {
       console.log(
         "[os-manual-cycle] Todos os ciclos concluídos. Status da OS atualizado para Finalizado.",
       );
+      console.log(
+        `[Perf][os-manual-cycle] ${action} ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
 
       return NextResponse.json({
         success: true,
@@ -429,6 +445,10 @@ export async function POST(request: Request) {
       console.error("[os-manual-cycle] Erro ao registrar log:", logError);
     }
 
+    console.log(
+      `[Perf][os-manual-cycle] ${action} ${(performance.now() - startedAt).toFixed(0)}ms`,
+    );
+
     return NextResponse.json({
       success: true,
       message: `Ciclo ${action} realizado com sucesso.`,
@@ -436,6 +456,9 @@ export async function POST(request: Request) {
     });
   } catch (error: unknown) {
     console.error("Erro na rota os-manual-cycle:", error);
+    console.log(
+      `[Perf][os-manual-cycle] failed after ${(performance.now() - startedAt).toFixed(0)}ms`,
+    );
     return NextResponse.json(
       {
         success: false,
