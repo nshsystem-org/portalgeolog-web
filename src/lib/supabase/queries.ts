@@ -140,6 +140,11 @@ const buildOSUpdateLogContext = (
   };
 
   if (previousOS) {
+    const nextCentroCusto =
+      (osData as OSInput & { centroCusto?: string }).centroCusto ??
+      osData.centroCustoId ??
+      null;
+
     const simpleFields: Array<[string, unknown, unknown]> = [
       ["Data", previousOS.data, osData.data],
       ["Horário", previousOS.hora, osData.hora || null],
@@ -148,7 +153,7 @@ const buildOSUpdateLogContext = (
       ["Cliente", previousOS.clienteId, osData.clienteId],
       ["Solicitante", previousOS.solicitante || "", upperText(osData.solicitante)],
       ["Solicitante Responsável", previousOS.solicitanteId || null, osData.solicitanteId || null],
-      ["Centro de Custo", previousOS.centroCustoId || null, osData.centroCustoId || null],
+      ["Centro de Custo", previousOS.centroCustoId || null, nextCentroCusto],
       ["Motorista", previousOS.motorista || "", upperText(osData.motorista)],
       ["Motorista Alocado", previousOS.driverId || null, osData.driverId || null],
       ["Veículo de Uso", previousOS.veiculoId || null, osData.veiculoId || null],

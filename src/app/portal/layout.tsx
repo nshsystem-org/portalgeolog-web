@@ -312,6 +312,19 @@ export default function DashboardLayout({
       );
   }, []);
 
+  // Escutar evento do toast para abrir dropdown de funcionarios
+  useEffect(() => {
+    const handleOpenEmployees = () => {
+      setShowEmployees(true);
+    };
+    window.addEventListener("open-employees-dropdown", handleOpenEmployees);
+    return () =>
+      window.removeEventListener(
+        "open-employees-dropdown",
+        handleOpenEmployees,
+      );
+  }, []);
+
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0A2540]">
@@ -877,6 +890,28 @@ export default function DashboardLayout({
                                     notification.message,
                                   )}
                                 </p>
+                                {(() => {
+                                  const chips =
+                                    notification.metadata
+                                      ?.changed_fields_list;
+                                  if (
+                                    !Array.isArray(chips) ||
+                                    chips.length === 0
+                                  )
+                                    return null;
+                                  return (
+                                    <div className="flex flex-wrap gap-1.5 mt-2">
+                                      {chips.map((chip) => (
+                                        <span
+                                          key={String(chip)}
+                                          className="inline-flex items-center px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 text-[11px] font-bold border border-sky-100"
+                                        >
+                                          {String(chip)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
                                 <div className="flex items-center gap-2 mt-2">
                                   {(() => {
                                     const { protocolo } =

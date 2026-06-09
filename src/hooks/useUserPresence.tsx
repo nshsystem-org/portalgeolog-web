@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -6,6 +6,7 @@ import {
   PRESENCE_ONLINE_TIMEOUT_MS,
 } from "@/lib/presence";
 import { toast } from "sonner";
+import { X } from "lucide-react";
 
 export interface PresenceUser {
   id: string;
@@ -55,6 +56,103 @@ function getPresenceStatusLabel(user: PresenceUser): string {
   return "Nunca ativo";
 }
 
+function showNativePresenceNotification(user: PresenceUser): void {
+  if (typeof window === "undefined") return;
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  const native = new Notification(user.nome, {
+    body: "entrou no portal",
+    icon: user.avatar_url || "/logo.png",
+    badge: "/logo.png",
+    tag: `presence-${user.id}`,
+    requireInteraction: false,
+    silent: false,
+  });
+
+  native.onclick = () => {
+    window.focus();
+    window.dispatchEvent(
+      new CustomEvent("open-employees-dropdown", { bubbles: true }),
+    );
+    native.close();
+  };
+}
+
+function PresenceToastItem({
+  toastId,
+  user,
+}: {
+  toastId: string | number;
+  user: PresenceUser;
+}) {
+  const initials = user.nome.charAt(0).toUpperCase();
+
+  return (
+    <div
+      onClick={() => {
+        toast.dismiss(toastId);
+        window.dispatchEvent(
+          new CustomEvent("open-employees-dropdown", { bubbles: true }),
+        );
+      }}
+      className={`
+        relative flex items-center gap-3 w-full min-w-[320px] max-w-[380px]
+        bg-white rounded-2xl shadow-2xl shadow-slate-300/40
+        border border-slate-100 p-4 cursor-pointer
+        transition-all duration-300 ease-out
+        hover:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.15)]
+        hover:scale-[1.02] hover:ring-2 ring-emerald-100
+        animate-toast-in
+      `}
+    >
+      {/* Avatar */}
+      <div className="relative flex-shrink-0">
+        {user.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={user.avatar_url}
+            alt={user.nome}
+            className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-md"
+          />
+        ) : (
+          <span className="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white text-sm font-black flex items-center justify-center border-2 border-white shadow-md">
+            {initials}
+          </span>
+        )}
+        {/* Badge online */}
+        <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full" />
+      </div>
+
+      {/* Conteudo */}
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-black text-slate-900 leading-tight">
+          {user.nome}
+        </p>
+        <p className="text-xs text-slate-500 font-medium mt-0.5">
+          entrou no portal
+        </p>
+        <p className="text-[10px] text-emerald-500 font-bold mt-1 uppercase tracking-wider flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+          Online
+        </p>
+      </div>
+
+      {/* Fechar */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          toast.dismiss(toastId);
+        }}
+        className="absolute top-3 right-3 p-1 text-slate-300 hover:text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+        title="Fechar"
+      >
+        <X size={14} strokeWidth={2.5} />
+      </button>
+    </div>
+  );
+}
+
 export function useUserPresence() {
   const { user } = useAuth();
   const [users, setUsers] = useState<PresenceUser[]>([]);
@@ -85,7 +183,7 @@ export function useUserPresence() {
           data.filter((u) => u.is_online).length,
         );
 
-        // Detectar transições offline -> online para notificar (apenas no fetch inicial)
+        // Detectar transicoes offline -> online para notificar (apenas no fetch inicial)
         if (isInitial) {
           const prevStatus = prevStatusRef.current;
           data.forEach((u) => {
@@ -96,10 +194,11 @@ export function useUserPresence() {
               knownIdsRef.current.has(u.id) &&
               u.id !== user?.id
             ) {
-              toast.success(`${u.nome} entrou no portal`, {
-                icon: "🟢",
-                duration: 4000,
-              });
+              toast.custom(
+                (t) => <PresenceToastItem toastId={t} user={u} />,
+                { duration: 4000 },
+              );
+              showNativePresenceNotification(u);
             }
           });
         }
@@ -129,7 +228,7 @@ export function useUserPresence() {
         setError(null);
       } catch (err: unknown) {
         const message =
-          err instanceof Error ? err.message : "Erro ao carregar presença";
+          err instanceof Error ? err.message : "Erro ao carregar presenca";
         setError(message);
         console.error("useUserPresence fetch error:", message);
       } finally {
@@ -179,7 +278,7 @@ export function useUserPresence() {
 
     fetchUsers(true);
 
-    // Heartbeat inicial para marcar a sessão como ativa sem esperar interação.
+    // Heartbeat inicial para marcar a sessao como ativa sem esperar interacao.
     void sendHeartbeat(true);
 
     const handleActivity = () => {
@@ -205,7 +304,7 @@ export function useUserPresence() {
     };
   }, [user, fetchUsers, sendHeartbeat]);
 
-  // Realtime listener para mudanças de presença
+  // Realtime listener para mudancas de presenca
   useEffect(() => {
     if (!user) return;
 
@@ -215,7 +314,7 @@ export function useUserPresence() {
         "postgres_changes",
         { event: "*", schema: "public", table: "user_presence" },
         (payload) => {
-          // Atualiza o estado local baseado na mudança recebida, evitando um novo fetch total
+          // Atualiza o estado local baseado na mudanca recebida, evitando um novo fetch total
           const newRow = payload.new as {
             user_id: string;
             status: string;
@@ -242,10 +341,11 @@ export function useUserPresence() {
 
             // Notificar se mudou para online agora
             if (!oldUser.is_online && isOnline && oldUser.id !== user?.id) {
-              toast.success(`${oldUser.nome} entrou no portal`, {
-                icon: "🟢",
-                duration: 4000,
-              });
+              toast.custom(
+                (t) => <PresenceToastItem toastId={t} user={oldUser} />,
+                { duration: 4000 },
+              );
+              showNativePresenceNotification(oldUser);
             }
 
             const updatedUser = {
@@ -280,8 +380,8 @@ export function useUserPresence() {
     };
   }, [user, supabase, fetchUsers]);
 
-  // O status offline é inferido pelo servidor quando last_seen_at ultrapassa o timeout configurado.
-  // Não é necessário enviar beacon ao sair
+  // O status offline e inferido pelo servidor quando last_seen_at ultrapassa o timeout configurado.
+  // Nao e necessario enviar beacon ao sair
 
   return {
     users,

@@ -504,8 +504,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [removeOSFromState, upsertOSInState],
   );
 
+  const refreshOSCounts = useCallback(async () => {
+    try {
+      const counts = await fetchOSStatusCounts();
+      setOsCounts(counts);
+    } catch (error) {
+      logErrorEntry(
+        "DataContext",
+        "fetchOSStatusCounts falhou",
+        error as Error,
+      );
+    }
+  }, []);
+
   const refreshData = useCallback(async () => {
     try {
+      // Counts são leves e independentes, então saem do caminho crítico.
+      void refreshOSCounts();
+
       // Fase 1: Dados leves — liberam a UI rapidamente
       // Usamos Promise.all mas com catches individuais para não quebrar todo o fluxo se um falhar
       const results1 = await Promise.allSettled([
@@ -585,28 +601,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Fase 2: Dados pesados — carregam em background sem bloquear a UI
       setHeavyLoading(true);
       try {
-        const results2 = await Promise.allSettled([
-          fetchOSList(),
-          fetchOSStatusCounts(),
-        ]);
-
-        const [osListRes, osCountsRes] = results2;
-
-        if (osListRes.status === "fulfilled") setOsList(osListRes.value);
-        else
-          logErrorEntry(
-            "DataContext",
-            "fetchOSList falhou",
-            osListRes.reason as Error,
-          );
-
-        if (osCountsRes.status === "fulfilled") setOsCounts(osCountsRes.value);
-        else
-          logErrorEntry(
-            "DataContext",
-            "fetchOSStatusCounts falhou",
-            osCountsRes.reason as Error,
-          );
+        const osList = await fetchOSList();
+        setOsList(osList);
 
         // Não registramos logs de sucesso do carregamento global para evitar spam.
         // Mantemos apenas logs de erro/falha de carregamento.
@@ -630,7 +626,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       );
       toast.error("Erro ao sincronizar dados. Tente atualizar a página.");
     }
-  }, [dbFetchClientes, dbFetchSolicitantes, dbFetchDrivers]);
+  }, [
+    dbFetchClientes,
+    dbFetchSolicitantes,
+    dbFetchDrivers,
+    dbFetchPassageiros,
+    dbFetchParceiros,
+    refreshOSCounts,
+  ]);
 
   useEffect(() => {
     if (authLoading || !user || hasLoadedData.current) {
@@ -734,10 +737,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           if (change.eventType === "DELETE") {
             removeOSFromState(osId);
             setLastOSUpdate(Date.now());
-            debouncedFetch("os-counts", async () => {
-              const counts = await fetchOSStatusCounts();
-              setOsCounts(counts);
-            });
+            debouncedFetch("os-counts", refreshOSCounts);
             return;
           }
 
@@ -750,18 +750,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               "[DataContext] ⚡ Status mudou para Finalizado - refresh imediato",
             );
             void refreshOSById(osId);
-            void (async () => {
-              const counts = await fetchOSStatusCounts();
-              setOsCounts(counts);
-            })();
+            void refreshOSCounts();
           } else {
             debouncedFetch(`os-${osId}`, async () => {
               await refreshOSById(osId);
             });
-            debouncedFetch("os-counts", async () => {
-              const counts = await fetchOSStatusCounts();
-              setOsCounts(counts);
-            });
+            debouncedFetch("os-counts", refreshOSCounts);
           }
         },
       )
@@ -891,9 +885,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     authLoading,
     dbFetchClientes,
     dbFetchDrivers,
+    dbFetchPassageiros,
+    dbFetchParceiros,
     dbFetchSolicitantes,
     refreshOSById,
     removeOSFromState,
+    refreshOSCounts,
     supabase,
     user,
   ]);
@@ -1347,13 +1344,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       "id" | "lucro" | "imposto" | "status" | "protocolo"
     >,
   ): Promise<{ changed: boolean }> => {
-    let currentOS = osList.find((os) => os.id === id);
+    let currentOS: OrderService | null | undefined =
+      osList.find((os) => os.id === id);
 
     // Fallback: se a OS não estiver no estado local (ex: filtro, paginação),
     // buscar do banco para garantir que o diff de mudanças seja calculado
     if (!currentOS) {
       try {
-        currentOS = await fetchOSById(id);
+        currentOS = (await fetchOSById(id)) ?? undefined;
       } catch {
         // Falha silenciosa — updateOSInDB vai lidar sem previousOS
       }

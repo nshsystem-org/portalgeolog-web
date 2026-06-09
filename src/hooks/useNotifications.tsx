@@ -82,6 +82,7 @@ export interface AppNotification {
   created_by_name: string | null;
   created_by_avatar_url: string | null;
   created_at: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 const AUTO_DISMISS_MS = 6000;

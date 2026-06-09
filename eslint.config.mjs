@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     ".windsurf/**",
     "supabase/**",
     "enable_realtime.js",
+    "scripts/apply-migration.js",
+    ".wrangler/tmp/**",
   ]),
 ]);
 
