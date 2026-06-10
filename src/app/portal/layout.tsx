@@ -15,6 +15,7 @@ import {
 import { useNotifications } from "@/hooks/useNotifications";
 import { useUserPresence } from "@/hooks/useUserPresence";
 import { useAppVersion } from "@/hooks/useAppVersion";
+import { useRelativeTimeTicker } from "@/hooks/useRelativeTimeTicker";
 import { toast } from "sonner";
 import {
   Truck,
@@ -92,8 +93,9 @@ function extractNotificationProtocolo(message: string): {
   return { protocolo, cleanMessage };
 }
 
-function timeAgo(date: string): string {
-  const diff = Date.now() - new Date(date).getTime();
+function timeAgo(date: string, now: number): string {
+  const d = date.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(date) ? date : date + "Z";
+  const diff = Math.max(now - new Date(d).getTime(), 0);
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
@@ -121,6 +123,7 @@ export default function DashboardLayout({
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<"all" | "unread" | "read">("all");
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const relativeTimeNow = useRelativeTimeTicker(showNotifications);
   const filteredNotifications = useMemo(() => {
     if (notificationFilter === "unread") return notifications.filter((n) => !n.read);
     if (notificationFilter === "read") return notifications.filter((n) => n.read);
@@ -875,7 +878,7 @@ export default function DashboardLayout({
                               {/* Meta */}
                               <div className="flex items-center gap-1.5 mt-1.5">
                                 <span className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}>
-                                  {timeAgo(notification.created_at)}
+                                  {timeAgo(notification.created_at, relativeTimeNow)}
                                 </span>
                                 <span className="text-slate-300">•</span>
                                 <span className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"} capitalize`}>

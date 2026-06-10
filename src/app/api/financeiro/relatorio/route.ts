@@ -2,12 +2,13 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { PDFDocument, PDFImage, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFImage, PDFPage, StandardFonts, rgb, PDFFont, RGB } from "pdf-lib";
 import {
   isFinanceStatusSettled,
   isLiberadoParaFaturamento,
   sanitizeFinanceFileName,
 } from "@/lib/financeiro";
+import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 
 export const runtime = "edge";
 
@@ -45,6 +46,7 @@ type FinanceRow = {
   data: string | null;
   cliente_id: string | null;
   centro_custo_id: string | null;
+  solicitante: string | null;
   motorista: string | null;
   driver_id: string | null;
   valor_bruto: number | string | null;
@@ -63,6 +65,29 @@ type DriverDetail = {
   vinculo_tipo: string | null;
 };
 
+type OSWaypointRow = {
+  id: string;
+  ordem_servico_id: string;
+  position: number;
+  label: string;
+  lat: number | null;
+  lng: number | null;
+  comment: string | null;
+  itinerary_index: number | null;
+  hora: string | null;
+  data: string | null;
+};
+
+type OSWaypointPassengerRow = {
+  id: string;
+  waypoint_id: string;
+  passageiro_id: string | null;
+};
+
+type ReportWaypoint = OSWaypointRow & {
+  passengers: { id: string; nome: string }[];
+};
+
 type ReportData = {
   rows: FinanceRow[];
   clienteMap: Map<string, string>;
@@ -70,12 +95,17 @@ type ReportData = {
   driverMap: Map<string, string>;
   driverDetailMap: Map<string, DriverDetail>;
   parceiroMap: Map<string, string>;
+  waypointsMap: Map<string, ReportWaypoint[]>;
+  passengerNamesMap: Map<string, string>;
   summary: ReportSummary;
   periodLabel: string;
 };
 
 type ReportSummary = {
   totalOS: number;
+  totalCentrosCusto: number;
+  totalSolicitantes: number;
+  totalPassageiros: number;
   totalBruto: number;
   totalCusto: number;
   totalImposto: number;
@@ -190,7 +220,7 @@ async function fetchReportData(
   let query = adminClient
     .from("ordens_servico")
     .select(
-      "id, protocolo, os_number, data, cliente_id, centro_custo_id, motorista, driver_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, repasse_pago",
+      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, repasse_pago",
     )
     .eq("arquivado", false);
 
@@ -243,6 +273,74 @@ async function fetchReportData(
   if (rowsError) throw rowsError;
 
   let rows = (rowsRaw || []) as FinanceRow[];
+
+  const osIds = rows.map((r) => r.id);
+  const waypointsMap = new Map<string, ReportWaypoint[]>();
+  const passengerNamesMap = new Map<string, string>();
+
+  if (osIds.length > 0) {
+    const wpRows = await fetchInChunks<OSWaypointRow>(
+      adminClient,
+      "os_waypoints",
+      "ordem_servico_id",
+      osIds,
+      "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
+      "position",
+    );
+    const wpIds = wpRows.map((w) => w.id);
+
+    const wpPassRows =
+      wpIds.length > 0
+        ? await fetchInChunks<OSWaypointPassengerRow>(
+            adminClient,
+            "os_waypoint_passengers",
+            "waypoint_id",
+            wpIds,
+            "id, waypoint_id, passageiro_id",
+          )
+        : [];
+
+    const passengerIds = Array.from(
+      new Set(wpPassRows.map((p) => p.passageiro_id).filter((id): id is string => !!id)),
+    );
+
+    // Fetch passenger names
+    if (passengerIds.length > 0) {
+      const passData = await fetchInChunks<{
+        id: string;
+        nome_completo: string;
+      }>(
+        adminClient,
+        "passageiros",
+        "id",
+        passengerIds,
+        "id, nome_completo",
+      );
+      passData.forEach((p: { id: string; nome_completo: string }) => {
+        passengerNamesMap.set(p.id, p.nome_completo);
+      });
+    }
+
+    // Organize waypoints and passengers
+    const wpWithPassMap = new Map<string, string[]>(); // waypointId -> passengerIds
+    wpPassRows.forEach((p) => {
+      if (p.passageiro_id) {
+        const list = wpWithPassMap.get(p.waypoint_id) || [];
+        list.push(p.passageiro_id);
+        wpWithPassMap.set(p.waypoint_id, list);
+      }
+    });
+
+    wpRows.forEach((wp) => {
+      const list = waypointsMap.get(wp.ordem_servico_id) || [];
+      const passIds = wpWithPassMap.get(wp.id) || [];
+      list.push({
+        ...wp,
+        passengers: passIds.map((pid) => ({ id: pid, nome: passengerNamesMap.get(pid) || "" })),
+      });
+      waypointsMap.set(wp.ordem_servico_id, list);
+    });
+  }
 
   const clientIds = Array.from(
     new Set(rows.map((row) => row.cliente_id).filter(Boolean) as string[]),
@@ -326,7 +424,7 @@ async function fetchReportData(
     });
   }
 
-  const summary = computeSummary(rows, driverDetailMap);
+  const summary = computeSummary(rows, driverDetailMap, waypointsMap);
   const periodLabel = month
     ? month
     : dataInicio && dataFim
@@ -340,6 +438,8 @@ async function fetchReportData(
     driverMap,
     driverDetailMap,
     parceiroMap,
+    waypointsMap,
+    passengerNamesMap,
     summary,
     periodLabel,
   };
@@ -357,8 +457,13 @@ function emptyReportData(
     driverMap: new Map(),
     driverDetailMap: new Map(),
     parceiroMap: new Map(),
+    waypointsMap: new Map(),
+    passengerNamesMap: new Map(),
     summary: {
       totalOS: 0,
+      totalCentrosCusto: 0,
+      totalSolicitantes: 0,
+      totalPassageiros: 0,
       totalBruto: 0,
       totalCusto: 0,
       totalImposto: 0,
@@ -383,7 +488,24 @@ function emptyReportData(
 function computeSummary(
   rows: FinanceRow[],
   driverDetailMap: Map<string, DriverDetail>,
+  waypointsMap: Map<string, ReportWaypoint[]>,
 ): ReportSummary {
+  const centroCustoIds = new Set<string>();
+  const solicitanteNames = new Set<string>();
+  const passengerIds = new Set<string>();
+
+  rows.forEach((row) => {
+    if (row.centro_custo_id) centroCustoIds.add(row.centro_custo_id);
+    if (row.solicitante?.trim()) solicitanteNames.add(row.solicitante.trim());
+
+    const waypoints = waypointsMap.get(row.id) || [];
+    waypoints.forEach((waypoint) => {
+      waypoint.passengers.forEach((passenger) => {
+        if (passenger.id) passengerIds.add(passenger.id);
+      });
+    });
+  });
+
   return rows.reduce(
     (acc, row) => {
       const bruto = Number(row.valor_bruto || 0);
@@ -396,6 +518,9 @@ function computeSummary(
       const repassePago = row.repasse_pago || false;
 
       acc.totalOS += 1;
+      acc.totalCentrosCusto = centroCustoIds.size;
+      acc.totalSolicitantes = solicitanteNames.size;
+      acc.totalPassageiros = passengerIds.size;
       acc.totalBruto += bruto;
       acc.totalCusto += custo;
       acc.totalImposto += imposto;
@@ -426,6 +551,9 @@ function computeSummary(
     },
     {
       totalOS: 0,
+      totalCentrosCusto: 0,
+      totalSolicitantes: 0,
+      totalPassageiros: 0,
       totalBruto: 0,
       totalCusto: 0,
       totalImposto: 0,
@@ -452,6 +580,9 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       "Data",
       "Cliente",
       "Centro de Custo",
+      "Solicitante",
+      "Passageiros",
+      "Trajeto",
       "Motorista",
       "Valor Bruto",
       "Status",
@@ -518,7 +649,18 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       : "";
 
     switch (template) {
-      case "medicao_cliente":
+      case "medicao_cliente": {
+        const waypoints = data.waypointsMap.get(row.id) || [];
+        const passageiros = Array.from(
+          new Set(
+            waypoints.flatMap((wp) => wp.passengers?.map((p) => p.nome)).filter(Boolean),
+          ),
+        ).join(", ");
+        const trajeto = waypoints
+          .map((wp) => wp.label)
+          .filter(Boolean)
+          .join(" -> ");
+
         lines.push(
           [
             row.protocolo || "-",
@@ -526,12 +668,16 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             formatDate(row.data),
             clienteNome,
             centroCustoNome,
+            row.solicitante || "-",
+            passageiros,
+            trajeto,
             motoristaNome,
             formatCurrency(Number(row.valor_bruto || 0)),
             row.status_financeiro || "Pendente",
           ].join(";"),
         );
         break;
+      }
       case "repasse_autonomos":
         lines.push(
           [
@@ -647,12 +793,33 @@ async function generatePdf(
 
   let logoImage: PDFImage | null = null;
   try {
-    const logoResponse = await fetch(new URL("/logo.png", request.url));
+    const logoUrl = new URL("/logo.png", request.url);
+    let logoResponse = await fetch(logoUrl);
+
+    // Fallback if loopback fetch fails in production
+    if (!logoResponse.ok && !request.url.includes("localhost")) {
+      logoResponse = await fetch("https://portalgeolog.com.br/logo.png");
+    }
+
     if (logoResponse.ok) {
       const logoBytes = await logoResponse.arrayBuffer();
-      logoImage = await pdfDoc.embedPng(logoBytes);
+      const contentType = logoResponse.headers.get("content-type") || "";
+
+      if (contentType.includes("image/png") || logoUrl.pathname.endsWith(".png")) {
+        logoImage = await pdfDoc.embedPng(logoBytes);
+      } else if (
+        contentType.includes("image/jpeg") ||
+        logoUrl.pathname.endsWith(".jpg") ||
+        logoUrl.pathname.endsWith(".jpeg")
+      ) {
+        logoImage = await pdfDoc.embedJpg(logoBytes);
+      } else {
+        // Try PNG as default fallback
+        logoImage = await pdfDoc.embedPng(logoBytes);
+      }
     }
-  } catch {
+  } catch (err) {
+    console.error("Logo fetch error:", err);
     logoImage = null;
   }
 
@@ -681,19 +848,247 @@ async function generatePdf(
 
   const reportTitle = titleMap[template];
 
+  // ── Rounded rectangle helper (simulates border-radius) ──
+  function drawRoundedRect(
+    currentPage: PDFPage,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number,
+    fillColor?: ReturnType<typeof rgb>,
+    strokeColor?: ReturnType<typeof rgb>,
+    strokeWidth = 1,
+  ) {
+    const r = Math.min(radius, width / 2, height / 2);
+
+    const fillShape = (
+      ox: number,
+      oy: number,
+      ow: number,
+      oh: number,
+      or: number,
+      color: ReturnType<typeof rgb>,
+    ) => {
+      currentPage.drawRectangle({
+        x: ox + or,
+        y: oy,
+        width: ow - 2 * or,
+        height: oh,
+        color,
+      });
+      currentPage.drawRectangle({
+        x: ox,
+        y: oy + or,
+        width: or,
+        height: oh - 2 * or,
+        color,
+      });
+      currentPage.drawRectangle({
+        x: ox + ow - or,
+        y: oy + or,
+        width: or,
+        height: oh - 2 * or,
+        color,
+      });
+      currentPage.drawEllipse({
+        x: ox + or,
+        y: oy + or,
+        xScale: or,
+        yScale: or,
+        color,
+      });
+      currentPage.drawEllipse({
+        x: ox + ow - or,
+        y: oy + or,
+        xScale: or,
+        yScale: or,
+        color,
+      });
+      currentPage.drawEllipse({
+        x: ox + or,
+        y: oy + oh - or,
+        xScale: or,
+        yScale: or,
+        color,
+      });
+      currentPage.drawEllipse({
+        x: ox + ow - or,
+        y: oy + oh - or,
+        xScale: or,
+        yScale: or,
+        color,
+      });
+    };
+
+    if (strokeColor && strokeWidth > 0) {
+      fillShape(x, y, width, height, r, strokeColor);
+      const inset = strokeWidth;
+      const innerR = Math.max(0, r - inset);
+      if (fillColor) {
+        fillShape(
+          x + inset,
+          y + inset,
+          width - inset * 2,
+          height - inset * 2,
+          innerR,
+          fillColor,
+        );
+      }
+    } else if (fillColor) {
+      fillShape(x, y, width, height, r, fillColor);
+    }
+  }
+
+  // ── Color palette (blue-gray mix) ──
+  const c = {
+    headerBg: rgb(0.18, 0.28, 0.42),
+    headerText: rgb(1, 1, 1),
+    headerMuted: rgb(0.75, 0.82, 0.92),
+    primaryBox: rgb(0.24, 0.36, 0.52),
+    primaryBoxText: rgb(1, 1, 1),
+    primaryBoxMuted: rgb(0.82, 0.88, 0.96),
+    highlightBg: rgb(0.92, 0.97, 0.94),
+    highlightBorder: rgb(0.18, 0.55, 0.38),
+    highlightText: rgb(0.12, 0.48, 0.32),
+    standardBg: rgb(0.98, 0.99, 1.0),
+    standardBorder: rgb(0.82, 0.86, 0.92),
+    standardText: rgb(0.35, 0.42, 0.52),
+    tableHeader: rgb(0.24, 0.36, 0.52),
+    tableZebra: rgb(0.97, 0.98, 1.0),
+    tableWhite: rgb(1, 1, 1),
+    textDark: rgb(0.25, 0.30, 0.38),
+    textMedium: rgb(0.42, 0.47, 0.55),
+    borderLight: rgb(0.85, 0.89, 0.94),
+    accentGreen: rgb(0.12, 0.48, 0.32),
+    accentRed: rgb(0.75, 0.30, 0.22),
+  };
+
+  // ── Multi-line helpers ──
+  function wrapTextToLines(
+    text: string,
+    size: number,
+    font: PDFFont,
+    maxWidth: number,
+  ): string[] {
+    const paragraphs = text.split("\n");
+    const wrappedLines: string[] = [];
+
+    const pushWrappedWord = (word: string) => {
+      let chunk = "";
+      for (const char of word) {
+        const testChunk = chunk + char;
+        if (chunk && font.widthOfTextAtSize(testChunk, size) > maxWidth) {
+          wrappedLines.push(chunk);
+          chunk = char;
+        } else {
+          chunk = testChunk;
+        }
+      }
+
+      if (chunk) wrappedLines.push(chunk);
+    };
+
+    for (const paragraph of paragraphs) {
+      const words = paragraph.split(/\s+/).filter(Boolean);
+
+      if (words.length === 0) {
+        wrappedLines.push("");
+        continue;
+      }
+
+      let currentLine = "";
+
+      for (const word of words) {
+        const wordWidth = font.widthOfTextAtSize(word, size);
+
+        if (wordWidth > maxWidth) {
+          if (currentLine) {
+            wrappedLines.push(currentLine);
+            currentLine = "";
+          }
+          pushWrappedWord(word);
+          continue;
+        }
+
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        if (font.widthOfTextAtSize(testLine, size) > maxWidth && currentLine) {
+          wrappedLines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+
+      if (currentLine) wrappedLines.push(currentLine);
+    }
+
+    return wrappedLines.length > 0 ? wrappedLines : [text];
+  }
+
+  function calculateMultiLineHeight(
+    text: string,
+    size: number,
+    font: PDFFont,
+    maxWidth: number,
+    lineHeight: number,
+  ): number {
+    return Math.max(1, wrapTextToLines(text, size, font, maxWidth).length) * lineHeight;
+  }
+
+  function drawMultiLineText(
+    currentPage: PDFPage,
+    text: string,
+    x: number,
+    y: number,
+    size: number,
+    font: PDFFont,
+    color: RGB,
+    maxWidth: number,
+    lineHeight: number,
+  ) {
+    const lines = wrapTextToLines(text, size, font, maxWidth);
+    let currentY = y;
+
+    for (const line of lines) {
+      currentPage.drawText(line, { x, y: currentY, size, font, color });
+      currentY -= lineHeight;
+    }
+  }
+
+  function drawGradientHeaderBg(currentPage: PDFPage) {
+    const topY = pageHeight - 120;
+    const h = 120;
+    const strips = 24;
+    const stripH = h / strips;
+    // from darker blue at top to headerBg at bottom
+    const from = { r: 0.10, g: 0.18, b: 0.32 };
+    const to = { r: 0.18, g: 0.28, b: 0.42 };
+    for (let i = 0; i < strips; i++) {
+      const t = i / (strips - 1);
+      const color = rgb(
+        from.r + (to.r - from.r) * t,
+        from.g + (to.g - from.g) * t,
+        from.b + (to.b - from.b) * t,
+      );
+      currentPage.drawRectangle({
+        x: 0,
+        y: topY + i * stripH,
+        width: pageWidth,
+        height: stripH + 0.5,
+        color,
+        borderWidth: 0,
+      });
+    }
+  }
+
   function drawHeader(currentPage: PDFPage) {
-    currentPage.drawRectangle({
-      x: 0,
-      y: pageHeight - 120,
-      width: pageWidth,
-      height: 120,
-      color: rgb(0.02, 0.12, 0.25),
-    });
+    drawGradientHeaderBg(currentPage);
 
     if (logoImage) {
       currentPage.drawImage(logoImage, {
         x: margin,
-        y: pageHeight - 100,
+        y: pageHeight - 85,
         width: 50,
         height: 50,
       });
@@ -701,70 +1096,284 @@ async function generatePdf(
 
     currentPage.drawText(companyData.name, {
       x: margin + 60,
-      y: pageHeight - 55,
+      y: pageHeight - 40,
       size: 16,
       font: boldFont,
-      color: rgb(1, 1, 1),
+      color: c.headerText,
     });
 
     currentPage.drawText(`CNPJ: ${companyData.cnpj}`, {
       x: margin + 60,
-      y: pageHeight - 75,
+      y: pageHeight - 55,
       size: 8,
       font: regularFont,
-      color: rgb(0.8, 0.85, 0.95),
+      color: c.headerMuted,
     });
 
     currentPage.drawText(companyData.address, {
       x: margin + 60,
-      y: pageHeight - 90,
+      y: pageHeight - 70,
       size: 8,
       font: regularFont,
-      color: rgb(0.8, 0.85, 0.95),
+      color: c.headerMuted,
     });
 
     currentPage.drawText(`Tel: ${companyData.phone}`, {
       x: margin + 60,
-      y: pageHeight - 105,
+      y: pageHeight - 85,
       size: 8,
       font: regularFont,
-      color: rgb(0.8, 0.85, 0.95),
+      color: c.headerMuted,
     });
 
-    currentPage.drawRectangle({
-      x: pageWidth - 220,
-      y: pageHeight - 110,
-      width: 180,
-      height: 80,
-      borderColor: rgb(0.8, 0.85, 0.95),
-      borderWidth: 1,
-      color: rgb(0.02, 0.12, 0.25),
-    });
+    drawRoundedRect(
+      currentPage,
+      pageWidth - 250,
+      pageHeight - 100,
+      220,
+      80,
+      8,
+      c.primaryBox,
+      c.headerMuted,
+      1,
+    );
 
     currentPage.drawText(reportTitle, {
-      x: pageWidth - 210,
-      y: pageHeight - 55,
+      x: pageWidth - 230,
+      y: pageHeight - 45,
       size: 12,
+      font: boldFont,
+      color: c.headerText,
+    });
+
+    const periodLabelX = pageWidth - 230;
+    const periodLabelWidth = boldFont.widthOfTextAtSize("Período: ", 11);
+    currentPage.drawText("Período: ", {
+      x: periodLabelX,
+      y: pageHeight - 65,
+      size: 11,
       font: boldFont,
       color: rgb(1, 1, 1),
     });
-
-    currentPage.drawText(`Período: ${data.periodLabel}`, {
-      x: pageWidth - 210,
-      y: pageHeight - 75,
-      size: 9,
+    const periodParts = data.periodLabel.split(" a ");
+    const periodStart = periodParts[0] || data.periodLabel;
+    const periodEnd = periodParts[1] || "";
+    const periodStartWidth = regularFont.widthOfTextAtSize(periodStart, 11);
+    const connectorWidth = boldFont.widthOfTextAtSize(" a ", 11);
+    currentPage.drawText(periodStart, {
+      x: periodLabelX + periodLabelWidth,
+      y: pageHeight - 65,
+      size: 11,
       font: regularFont,
-      color: rgb(0.8, 0.85, 0.95),
+      color: c.headerMuted,
     });
+    if (periodEnd) {
+      currentPage.drawText(" a ", {
+        x: periodLabelX + periodLabelWidth + periodStartWidth,
+        y: pageHeight - 65,
+        size: 11,
+        font: boldFont,
+        color: rgb(1, 1, 1),
+      });
+      currentPage.drawText(periodEnd, {
+        x: periodLabelX + periodLabelWidth + periodStartWidth + connectorWidth,
+        y: pageHeight - 65,
+        size: 11,
+        font: regularFont,
+        color: c.headerMuted,
+      });
+    }
 
     const today = new Date().toLocaleDateString("pt-BR");
-    currentPage.drawText(`Emissão: ${today}`, {
-      x: pageWidth - 210,
-      y: pageHeight - 90,
-      size: 9,
-      font: regularFont,
-      color: rgb(0.8, 0.85, 0.95),
+    const emissaoLabelX = pageWidth - 230;
+    const emissaoLabelWidth = boldFont.widthOfTextAtSize("Emissão: ", 11);
+    currentPage.drawText("Emissão: ", {
+      x: emissaoLabelX,
+      y: pageHeight - 80,
+      size: 11,
+      font: boldFont,
+      color: rgb(1, 1, 1),
     });
+    currentPage.drawText(today, {
+      x: emissaoLabelX + emissaoLabelWidth,
+      y: pageHeight - 80,
+      size: 11,
+      font: regularFont,
+      color: c.headerMuted,
+    });
+  }
+
+  type SummaryCardTone = "blue" | "cyan" | "amber" | "teal" | "slate" | "emerald";
+
+  function getSummaryCardTone(tone: SummaryCardTone) {
+    switch (tone) {
+      case "blue":
+        return {
+          badgeFill: rgb(0.94, 0.97, 1),
+          badgeStroke: rgb(0.81, 0.88, 0.98),
+          badgeText: rgb(0.11, 0.27, 0.72),
+          titleColor: rgb(0.11, 0.27, 0.72),
+          valueColor: rgb(0.05, 0.12, 0.23),
+          subtitleColor: c.textMedium,
+          accentBorder: rgb(0.81, 0.88, 0.98),
+        };
+      case "cyan":
+        return {
+          badgeFill: rgb(0.92, 0.98, 0.99),
+          badgeStroke: rgb(0.77, 0.92, 0.95),
+          badgeText: rgb(0.09, 0.53, 0.62),
+          titleColor: rgb(0.09, 0.53, 0.62),
+          valueColor: rgb(0.05, 0.12, 0.23),
+          subtitleColor: c.textMedium,
+          accentBorder: rgb(0.77, 0.92, 0.95),
+        };
+      case "amber":
+        return {
+          badgeFill: rgb(0.99, 0.98, 0.91),
+          badgeStroke: rgb(0.94, 0.89, 0.69),
+          badgeText: rgb(0.59, 0.47, 0.08),
+          titleColor: rgb(0.59, 0.47, 0.08),
+          valueColor: rgb(0.39, 0.32, 0.06),
+          subtitleColor: c.textMedium,
+          accentBorder: rgb(0.94, 0.89, 0.69),
+        };
+      case "teal":
+        return {
+          badgeFill: rgb(0.91, 0.98, 0.96),
+          badgeStroke: rgb(0.77, 0.92, 0.88),
+          badgeText: rgb(0.09, 0.59, 0.49),
+          titleColor: rgb(0.09, 0.59, 0.49),
+          valueColor: rgb(0.05, 0.12, 0.23),
+          subtitleColor: c.textMedium,
+          accentBorder: rgb(0.77, 0.92, 0.88),
+        };
+      case "emerald":
+        return {
+          badgeFill: rgb(0.92, 0.98, 0.94),
+          badgeStroke: rgb(0.78, 0.92, 0.84),
+          badgeText: rgb(0.12, 0.48, 0.32),
+          titleColor: rgb(0.12, 0.48, 0.32),
+          valueColor: rgb(0.05, 0.12, 0.23),
+          subtitleColor: c.textMedium,
+          accentBorder: rgb(0.78, 0.92, 0.84),
+        };
+      case "slate":
+      default:
+        return {
+          badgeFill: rgb(0.96, 0.97, 0.99),
+          badgeStroke: rgb(0.86, 0.89, 0.94),
+          badgeText: rgb(0.35, 0.42, 0.52),
+          titleColor: rgb(0.35, 0.42, 0.52),
+          valueColor: rgb(0.05, 0.12, 0.23),
+          subtitleColor: c.textMedium,
+          accentBorder: rgb(0.86, 0.89, 0.94),
+        };
+    }
+  }
+
+  // ── Simple geometric card icons (pdf-lib has no SVG support) ──
+  function drawCardIcon(
+    currentPage: PDFPage,
+    cx: number,
+    cy: number,
+    size: number,
+    iconType: string,
+    color: RGB,
+  ) {
+    const s = size * 0.5;
+    switch (iconType) {
+      case "document": {
+        // page with lines
+        currentPage.drawRectangle({
+          x: cx - s * 0.35,
+          y: cy - s * 0.42,
+          width: s * 0.7,
+          height: s * 0.84,
+          color,
+          borderWidth: 0,
+        });
+        currentPage.drawRectangle({
+          x: cx - s * 0.22,
+          y: cy + s * 0.08,
+          width: s * 0.44,
+          height: s * 0.08,
+          color: c.standardBg,
+          borderWidth: 0,
+        });
+        currentPage.drawRectangle({
+          x: cx - s * 0.22,
+          y: cy - s * 0.12,
+          width: s * 0.3,
+          height: s * 0.06,
+          color: c.standardBg,
+          borderWidth: 0,
+        });
+        break;
+      }
+      case "grid": {
+        // 2x2 grid
+        const sq = s * 0.22;
+        const g = 3;
+        currentPage.drawRectangle({ x: cx - sq - g, y: cy + g, width: sq, height: sq, color, borderWidth: 0 });
+        currentPage.drawRectangle({ x: cx + g, y: cy + g, width: sq, height: sq, color, borderWidth: 0 });
+        currentPage.drawRectangle({ x: cx - sq - g, y: cy - sq - g, width: sq, height: sq, color, borderWidth: 0 });
+        currentPage.drawRectangle({ x: cx + g, y: cy - sq - g, width: sq, height: sq, color, borderWidth: 0 });
+        break;
+      }
+      case "person": {
+        // head + body
+        currentPage.drawEllipse({ x: cx, y: cy + s * 0.2, xScale: s * 0.18, yScale: s * 0.18, color });
+        currentPage.drawRectangle({
+          x: cx - s * 0.22,
+          y: cy - s * 0.38,
+          width: s * 0.44,
+          height: s * 0.38,
+          color,
+          borderWidth: 0,
+        });
+        break;
+      }
+      case "people": {
+        // two overlapping people
+        // back person
+        currentPage.drawEllipse({ x: cx + s * 0.12, y: cy + s * 0.18, xScale: s * 0.14, yScale: s * 0.14, color });
+        currentPage.drawRectangle({
+          x: cx - s * 0.05,
+          y: cy - s * 0.28,
+          width: s * 0.34,
+          height: s * 0.32,
+          color,
+          borderWidth: 0,
+        });
+        // front person
+        currentPage.drawEllipse({ x: cx - s * 0.12, y: cy + s * 0.08, xScale: s * 0.16, yScale: s * 0.16, color });
+        currentPage.drawRectangle({
+          x: cx - s * 0.32,
+          y: cy - s * 0.38,
+          width: s * 0.4,
+          height: s * 0.34,
+          color,
+          borderWidth: 0,
+        });
+        break;
+      }
+      case "money": {
+        // coin with ring
+        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.32, yScale: s * 0.32, color });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.22,
+          yScale: s * 0.22,
+          color: c.standardBg,
+        });
+        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.14, yScale: s * 0.14, color });
+        break;
+      }
+      default: {
+        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.25, yScale: s * 0.25, color });
+      }
+    }
   }
 
   function drawSummaryBox(
@@ -772,62 +1381,77 @@ async function generatePdf(
     x: number,
     y: number,
     width: number,
+    height: number,
     title: string,
     value: string,
-    isHighlighted = false,
-    isPrimary = false,
+    subtitle: string,
+    iconType: string,
+    tone: SummaryCardTone,
+    isEmphasis = false,
   ) {
-    currentPage.drawRectangle({
+    const palette = getSummaryCardTone(tone);
+
+    drawRoundedRect(
+      currentPage,
       x,
       y,
       width,
-      height: 65,
-      color: isPrimary
-        ? rgb(0.02, 0.12, 0.25)
-        : isHighlighted
-          ? rgb(0.95, 0.98, 0.96)
-          : rgb(1, 1, 1),
-      borderColor: isPrimary
-        ? rgb(0.02, 0.12, 0.25)
-        : isHighlighted
-          ? rgb(0.05, 0.56, 0.31)
-          : rgb(0.87, 0.9, 0.95),
-      borderWidth: isPrimary ? 2 : isHighlighted ? 2 : 1,
-    });
+      height,
+      18,
+      c.standardBg,
+      isEmphasis ? palette.accentBorder : c.standardBorder,
+      isEmphasis ? 1.5 : 1,
+    );
 
-    currentPage.drawText(title, {
-      x: x + 12,
-      y: y + 45,
-      size: 8,
+    const badgeSize = Math.min(52, height - 28);
+    const badgeY = y + (height - badgeSize) / 2;
+    const contentX = x + 82;
+
+    // Colored icon background
+    drawRoundedRect(
+      currentPage,
+      x + 16,
+      badgeY,
+      badgeSize,
+      badgeSize,
+      14,
+      palette.badgeFill,
+      palette.badgeStroke,
+      1,
+    );
+
+    // Geometric icon instead of text
+    drawCardIcon(
+      currentPage,
+      x + 16 + badgeSize / 2,
+      badgeY + badgeSize / 2,
+      badgeSize,
+      iconType,
+      palette.badgeText,
+    );
+
+    currentPage.drawText(title.toUpperCase(), {
+      x: contentX,
+      y: y + height - 24,
+      size: 11,
       font: boldFont,
-      color: isPrimary
-        ? rgb(0.8, 0.85, 0.95)
-        : isHighlighted
-          ? rgb(0.05, 0.56, 0.31)
-          : rgb(0.42, 0.47, 0.55),
+      color: palette.titleColor,
     });
 
     currentPage.drawText(value, {
-      x: x + 12,
-      y: y + 20,
-      size: 16,
+      x: contentX,
+      y: y + height / 2 - 6,
+      size: value.length > 11 ? 17 : 20,
       font: boldFont,
-      color: isPrimary
-        ? rgb(1, 1, 1)
-        : isHighlighted
-          ? rgb(0.05, 0.56, 0.31)
-          : rgb(0.05, 0.12, 0.23),
+      color: palette.valueColor,
     });
 
-    currentPage.drawLine({
-      start: { x: x + 12, y: y + 38 },
-      end: { x: x + width - 12, y: y + 38 },
-      thickness: 1,
-      color: isPrimary
-        ? rgb(0.3, 0.4, 0.6)
-        : isHighlighted
-          ? rgb(0.05, 0.56, 0.31)
-          : rgb(0.85, 0.89, 0.94),
+    currentPage.drawText(subtitle, {
+      x: contentX,
+      y: y + 18,
+      size: 10,
+      font: regularFont,
+      color: palette.subtitleColor,
     });
   }
 
@@ -836,15 +1460,17 @@ async function generatePdf(
     y: number,
     headers: Array<{ label: string; width: number; align?: string }>,
   ) {
-    currentPage.drawRectangle({
-      x: margin,
+    drawRoundedRect(
+      currentPage,
+      margin,
       y,
-      width: pageWidth - margin * 2,
-      height: 32,
-      color: rgb(0.02, 0.12, 0.25),
-      borderColor: rgb(0.02, 0.12, 0.25),
-      borderWidth: 1,
-    });
+      pageWidth - margin * 2,
+      32,
+      4,
+      c.tableHeader,
+      c.tableHeader,
+      1,
+    );
 
     let x = margin + 8;
     headers.forEach((header) => {
@@ -853,7 +1479,7 @@ async function generatePdf(
         y: y + 12,
         size: 9,
         font: boldFont,
-        color: rgb(1, 1, 1),
+        color: c.headerText,
       });
       x += header.width;
     });
@@ -869,7 +1495,7 @@ async function generatePdf(
       start: { x: margin, y: footerY + 15 },
       end: { x: pageWidth - margin, y: footerY + 15 },
       thickness: 1,
-      color: rgb(0.85, 0.89, 0.94),
+      color: c.borderLight,
     });
 
     currentPage.drawText("Geolog Transportes e Logística Ltda", {
@@ -877,7 +1503,7 @@ async function generatePdf(
       y: footerY + 5,
       size: 8,
       font: regularFont,
-      color: rgb(0.42, 0.47, 0.55),
+      color: c.textMedium,
     });
 
     currentPage.drawText(`CNPJ: ${companyData.cnpj}`, {
@@ -885,7 +1511,7 @@ async function generatePdf(
       y: footerY - 8,
       size: 8,
       font: regularFont,
-      color: rgb(0.42, 0.47, 0.55),
+      color: c.textMedium,
     });
 
     currentPage.drawText(`Página ${pageNumber} de ${totalPages}`, {
@@ -893,7 +1519,7 @@ async function generatePdf(
       y: footerY + 5,
       size: 8,
       font: regularFont,
-      color: rgb(0.42, 0.47, 0.55),
+      color: c.textMedium,
     });
 
     currentPage.drawText("Documento emitido eletronicamente", {
@@ -901,7 +1527,7 @@ async function generatePdf(
       y: footerY - 8,
       size: 8,
       font: regularFont,
-      color: rgb(0.42, 0.47, 0.55),
+      color: c.textMedium,
     });
   }
 
@@ -911,90 +1537,154 @@ async function generatePdf(
     Array<{
       title: string;
       value: string;
-      highlight?: boolean;
-      primary?: boolean;
+      subtitle: string;
+      iconType: string;
+      tone: SummaryCardTone;
+      emphasis?: boolean;
     }>
   > = {
     medicao_cliente: [
-      { title: "Total OS", value: String(data.summary.totalOS), primary: true },
       {
-        title: "Liberado Faturamento",
-        value: formatCurrency(data.summary.totalLiberadoFaturamento),
-        highlight: true,
+        title: "Total OS",
+        value: String(data.summary.totalOS),
+        subtitle: "Volume total de ordens",
+        iconType: "document",
+        tone: "blue",
+        emphasis: true,
       },
       {
-        title: "Recebido",
-        value: formatCurrency(data.summary.totalRecebido),
-        highlight: true,
+        title: "Centros de custo",
+        value: String(data.summary.totalCentrosCusto),
+        subtitle: "Centros distintos no período",
+        iconType: "grid",
+        tone: "cyan",
       },
-      { title: "A Receber", value: formatCurrency(data.summary.totalFaturado) },
       {
-        title: "Faturamento Bruto",
+        title: "Solicitantes",
+        value: String(data.summary.totalSolicitantes),
+        subtitle: "Solicitantes distintos",
+        iconType: "person",
+        tone: "teal",
+      },
+      {
+        title: "Passageiros",
+        value: String(data.summary.totalPassageiros),
+        subtitle: "Passageiros distintos",
+        iconType: "people",
+        tone: "amber",
+      },
+      {
+        title: "Valor Total",
         value: formatCurrency(data.summary.totalBruto),
-      },
-      {
-        title: "Custos Totais",
-        value: formatCurrency(data.summary.totalCusto),
-      },
-      { title: "Impostos", value: formatCurrency(data.summary.totalImposto) },
-      {
-        title: "Lucro Líquido",
-        value: formatCurrency(data.summary.totalLucro),
-        highlight: true,
-        primary: true,
+        subtitle: "Valor total de todas as OS",
+        iconType: "money",
+        tone: "emerald",
+        emphasis: true,
       },
     ],
     repasse_autonomos: [
-      { title: "Total OS", value: String(data.summary.totalOS), primary: true },
+      {
+        title: "Total OS",
+        value: String(data.summary.totalOS),
+        subtitle: "Volume total de ordens",
+        iconType: "document",
+        tone: "blue",
+        emphasis: true,
+      },
       {
         title: "Custo Autônomos",
         value: formatCurrency(data.summary.totalCustoAutonomos),
-        highlight: true,
+        subtitle: "Repasses previstos",
+        iconType: "grid",
+        tone: "cyan",
       },
       {
         title: "Já Pago",
         value: formatCurrency(data.summary.totalPagoAutonomos),
-        highlight: true,
+        subtitle: "Repasses quitados",
+        iconType: "money",
+        tone: "teal",
       },
       {
         title: "Pendente",
         value: formatCurrency(
           data.summary.totalCustoAutonomos - data.summary.totalPagoAutonomos,
         ),
+        subtitle: "Saldo em aberto",
+        iconType: "document",
+        tone: "amber",
       },
     ],
     repasse_parceiros: [
-      { title: "Total OS", value: String(data.summary.totalOS), primary: true },
+      {
+        title: "Total OS",
+        value: String(data.summary.totalOS),
+        subtitle: "Volume total de ordens",
+        iconType: "document",
+        tone: "blue",
+        emphasis: true,
+      },
       {
         title: "Custo Parceiros",
         value: formatCurrency(data.summary.totalCustoParceiros),
-        highlight: true,
+        subtitle: "Repasses previstos",
+        iconType: "grid",
+        tone: "cyan",
       },
       {
         title: "Já Pago",
         value: formatCurrency(data.summary.totalPagoParceiros),
-        highlight: true,
+        subtitle: "Repasses quitados",
+        iconType: "money",
+        tone: "teal",
       },
       {
         title: "Pendente",
         value: formatCurrency(
           data.summary.totalCustoParceiros - data.summary.totalPagoParceiros,
         ),
+        subtitle: "Saldo em aberto",
+        iconType: "document",
+        tone: "amber",
       },
     ],
     performance: [
-      { title: "Total OS", value: String(data.summary.totalOS), primary: true },
+      {
+        title: "Total OS",
+        value: String(data.summary.totalOS),
+        subtitle: "Volume total de ordens",
+        iconType: "document",
+        tone: "blue",
+        emphasis: true,
+      },
       {
         title: "Faturamento Bruto",
         value: formatCurrency(data.summary.totalBruto),
+        subtitle: "Receita bruta",
+        iconType: "money",
+        tone: "blue",
       },
-      { title: "Custos", value: formatCurrency(data.summary.totalCusto) },
-      { title: "Impostos", value: formatCurrency(data.summary.totalImposto) },
+      {
+        title: "Custos",
+        value: formatCurrency(data.summary.totalCusto),
+        subtitle: "Custos operacionais",
+        iconType: "grid",
+        tone: "slate",
+      },
+      {
+        title: "Impostos",
+        value: formatCurrency(data.summary.totalImposto),
+        subtitle: "Tributos apurados",
+        iconType: "document",
+        tone: "amber",
+      },
       {
         title: "Lucro Líquido",
         value: formatCurrency(data.summary.totalLucro),
-        highlight: true,
-        primary: true,
+        subtitle: "Resultado final",
+        iconType: "money",
+        tone: "emerald",
+        emphasis: true,
       },
       {
         title: "Margem",
@@ -1002,27 +1692,37 @@ async function generatePdf(
           data.summary.totalBruto > 0
             ? `${((data.summary.totalLucro / data.summary.totalBruto) * 100).toFixed(1)}%`
             : "0%",
-        highlight: true,
+        subtitle: "Eficiência operacional",
+        iconType: "document",
+        tone: "teal",
       },
     ],
     liberadas_faturamento: [
       {
         title: "Total OS Liberadas",
         value: String(data.summary.totalOS),
-        primary: true,
+        subtitle: "Prontas para faturar",
+        iconType: "document",
+        tone: "blue",
+        emphasis: true,
       },
       {
         title: "Valor Total",
         value: formatCurrency(data.summary.totalBruto),
-        highlight: true,
-        primary: true,
+        subtitle: "Total liberado",
+        iconType: "money",
+        tone: "cyan",
+        emphasis: true,
       },
     ],
     pendentes_repasse: [
       {
         title: "Total OS Pendentes",
         value: String(data.summary.totalOS),
-        primary: true,
+        subtitle: "Itens em aberto",
+        iconType: "document",
+        tone: "blue",
+        emphasis: true,
       },
       {
         title: "Custo Total Pendente",
@@ -1032,8 +1732,10 @@ async function generatePdf(
             data.summary.totalPagoAutonomos -
             data.summary.totalPagoParceiros,
         ),
-        highlight: true,
-        primary: true,
+        subtitle: "Saldo total pendente",
+        iconType: "money",
+        tone: "amber",
+        emphasis: true,
       },
     ],
   };
@@ -1044,13 +1746,13 @@ async function generatePdf(
     Array<{ label: string; width: number; key: string }>
   > = {
     medicao_cliente: [
-      { label: "Protocolo", width: 90, key: "protocolo" },
-      { label: "OS", width: 70, key: "os" },
-      { label: "Empresa / Centro", width: 280, key: "cliente" },
-      { label: "Motorista", width: 180, key: "motorista" },
-      { label: "Data", width: 80, key: "data" },
-      { label: "Valor", width: 100, key: "valor" },
-      { label: "Status", width: 90, key: "status" },
+      { label: "Protocolo/Data", width: 80, key: "protocolo_data" },
+      { label: "OS", width: 60, key: "os" },
+      { label: "Centro de Custo", width: 100, key: "centro_custo" },
+      { label: "Solicitante", width: 120, key: "solicitante" },
+      { label: "Passageiros", width: 120, key: "passageiros" },
+      { label: "Trajeto Realizado", width: 210, key: "trajeto" },
+      { label: "Valor", width: 88, key: "valor" },
     ],
     repasse_autonomos: [
       { label: "Protocolo", width: 100, key: "protocolo" },
@@ -1108,66 +1810,132 @@ async function generatePdf(
   drawHeader(page);
 
   // Draw summary boxes (4 per row)
-  const boxWidth = (pageWidth - margin * 2 - 12 * 3) / 4;
-  const boxHeight = 65;
-  const boxGap = 12;
-  let boxRow = 0;
-  let boxCol = 0;
+  if (template === "medicao_cliente") {
+    // Add title for Medição ao Cliente
+    const titleText = "RELATÓRIO DE MEDIÇÃO";
+    const titleWidth = regularFont.widthOfTextAtSize(titleText, 10);
+    page.drawText(titleText, {
+      x: (pageWidth - titleWidth) / 2 + 10,
+      y: pageHeight - 155,
+      size: 10,
+      font: regularFont,
+      color: rgb(0.5, 0.5, 0.5),
+    });
 
-  for (const box of boxes) {
-    const x = margin + boxCol * (boxWidth + boxGap);
-    const y = pageHeight - 200 - boxRow * (boxHeight + boxGap);
-    drawSummaryBox(
-      page,
-      x,
-      y,
-      boxWidth,
-      box.title,
-      box.value,
-      box.highlight,
-      box.primary,
-    );
-    boxCol++;
-    if (boxCol >= 4) {
-      boxCol = 0;
-      boxRow++;
+    const selectedClientId = data.rows[0]?.cliente_id;
+    const clientName = selectedClientId ? (data.clienteMap.get(selectedClientId) || "GERAL") : "GERAL";
+
+    const nameWidth = boldFont.widthOfTextAtSize(clientName.toUpperCase(), 18);
+    page.drawText(clientName.toUpperCase(), {
+      x: (pageWidth - nameWidth) / 2 + 10,
+      y: pageHeight - 190,
+      size: 18,
+      font: boldFont,
+      color: rgb(0.05, 0.12, 0.23), // Very dark navy blue
+    });
+
+    const cardGap = 16;
+    const cardWidth = (pageWidth - margin * 2 - cardGap * 2) / 3;
+    const cardHeight = 108;
+    const firstRowY = 240;
+    const secondRowY = 120;
+    const firstRow = boxes.slice(0, 3);
+    const secondRow = boxes.slice(3);
+
+    firstRow.forEach((box, index) => {
+      const x = margin + index * (cardWidth + cardGap);
+      drawSummaryBox(
+        page,
+        x,
+        firstRowY,
+        cardWidth,
+        cardHeight,
+        box.title,
+        box.value,
+        box.subtitle,
+        box.iconType,
+        box.tone,
+        box.emphasis,
+      );
+    });
+
+    secondRow.forEach((box, index) => {
+      const x = margin + (cardWidth + cardGap) / 2 + index * (cardWidth + cardGap);
+      drawSummaryBox(
+        page,
+        x,
+        secondRowY,
+        cardWidth,
+        cardHeight,
+        box.title,
+        box.value,
+        box.subtitle,
+        box.iconType,
+        box.tone,
+        box.emphasis,
+      );
+    });
+  } else {
+    const boxWidth = (pageWidth - margin * 2 - 12 * 3) / 4;
+    const boxHeight = 84;
+    const boxGap = 12;
+    let boxRow = 0;
+    let boxCol = 0;
+
+    for (const box of boxes) {
+      const x = margin + boxCol * (boxWidth + boxGap);
+      const y = pageHeight - 200 - boxRow * (boxHeight + boxGap);
+      drawSummaryBox(
+        page,
+        x,
+        y,
+        boxWidth,
+        boxHeight,
+        box.title,
+        box.value,
+        box.subtitle,
+        box.iconType,
+        box.tone,
+        box.emphasis,
+      );
+      boxCol++;
+      if (boxCol >= 4) {
+        boxCol = 0;
+        boxRow++;
+      }
     }
   }
 
-  const lastBoxY =
-    pageHeight -
-    200 -
-    boxRow * (boxHeight + boxGap) -
-    (boxCol > 0 ? 0 : boxHeight + boxGap);
-  currentY = lastBoxY - 40;
+  // Dashboard/cards page ends here. Table starts on a new page.
+  page = pdfDoc.addPage([pageWidth, pageHeight]);
+  drawHeader(page);
 
-  // Table
+  // Start table header lower to avoid any overlap with info box
+  currentY = pageHeight - 170;
   drawTableHeader(page, currentY, headers);
-  currentY -= 36;
+
+  // currentY will track the top of the next row. 
+  // We leave a small padding between header and first row.
+  currentY -= 4; 
 
   data.rows.forEach((row: FinanceRow, index: number) => {
-    if (currentY < margin + 50) {
-      page = pdfDoc.addPage([pageWidth, pageHeight]);
-      drawHeader(page);
-      currentY = pageHeight - 160;
-      drawTableHeader(page, currentY, headers);
-      currentY -= 36;
-    }
-
-    const isEven = index % 2 === 0;
-    (page as PDFPage).drawRectangle({
-      x: margin,
-      y: currentY - 2,
-      width: pageWidth - margin * 2,
-      height: 36,
-      color: isEven ? rgb(0.97, 0.98, 0.99) : rgb(1, 1, 1),
-    });
-
+    const isMedicaoCliente = template === "medicao_cliente";
+    const baseRowHeight = isMedicaoCliente ? 45 : 36;
+    
+    // Fetch related data
     const clienteNome = data.clienteMap.get(row.cliente_id || "") || "-";
     const centroCustoNome =
       data.centroCustoMap.get(row.centro_custo_id || "") || "";
     const motoristaNome =
       data.driverMap.get(row.driver_id || "") || row.motorista || "-";
+    const waypoints = data.waypointsMap.get(row.id) || [];
+    const passageirosList = Array.from(
+      new Set(
+        waypoints.flatMap((wp) => wp.passengers?.map((p) => p.nome)).filter(Boolean),
+      ),
+    ) as string[];
+    const trajetoList = waypoints.map((wp) => wp.label).filter(Boolean);
+
     const driver = row.driver_id
       ? data.driverDetailMap.get(row.driver_id)
       : undefined;
@@ -1176,21 +1944,53 @@ async function generatePdf(
       : "";
     const status = row.status_financeiro || "Pendente";
 
-    let x = margin + 8;
+    // First pass: compute all cell texts and measure heights
+    const cellData: Array<{
+      text: string;
+      font: PDFFont;
+      color: RGB;
+      size: number;
+      isMultiLine: boolean;
+      maxWidth: number;
+      lineHeight: number;
+    }> = [];
+
+    let maxContentHeight = baseRowHeight;
 
     for (const h of headers) {
       let text = "";
       let font = regularFont;
-      let color = rgb(0.15, 0.19, 0.24);
+      let color = c.textDark;
       let size = 9;
 
       switch (h.key) {
+        case "protocolo_data":
+          text = `${row.protocolo || "-"}\n${formatDate(row.data)}`;
+          size = 8;
+          break;
         case "protocolo":
           text = row.protocolo || "-";
           break;
         case "os":
           text = row.os_number || "-";
+          size = 8;
           font = boldFont;
+          break;
+        case "centro_custo":
+          text = centroCustoNome || "-";
+          size = 8;
+          break;
+        case "solicitante":
+          text = row.solicitante || "-";
+          size = 8;
+          break;
+        case "passageiros":
+          text = passageirosList.join(", ");
+          size = 7;
+          break;
+        case "trajeto":
+          text = trajetoList.join(" -> ");
+          size = 7;
           break;
         case "cliente": {
           const lines = [truncateText(clienteNome, 35)];
@@ -1209,12 +2009,12 @@ async function generatePdf(
         case "bruto":
           text = formatCurrency(Number(row.valor_bruto || 0));
           font = boldFont;
-          color = rgb(0.05, 0.56, 0.31);
+          color = c.accentGreen;
           break;
         case "custo":
           text = formatCurrency(Number(row.custo || 0));
           font = boldFont;
-          color = rgb(0.8, 0.3, 0.2);
+          color = c.accentRed;
           break;
         case "imposto":
           text = formatCurrency(Number(row.imposto || 0));
@@ -1222,7 +2022,7 @@ async function generatePdf(
         case "lucro": {
           const l = Number(row.lucro || 0);
           text = formatCurrency(l);
-          color = l >= 0 ? rgb(0.05, 0.56, 0.31) : rgb(0.8, 0.3, 0.2);
+          color = l >= 0 ? c.accentGreen : c.accentRed;
           font = boldFont;
           break;
         }
@@ -1235,15 +2035,12 @@ async function generatePdf(
         case "status":
           text = status;
           font = boldFont;
-          color =
-            status === "Recebido"
-              ? rgb(0.05, 0.56, 0.31)
-              : rgb(0.15, 0.19, 0.24);
+          color = status === "Recebido" ? c.accentGreen : c.textDark;
           break;
         case "pago":
           text = row.repasse_pago ? "Sim" : "Não";
           font = boldFont;
-          color = row.repasse_pago ? rgb(0.05, 0.56, 0.31) : rgb(0.8, 0.3, 0.2);
+          color = row.repasse_pago ? c.accentGreen : c.accentRed;
           break;
         case "parceiro":
           text = parceiroNome;
@@ -1256,18 +2053,78 @@ async function generatePdf(
         }
       }
 
-      (page as PDFPage).drawText(text, {
-        x,
-        y: currentY + 10,
-        size,
-        font,
-        color,
-      });
+      const isMultiLine =
+        h.key === "protocolo_data" ||
+        h.key === "os" ||
+        h.key === "centro_custo" ||
+        h.key === "solicitante" ||
+        h.key === "passageiros" ||
+        h.key === "trajeto";
+      const lineH = size + 2;
+      const maxW = h.width - 10;
+
+      if (isMultiLine) {
+        const contentHeight = calculateMultiLineHeight(text, size, font, maxW, lineH);
+        maxContentHeight = Math.max(maxContentHeight, contentHeight + 10);
+      } else if (text.includes("\n")) {
+        const lines = text.split("\n").length;
+        maxContentHeight = Math.max(maxContentHeight, lines * lineH + 10);
+      }
+
+      cellData.push({ text, font, color, size, isMultiLine, maxWidth: maxW, lineHeight: lineH });
+    }
+
+    const rowHeight = maxContentHeight;
+
+    // Check pagination
+    if (currentY - rowHeight < margin + 20) {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      drawHeader(page);
+      currentY = pageHeight - 170;
+      drawTableHeader(page, currentY, headers);
+      currentY -= 4; 
+    }
+
+    const isEven = index % 2 === 0;
+    currentY -= rowHeight;
+
+    (page as PDFPage).drawRectangle({
+      x: margin,
+      y: currentY,
+      width: pageWidth - margin * 2,
+      height: rowHeight,
+      color: isEven ? c.tableZebra : c.tableWhite,
+    });
+
+    let x = margin + 8;
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i];
+      const cell = cellData[i];
+
+      if (cell.isMultiLine) {
+        drawMultiLineText(
+          page as PDFPage,
+          cell.text,
+          x,
+          currentY + rowHeight - 8,
+          cell.size,
+          cell.font,
+          cell.color,
+          cell.maxWidth,
+          cell.lineHeight,
+        );
+      } else {
+        (page as PDFPage).drawText(cell.text, {
+          x,
+          y: currentY + (rowHeight / 2) - (cell.size / 2),
+          size: cell.size,
+          font: cell.font,
+          color: cell.color,
+        });
+      }
 
       x += h.width;
     }
-
-    currentY -= 36;
   });
 
   // Draw footers
@@ -1337,6 +2194,8 @@ export async function GET(request: Request) {
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Erro desconhecido";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const stack = error instanceof Error ? error.stack : "";
+    console.error("[Relatorio Error]", message, stack);
+    return NextResponse.json({ error: message, stack }, { status: 500 });
   }
 }

@@ -155,7 +155,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
   // Report
   const [reportLoading, setReportLoading] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const isReportModalEnabled = false;
+  const isReportModalEnabled = true;
 
   // Modals / Actions
   const [actionTarget, setActionTarget] = useState<FinanceActionTarget | null>(

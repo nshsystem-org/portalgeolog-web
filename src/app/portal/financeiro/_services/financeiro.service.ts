@@ -76,6 +76,7 @@ export async function gerarRelatorio(payload: ReportPayload): Promise<Blob> {
   params.set("format", payload.format);
   params.set("dataInicio", payload.dataInicio);
   params.set("dataFim", payload.dataFim);
+  if (payload.clienteId) params.set("clienteId", payload.clienteId);
   if (payload.onlyPending) params.set("onlyPending", "true");
 
   const response = await fetch(
