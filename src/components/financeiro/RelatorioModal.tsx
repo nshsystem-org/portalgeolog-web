@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   X,
   Download,
@@ -114,6 +114,17 @@ export default function RelatorioModal({
   const [clienteId, setClienteId] = useState("");
   const [onlyPending, setOnlyPending] = useState(false);
 
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen]);
+
   const activeTemplate = useMemo(
     () => TEMPLATES.find((t) => t.id === selectedTemplate),
     [selectedTemplate],
@@ -161,65 +172,88 @@ export default function RelatorioModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative bg-white w-full max-w-4xl max-h-[92vh] rounded-[3rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200"
+        className="relative bg-white w-full max-w-3xl max-h-[92vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200"
         style={{ textRendering: "geometricPrecision" }}
       >
-        <div className="flex items-center justify-between px-10 pt-10 pb-8">
+        <div className="flex items-center justify-between px-8 pt-6 pb-5">
           <div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">
               Exportar Relatório
             </h2>
-            <p className="text-base font-medium text-slate-500 mt-2">
+            <p className="text-sm font-medium text-slate-500 mt-1">
               Selecione o tipo de relatório e o período desejado.
             </p>
           </div>
           <button
             onClick={handleClose}
-            className="p-3 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-2xl transition-all"
+            className="p-2.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
           >
-            <X size={24} />
+            <X size={22} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-10 pb-10 space-y-12">
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-8">
+          {/* Period */}
+          <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
+            <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
+              Selecione o período
+            </label>
+            <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <GeologDateInput
+                  label="Data Inicial"
+                  value={dataInicio}
+                  onChange={setDataInicio}
+                  labelClassName="text-emerald-600 font-bold"
+                />
+                <GeologDateInput
+                  label="Data Final"
+                  value={dataFim}
+                  onChange={setDataFim}
+                  labelClassName="text-blue-600 font-bold"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Template Selection */}
-          <div className="space-y-5">
-            <label className="block text-[12px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
+          <div className="space-y-3">
+            <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
               Tipo de Relatório
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {TEMPLATES.map((template) => {
                 const isActive = selectedTemplate === template.id;
                 return (
                   <button
                     key={template.id}
                     onClick={() => setSelectedTemplate(template.id)}
-                    className={`flex items-start gap-4 p-5 rounded-[2rem] border-2 text-left transition-all duration-200 cursor-pointer ${
+                    className={`flex items-start gap-3 p-4 rounded-2xl border-2 text-left transition-all duration-200 cursor-pointer ${
                       isActive
-                        ? "border-emerald-400 bg-emerald-50/30 shadow-lg shadow-emerald-100/50"
+                        ? "border-emerald-400 bg-emerald-50/30 shadow-md shadow-emerald-100/50"
                         : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50/50"
                     }`}
                   >
                     <div
-                      className={`p-3.5 rounded-2xl shrink-0 ${
+                      className={`p-2.5 rounded-xl shrink-0 ${
                         isActive
                           ? "bg-emerald-100 text-emerald-700"
                           : "bg-slate-100 text-slate-500"
                       }`}
                     >
-                      {React.cloneElement(template.icon as React.ReactElement, {
-                        size: 24,
+                      {React.cloneElement(template.icon as React.ReactElement<{ size?: number }>, {
+                        size: 20,
                       })}
                     </div>
                     <div className="min-w-0 pt-0.5">
                       <p
-                        className={`text-base font-black tracking-tight ${
+                        className={`text-sm font-black tracking-tight ${
                           isActive ? "text-emerald-900" : "text-slate-800"
                         }`}
                       >
                         {template.label}
                       </p>
-                      <p className="text-sm text-slate-500 mt-1 leading-relaxed font-medium">
+                      <p className="text-xs text-slate-500 mt-0.5 leading-relaxed font-medium">
                         {template.description}
                       </p>
                     </div>
@@ -232,7 +266,7 @@ export default function RelatorioModal({
           {/* Cliente Selection (Only for Medição ao Cliente) */}
           {selectedTemplate === "medicao_cliente" && (
             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-              <div className="bg-slate-50/50 p-8 rounded-[2.5rem] border border-slate-100">
+              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
                 <GeologSearchableSelect
                   label="Cliente / Empresa Destino"
                   options={clientes}
@@ -240,31 +274,11 @@ export default function RelatorioModal({
                   onChange={setClienteId}
                   required
                   placeholder="Selecione um cliente..."
+                  triggerClassName="px-4 py-3 text-base"
                 />
               </div>
             </div>
           )}
-
-          {/* Period */}
-          <div className="space-y-5">
-            <label className="block text-[12px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
-              Período
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <GeologDateInput
-                label="Data Inicial"
-                value={dataInicio}
-                onChange={setDataInicio}
-                labelClassName="text-emerald-600 font-bold"
-              />
-              <GeologDateInput
-                label="Data Final"
-                value={dataFim}
-                onChange={setDataFim}
-                labelClassName="text-blue-600 font-bold"
-              />
-            </div>
-          </div>
 
           {/* Pending only toggle (if template supports it) */}
           {(selectedTemplate === "repasse_autonomos" ||
@@ -272,24 +286,24 @@ export default function RelatorioModal({
             <div className="animate-in fade-in duration-300">
               <button
                 onClick={() => setOnlyPending(!onlyPending)}
-                className={`flex items-center gap-5 px-8 py-5 rounded-[2rem] border-2 transition-all ${
+                className={`flex items-center gap-3 px-5 py-3 rounded-2xl border-2 transition-all ${
                   onlyPending
-                    ? "border-amber-400 bg-amber-50/50 text-amber-900 shadow-lg"
+                    ? "border-amber-400 bg-amber-50/50 text-amber-900 shadow-md"
                     : "border-slate-100 bg-white text-slate-600 hover:border-slate-200"
                 }`}
               >
                 <div
-                  className={`w-7 h-7 rounded-xl border-2 flex items-center justify-center transition-all ${
+                  className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${
                     onlyPending
                       ? "bg-amber-500 border-amber-500 text-white"
                       : "border-slate-300 bg-white"
                   }`}
                 >
                   {onlyPending && (
-                    <div className="w-3 h-3 bg-white rounded-full" />
+                    <div className="w-2.5 h-2.5 bg-white rounded-full" />
                   )}
                 </div>
-                <span className="text-lg font-black tracking-tight">
+                <span className="text-sm font-black tracking-tight">
                   Exportar apenas repasses pendentes
                 </span>
               </button>
@@ -298,13 +312,13 @@ export default function RelatorioModal({
 
           {/* Info Banners */}
           {selectedTemplate === "pendentes_repasse" && (
-            <div className="flex items-center gap-4 p-6 rounded-[2rem] bg-amber-50/60 border border-amber-200">
-              <AlertCircle size={24} className="text-amber-600 shrink-0" />
+            <div className="flex items-center gap-3 p-4 rounded-2xl bg-amber-50/60 border border-amber-200">
+              <AlertCircle size={20} className="text-amber-600 shrink-0" />
               <div>
-                <p className="text-base font-black text-amber-800">
+                <p className="text-sm font-black text-amber-800">
                   Apenas ordens com repasse pendente
                 </p>
-                <p className="text-sm font-medium text-amber-600 mt-1">
+                <p className="text-xs font-medium text-amber-600 mt-0.5">
                   Motoristas autônomos e parceiros que ainda não tiveram o
                   pagamento registrado.
                 </p>
@@ -313,13 +327,13 @@ export default function RelatorioModal({
           )}
 
           {selectedTemplate === "liberadas_faturamento" && (
-            <div className="flex items-center gap-4 p-6 rounded-[2rem] bg-blue-50/60 border border-blue-200">
-              <AlertCircle size={24} className="text-blue-600 shrink-0" />
+            <div className="flex items-center gap-3 p-4 rounded-2xl bg-blue-50/60 border border-blue-200">
+              <AlertCircle size={20} className="text-blue-600 shrink-0" />
               <div>
-                <p className="text-base font-black text-blue-800">
+                <p className="text-sm font-black text-blue-800">
                   Apenas ordens prontas para faturar
                 </p>
-                <p className="text-sm font-medium text-blue-600 mt-1">
+                <p className="text-xs font-medium text-blue-600 mt-0.5">
                   Status operacional: Finalizado | Status financeiro: Pendente.
                 </p>
               </div>
@@ -327,58 +341,58 @@ export default function RelatorioModal({
           )}
         </div>
 
-        <div className="px-10 py-10 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between gap-5">
+        <div className="px-8 py-5 bg-blue-50/70 border-t border-blue-100 flex items-center justify-between gap-5">
           {/* Format toggles */}
           <div className="flex gap-3">
             <button
               onClick={() => setFormat("pdf")}
-              className={`flex items-center gap-2 px-5 py-3 rounded-xl border-2 text-sm font-black transition-all ${
+              className={`cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-black transition-all ${
                 format === "pdf"
-                  ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
-                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
-              }`}
-            >
-              <FileText size={18} />
-              PDF
-            </button>
-            <button
-              onClick={() => setFormat("csv")}
-              className={`flex items-center gap-2 px-5 py-3 rounded-xl border-2 text-sm font-black transition-all ${
-                format === "csv"
                   ? "border-blue-400 bg-blue-50 text-blue-700 shadow-sm"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
               }`}
             >
-              <FileSpreadsheet size={18} />
-              CSV
+              <FileText size={16} />
+              PDF
+            </button>
+            <button
+              onClick={() => setFormat("csv")}
+              className={`cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-black transition-all ${
+                format === "csv"
+                  ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+              }`}
+            >
+              <FileSpreadsheet size={16} />
+              Excel
             </button>
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-4">
             <button
               onClick={handleClose}
-              className="px-10 py-5 text-base font-black text-slate-500 hover:text-slate-700 transition-colors"
+              className="cursor-pointer px-6 py-3 text-sm font-black text-slate-500 hover:text-slate-700 transition-colors"
             >
               Cancelar
             </button>
             <button
               onClick={handleGenerate}
               disabled={!canGenerate || loading}
-              className={`flex items-center gap-3 px-12 py-5 rounded-[2rem] text-lg font-black transition-all shadow-xl shadow-slate-200/50 ${
+              className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-base font-black transition-all shadow-lg shadow-slate-200/40 ${
                 canGenerate && !loading
-                  ? "bg-slate-900 text-white hover:bg-slate-800 hover:-translate-y-1 active:translate-y-0"
+                  ? "cursor-pointer bg-slate-900 text-white hover:bg-slate-800 hover:-translate-y-0.5 active:translate-y-0"
                   : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
               }`}
             >
               {loading ? (
                 <>
-                  <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Gerando...
                 </>
               ) : (
                 <>
-                  <Download size={22} />
+                  <Download size={18} />
                   Gerar Relatório
                 </>
               )}
