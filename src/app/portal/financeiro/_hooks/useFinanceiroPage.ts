@@ -101,6 +101,7 @@ export type FinanceiroPageState = {
   setShowFilters: (value: boolean | ((prev: boolean) => boolean)) => void;
   setShowMotorista: (value: boolean | ((prev: boolean) => boolean)) => void;
   setShowReportModal: (value: boolean | ((prev: boolean) => boolean)) => void;
+  handleOpenReportModal: () => void;
   setOpenActionMenuId: (
     value: string | null | ((prev: string | null) => string | null),
   ) => void;
@@ -154,6 +155,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
   // Report
   const [reportLoading, setReportLoading] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const isReportModalEnabled = false;
 
   // Modals / Actions
   const [actionTarget, setActionTarget] = useState<FinanceActionTarget | null>(
@@ -367,6 +369,17 @@ export function useFinanceiroPage(): FinanceiroPageState {
     setFaturarFile(null);
   }, []);
 
+  // Open report modal
+  const handleOpenReportModal = useCallback((): void => {
+    toast.info("Implementação de melhorias em andamento...");
+
+    if (!isReportModalEnabled) {
+      return;
+    }
+
+    setShowReportModal(true);
+  }, [isReportModalEnabled]);
+
   // Close action modal
   const closeActionModal = useCallback((): void => {
     setActionTarget(null);
@@ -541,6 +554,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
     setShowFilters,
     setShowMotorista,
     setShowReportModal,
+    handleOpenReportModal,
     setOpenActionMenuId,
     setFaturarFile,
     setFaturarTipoDocumento,

@@ -30,7 +30,7 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         onToggleFilters={() => page.setShowFilters((current) => !current)}
         onToggleMotorista={() => page.setShowMotorista((current) => !current)}
         onSetQuickRange={page.setQuickRange}
-        onOpenReportModal={() => page.setShowReportModal(true)}
+        onOpenReportModal={page.handleOpenReportModal}
       />
 
       <FinanceiroStats stats={page.stats} showMotorista={page.showMotorista} />
