@@ -245,57 +245,24 @@ export default function RelatorioModal({
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-            {/* Period */}
-            <div className="space-y-5">
-              <label className="block text-[12px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
-                Período
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <GeologDateInput
-                  label="Data Inicial"
-                  value={dataInicio}
-                  onChange={setDataInicio}
-                  labelClassName="text-emerald-600 font-bold"
-                />
-                <GeologDateInput
-                  label="Data Final"
-                  value={dataFim}
-                  onChange={setDataFim}
-                  labelClassName="text-blue-600 font-bold"
-                />
-              </div>
-            </div>
-
-            {/* Format */}
-            <div className="space-y-5">
-              <label className="block text-[12px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
-                Formato de Saída
-              </label>
-              <div className="flex gap-5">
-                <button
-                  onClick={() => setFormat("pdf")}
-                  className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border-2 text-base font-black transition-all ${
-                    format === "pdf"
-                      ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-md"
-                      : "border-slate-100 bg-white text-slate-600 hover:border-slate-200"
-                  }`}
-                >
-                  <FileText size={22} />
-                  PDF
-                </button>
-                <button
-                  onClick={() => setFormat("csv")}
-                  className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border-2 text-base font-black transition-all ${
-                    format === "csv"
-                      ? "border-blue-400 bg-blue-50 text-blue-700 shadow-md"
-                      : "border-slate-100 bg-white text-slate-600 hover:border-slate-200"
-                  }`}
-                >
-                  <FileSpreadsheet size={22} />
-                  CSV
-                </button>
-              </div>
+          {/* Period */}
+          <div className="space-y-5">
+            <label className="block text-[12px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
+              Período
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <GeologDateInput
+                label="Data Inicial"
+                value={dataInicio}
+                onChange={setDataInicio}
+                labelClassName="text-emerald-600 font-bold"
+              />
+              <GeologDateInput
+                label="Data Final"
+                value={dataFim}
+                onChange={setDataFim}
+                labelClassName="text-blue-600 font-bold"
+              />
             </div>
           </div>
 
@@ -360,34 +327,63 @@ export default function RelatorioModal({
           )}
         </div>
 
-        <div className="px-10 py-10 bg-slate-50/50 border-t border-slate-100 flex items-center justify-end gap-5">
-          <button
-            onClick={handleClose}
-            className="px-10 py-5 text-base font-black text-slate-500 hover:text-slate-700 transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleGenerate}
-            disabled={!canGenerate || loading}
-            className={`flex items-center gap-3 px-12 py-5 rounded-[2rem] text-lg font-black transition-all shadow-xl shadow-slate-200/50 ${
-              canGenerate && !loading
-                ? "bg-slate-900 text-white hover:bg-slate-800 hover:-translate-y-1 active:translate-y-0"
-                : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-            }`}
-          >
-            {loading ? (
-              <>
-                <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
-                Gerando...
-              </>
-            ) : (
-              <>
-                <Download size={22} />
-                Gerar Relatório
-              </>
-            )}
-          </button>
+        <div className="px-10 py-10 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between gap-5">
+          {/* Format toggles */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setFormat("pdf")}
+              className={`flex items-center gap-2 px-5 py-3 rounded-xl border-2 text-sm font-black transition-all ${
+                format === "pdf"
+                  ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+              }`}
+            >
+              <FileText size={18} />
+              PDF
+            </button>
+            <button
+              onClick={() => setFormat("csv")}
+              className={`flex items-center gap-2 px-5 py-3 rounded-xl border-2 text-sm font-black transition-all ${
+                format === "csv"
+                  ? "border-blue-400 bg-blue-50 text-blue-700 shadow-sm"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+              }`}
+            >
+              <FileSpreadsheet size={18} />
+              CSV
+            </button>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-5">
+            <button
+              onClick={handleClose}
+              className="px-10 py-5 text-base font-black text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleGenerate}
+              disabled={!canGenerate || loading}
+              className={`flex items-center gap-3 px-12 py-5 rounded-[2rem] text-lg font-black transition-all shadow-xl shadow-slate-200/50 ${
+                canGenerate && !loading
+                  ? "bg-slate-900 text-white hover:bg-slate-800 hover:-translate-y-1 active:translate-y-0"
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+              }`}
+            >
+              {loading ? (
+                <>
+                  <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                  Gerando...
+                </>
+              ) : (
+                <>
+                  <Download size={22} />
+                  Gerar Relatório
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
