@@ -200,6 +200,15 @@ const formatCurrency = (value: number): string =>
 const formatDate = (value?: string | null): string =>
   value ? new Date(value).toLocaleDateString("pt-BR") : "-";
 
+const formatDateTime = (data?: string | null, hora?: string | null): string => {
+  const parts: string[] = [];
+
+  if (data) parts.push(formatDate(data));
+  if (hora) parts.push(hora.slice(0, 5));
+
+  return parts.length > 0 ? parts.join(" ") : "-";
+};
+
 const truncateText = (text: string | null | undefined, maxLength: number): string => {
   const safeText = text || "";
   if (safeText.length <= maxLength) return safeText;
@@ -2062,6 +2071,7 @@ async function generatePdf(
     type RouteSegment = {
       type: "header" | "origem" | "parada" | "destino";
       text: string;
+      dateTime?: string;
     };
     const cellData: Array<{
       text: string;
@@ -2225,7 +2235,12 @@ async function generatePdf(
             const headerLabel = gi === 0
               ? `ITINERÁRIO ${gi + 1}`
               : `RETORNO / ITINERÁRIO ${gi + 1}`;
-            routeSegments.push({ type: "header", text: headerLabel });
+            const headerDateTime = formatDateTime(group[0]?.data, group[0]?.hora);
+            routeSegments.push({
+              type: "header",
+              text: headerLabel,
+              dateTime: headerDateTime !== "-" ? headerDateTime : undefined,
+            });
           }
 
           for (let i = 0; i < group.length; i++) {
@@ -2318,7 +2333,18 @@ async function generatePdf(
               font: boldFont,
               color: rgb(0.88, 0.53, 0.12),
             });
-            segY -= segSize + 5;
+            if (seg.dateTime) {
+              (page as PDFPage).drawText(seg.dateTime, {
+                x: x + 2,
+                y: segY - segSize + 2,
+                size: segSize - 2,
+                font: regularFont,
+                color: c.textMedium,
+              });
+              segY -= segSize + 6;
+            } else {
+              segY -= segSize + 5;
+            }
           } else {
             const col = segColors[seg.type];
             const lbl = segLabels[seg.type];
@@ -2354,9 +2380,9 @@ async function generatePdf(
       } else if (h.key === "protocolo_data") {
         const [protocolLine = "-", dateLine = ""] = cell.text.split("\n");
         const protocolSize = 8;
-        const dateSize = 7;
+        const dateSize = 9;
         const protocolY = currentY + rowHeight - 10;
-        const dateY = protocolY - 11;
+        const dateY = protocolY - 13;
 
         (page as PDFPage).drawText(protocolLine, {
           x,
