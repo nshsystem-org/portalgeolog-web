@@ -2203,9 +2203,11 @@ async function generatePdf(
       const align =
         h.key === "custo" && template === "repasse_autonomos"
           ? "left"
-          : h.key === "valor" || h.key === "bruto" || h.key === "custo"
-            ? "right"
-            : "left";
+          : h.key === "valor" && template === "medicao_cliente"
+            ? "left"
+            : h.key === "valor" || h.key === "bruto" || h.key === "custo"
+              ? "right"
+              : "left";
 
       // Build structured route segments for trajeto (medicao_cliente & repasse_autonomos)
       let routeSegments: RouteSegment[] | undefined;
