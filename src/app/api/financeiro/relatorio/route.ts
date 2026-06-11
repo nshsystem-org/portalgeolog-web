@@ -2334,10 +2334,12 @@ async function generatePdf(
               color: rgb(0.88, 0.53, 0.12),
             });
             if (seg.dateTime) {
+              const dateTimeSize = segSize;
+              const dateTimeWidth = regularFont.widthOfTextAtSize(seg.dateTime, dateTimeSize);
               (page as PDFPage).drawText(seg.dateTime, {
-                x: x + 2,
-                y: segY - segSize + 2,
-                size: segSize - 2,
+                x: x + h.width - 10 - dateTimeWidth,
+                y: segY - 1,
+                size: dateTimeSize,
                 font: regularFont,
                 color: c.textMedium,
               });
@@ -2379,10 +2381,10 @@ async function generatePdf(
         }
       } else if (h.key === "protocolo_data") {
         const [protocolLine = "-", dateLine = ""] = cell.text.split("\n");
-        const protocolSize = 8;
+        const protocolSize = 10;
         const dateSize = 9;
         const protocolY = currentY + rowHeight - 10;
-        const dateY = protocolY - 13;
+        const dateY = protocolY - 15;
 
         (page as PDFPage).drawText(protocolLine, {
           x,
