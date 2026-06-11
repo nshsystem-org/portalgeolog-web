@@ -50,6 +50,7 @@ const TEMPLATES: TemplateConfig[] = [
     description:
       "OS executadas por motoristas autônomos com valores a repassar",
     icon: <Truck size={20} />,
+    extraFilters: ["driverId"],
   },
   {
     id: "repasse_parceiros",
@@ -83,7 +84,8 @@ export type ReportPayload = {
   dataInicio: string;
   dataFim: string;
   clienteId?: string;
-  onlyPending?: boolean;
+  driverId?: string;
+  repasseStatusFilter?: "all" | "pending" | "paid";
 };
 
 interface RelatorioModalProps {
@@ -94,6 +96,7 @@ interface RelatorioModalProps {
   defaultDataFim: string;
   loading?: boolean;
   clientes?: Array<{ id: string; nome: string }>;
+  drivers?: Array<{ id: string; name: string; phone?: string; vinculo_tipo?: string }>;
 }
 
 export default function RelatorioModal({
@@ -104,6 +107,7 @@ export default function RelatorioModal({
   defaultDataFim,
   loading = false,
   clientes = [],
+  drivers = [],
 }: RelatorioModalProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplate | "">(
     "",
@@ -112,7 +116,11 @@ export default function RelatorioModal({
   const [dataInicio, setDataInicio] = useState(defaultDataInicio);
   const [dataFim, setDataFim] = useState(defaultDataFim);
   const [clienteId, setClienteId] = useState("");
-  const [onlyPending, setOnlyPending] = useState(false);
+  const [driverId, setDriverId] = useState("");
+  const [repasseStatusFilter, setRepasseStatusFilter] = useState<
+    "all" | "pending" | "paid"
+  >("all");
+  const [isTallModal, setIsTallModal] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -125,20 +133,40 @@ export default function RelatorioModal({
     };
   }, [isOpen]);
 
-  const activeTemplate = useMemo(
-    () => TEMPLATES.find((t) => t.id === selectedTemplate),
-    [selectedTemplate],
+  useEffect(() => {
+    const check = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setIsTallModal(w >= 1300 && h <= 950);
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  const autonomousDrivers = useMemo(
+    () =>
+      drivers.filter(
+        (driver) => driver.vinculo_tipo === "autonomo" || !driver.vinculo_tipo,
+      ),
+    [drivers],
   );
+
+  const isRepasseTemplate =
+    selectedTemplate === "repasse_autonomos" ||
+    selectedTemplate === "repasse_parceiros";
 
   const canGenerate =
     selectedTemplate &&
     dataInicio &&
     dataFim &&
-    (selectedTemplate !== "medicao_cliente" || clienteId);
+    (selectedTemplate !== "medicao_cliente" || clienteId) &&
+    (selectedTemplate !== "repasse_autonomos" || driverId);
 
   const handleGenerate = () => {
     if (!selectedTemplate || !dataInicio || !dataFim) return;
     if (selectedTemplate === "medicao_cliente" && !clienteId) return;
+    if (selectedTemplate === "repasse_autonomos" && !driverId) return;
 
     onGenerate({
       template: selectedTemplate,
@@ -146,8 +174,8 @@ export default function RelatorioModal({
       dataInicio,
       dataFim,
       clienteId: selectedTemplate === "medicao_cliente" ? clienteId : undefined,
-      onlyPending:
-        activeTemplate?.id === "pendentes_repasse" ? true : onlyPending,
+      driverId: selectedTemplate === "repasse_autonomos" ? driverId : undefined,
+      repasseStatusFilter: isRepasseTemplate ? repasseStatusFilter : undefined,
     });
   };
 
@@ -158,13 +186,14 @@ export default function RelatorioModal({
     setDataInicio(defaultDataInicio);
     setDataFim(defaultDataFim);
     setClienteId("");
-    setOnlyPending(false);
+    setDriverId("");
+    setRepasseStatusFilter("all");
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+    <div className={`fixed inset-0 z-[9999] flex items-center justify-center transition-all ${isTallModal ? "p-1" : "p-4"}`}>
       <div
         className="absolute inset-0 bg-[#001C3A]/60 backdrop-blur-md"
         onClick={handleClose}
@@ -172,10 +201,10 @@ export default function RelatorioModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative bg-white w-full max-w-3xl max-h-[92vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200"
+        className={`relative bg-white w-full max-w-3xl ${isTallModal ? "max-w-[720px] h-[90vh] rounded-[1.5rem]" : "max-h-[92vh] rounded-[2.5rem]"} shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200`}
         style={{ textRendering: "geometricPrecision" }}
       >
-        <div className="flex items-center justify-between px-8 pt-6 pb-5">
+        <div className={`flex items-center justify-between px-8 pt-6 pb-5 ${isTallModal ? "px-6 pt-4 pb-3" : ""} bg-blue-50/70 border-b border-blue-100`}>
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">
               Exportar Relatório
@@ -192,9 +221,9 @@ export default function RelatorioModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-8">
+        <div className={`flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-8 ${isTallModal ? "px-6 pb-6 space-y-5" : ""}`}>
           {/* Period */}
-          <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500 mt-6">
             <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
               Selecione o período
             </label>
@@ -221,14 +250,14 @@ export default function RelatorioModal({
             <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
               Tipo de Relatório
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isTallModal ? "gap-4" : ""}`}>
               {TEMPLATES.map((template) => {
                 const isActive = selectedTemplate === template.id;
                 return (
                   <button
                     key={template.id}
                     onClick={() => setSelectedTemplate(template.id)}
-                    className={`flex items-start gap-3 p-4 rounded-2xl border-2 text-left transition-all duration-200 cursor-pointer ${
+                    className={`flex items-start gap-3 p-4 rounded-2xl border-2 text-left transition-all duration-200 cursor-pointer ${isTallModal ? "p-5" : ""} ${
                       isActive
                         ? "border-emerald-400 bg-emerald-50/30 shadow-md shadow-emerald-100/50"
                         : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50/50"
@@ -275,38 +304,83 @@ export default function RelatorioModal({
                   required
                   placeholder="Selecione um cliente..."
                   triggerClassName="px-4 py-3 text-base"
+                  dropdownPosition="up"
                 />
               </div>
             </div>
           )}
 
-          {/* Pending only toggle (if template supports it) */}
-          {(selectedTemplate === "repasse_autonomos" ||
-            selectedTemplate === "repasse_parceiros") && (
+          {/* Driver Selection (Only for Repasse a Autônomos) */}
+          {selectedTemplate === "repasse_autonomos" && (
+            <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+                <GeologSearchableSelect
+                  label="Motorista Autônomo"
+                  options={autonomousDrivers.map((driver) => ({
+                    id: driver.id,
+                    nome: driver.name,
+                    sublabel: driver.phone || undefined,
+                  }))}
+                  value={driverId}
+                  onChange={setDriverId}
+                  required
+                  placeholder="Selecione um motorista..."
+                  triggerClassName="px-4 py-3 text-base"
+                  dropdownPosition="up"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Repasse filter (if template supports it) */}
+          {isRepasseTemplate && (
             <div className="animate-in fade-in duration-300">
-              <button
-                onClick={() => setOnlyPending(!onlyPending)}
-                className={`flex items-center gap-3 px-5 py-3 rounded-2xl border-2 transition-all ${
-                  onlyPending
-                    ? "border-amber-400 bg-amber-50/50 text-amber-900 shadow-md"
-                    : "border-slate-100 bg-white text-slate-600 hover:border-slate-200"
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${
-                    onlyPending
-                      ? "bg-amber-500 border-amber-500 text-white"
-                      : "border-slate-300 bg-white"
-                  }`}
-                >
-                  {onlyPending && (
-                    <div className="w-2.5 h-2.5 bg-white rounded-full" />
-                  )}
+              <div className="space-y-3">
+                <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
+                  Status do Repasse
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    {
+                      value: "all" as const,
+                      label: "Exportar tudo",
+                      activeClass:
+                        "border-blue-400 bg-blue-50 text-blue-700 shadow-md shadow-blue-100/50",
+                    },
+                    {
+                      value: "pending" as const,
+                      label: "Pendentes",
+                      activeClass:
+                        "border-amber-400 bg-amber-50 text-amber-900 shadow-md shadow-amber-100/50",
+                    },
+                    {
+                      value: "paid" as const,
+                      label: "Pagos",
+                      activeClass:
+                        "border-emerald-400 bg-emerald-50 text-emerald-900 shadow-md shadow-emerald-100/50",
+                    },
+                  ].map((option) => {
+                    const isActive = repasseStatusFilter === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setRepasseStatusFilter(option.value)}
+                        aria-pressed={isActive}
+                        className={`flex items-center justify-center gap-3 px-5 py-3 rounded-2xl border-2 cursor-pointer transition-all ${
+                          isActive
+                            ? option.activeClass
+                            : "border-slate-100 bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50/50"
+                        }`}
+                      >
+                        <span className="text-sm font-black tracking-tight">
+                          {option.label}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <span className="text-sm font-black tracking-tight">
-                  Exportar apenas repasses pendentes
-                </span>
-              </button>
+              </div>
             </div>
           )}
 
@@ -341,12 +415,12 @@ export default function RelatorioModal({
           )}
         </div>
 
-        <div className="px-8 py-5 bg-blue-50/70 border-t border-blue-100 flex items-center justify-between gap-5">
+        <div className={`px-8 py-5 ${isTallModal ? "px-6 py-4" : ""} bg-blue-50/70 border-t border-blue-100 flex items-center justify-between gap-5`}>
           {/* Format toggles */}
           <div className="flex gap-3">
             <button
               onClick={() => setFormat("pdf")}
-              className={`cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-black transition-all ${
+              className={`cursor-pointer flex items-center gap-2 ${isTallModal ? "px-5 py-3" : "px-4 py-2.5"} rounded-lg border-2 text-sm font-black transition-all ${
                 format === "pdf"
                   ? "border-blue-400 bg-blue-50 text-blue-700 shadow-sm"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
@@ -357,7 +431,7 @@ export default function RelatorioModal({
             </button>
             <button
               onClick={() => setFormat("csv")}
-              className={`cursor-pointer flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 text-sm font-black transition-all ${
+              className={`cursor-pointer flex items-center gap-2 ${isTallModal ? "px-5 py-3" : "px-4 py-2.5"} rounded-lg border-2 text-sm font-black transition-all ${
                 format === "csv"
                   ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
@@ -372,14 +446,14 @@ export default function RelatorioModal({
           <div className="flex items-center gap-4">
             <button
               onClick={handleClose}
-              className="cursor-pointer px-6 py-3 text-sm font-black text-slate-500 hover:text-slate-700 transition-colors"
+              className={`cursor-pointer ${isTallModal ? "px-7 py-3.5" : "px-6 py-3"} text-sm font-black text-slate-500 hover:text-slate-700 transition-colors`}
             >
               Cancelar
             </button>
             <button
               onClick={handleGenerate}
               disabled={!canGenerate || loading}
-              className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-base font-black transition-all shadow-lg shadow-slate-200/40 ${
+              className={`flex items-center gap-2 ${isTallModal ? "px-10 py-3.5" : "px-8 py-3"} rounded-2xl text-base font-black transition-all shadow-lg shadow-slate-200/40 ${
                 canGenerate && !loading
                   ? "cursor-pointer bg-slate-900 text-white hover:bg-slate-800 hover:-translate-y-0.5 active:translate-y-0"
                   : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"

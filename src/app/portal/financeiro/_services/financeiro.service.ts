@@ -77,7 +77,10 @@ export async function gerarRelatorio(payload: ReportPayload): Promise<Blob> {
   params.set("dataInicio", payload.dataInicio);
   params.set("dataFim", payload.dataFim);
   if (payload.clienteId) params.set("clienteId", payload.clienteId);
-  if (payload.onlyPending) params.set("onlyPending", "true");
+  if (payload.driverId) params.set("driverId", payload.driverId);
+  if (payload.repasseStatusFilter && payload.repasseStatusFilter !== "all") {
+    params.set("repasseStatusFilter", payload.repasseStatusFilter);
+  }
 
   const response = await fetch(
     `/api/financeiro/relatorio?${params.toString()}`,

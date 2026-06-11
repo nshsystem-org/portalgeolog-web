@@ -22,6 +22,8 @@ export type ReportTemplate =
 
 export type ReportFormat = "pdf" | "csv";
 
+type RepasseStatusFilter = "all" | "pending" | "paid";
+
 type FinanceFilters = {
   template?: ReportTemplate;
   format?: ReportFormat;
@@ -36,7 +38,7 @@ type FinanceFilters = {
   statusOperacional?: string;
   statusFinanceiro?: string;
   searchTerm?: string;
-  onlyPending?: boolean;
+  repasseStatusFilter?: RepasseStatusFilter;
 };
 
 type FinanceRow = {
@@ -106,6 +108,7 @@ type ReportSummary = {
   totalCentrosCusto: number;
   totalSolicitantes: number;
   totalPassageiros: number;
+  totalWaypoints: number;
   totalBruto: number;
   totalCusto: number;
   totalImposto: number;
@@ -151,6 +154,7 @@ async function createAuthClient() {
 
 const parseFilters = (request: Request): FinanceFilters => {
   const url = new URL(request.url);
+  const repasseStatusFilter = url.searchParams.get("repasseStatusFilter");
   return {
     template:
       (url.searchParams.get("template") as ReportTemplate) || "medicao_cliente",
@@ -166,7 +170,10 @@ const parseFilters = (request: Request): FinanceFilters => {
     statusOperacional: url.searchParams.get("statusOperacional") || undefined,
     statusFinanceiro: url.searchParams.get("statusFinanceiro") || undefined,
     searchTerm: url.searchParams.get("searchTerm") || undefined,
-    onlyPending: url.searchParams.get("onlyPending") === "true",
+    repasseStatusFilter:
+      repasseStatusFilter === "pending" || repasseStatusFilter === "paid"
+        ? repasseStatusFilter
+        : "all",
   };
 };
 
@@ -193,9 +200,26 @@ const formatCurrency = (value: number): string =>
 const formatDate = (value?: string | null): string =>
   value ? new Date(value).toLocaleDateString("pt-BR") : "-";
 
-const truncateText = (text: string, maxLength: number): string => {
-  if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength - 3) + "...";
+const truncateText = (text: string | null | undefined, maxLength: number): string => {
+  const safeText = text || "";
+  if (safeText.length <= maxLength) return safeText;
+  return safeText.substring(0, maxLength - 3) + "...";
+};
+
+/**
+ * Sanitizes text for pdf-lib StandardFonts (WinAnsi encoding).
+ * Replaces characters outside the Windows-1252 range with ASCII equivalents
+ * so that widthOfTextAtSize / drawText never throw an encoding error.
+ */
+const sanitizePdfText = (text: string | null | undefined): string => {
+  if (!text) return "";
+  return text
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'") // curly single quotes → '
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"') // curly double quotes → "
+    .replace(/[\u2013\u2014\u2015]/g, "-")                   // en/em dash → -
+    .replace(/\u2026/g, "...")                               // ellipsis → ...
+    .replace(/\u00A0/g, " ")                                 // non-breaking space → space
+    .replace(/[^\x00-\xFF]/g, "?");                          // any remaining non-Latin → ?
 };
 
 async function fetchReportData(
@@ -215,6 +239,7 @@ async function fetchReportData(
     statusOperacional,
     statusFinanceiro,
     searchTerm,
+    repasseStatusFilter = "all",
   } = filters;
 
   let query = adminClient
@@ -243,11 +268,20 @@ async function fetchReportData(
       .eq("status_financeiro", "Pendente");
   } else if (template === "pendentes_repasse") {
     query = query.eq("repasse_pago", false);
+  } else if (template === "repasse_autonomos") {
+    query = query.eq("status_operacional", "Finalizado");
   } else {
     if (statusOperacional)
       query = query.eq("status_operacional", statusOperacional);
     if (statusFinanceiro)
       query = query.eq("status_financeiro", statusFinanceiro);
+  }
+
+  if (
+    (template === "repasse_autonomos" || template === "repasse_parceiros") &&
+    repasseStatusFilter !== "all"
+  ) {
+    query = query.eq("repasse_pago", repasseStatusFilter === "paid");
   }
 
   if (searchTerm) {
@@ -476,6 +510,7 @@ function emptyReportData(
       totalPagoAutonomos: 0,
       totalCustoParceiros: 0,
       totalPagoParceiros: 0,
+      totalWaypoints: 0,
     },
     periodLabel:
       month ||
@@ -493,12 +528,14 @@ function computeSummary(
   const centroCustoIds = new Set<string>();
   const solicitanteNames = new Set<string>();
   const passengerIds = new Set<string>();
+  let totalWaypoints = 0;
 
   rows.forEach((row) => {
     if (row.centro_custo_id) centroCustoIds.add(row.centro_custo_id);
     if (row.solicitante?.trim()) solicitanteNames.add(row.solicitante.trim());
 
     const waypoints = waypointsMap.get(row.id) || [];
+    totalWaypoints += waypoints.length;
     waypoints.forEach((waypoint) => {
       waypoint.passengers.forEach((passenger) => {
         if (passenger.id) passengerIds.add(passenger.id);
@@ -521,6 +558,7 @@ function computeSummary(
       acc.totalCentrosCusto = centroCustoIds.size;
       acc.totalSolicitantes = solicitanteNames.size;
       acc.totalPassageiros = passengerIds.size;
+      acc.totalWaypoints = totalWaypoints;
       acc.totalBruto += bruto;
       acc.totalCusto += custo;
       acc.totalImposto += imposto;
@@ -566,6 +604,7 @@ function computeSummary(
       totalPagoAutonomos: 0,
       totalCustoParceiros: 0,
       totalPagoParceiros: 0,
+      totalWaypoints: 0,
     },
   );
 }
@@ -588,12 +627,10 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       "Status",
     ],
     repasse_autonomos: [
-      "Protocolo",
-      "OS",
-      "Data",
-      "Motorista",
-      "Custo",
-      "Repasse Pago",
+      "Protocolo/Data",
+      "Trajeto",
+      "Status",
+      "Valor",
     ],
     repasse_parceiros: [
       "Protocolo",
@@ -678,18 +715,22 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
         );
         break;
       }
-      case "repasse_autonomos":
+      case "repasse_autonomos": {
+        const waypoints = data.waypointsMap.get(row.id) || [];
+        const trajeto = waypoints
+          .map((wp) => wp.label)
+          .filter(Boolean)
+          .join(" -> ");
         lines.push(
           [
-            row.protocolo || "-",
-            row.os_number || "-",
-            formatDate(row.data),
-            motoristaNome,
+            `${row.protocolo || "-"} / ${formatDate(row.data)}`,
+            trajeto || "-",
+            row.repasse_pago ? "Pago" : "Pendente",
             formatCurrency(Number(row.custo || 0)),
-            row.repasse_pago ? "Sim" : "Não",
           ].join(";"),
         );
         break;
+      }
       case "repasse_parceiros":
         lines.push(
           [
@@ -786,6 +827,7 @@ async function generatePdf(
   data: ReportData,
   template: ReportTemplate,
   request: Request,
+  filters: FinanceFilters,
 ): Promise<Response> {
   const pdfDoc = await PDFDocument.create();
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -794,11 +836,15 @@ async function generatePdf(
   let logoImage: PDFImage | null = null;
   try {
     const logoUrl = new URL("/logo.png", request.url);
-    let logoResponse = await fetch(logoUrl);
-
-    // Fallback if loopback fetch fails in production
-    if (!logoResponse.ok && !request.url.includes("localhost")) {
-      logoResponse = await fetch("https://portalgeolog.com.br/logo.png");
+    const prodUrl = "https://portalgeolog.com.br/logo.png";
+    
+    let logoResponse: Response;
+    try {
+      logoResponse = await fetch(logoUrl);
+      if (!logoResponse.ok) throw new Error("Local logo fetch failed");
+    } catch (e) {
+      console.warn("Attempting production logo fallback...", e);
+      logoResponse = await fetch(prodUrl);
     }
 
     if (logoResponse.ok) {
@@ -814,12 +860,11 @@ async function generatePdf(
       ) {
         logoImage = await pdfDoc.embedJpg(logoBytes);
       } else {
-        // Try PNG as default fallback
         logoImage = await pdfDoc.embedPng(logoBytes);
       }
     }
   } catch (err) {
-    console.error("Logo fetch error:", err);
+    console.error("Logo embedding failed:", err);
     logoImage = null;
   }
 
@@ -1283,91 +1328,143 @@ async function generatePdf(
     const s = size * 0.5;
     switch (iconType) {
       case "document": {
-        // page with lines
-        currentPage.drawRectangle({
-          x: cx - s * 0.35,
-          y: cy - s * 0.42,
-          width: s * 0.7,
-          height: s * 0.84,
-          color,
-          borderWidth: 0,
+        // page with lines and folded corner
+        const w = s * 0.7;
+        const h = s * 0.9;
+        const x = cx - w / 2;
+        const y = cy - h / 2;
+        
+        // main page
+        currentPage.drawRectangle({ x, y, width: w, height: h, color, borderWidth: 0 });
+        
+        // folded corner triangle (simulated with a small background-colored rectangle at top right)
+        const corner = s * 0.25;
+        currentPage.drawRectangle({ 
+          x: x + w - corner, 
+          y: y + h - corner, 
+          width: corner + 1, 
+          height: corner + 1, 
+          color: c.standardBg 
         });
-        currentPage.drawRectangle({
-          x: cx - s * 0.22,
-          y: cy + s * 0.08,
-          width: s * 0.44,
-          height: s * 0.08,
-          color: c.standardBg,
-          borderWidth: 0,
-        });
-        currentPage.drawRectangle({
-          x: cx - s * 0.22,
-          y: cy - s * 0.12,
-          width: s * 0.3,
-          height: s * 0.06,
-          color: c.standardBg,
-          borderWidth: 0,
+        
+        // lines on page
+        const lineW = w * 0.6;
+        const lineH = 1.5;
+        const lineX = x + w * 0.2;
+        [0.3, 0.5, 0.7].forEach(offset => {
+          currentPage.drawRectangle({
+            x: lineX,
+            y: y + h * offset,
+            width: lineW,
+            height: lineH,
+            color: c.standardBg,
+            borderWidth: 0,
+          });
         });
         break;
       }
       case "grid": {
-        // 2x2 grid
-        const sq = s * 0.22;
-        const g = 3;
-        currentPage.drawRectangle({ x: cx - sq - g, y: cy + g, width: sq, height: sq, color, borderWidth: 0 });
-        currentPage.drawRectangle({ x: cx + g, y: cy + g, width: sq, height: sq, color, borderWidth: 0 });
-        currentPage.drawRectangle({ x: cx - sq - g, y: cy - sq - g, width: sq, height: sq, color, borderWidth: 0 });
-        currentPage.drawRectangle({ x: cx + g, y: cy - sq - g, width: sq, height: sq, color, borderWidth: 0 });
+        // 2x2 grid with rounded-ish look
+        const sq = s * 0.3;
+        const g = 2;
+        [
+          { dx: -sq - g, dy: g }, { dx: g, dy: g },
+          { dx: -sq - g, dy: -sq - g }, { dx: g, dy: -sq - g }
+        ].forEach(pos => {
+          currentPage.drawRectangle({ 
+            x: cx + pos.dx, 
+            y: cy + pos.dy, 
+            width: sq, 
+            height: sq, 
+            color, 
+            borderWidth: 0 
+          });
+        });
         break;
       }
       case "person": {
-        // head + body
-        currentPage.drawEllipse({ x: cx, y: cy + s * 0.2, xScale: s * 0.18, yScale: s * 0.18, color });
+        // head + rounded shoulders
+        currentPage.drawEllipse({ x: cx, y: cy + s * 0.25, xScale: s * 0.22, yScale: s * 0.22, color });
         currentPage.drawRectangle({
-          x: cx - s * 0.22,
-          y: cy - s * 0.38,
-          width: s * 0.44,
-          height: s * 0.38,
+          x: cx - s * 0.35,
+          y: cy - s * 0.35,
+          width: s * 0.7,
+          height: s * 0.4,
           color,
           borderWidth: 0,
         });
+        // round the shoulders
+        currentPage.drawEllipse({ x: cx - s * 0.35, y: cy - s * 0.15, xScale: s * 0.1, yScale: s * 0.2, color });
+        currentPage.drawEllipse({ x: cx + s * 0.35, y: cy - s * 0.15, xScale: s * 0.1, yScale: s * 0.2, color });
         break;
       }
       case "people": {
-        // two overlapping people
-        // back person
-        currentPage.drawEllipse({ x: cx + s * 0.12, y: cy + s * 0.18, xScale: s * 0.14, yScale: s * 0.14, color });
-        currentPage.drawRectangle({
-          x: cx - s * 0.05,
-          y: cy - s * 0.28,
-          width: s * 0.34,
-          height: s * 0.32,
-          color,
-          borderWidth: 0,
-        });
-        // front person
-        currentPage.drawEllipse({ x: cx - s * 0.12, y: cy + s * 0.08, xScale: s * 0.16, yScale: s * 0.16, color });
-        currentPage.drawRectangle({
-          x: cx - s * 0.32,
-          y: cy - s * 0.38,
-          width: s * 0.4,
-          height: s * 0.34,
-          color,
-          borderWidth: 0,
-        });
+        // two people overlapping
+        const drawP = (ox: number, oy: number, sc: number) => {
+          currentPage.drawEllipse({ x: cx + ox, y: cy + oy + s * 0.2 * sc, xScale: s * 0.18 * sc, yScale: s * 0.18 * sc, color });
+          currentPage.drawRectangle({
+            x: cx + ox - s * 0.3 * sc,
+            y: cy + oy - s * 0.3 * sc,
+            width: s * 0.6 * sc,
+            height: s * 0.35 * sc,
+            color,
+            borderWidth: 0,
+          });
+        };
+        drawP(s * 0.15, s * 0.1, 0.9); // back
+        drawP(-s * 0.15, -s * 0.1, 1); // front
         break;
       }
       case "money": {
-        // coin with ring
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.32, yScale: s * 0.32, color });
-        currentPage.drawEllipse({
-          x: cx,
-          y: cy,
-          xScale: s * 0.22,
-          yScale: s * 0.22,
-          color: c.standardBg,
+        // nested coins/circles with a vertical "bill" look
+        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.4, yScale: s * 0.4, color });
+        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.32, yScale: s * 0.32, color: c.standardBg });
+        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.25, yScale: s * 0.25, color });
+        
+        // vertical symbol (simulated $)
+        currentPage.drawRectangle({ x: cx - 0.75, y: cy - s * 0.3, width: 1.5, height: s * 0.6, color: c.standardBg });
+        break;
+      }
+      case "check": {
+        // heavy checkmark
+        const thick = 3.5;
+        currentPage.drawLine({
+          start: { x: cx - s * 0.3, y: cy },
+          end: { x: cx - s * 0.05, y: cy - s * 0.25 },
+          thickness: thick,
+          color,
         });
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.14, yScale: s * 0.14, color });
+        currentPage.drawLine({
+          start: { x: cx - s * 0.05, y: cy - s * 0.25 },
+          end: { x: cx + s * 0.35, y: cy + s * 0.3 },
+          thickness: thick,
+          color,
+        });
+        // caps
+        currentPage.drawEllipse({ x: cx - s * 0.3, y: cy, xScale: thick/2, yScale: thick/2, color });
+        currentPage.drawEllipse({ x: cx + s * 0.35, y: cy + s * 0.3, xScale: thick/2, yScale: thick/2, color });
+        break;
+      }
+      case "route": {
+        // path with start point and end point
+        const dotR = 3.5;
+        const lineT = 2.5;
+        // start (bottom leftish)
+        const x1 = cx - s * 0.3;
+        const y1 = cy - s * 0.2;
+        // mid
+        const x2 = cx + s * 0.1;
+        const y2 = cy + s * 0.1;
+        // end (top rightish)
+        const x3 = cx + s * 0.35;
+        const y3 = cy + s * 0.35;
+
+        currentPage.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: lineT, color });
+        currentPage.drawLine({ start: { x: x2, y: y2 }, end: { x: x3, y: y3 }, thickness: lineT, color });
+        
+        currentPage.drawEllipse({ x: x1, y: y1, xScale: dotR, yScale: dotR, color });
+        currentPage.drawEllipse({ x: x3, y: y3, xScale: dotR + 1, yScale: dotR + 1, color });
+        currentPage.drawEllipse({ x: x3, y: y3, xScale: dotR - 1, yScale: dotR - 1, color: c.standardBg });
         break;
       }
       default: {
@@ -1584,7 +1681,7 @@ async function generatePdf(
     ],
     repasse_autonomos: [
       {
-        title: "Total OS",
+        title: "Serviços Executados",
         value: String(data.summary.totalOS),
         subtitle: "Volume total de ordens",
         iconType: "document",
@@ -1592,18 +1689,19 @@ async function generatePdf(
         emphasis: true,
       },
       {
-        title: "Custo Autônomos",
+        title: "Valor Total",
         value: formatCurrency(data.summary.totalCustoAutonomos),
         subtitle: "Repasses previstos",
-        iconType: "grid",
+        iconType: "money",
         tone: "cyan",
+        emphasis: true,
       },
       {
         title: "Já Pago",
         value: formatCurrency(data.summary.totalPagoAutonomos),
         subtitle: "Repasses quitados",
-        iconType: "money",
-        tone: "teal",
+        iconType: "check",
+        tone: "emerald",
       },
       {
         title: "Pendente",
@@ -1613,6 +1711,14 @@ async function generatePdf(
         subtitle: "Saldo em aberto",
         iconType: "document",
         tone: "amber",
+        emphasis: true,
+      },
+      {
+        title: "Itinerários",
+        value: String(data.summary.totalWaypoints),
+        subtitle: "Total de waypoints",
+        iconType: "route",
+        tone: "teal",
       },
     ],
     repasse_parceiros: [
@@ -1755,12 +1861,10 @@ async function generatePdf(
       { label: "Valor", width: 88, key: "valor" },
     ],
     repasse_autonomos: [
-      { label: "Protocolo", width: 100, key: "protocolo" },
-      { label: "OS", width: 80, key: "os" },
-      { label: "Data", width: 90, key: "data" },
-      { label: "Motorista", width: 250, key: "motorista" },
-      { label: "Custo", width: 110, key: "custo" },
-      { label: "Pago", width: 90, key: "pago" },
+      { label: "Protocolo/Data", width: 110, key: "protocolo_data" },
+      { label: "Status", width: 90, key: "status" },
+      { label: "Trajeto / Itinerário", width: 472, key: "trajeto" },
+      { label: "Valor", width: 90, key: "custo" },
     ],
     repasse_parceiros: [
       { label: "Protocolo", width: 90, key: "protocolo" },
@@ -1810,9 +1914,13 @@ async function generatePdf(
   drawHeader(page);
 
   // Draw summary boxes (4 per row)
-  if (template === "medicao_cliente") {
-    // Add title for Medição ao Cliente
-    const titleText = "RELATÓRIO DE MEDIÇÃO";
+  if (template === "medicao_cliente" || template === "repasse_autonomos") {
+    const isMedicao = template === "medicao_cliente";
+    // Add title
+    const titleText = isMedicao
+      ? "RELATÓRIO DE MEDIÇÃO"
+      : "RELATÓRIO DE MEDIÇÃO PARA MOTORISTA";
+
     const titleWidth = regularFont.widthOfTextAtSize(titleText, 10);
     page.drawText(titleText, {
       x: (pageWidth - titleWidth) / 2 + 10,
@@ -1822,11 +1930,21 @@ async function generatePdf(
       color: rgb(0.5, 0.5, 0.5),
     });
 
-    const selectedClientId = data.rows[0]?.cliente_id;
-    const clientName = selectedClientId ? (data.clienteMap.get(selectedClientId) || "GERAL") : "GERAL";
+    let displayName = "GERAL";
+    if (isMedicao) {
+      const selectedClientId = data.rows[0]?.cliente_id;
+      displayName = sanitizePdfText(
+        selectedClientId ? data.clienteMap.get(selectedClientId) || "GERAL" : "GERAL"
+      );
+    } else {
+      const selectedDriverId = filters.driverId || data.rows[0]?.driver_id;
+      displayName = sanitizePdfText(
+        selectedDriverId ? data.driverMap.get(selectedDriverId) || "MOTORISTA GERAL" : "MOTORISTA GERAL"
+      );
+    }
 
-    const nameWidth = boldFont.widthOfTextAtSize(clientName.toUpperCase(), 18);
-    page.drawText(clientName.toUpperCase(), {
+    const nameWidth = boldFont.widthOfTextAtSize(displayName.toUpperCase(), 18);
+    page.drawText(displayName.toUpperCase(), {
       x: (pageWidth - nameWidth) / 2 + 10,
       y: pageHeight - 190,
       size: 18,
@@ -1860,7 +1978,10 @@ async function generatePdf(
     });
 
     secondRow.forEach((box, index) => {
-      const x = margin + (cardWidth + cardGap) / 2 + index * (cardWidth + cardGap);
+      const x =
+        margin +
+        (cardWidth + cardGap) / 2 +
+        index * (cardWidth + cardGap);
       drawSummaryBox(
         page,
         x,
@@ -1945,6 +2066,10 @@ async function generatePdf(
     const status = row.status_financeiro || "Pendente";
 
     // First pass: compute all cell texts and measure heights
+    type RouteSegment = {
+      type: "header" | "origem" | "parada" | "destino";
+      text: string;
+    };
     const cellData: Array<{
       text: string;
       font: PDFFont;
@@ -1953,6 +2078,8 @@ async function generatePdf(
       isMultiLine: boolean;
       maxWidth: number;
       lineHeight: number;
+      align: "left" | "right";
+      routeSegments?: RouteSegment[];
     }> = [];
 
     let maxContentHeight = baseRowHeight;
@@ -1965,42 +2092,47 @@ async function generatePdf(
 
       switch (h.key) {
         case "protocolo_data":
-          text = `${row.protocolo || "-"}\n${formatDate(row.data)}`;
+          text = `${sanitizePdfText(row.protocolo) || "-"}\n${formatDate(row.data)}`;
           size = 8;
           break;
         case "protocolo":
-          text = row.protocolo || "-";
+          text = sanitizePdfText(row.protocolo) || "-";
           break;
         case "os":
-          text = row.os_number || "-";
+          text = sanitizePdfText(row.os_number) || "-";
           size = 8;
           font = boldFont;
           break;
         case "centro_custo":
-          text = centroCustoNome || "-";
+          text = sanitizePdfText(centroCustoNome) || "-";
           size = 8;
           break;
         case "solicitante":
-          text = row.solicitante || "-";
+          text = sanitizePdfText(row.solicitante) || "-";
           size = 8;
           break;
         case "passageiros":
-          text = passageirosList.join(", ");
+          text = sanitizePdfText(passageirosList.join(", "));
           size = 7;
           break;
         case "trajeto":
-          text = trajetoList.join(" -> ");
-          size = 7;
+          if (template === "repasse_autonomos") {
+            // routeSegments will be set below; text is left empty
+            size = 6.5;
+          } else {
+            text = sanitizePdfText(trajetoList.join(" -> "));
+            size = 7;
+          }
           break;
         case "cliente": {
-          const lines = [truncateText(clienteNome, 35)];
-          if (centroCustoNome) lines.push(truncateText(centroCustoNome, 35));
+          const lines = [truncateText(sanitizePdfText(clienteNome), 35)];
+          if (centroCustoNome) lines.push(truncateText(sanitizePdfText(centroCustoNome), 35));
           text = lines.join("\n");
           if (lines.length > 1) size = 8;
           break;
         }
         case "motorista":
-          text = truncateText(motoristaNome, 25);
+          text = truncateText(sanitizePdfText(motoristaNome), 25);
           break;
         case "data":
           text = formatDate(row.data);
@@ -2014,7 +2146,7 @@ async function generatePdf(
         case "custo":
           text = formatCurrency(Number(row.custo || 0));
           font = boldFont;
-          color = c.accentRed;
+          color = template === "repasse_autonomos" ? c.accentGreen : c.accentRed;
           break;
         case "imposto":
           text = formatCurrency(Number(row.imposto || 0));
@@ -2033,9 +2165,15 @@ async function generatePdf(
           break;
         }
         case "status":
-          text = status;
-          font = boldFont;
-          color = status === "Recebido" ? c.accentGreen : c.textDark;
+          if (template === "repasse_autonomos") {
+            text = row.repasse_pago ? "Pago" : "Pendente";
+            font = boldFont;
+            color = row.repasse_pago ? c.accentGreen : c.accentRed;
+          } else {
+            text = status;
+            font = boldFont;
+            color = status === "Recebido" ? c.accentGreen : c.textDark;
+          }
           break;
         case "pago":
           text = row.repasse_pago ? "Sim" : "Não";
@@ -2043,12 +2181,12 @@ async function generatePdf(
           color = row.repasse_pago ? c.accentGreen : c.accentRed;
           break;
         case "parceiro":
-          text = parceiroNome;
+          text = sanitizePdfText(parceiroNome);
           break;
         case "destinatario": {
           const isParceiro =
             driver?.parceiro_id !== null && driver?.parceiro_id !== undefined;
-          text = isParceiro ? parceiroNome : motoristaNome;
+          text = sanitizePdfText(isParceiro ? parceiroNome : motoristaNome);
           break;
         }
       }
@@ -2062,8 +2200,58 @@ async function generatePdf(
         h.key === "trajeto";
       const lineH = size + 2;
       const maxW = h.width - 10;
+      const align =
+        h.key === "custo" && template === "repasse_autonomos"
+          ? "left"
+          : h.key === "valor" || h.key === "bruto" || h.key === "custo"
+            ? "right"
+            : "left";
 
-      if (isMultiLine) {
+      // Build structured route segments for trajeto (medicao_cliente & repasse_autonomos)
+      let routeSegments: RouteSegment[] | undefined;
+      if (h.key === "trajeto" && (template === "repasse_autonomos" || template === "medicao_cliente")) {
+        routeSegments = [];
+
+        // Group waypoints by itinerary_index
+        const itineraryGroups = new Map<number, ReportWaypoint[]>();
+        for (const wp of waypoints) {
+          const idx = wp.itinerary_index ?? 0;
+          if (!itineraryGroups.has(idx)) itineraryGroups.set(idx, []);
+          itineraryGroups.get(idx)!.push(wp);
+        }
+        const sortedIndices = Array.from(itineraryGroups.keys()).sort((a, b) => a - b);
+        const hasMultiple = sortedIndices.length > 1;
+
+        for (let gi = 0; gi < sortedIndices.length; gi++) {
+          const group = itineraryGroups.get(sortedIndices[gi])!;
+
+          // Section header when there are multiple itineraries
+          if (hasMultiple) {
+            const headerLabel = gi === 0
+              ? `ITINERÁRIO ${gi + 1}`
+              : `RETORNO / ITINERÁRIO ${gi + 1}`;
+            routeSegments.push({ type: "header", text: headerLabel });
+          }
+
+          for (let i = 0; i < group.length; i++) {
+            const wp = group[i];
+            const type: RouteSegment["type"] =
+              i === 0 ? "origem" : i === group.length - 1 ? "destino" : "parada";
+            const label = sanitizePdfText(wp.label) || "Endereco nao informado";
+            routeSegments.push({ type, text: truncateText(label, template === "medicao_cliente" ? 30 : 55) });
+          }
+        }
+
+        if (routeSegments.length === 0) {
+          routeSegments.push({ type: "origem", text: "-" });
+        }
+
+        // height: header lines are shorter (size+5) to create whitespace between itineraries
+        const segH = routeSegments.reduce((acc, seg) => {
+          return acc + (seg.type === "header" ? size + 5 : size + 3);
+        }, 10);
+        maxContentHeight = Math.max(maxContentHeight, segH);
+      } else if (isMultiLine) {
         const contentHeight = calculateMultiLineHeight(text, size, font, maxW, lineH);
         maxContentHeight = Math.max(maxContentHeight, contentHeight + 10);
       } else if (text.includes("\n")) {
@@ -2071,7 +2259,17 @@ async function generatePdf(
         maxContentHeight = Math.max(maxContentHeight, lines * lineH + 10);
       }
 
-      cellData.push({ text, font, color, size, isMultiLine, maxWidth: maxW, lineHeight: lineH });
+      cellData.push({
+        text,
+        font,
+        color,
+        size,
+        isMultiLine,
+        maxWidth: maxW,
+        lineHeight: lineH,
+        align,
+        routeSegments,
+      });
     }
 
     const rowHeight = maxContentHeight;
@@ -2101,7 +2299,87 @@ async function generatePdf(
       const h = headers[i];
       const cell = cellData[i];
 
-      if (cell.isMultiLine) {
+      if (h.key === "trajeto" && cell.routeSegments) {
+        const segColors: Record<string, RGB> = {
+          origem:  rgb(0.08, 0.48, 0.28),
+          parada:  rgb(0.56, 0.62, 0.72),
+          destino: rgb(0.16, 0.42, 0.78),
+        };
+        const segLabels: Record<string, string> = {
+          origem:  "ORIGEM: ",
+          parada:  "PARADA: ",
+          destino: "DESTINO: ",
+        };
+        const segSize = cell.size;
+        let segY = currentY + rowHeight - 9;
+
+        for (const seg of cell.routeSegments) {
+          if (seg.type === "header") {
+            // Section label with blank line before the next itinerary
+            (page as PDFPage).drawText(seg.text, {
+              x: x + 2,
+              y: segY - 1,
+              size: segSize - 1,
+              font: boldFont,
+              color: rgb(0.88, 0.53, 0.12),
+            });
+            segY -= segSize + 5;
+          } else {
+            const col = segColors[seg.type];
+            const lbl = segLabels[seg.type];
+            const lblWidth = boldFont.widthOfTextAtSize(lbl, segSize - 0.5);
+
+            // bullet circle
+            (page as PDFPage).drawEllipse({
+              x: x + 3,
+              y: segY + segSize * 0.3,
+              xScale: 2.5,
+              yScale: 2.5,
+              color: col,
+            });
+            // label
+            (page as PDFPage).drawText(lbl, {
+              x: x + 8,
+              y: segY,
+              size: segSize - 0.5,
+              font: boldFont,
+              color: col,
+            });
+            // address
+            (page as PDFPage).drawText(seg.text, {
+              x: x + 12 + lblWidth,
+              y: segY,
+              size: segSize,
+              font: regularFont,
+              color: c.textDark,
+            });
+            segY -= segSize + (seg.type === "destino" ? 7 : 3);
+          }
+        }
+      } else if (h.key === "protocolo_data") {
+        const [protocolLine = "-", dateLine = ""] = cell.text.split("\n");
+        const protocolSize = 8;
+        const dateSize = 7;
+        const protocolY = currentY + rowHeight - 10;
+        const dateY = protocolY - 11;
+
+        (page as PDFPage).drawText(protocolLine, {
+          x,
+          y: protocolY,
+          size: protocolSize,
+          font: boldFont,
+          color: cell.color,
+        });
+        if (dateLine) {
+          (page as PDFPage).drawText(dateLine, {
+            x,
+            y: dateY,
+            size: dateSize,
+            font: regularFont,
+            color: c.textMedium,
+          });
+        }
+      } else if (cell.isMultiLine) {
         drawMultiLineText(
           page as PDFPage,
           cell.text,
@@ -2114,8 +2392,12 @@ async function generatePdf(
           cell.lineHeight,
         );
       } else {
+        const drawX =
+          cell.align === "right"
+            ? x + h.width - 8 - cell.font.widthOfTextAtSize(cell.text, cell.size)
+            : x;
         (page as PDFPage).drawText(cell.text, {
-          x,
+          x: drawX,
           y: currentY + (rowHeight / 2) - (cell.size / 2),
           size: cell.size,
           font: cell.font,
@@ -2190,7 +2472,7 @@ export async function GET(request: Request) {
       return generateCsv(data, template);
     }
 
-    return generatePdf(data, template, request);
+    return generatePdf(data, template, request, filters);
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Erro desconhecido";

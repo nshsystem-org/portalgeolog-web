@@ -49,6 +49,7 @@ interface GeologSearchableSelectProps {
   triggerClassName?: string;
   className?: string;
   disableSearch?: boolean;
+  dropdownPosition?: "auto" | "down" | "up";
 }
 
 export default function GeologSearchableSelect({
@@ -64,6 +65,7 @@ export default function GeologSearchableSelect({
   triggerClassName = "",
   className = "",
   disableSearch = false,
+  dropdownPosition = "auto",
 }: GeologSearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -115,13 +117,20 @@ export default function GeologSearchableSelect({
         const spaceBelow = window.innerHeight - rect.bottom;
         const spaceAbove = rect.top;
 
-        // Abre para cima apenas se o espaço abaixo for crítico (< 250px)
-        // e se estivermos em uma resolução vertical reduzida (< 880px)
-        // ou se houver significativamente mais espaço acima.
-        const needsUpwards =
-          (window.innerHeight < 880 || spaceBelow < 150) &&
-          spaceBelow < 250 &&
-          spaceAbove > spaceBelow;
+        let needsUpwards: boolean;
+        if (dropdownPosition === "down") {
+          needsUpwards = false;
+        } else if (dropdownPosition === "up") {
+          needsUpwards = true;
+        } else {
+          // Abre para cima apenas se o espaço abaixo for crítico (< 250px)
+          // e se estivermos em uma resolução vertical reduzida (< 880px)
+          // ou se houver significativamente mais espaço acima.
+          needsUpwards =
+            (window.innerHeight < 880 || spaceBelow < 150) &&
+            spaceBelow < 250 &&
+            spaceAbove > spaceBelow;
+        }
 
         setCoords({
           top: rect.bottom,
@@ -143,7 +152,7 @@ export default function GeologSearchableSelect({
       window.removeEventListener("scroll", updateCoords, true);
       window.removeEventListener("resize", updateCoords);
     };
-  }, [isOpen]);
+  }, [isOpen, dropdownPosition]);
 
   const normalizedSearch = normalizeSearch(searchTerm);
   const searchDigits = normalizePhoneDigits(searchTerm);
