@@ -835,28 +835,21 @@ async function generatePdf(
 
   let logoImage: PDFImage | null = null;
   try {
-    const logoUrl = new URL("/logo.png", request.url);
-    const prodUrl = "https://portalgeolog.com.br/logo.png";
+    // Always use production URL for logo to ensure it works in Cloudflare Workers
+    const logoUrl = "https://portalgeolog.com.br/logo.png";
     
-    let logoResponse: Response;
-    try {
-      logoResponse = await fetch(logoUrl);
-      if (!logoResponse.ok) throw new Error("Local logo fetch failed");
-    } catch (e) {
-      console.warn("Attempting production logo fallback...", e);
-      logoResponse = await fetch(prodUrl);
-    }
+    const logoResponse = await fetch(logoUrl);
 
     if (logoResponse.ok) {
       const logoBytes = await logoResponse.arrayBuffer();
       const contentType = logoResponse.headers.get("content-type") || "";
 
-      if (contentType.includes("image/png") || logoUrl.pathname.endsWith(".png")) {
+      if (contentType.includes("image/png") || logoUrl.endsWith(".png")) {
         logoImage = await pdfDoc.embedPng(logoBytes);
       } else if (
         contentType.includes("image/jpeg") ||
-        logoUrl.pathname.endsWith(".jpg") ||
-        logoUrl.pathname.endsWith(".jpeg")
+        logoUrl.endsWith(".jpg") ||
+        logoUrl.endsWith(".jpeg")
       ) {
         logoImage = await pdfDoc.embedJpg(logoBytes);
       } else {
