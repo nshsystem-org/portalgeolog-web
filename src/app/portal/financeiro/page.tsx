@@ -135,7 +135,9 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         defaultDataFim={page.dataFim}
         loading={page.reportLoading}
         clientes={page.clientes}
+        parceiros={page.parceiros}
         drivers={page.drivers}
+        driverPartnerMap={page.driverPartnerMap}
       />
     </div>
   );

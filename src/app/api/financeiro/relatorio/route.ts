@@ -51,6 +51,7 @@ type FinanceRow = {
   solicitante: string | null;
   motorista: string | null;
   driver_id: string | null;
+  veiculo_id: string | null;
   valor_bruto: number | string | null;
   custo: number | string | null;
   imposto: number | string | null;
@@ -97,6 +98,7 @@ type ReportData = {
   driverMap: Map<string, string>;
   driverDetailMap: Map<string, DriverDetail>;
   parceiroMap: Map<string, string>;
+  vehicleMap: Map<string, string>;
   waypointsMap: Map<string, ReportWaypoint[]>;
   passengerNamesMap: Map<string, string>;
   summary: ReportSummary;
@@ -254,7 +256,7 @@ async function fetchReportData(
   let query = adminClient
     .from("ordens_servico")
     .select(
-      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, repasse_pago",
+      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, veiculo_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, repasse_pago",
     )
     .eq("arquivado", false);
 
@@ -426,6 +428,18 @@ async function fetchReportData(
           .in("id", [...new Set(driverParceiroIds)])
       : { data: [] };
 
+  const vehicleIds = Array.from(
+    new Set(rows.map((row) => row.veiculo_id).filter(Boolean) as string[]),
+  );
+
+  const { data: veiculosRaw } =
+    vehicleIds.length > 0
+      ? await adminClient
+          .from("veiculos")
+          .select("id, placa, modelo")
+          .in("id", vehicleIds)
+      : { data: [] };
+
   const clienteMap = new Map(
     (clientes || []).map((item) => [item.id, item.nome]),
   );
@@ -443,6 +457,13 @@ async function fetchReportData(
       item.id as string,
       (item.razao_social_ou_nome_completo as string) || "",
     ]),
+  );
+  const vehicleMap = new Map(
+    (veiculosRaw || []).map((item: Record<string, unknown>) => {
+      const placa = (item.placa as string) || "";
+      const modelo = (item.modelo as string) || "";
+      return [item.id as string, placa && modelo ? `${placa} - ${modelo}` : placa || modelo || "-"];
+    }),
   );
 
   if (template === "repasse_autonomos") {
@@ -481,6 +502,7 @@ async function fetchReportData(
     driverMap,
     driverDetailMap,
     parceiroMap,
+    vehicleMap,
     waypointsMap,
     passengerNamesMap,
     summary,
@@ -500,6 +522,7 @@ function emptyReportData(
     driverMap: new Map(),
     driverDetailMap: new Map(),
     parceiroMap: new Map(),
+    vehicleMap: new Map(),
     waypointsMap: new Map(),
     passengerNamesMap: new Map(),
     summary: {
@@ -619,7 +642,7 @@ function computeSummary(
 }
 
 function generateCsv(data: ReportData, template: ReportTemplate): Response {
-  const { rows, clienteMap, centroCustoMap, driverMap, parceiroMap } = data;
+  const { rows, clienteMap, centroCustoMap, driverMap, parceiroMap, vehicleMap } = data;
 
   const headersMap: Record<ReportTemplate, string[]> = {
     medicao_cliente: [
@@ -647,6 +670,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       "Data",
       "Parceiro",
       "Motorista",
+      "Veículo usado",
       "Custo",
       "Repasse Pago",
     ],
@@ -748,6 +772,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             formatDate(row.data),
             parceiroNome,
             motoristaNome,
+            vehicleMap.get(row.veiculo_id || "") || "-",
             formatCurrency(Number(row.custo || 0)),
             row.repasse_pago ? "Sim" : "Não",
           ].join(";"),
@@ -1863,19 +1888,21 @@ async function generatePdf(
       { label: "Valor", width: 88, key: "valor" },
     ],
     repasse_autonomos: [
-      { label: "Protocolo/Data", width: 110, key: "protocolo_data" },
+      { label: "Protocolo/Data", width: 100, key: "protocolo_data" },
       { label: "Status", width: 90, key: "status" },
-      { label: "Trajeto / Itinerário", width: 472, key: "trajeto" },
-      { label: "Valor", width: 90, key: "custo" },
+      { label: "Trajeto realizado", width: 360, key: "trajeto" },
+      { label: "Veículo usado", width: 140, key: "veiculo" },
+      { label: "Valor", width: 88, key: "custo" },
     ],
     repasse_parceiros: [
-      { label: "Protocolo", width: 90, key: "protocolo" },
-      { label: "OS", width: 70, key: "os" },
-      { label: "Data", width: 80, key: "data" },
-      { label: "Parceiro", width: 180, key: "parceiro" },
-      { label: "Motorista", width: 180, key: "motorista" },
-      { label: "Custo", width: 100, key: "custo" },
-      { label: "Pago", width: 90, key: "pago" },
+      { label: "Protocolo", width: 78, key: "protocolo" },
+      { label: "OS", width: 52, key: "os" },
+      { label: "Data", width: 64, key: "data" },
+      { label: "Parceiro", width: 128, key: "parceiro" },
+      { label: "Motorista", width: 128, key: "motorista" },
+      { label: "Veículo usado", width: 140, key: "veiculo" },
+      { label: "Custo", width: 88, key: "custo" },
+      { label: "Pago", width: 50, key: "pago" },
     ],
     performance: [
       { label: "Protocolo", width: 80, key: "protocolo" },
@@ -2065,6 +2092,7 @@ async function generatePdf(
     const parceiroNome = driver?.parceiro_id
       ? data.parceiroMap.get(driver.parceiro_id) || "-"
       : "";
+    const veiculoNome = data.vehicleMap.get(row.veiculo_id || "") || "-";
     const status = row.status_financeiro || "Pendente";
 
     // First pass: compute all cell texts and measure heights
@@ -2192,6 +2220,19 @@ async function generatePdf(
           text = sanitizePdfText(isParceiro ? parceiroNome : motoristaNome);
           break;
         }
+        case "veiculo": {
+          const vehText = sanitizePdfText(veiculoNome);
+          if (vehText === "-") {
+            text = "-";
+          } else {
+            const parts = vehText.split(" - ", 2);
+            const placaPart = parts[0] || "-";
+            const modeloPart = parts[1] ? truncateText(parts[1], 22) : "";
+            text = modeloPart ? `${placaPart}\n${modeloPart}` : placaPart;
+          }
+          size = 8;
+          break;
+        }
       }
 
       const isMultiLine =
@@ -2200,7 +2241,8 @@ async function generatePdf(
         h.key === "centro_custo" ||
         h.key === "solicitante" ||
         h.key === "passageiros" ||
-        h.key === "trajeto";
+        h.key === "trajeto" ||
+        h.key === "veiculo";
       const lineH = size + 2;
       const maxW = h.width - 10;
       const align =
@@ -2334,16 +2376,25 @@ async function generatePdf(
               color: rgb(0.88, 0.53, 0.12),
             });
             if (seg.dateTime) {
-              const dateTimeSize = segSize;
-              const dateTimeWidth = regularFont.widthOfTextAtSize(seg.dateTime, dateTimeSize);
-              (page as PDFPage).drawText(seg.dateTime, {
-                x: x + h.width - 10 - dateTimeWidth,
+              const labelWidth = boldFont.widthOfTextAtSize(seg.text, segSize - 1);
+              const dash = " - ";
+              const dashWidth = boldFont.widthOfTextAtSize(dash, segSize - 1);
+              (page as PDFPage).drawText(dash, {
+                x: x + 2 + labelWidth,
                 y: segY - 1,
-                size: dateTimeSize,
+                size: segSize - 1,
+                font: boldFont,
+                color: c.textMedium,
+              });
+              const dateSize = segSize + 1;
+              (page as PDFPage).drawText(seg.dateTime, {
+                x: x + 2 + labelWidth + dashWidth,
+                y: segY - 1,
+                size: dateSize,
                 font: regularFont,
                 color: c.textMedium,
               });
-              segY -= segSize + 6;
+              segY -= segSize + 5;
             } else {
               segY -= segSize + 5;
             }
@@ -2398,6 +2449,31 @@ async function generatePdf(
             x,
             y: dateY,
             size: dateSize,
+            font: regularFont,
+            color: c.textMedium,
+          });
+        }
+      } else if (h.key === "veiculo") {
+        const [placaLine = "-", modeloLine = ""] = cell.text.split("\n");
+        const placaSize = 10;
+        const modeloSize = 9;
+        const gap = 4;
+        const centerY = currentY + rowHeight / 2;
+        const placaY = modeloLine ? centerY + gap / 2 + modeloSize / 2 : centerY;
+        const modeloY = modeloLine ? centerY - gap / 2 - placaSize / 2 : 0;
+
+        (page as PDFPage).drawText(placaLine, {
+          x,
+          y: placaY,
+          size: placaSize,
+          font: boldFont,
+          color: cell.color,
+        });
+        if (modeloLine) {
+          (page as PDFPage).drawText(modeloLine, {
+            x,
+            y: modeloY,
+            size: modeloSize,
             font: regularFont,
             color: c.textMedium,
           });

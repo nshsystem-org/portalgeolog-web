@@ -84,6 +84,7 @@ export type ReportPayload = {
   dataInicio: string;
   dataFim: string;
   clienteId?: string;
+  parceiroId?: string;
   driverId?: string;
   repasseStatusFilter?: "all" | "pending" | "paid";
 };
@@ -96,7 +97,14 @@ interface RelatorioModalProps {
   defaultDataFim: string;
   loading?: boolean;
   clientes?: Array<{ id: string; nome: string }>;
-  drivers?: Array<{ id: string; name: string; phone?: string; vinculo_tipo?: string }>;
+  parceiros?: Array<{ id: string; razaoSocialOuNomeCompleto: string }>;
+  drivers?: Array<{
+    id: string;
+    name: string;
+    phone?: string;
+    vinculo_tipo?: string;
+  }>;
+  driverPartnerMap?: Map<string, string>;
 }
 
 export default function RelatorioModal({
@@ -107,7 +115,9 @@ export default function RelatorioModal({
   defaultDataFim,
   loading = false,
   clientes = [],
+  parceiros = [],
   drivers = [],
+  driverPartnerMap = new Map(),
 }: RelatorioModalProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplate | "">(
     "",
@@ -116,6 +126,7 @@ export default function RelatorioModal({
   const [dataInicio, setDataInicio] = useState(defaultDataInicio);
   const [dataFim, setDataFim] = useState(defaultDataFim);
   const [clienteId, setClienteId] = useState("");
+  const [parceiroId, setParceiroId] = useState("");
   const [driverId, setDriverId] = useState("");
   const [repasseStatusFilter, setRepasseStatusFilter] = useState<
     "all" | "pending" | "paid"
@@ -152,6 +163,25 @@ export default function RelatorioModal({
     [drivers],
   );
 
+  const partnerDrivers = useMemo(
+    () =>
+      drivers.filter(
+        (driver) => driverPartnerMap.get(driver.id) === parceiroId,
+      ),
+    [drivers, driverPartnerMap, parceiroId],
+  );
+
+  useEffect(() => {
+    if (selectedTemplate !== "repasse_parceiros") return;
+    if (
+      driverId &&
+      parceiroId &&
+      driverPartnerMap.get(driverId) !== parceiroId
+    ) {
+      setDriverId("");
+    }
+  }, [driverId, driverPartnerMap, parceiroId, selectedTemplate]);
+
   const isRepasseTemplate =
     selectedTemplate === "repasse_autonomos" ||
     selectedTemplate === "repasse_parceiros";
@@ -161,12 +191,14 @@ export default function RelatorioModal({
     dataInicio &&
     dataFim &&
     (selectedTemplate !== "medicao_cliente" || clienteId) &&
-    (selectedTemplate !== "repasse_autonomos" || driverId);
+    (selectedTemplate !== "repasse_autonomos" || driverId) &&
+    (selectedTemplate !== "repasse_parceiros" || parceiroId);
 
   const handleGenerate = () => {
     if (!selectedTemplate || !dataInicio || !dataFim) return;
     if (selectedTemplate === "medicao_cliente" && !clienteId) return;
     if (selectedTemplate === "repasse_autonomos" && !driverId) return;
+    if (selectedTemplate === "repasse_parceiros" && !parceiroId) return;
 
     onGenerate({
       template: selectedTemplate,
@@ -174,7 +206,13 @@ export default function RelatorioModal({
       dataInicio,
       dataFim,
       clienteId: selectedTemplate === "medicao_cliente" ? clienteId : undefined,
-      driverId: selectedTemplate === "repasse_autonomos" ? driverId : undefined,
+      parceiroId:
+        selectedTemplate === "repasse_parceiros" ? parceiroId : undefined,
+      driverId:
+        selectedTemplate === "repasse_autonomos" ||
+        selectedTemplate === "repasse_parceiros"
+          ? driverId
+          : undefined,
       repasseStatusFilter: isRepasseTemplate ? repasseStatusFilter : undefined,
     });
   };
@@ -186,6 +224,7 @@ export default function RelatorioModal({
     setDataInicio(defaultDataInicio);
     setDataFim(defaultDataFim);
     setClienteId("");
+    setParceiroId("");
     setDriverId("");
     setRepasseStatusFilter("all");
   };
@@ -193,7 +232,9 @@ export default function RelatorioModal({
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 z-[9999] flex items-center justify-center transition-all ${isTallModal ? "p-1" : "p-4"}`}>
+    <div
+      className={`fixed inset-0 z-[9999] flex items-center justify-center transition-all ${isTallModal ? "p-1" : "p-4"}`}
+    >
       <div
         className="absolute inset-0 bg-[#001C3A]/60 backdrop-blur-md"
         onClick={handleClose}
@@ -204,7 +245,9 @@ export default function RelatorioModal({
         className={`relative bg-white w-full max-w-3xl ${isTallModal ? "max-w-[720px] h-[90vh] rounded-[1.5rem]" : "max-h-[92vh] rounded-[2.5rem]"} shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200`}
         style={{ textRendering: "geometricPrecision" }}
       >
-        <div className={`flex items-center justify-between px-8 pt-6 pb-5 ${isTallModal ? "px-6 pt-4 pb-3" : ""} bg-blue-50/70 border-b border-blue-100`}>
+        <div
+          className={`flex items-center justify-between px-8 pt-6 pb-5 ${isTallModal ? "px-6 pt-4 pb-3" : ""} bg-blue-50/70 border-b border-blue-100`}
+        >
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">
               Exportar Relatório
@@ -221,7 +264,9 @@ export default function RelatorioModal({
           </button>
         </div>
 
-        <div className={`flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-8 ${isTallModal ? "px-6 pb-6 space-y-5" : ""}`}>
+        <div
+          className={`flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-8 ${isTallModal ? "px-6 pb-6 space-y-5" : ""}`}
+        >
           {/* Period */}
           <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500 mt-6">
             <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
@@ -250,7 +295,9 @@ export default function RelatorioModal({
             <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
               Tipo de Relatório
             </label>
-            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isTallModal ? "gap-4" : ""}`}>
+            <div
+              className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isTallModal ? "gap-4" : ""}`}
+            >
               {TEMPLATES.map((template) => {
                 const isActive = selectedTemplate === template.id;
                 return (
@@ -270,9 +317,12 @@ export default function RelatorioModal({
                           : "bg-slate-100 text-slate-500"
                       }`}
                     >
-                      {React.cloneElement(template.icon as React.ReactElement<{ size?: number }>, {
-                        size: 20,
-                      })}
+                      {React.cloneElement(
+                        template.icon as React.ReactElement<{ size?: number }>,
+                        {
+                          size: 20,
+                        },
+                      )}
                     </div>
                     <div className="min-w-0 pt-0.5">
                       <p
@@ -328,6 +378,64 @@ export default function RelatorioModal({
                   triggerClassName="px-4 py-3 text-base"
                   dropdownPosition="up"
                 />
+              </div>
+            </div>
+          )}
+
+          {/* Partner Selection (Only for Repasse a Parceiros) */}
+          {selectedTemplate === "repasse_parceiros" && (
+            <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-4">
+              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+                <GeologSearchableSelect
+                  label="Parceiro"
+                  options={parceiros.map((partner) => ({
+                    id: partner.id,
+                    nome: partner.razaoSocialOuNomeCompleto,
+                  }))}
+                  value={parceiroId}
+                  onChange={(value) => {
+                    setParceiroId(value);
+                    setDriverId("");
+                  }}
+                  required
+                  placeholder="Selecione um parceiro..."
+                  triggerClassName="px-4 py-3 text-base"
+                  dropdownPosition="up"
+                />
+              </div>
+
+              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <GeologSearchableSelect
+                      label="Motorista do parceiro"
+                      options={partnerDrivers.map((driver) => ({
+                        id: driver.id,
+                        nome: driver.name,
+                        sublabel: driver.phone || undefined,
+                      }))}
+                      value={driverId}
+                      onChange={setDriverId}
+                      disabled={!parceiroId}
+                      placeholder={
+                        parceiroId
+                          ? "Opcional: selecione um motorista..."
+                          : "Selecione um parceiro primeiro..."
+                      }
+                      triggerClassName="px-4 py-3 text-base"
+                      dropdownPosition="up"
+                    />
+                  </div>
+                  {driverId && (
+                    <button
+                      onClick={() => setDriverId("")}
+                      className="shrink-0 p-2 text-slate-400 hover:text-red-400 hover:bg-red-50 rounded-xl transition-all cursor-pointer mt-6"
+                      title="Limpar seleção de motorista"
+                    >
+                      <X size={18} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -415,7 +523,9 @@ export default function RelatorioModal({
           )}
         </div>
 
-        <div className={`px-8 py-5 ${isTallModal ? "px-6 py-4" : ""} bg-blue-50/70 border-t border-blue-100 flex items-center justify-between gap-5`}>
+        <div
+          className={`px-8 py-5 ${isTallModal ? "px-6 py-4" : ""} bg-blue-50/70 border-t border-blue-100 flex items-center justify-between gap-5`}
+        >
           {/* Format toggles */}
           <div className="flex gap-3">
             <button
