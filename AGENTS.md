@@ -24,7 +24,8 @@ Sempre verifique o `package.json` antes de executar, mas prefira estes padrões:
 
 - **NÃO FAÇA COMMITS automaticamente.** Só execute `git commit` quando o usuário pedir explicitamente no chat.
 - **NÃO FAÇA PUSH** sem autorização explícita do usuário.
-- **Regra de Ouro:** Build e lint são obrigatórios antes de qualquer commit, mas o commit em si só ocorre mediante solicitação direta.
+- **NÃO FAÇA DEPLOY** (incluindo `wrangler deploy`, `npm run deploy` ou `npm run publish:app-version`) sem autorização explícita do usuário.
+- **Regra de Ouro:** build, lint, commit, push e deploy só podem ocorrer quando eu pedir explicitamente no chat; na dúvida, pare e aguarde confirmação.
 
 ### 🧪 Testes (Protocolo de Validação)
 

@@ -2,7 +2,15 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { PDFDocument, PDFImage, PDFPage, StandardFonts, rgb, PDFFont, RGB } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFImage,
+  PDFPage,
+  StandardFonts,
+  rgb,
+  PDFFont,
+  RGB,
+} from "pdf-lib";
 import {
   isFinanceStatusSettled,
   isLiberadoParaFaturamento,
@@ -211,7 +219,10 @@ const formatDateTime = (data?: string | null, hora?: string | null): string => {
   return parts.length > 0 ? parts.join(" ") : "-";
 };
 
-const truncateText = (text: string | null | undefined, maxLength: number): string => {
+const truncateText = (
+  text: string | null | undefined,
+  maxLength: number,
+): string => {
   const safeText = text || "";
   if (safeText.length <= maxLength) return safeText;
   return safeText.substring(0, maxLength - 3) + "...";
@@ -227,10 +238,10 @@ const sanitizePdfText = (text: string | null | undefined): string => {
   return text
     .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'") // curly single quotes → '
     .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"') // curly double quotes → "
-    .replace(/[\u2013\u2014\u2015]/g, "-")                   // en/em dash → -
-    .replace(/\u2026/g, "...")                               // ellipsis → ...
-    .replace(/\u00A0/g, " ")                                 // non-breaking space → space
-    .replace(/[^\x00-\xFF]/g, "?");                          // any remaining non-Latin → ?
+    .replace(/[\u2013\u2014\u2015]/g, "-") // en/em dash → -
+    .replace(/\u2026/g, "...") // ellipsis → ...
+    .replace(/\u00A0/g, " ") // non-breaking space → space
+    .replace(/[^\x00-\xFF]/g, "?"); // any remaining non-Latin → ?
 };
 
 async function fetchReportData(
@@ -346,7 +357,11 @@ async function fetchReportData(
         : [];
 
     const passengerIds = Array.from(
-      new Set(wpPassRows.map((p) => p.passageiro_id).filter((id): id is string => !!id)),
+      new Set(
+        wpPassRows
+          .map((p) => p.passageiro_id)
+          .filter((id): id is string => !!id),
+      ),
     );
 
     // Fetch passenger names
@@ -354,13 +369,7 @@ async function fetchReportData(
       const passData = await fetchInChunks<{
         id: string;
         nome_completo: string;
-      }>(
-        adminClient,
-        "passageiros",
-        "id",
-        passengerIds,
-        "id, nome_completo",
-      );
+      }>(adminClient, "passageiros", "id", passengerIds, "id, nome_completo");
       passData.forEach((p: { id: string; nome_completo: string }) => {
         passengerNamesMap.set(p.id, p.nome_completo);
       });
@@ -381,7 +390,10 @@ async function fetchReportData(
       const passIds = wpWithPassMap.get(wp.id) || [];
       list.push({
         ...wp,
-        passengers: passIds.map((pid) => ({ id: pid, nome: passengerNamesMap.get(pid) || "" })),
+        passengers: passIds.map((pid) => ({
+          id: pid,
+          nome: passengerNamesMap.get(pid) || "",
+        })),
       });
       waypointsMap.set(wp.ordem_servico_id, list);
     });
@@ -462,7 +474,10 @@ async function fetchReportData(
     (veiculosRaw || []).map((item: Record<string, unknown>) => {
       const placa = (item.placa as string) || "";
       const modelo = (item.modelo as string) || "";
-      return [item.id as string, placa && modelo ? `${placa} - ${modelo}` : placa || modelo || "-"];
+      return [
+        item.id as string,
+        placa && modelo ? `${placa} - ${modelo}` : placa || modelo || "-",
+      ];
     }),
   );
 
@@ -642,7 +657,14 @@ function computeSummary(
 }
 
 function generateCsv(data: ReportData, template: ReportTemplate): Response {
-  const { rows, clienteMap, centroCustoMap, driverMap, parceiroMap, vehicleMap } = data;
+  const {
+    rows,
+    clienteMap,
+    centroCustoMap,
+    driverMap,
+    parceiroMap,
+    vehicleMap,
+  } = data;
 
   const headersMap: Record<ReportTemplate, string[]> = {
     medicao_cliente: [
@@ -658,21 +680,14 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       "Valor Bruto",
       "Status",
     ],
-    repasse_autonomos: [
-      "Protocolo/Data",
-      "Trajeto",
-      "Status",
-      "Valor",
-    ],
+    repasse_autonomos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
     repasse_parceiros: [
-      "Protocolo",
-      "OS",
-      "Data",
-      "Parceiro",
-      "Motorista",
+      "Protocolo/Data",
+      "Status",
+      "Parceiro/Motorista",
+      "Trajeto realizado",
       "Veículo usado",
-      "Custo",
-      "Repasse Pago",
+      "Valor",
     ],
     performance: [
       "Protocolo",
@@ -723,7 +738,9 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
         const waypoints = data.waypointsMap.get(row.id) || [];
         const passageiros = Array.from(
           new Set(
-            waypoints.flatMap((wp) => wp.passengers?.map((p) => p.nome)).filter(Boolean),
+            waypoints
+              .flatMap((wp) => wp.passengers?.map((p) => p.nome))
+              .filter(Boolean),
           ),
         ).join(", ");
         const trajeto = waypoints
@@ -767,14 +784,15 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       case "repasse_parceiros":
         lines.push(
           [
-            row.protocolo || "-",
-            row.os_number || "-",
-            formatDate(row.data),
-            parceiroNome,
-            motoristaNome,
+            `${row.protocolo || "-"} / ${formatDate(row.data)}`,
+            row.repasse_pago ? "Pago" : "Pendente",
+            `${parceiroNome || "-"} / ${motoristaNome || "-"}`,
+            (data.waypointsMap.get(row.id) || [])
+              .map((wp) => wp.label)
+              .filter(Boolean)
+              .join(" -> ") || "-",
             vehicleMap.get(row.veiculo_id || "") || "-",
             formatCurrency(Number(row.custo || 0)),
-            row.repasse_pago ? "Sim" : "Não",
           ].join(";"),
         );
         break;
@@ -867,29 +885,253 @@ async function generatePdf(
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
+  // Logo embutido como base64 (100x100 otimizado).
+  // Cloudflare Workers nao consegue fazer fetch para o proprio dominio (self-referential request),
+  // por isso o logo é embutido diretamente para garantir que funcione tanto em localhost quanto em producao.
+  const LOGO_BASE64 =
+    "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";
+
   let logoImage: PDFImage | null = null;
   try {
-    // Always use production URL for logo to ensure it works in Cloudflare Workers
-    const logoUrl = "https://portalgeolog.com.br/logo.png";
-    
-    const logoResponse = await fetch(logoUrl);
-
-    if (logoResponse.ok) {
-      const logoBytes = await logoResponse.arrayBuffer();
-      const contentType = logoResponse.headers.get("content-type") || "";
-
-      if (contentType.includes("image/png") || logoUrl.endsWith(".png")) {
-        logoImage = await pdfDoc.embedPng(logoBytes);
-      } else if (
-        contentType.includes("image/jpeg") ||
-        logoUrl.endsWith(".jpg") ||
-        logoUrl.endsWith(".jpeg")
-      ) {
-        logoImage = await pdfDoc.embedJpg(logoBytes);
-      } else {
-        logoImage = await pdfDoc.embedPng(logoBytes);
-      }
-    }
+    const logoBytes = Uint8Array.from(atob(LOGO_BASE64), (c) =>
+      c.charCodeAt(0),
+    ).buffer;
+    logoImage = await pdfDoc.embedPng(logoBytes);
   } catch (err) {
     console.error("Logo embedding failed:", err);
     logoImage = null;
@@ -1029,11 +1271,11 @@ async function generatePdf(
     tableHeader: rgb(0.24, 0.36, 0.52),
     tableZebra: rgb(0.97, 0.98, 1.0),
     tableWhite: rgb(1, 1, 1),
-    textDark: rgb(0.25, 0.30, 0.38),
+    textDark: rgb(0.25, 0.3, 0.38),
     textMedium: rgb(0.42, 0.47, 0.55),
     borderLight: rgb(0.85, 0.89, 0.94),
     accentGreen: rgb(0.12, 0.48, 0.32),
-    accentRed: rgb(0.75, 0.30, 0.22),
+    accentRed: rgb(0.75, 0.3, 0.22),
   };
 
   // ── Multi-line helpers ──
@@ -1105,7 +1347,10 @@ async function generatePdf(
     maxWidth: number,
     lineHeight: number,
   ): number {
-    return Math.max(1, wrapTextToLines(text, size, font, maxWidth).length) * lineHeight;
+    return (
+      Math.max(1, wrapTextToLines(text, size, font, maxWidth).length) *
+      lineHeight
+    );
   }
 
   function drawMultiLineText(
@@ -1134,7 +1379,7 @@ async function generatePdf(
     const strips = 24;
     const stripH = h / strips;
     // from darker blue at top to headerBg at bottom
-    const from = { r: 0.10, g: 0.18, b: 0.32 };
+    const from = { r: 0.1, g: 0.18, b: 0.32 };
     const to = { r: 0.18, g: 0.28, b: 0.42 };
     for (let i = 0; i < strips; i++) {
       const t = i / (strips - 1);
@@ -1163,6 +1408,24 @@ async function generatePdf(
         y: pageHeight - 85,
         width: 50,
         height: 50,
+      });
+    } else {
+      // Fallback: draw a simple icon placeholder
+      currentPage.drawRectangle({
+        x: margin,
+        y: pageHeight - 85,
+        width: 50,
+        height: 50,
+        borderColor: c.headerMuted,
+        borderWidth: 2,
+        color: rgb(0.95, 0.95, 0.95),
+      });
+      currentPage.drawText("G", {
+        x: margin + 16,
+        y: pageHeight - 70,
+        size: 28,
+        font: boldFont,
+        color: c.primaryBox,
       });
     }
 
@@ -1275,7 +1538,13 @@ async function generatePdf(
     });
   }
 
-  type SummaryCardTone = "blue" | "cyan" | "amber" | "teal" | "slate" | "emerald";
+  type SummaryCardTone =
+    | "blue"
+    | "cyan"
+    | "amber"
+    | "teal"
+    | "slate"
+    | "emerald";
 
   function getSummaryCardTone(tone: SummaryCardTone) {
     switch (tone) {
@@ -1360,25 +1629,32 @@ async function generatePdf(
         const h = s * 0.9;
         const x = cx - w / 2;
         const y = cy - h / 2;
-        
+
         // main page
-        currentPage.drawRectangle({ x, y, width: w, height: h, color, borderWidth: 0 });
-        
+        currentPage.drawRectangle({
+          x,
+          y,
+          width: w,
+          height: h,
+          color,
+          borderWidth: 0,
+        });
+
         // folded corner triangle (simulated with a small background-colored rectangle at top right)
         const corner = s * 0.25;
-        currentPage.drawRectangle({ 
-          x: x + w - corner, 
-          y: y + h - corner, 
-          width: corner + 1, 
-          height: corner + 1, 
-          color: c.standardBg 
+        currentPage.drawRectangle({
+          x: x + w - corner,
+          y: y + h - corner,
+          width: corner + 1,
+          height: corner + 1,
+          color: c.standardBg,
         });
-        
+
         // lines on page
         const lineW = w * 0.6;
         const lineH = 1.5;
         const lineX = x + w * 0.2;
-        [0.3, 0.5, 0.7].forEach(offset => {
+        [0.3, 0.5, 0.7].forEach((offset) => {
           currentPage.drawRectangle({
             x: lineX,
             y: y + h * offset,
@@ -1395,23 +1671,31 @@ async function generatePdf(
         const sq = s * 0.3;
         const g = 2;
         [
-          { dx: -sq - g, dy: g }, { dx: g, dy: g },
-          { dx: -sq - g, dy: -sq - g }, { dx: g, dy: -sq - g }
-        ].forEach(pos => {
-          currentPage.drawRectangle({ 
-            x: cx + pos.dx, 
-            y: cy + pos.dy, 
-            width: sq, 
-            height: sq, 
-            color, 
-            borderWidth: 0 
+          { dx: -sq - g, dy: g },
+          { dx: g, dy: g },
+          { dx: -sq - g, dy: -sq - g },
+          { dx: g, dy: -sq - g },
+        ].forEach((pos) => {
+          currentPage.drawRectangle({
+            x: cx + pos.dx,
+            y: cy + pos.dy,
+            width: sq,
+            height: sq,
+            color,
+            borderWidth: 0,
           });
         });
         break;
       }
       case "person": {
         // head + rounded shoulders
-        currentPage.drawEllipse({ x: cx, y: cy + s * 0.25, xScale: s * 0.22, yScale: s * 0.22, color });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy + s * 0.25,
+          xScale: s * 0.22,
+          yScale: s * 0.22,
+          color,
+        });
         currentPage.drawRectangle({
           x: cx - s * 0.35,
           y: cy - s * 0.35,
@@ -1421,14 +1705,32 @@ async function generatePdf(
           borderWidth: 0,
         });
         // round the shoulders
-        currentPage.drawEllipse({ x: cx - s * 0.35, y: cy - s * 0.15, xScale: s * 0.1, yScale: s * 0.2, color });
-        currentPage.drawEllipse({ x: cx + s * 0.35, y: cy - s * 0.15, xScale: s * 0.1, yScale: s * 0.2, color });
+        currentPage.drawEllipse({
+          x: cx - s * 0.35,
+          y: cy - s * 0.15,
+          xScale: s * 0.1,
+          yScale: s * 0.2,
+          color,
+        });
+        currentPage.drawEllipse({
+          x: cx + s * 0.35,
+          y: cy - s * 0.15,
+          xScale: s * 0.1,
+          yScale: s * 0.2,
+          color,
+        });
         break;
       }
       case "people": {
         // two people overlapping
         const drawP = (ox: number, oy: number, sc: number) => {
-          currentPage.drawEllipse({ x: cx + ox, y: cy + oy + s * 0.2 * sc, xScale: s * 0.18 * sc, yScale: s * 0.18 * sc, color });
+          currentPage.drawEllipse({
+            x: cx + ox,
+            y: cy + oy + s * 0.2 * sc,
+            xScale: s * 0.18 * sc,
+            yScale: s * 0.18 * sc,
+            color,
+          });
           currentPage.drawRectangle({
             x: cx + ox - s * 0.3 * sc,
             y: cy + oy - s * 0.3 * sc,
@@ -1444,12 +1746,36 @@ async function generatePdf(
       }
       case "money": {
         // nested coins/circles with a vertical "bill" look
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.4, yScale: s * 0.4, color });
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.32, yScale: s * 0.32, color: c.standardBg });
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.25, yScale: s * 0.25, color });
-        
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.4,
+          yScale: s * 0.4,
+          color,
+        });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.32,
+          yScale: s * 0.32,
+          color: c.standardBg,
+        });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.25,
+          yScale: s * 0.25,
+          color,
+        });
+
         // vertical symbol (simulated $)
-        currentPage.drawRectangle({ x: cx - 0.75, y: cy - s * 0.3, width: 1.5, height: s * 0.6, color: c.standardBg });
+        currentPage.drawRectangle({
+          x: cx - 0.75,
+          y: cy - s * 0.3,
+          width: 1.5,
+          height: s * 0.6,
+          color: c.standardBg,
+        });
         break;
       }
       case "check": {
@@ -1468,8 +1794,20 @@ async function generatePdf(
           color,
         });
         // caps
-        currentPage.drawEllipse({ x: cx - s * 0.3, y: cy, xScale: thick/2, yScale: thick/2, color });
-        currentPage.drawEllipse({ x: cx + s * 0.35, y: cy + s * 0.3, xScale: thick/2, yScale: thick/2, color });
+        currentPage.drawEllipse({
+          x: cx - s * 0.3,
+          y: cy,
+          xScale: thick / 2,
+          yScale: thick / 2,
+          color,
+        });
+        currentPage.drawEllipse({
+          x: cx + s * 0.35,
+          y: cy + s * 0.3,
+          xScale: thick / 2,
+          yScale: thick / 2,
+          color,
+        });
         break;
       }
       case "route": {
@@ -1486,16 +1824,50 @@ async function generatePdf(
         const x3 = cx + s * 0.35;
         const y3 = cy + s * 0.35;
 
-        currentPage.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: lineT, color });
-        currentPage.drawLine({ start: { x: x2, y: y2 }, end: { x: x3, y: y3 }, thickness: lineT, color });
-        
-        currentPage.drawEllipse({ x: x1, y: y1, xScale: dotR, yScale: dotR, color });
-        currentPage.drawEllipse({ x: x3, y: y3, xScale: dotR + 1, yScale: dotR + 1, color });
-        currentPage.drawEllipse({ x: x3, y: y3, xScale: dotR - 1, yScale: dotR - 1, color: c.standardBg });
+        currentPage.drawLine({
+          start: { x: x1, y: y1 },
+          end: { x: x2, y: y2 },
+          thickness: lineT,
+          color,
+        });
+        currentPage.drawLine({
+          start: { x: x2, y: y2 },
+          end: { x: x3, y: y3 },
+          thickness: lineT,
+          color,
+        });
+
+        currentPage.drawEllipse({
+          x: x1,
+          y: y1,
+          xScale: dotR,
+          yScale: dotR,
+          color,
+        });
+        currentPage.drawEllipse({
+          x: x3,
+          y: y3,
+          xScale: dotR + 1,
+          yScale: dotR + 1,
+          color,
+        });
+        currentPage.drawEllipse({
+          x: x3,
+          y: y3,
+          xScale: dotR - 1,
+          yScale: dotR - 1,
+          color: c.standardBg,
+        });
         break;
       }
       default: {
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.25, yScale: s * 0.25, color });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.25,
+          yScale: s * 0.25,
+          color,
+        });
       }
     }
   }
@@ -1750,7 +2122,7 @@ async function generatePdf(
     ],
     repasse_parceiros: [
       {
-        title: "Total OS",
+        title: "Serviços Executados",
         value: String(data.summary.totalOS),
         subtitle: "Volume total de ordens",
         iconType: "document",
@@ -1758,18 +2130,19 @@ async function generatePdf(
         emphasis: true,
       },
       {
-        title: "Custo Parceiros",
+        title: "Valor Total",
         value: formatCurrency(data.summary.totalCustoParceiros),
         subtitle: "Repasses previstos",
-        iconType: "grid",
+        iconType: "money",
         tone: "cyan",
+        emphasis: true,
       },
       {
         title: "Já Pago",
         value: formatCurrency(data.summary.totalPagoParceiros),
         subtitle: "Repasses quitados",
-        iconType: "money",
-        tone: "teal",
+        iconType: "check",
+        tone: "emerald",
       },
       {
         title: "Pendente",
@@ -1779,6 +2152,14 @@ async function generatePdf(
         subtitle: "Saldo em aberto",
         iconType: "document",
         tone: "amber",
+        emphasis: true,
+      },
+      {
+        title: "Itinerários",
+        value: String(data.summary.totalWaypoints),
+        subtitle: "Total de waypoints",
+        iconType: "route",
+        tone: "teal",
       },
     ],
     performance: [
@@ -1895,14 +2276,12 @@ async function generatePdf(
       { label: "Valor", width: 88, key: "custo" },
     ],
     repasse_parceiros: [
-      { label: "Protocolo", width: 78, key: "protocolo" },
-      { label: "OS", width: 52, key: "os" },
-      { label: "Data", width: 64, key: "data" },
-      { label: "Parceiro", width: 128, key: "parceiro" },
-      { label: "Motorista", width: 128, key: "motorista" },
-      { label: "Veículo usado", width: 140, key: "veiculo" },
-      { label: "Custo", width: 88, key: "custo" },
-      { label: "Pago", width: 50, key: "pago" },
+      { label: "Protocolo/Data", width: 100, key: "protocolo_data" },
+      { label: "Status", width: 80, key: "status" },
+      { label: "Parceiro/Motorista", width: 170, key: "parceiro_motorista" },
+      { label: "Trajeto realizado", width: 250, key: "trajeto" },
+      { label: "Veículo usado", width: 100, key: "veiculo" },
+      { label: "Valor", width: 78, key: "custo" },
     ],
     performance: [
       { label: "Protocolo", width: 80, key: "protocolo" },
@@ -1943,12 +2322,19 @@ async function generatePdf(
   drawHeader(page);
 
   // Draw summary boxes (4 per row)
-  if (template === "medicao_cliente" || template === "repasse_autonomos") {
+  if (
+    template === "medicao_cliente" ||
+    template === "repasse_autonomos" ||
+    template === "repasse_parceiros"
+  ) {
     const isMedicao = template === "medicao_cliente";
+    const isParceiros = template === "repasse_parceiros";
     // Add title
     const titleText = isMedicao
       ? "RELATÓRIO DE MEDIÇÃO"
-      : "RELATÓRIO DE MEDIÇÃO PARA MOTORISTA";
+      : isParceiros
+        ? "RELATÓRIO DE REPASSE A PARCEIROS"
+        : "RELATÓRIO DE MEDIÇÃO PARA MOTORISTA";
 
     const titleWidth = regularFont.widthOfTextAtSize(titleText, 10);
     page.drawText(titleText, {
@@ -1963,12 +2349,27 @@ async function generatePdf(
     if (isMedicao) {
       const selectedClientId = data.rows[0]?.cliente_id;
       displayName = sanitizePdfText(
-        selectedClientId ? data.clienteMap.get(selectedClientId) || "GERAL" : "GERAL"
+        selectedClientId
+          ? data.clienteMap.get(selectedClientId) || "GERAL"
+          : "GERAL",
       );
+    } else if (isParceiros) {
+      const firstRow = data.rows[0];
+      if (firstRow?.driver_id) {
+        const driver = data.driverDetailMap.get(firstRow.driver_id);
+        if (driver?.parceiro_id) {
+          const parceiroNome = data.parceiroMap.get(driver.parceiro_id);
+          if (parceiroNome) {
+            displayName = sanitizePdfText(parceiroNome);
+          }
+        }
+      }
     } else {
       const selectedDriverId = filters.driverId || data.rows[0]?.driver_id;
       displayName = sanitizePdfText(
-        selectedDriverId ? data.driverMap.get(selectedDriverId) || "MOTORISTA GERAL" : "MOTORISTA GERAL"
+        selectedDriverId
+          ? data.driverMap.get(selectedDriverId) || "MOTORISTA GERAL"
+          : "MOTORISTA GERAL",
       );
     }
 
@@ -2008,9 +2409,7 @@ async function generatePdf(
 
     secondRow.forEach((box, index) => {
       const x =
-        margin +
-        (cardWidth + cardGap) / 2 +
-        index * (cardWidth + cardGap);
+        margin + (cardWidth + cardGap) / 2 + index * (cardWidth + cardGap);
       drawSummaryBox(
         page,
         x,
@@ -2064,14 +2463,14 @@ async function generatePdf(
   currentY = pageHeight - 170;
   drawTableHeader(page, currentY, headers);
 
-  // currentY will track the top of the next row. 
+  // currentY will track the top of the next row.
   // We leave a small padding between header and first row.
-  currentY -= 4; 
+  currentY -= 4;
 
   data.rows.forEach((row: FinanceRow, index: number) => {
     const isMedicaoCliente = template === "medicao_cliente";
     const baseRowHeight = isMedicaoCliente ? 45 : 36;
-    
+
     // Fetch related data
     const clienteNome = data.clienteMap.get(row.cliente_id || "") || "-";
     const centroCustoNome =
@@ -2081,7 +2480,9 @@ async function generatePdf(
     const waypoints = data.waypointsMap.get(row.id) || [];
     const passageirosList = Array.from(
       new Set(
-        waypoints.flatMap((wp) => wp.passengers?.map((p) => p.nome)).filter(Boolean),
+        waypoints
+          .flatMap((wp) => wp.passengers?.map((p) => p.nome))
+          .filter(Boolean),
       ),
     ) as string[];
     const trajetoList = waypoints.map((wp) => wp.label).filter(Boolean);
@@ -2100,6 +2501,7 @@ async function generatePdf(
       type: "header" | "origem" | "parada" | "destino";
       text: string;
       dateTime?: string;
+      wrappedLines?: string[];
     };
     const cellData: Array<{
       text: string;
@@ -2157,7 +2559,8 @@ async function generatePdf(
           break;
         case "cliente": {
           const lines = [truncateText(sanitizePdfText(clienteNome), 35)];
-          if (centroCustoNome) lines.push(truncateText(sanitizePdfText(centroCustoNome), 35));
+          if (centroCustoNome)
+            lines.push(truncateText(sanitizePdfText(centroCustoNome), 35));
           text = lines.join("\n");
           if (lines.length > 1) size = 8;
           break;
@@ -2177,7 +2580,10 @@ async function generatePdf(
         case "custo":
           text = formatCurrency(Number(row.custo || 0));
           font = boldFont;
-          color = template === "repasse_autonomos" ? c.accentGreen : c.accentRed;
+          color =
+            template === "repasse_autonomos" || template === "repasse_parceiros"
+              ? c.accentGreen
+              : c.accentRed;
           break;
         case "imposto":
           text = formatCurrency(Number(row.imposto || 0));
@@ -2196,7 +2602,10 @@ async function generatePdf(
           break;
         }
         case "status":
-          if (template === "repasse_autonomos") {
+          if (
+            template === "repasse_autonomos" ||
+            template === "repasse_parceiros"
+          ) {
             text = row.repasse_pago ? "Pago" : "Pendente";
             font = boldFont;
             color = row.repasse_pago ? c.accentGreen : c.accentRed;
@@ -2206,6 +2615,14 @@ async function generatePdf(
             color = status === "Recebido" ? c.accentGreen : c.textDark;
           }
           break;
+        case "parceiro_motorista": {
+          const partnerLine = sanitizePdfText(parceiroNome) || "-";
+          const driverLine = sanitizePdfText(motoristaNome) || "-";
+          text = `${partnerLine}\n${driverLine}`;
+          font = boldFont;
+          size = 10;
+          break;
+        }
         case "pago":
           text = row.repasse_pago ? "Sim" : "Não";
           font = boldFont;
@@ -2242,11 +2659,13 @@ async function generatePdf(
         h.key === "solicitante" ||
         h.key === "passageiros" ||
         h.key === "trajeto" ||
+        h.key === "parceiro_motorista" ||
         h.key === "veiculo";
       const lineH = size + 2;
       const maxW = h.width - 10;
       const align =
-        h.key === "custo" && template === "repasse_autonomos"
+        h.key === "custo" &&
+        (template === "repasse_autonomos" || template === "repasse_parceiros")
           ? "left"
           : h.key === "valor" && template === "medicao_cliente"
             ? "left"
@@ -2254,9 +2673,14 @@ async function generatePdf(
               ? "right"
               : "left";
 
-      // Build structured route segments for trajeto (medicao_cliente & repasse_autonomos)
+      // Build structured route segments for trajeto (medicao_cliente, repasse_autonomos & repasse_parceiros)
       let routeSegments: RouteSegment[] | undefined;
-      if (h.key === "trajeto" && (template === "repasse_autonomos" || template === "medicao_cliente")) {
+      if (
+        h.key === "trajeto" &&
+        (template === "repasse_autonomos" ||
+          template === "medicao_cliente" ||
+          template === "repasse_parceiros")
+      ) {
         routeSegments = [];
 
         // Group waypoints by itinerary_index
@@ -2266,7 +2690,9 @@ async function generatePdf(
           if (!itineraryGroups.has(idx)) itineraryGroups.set(idx, []);
           itineraryGroups.get(idx)!.push(wp);
         }
-        const sortedIndices = Array.from(itineraryGroups.keys()).sort((a, b) => a - b);
+        const sortedIndices = Array.from(itineraryGroups.keys()).sort(
+          (a, b) => a - b,
+        );
         const hasMultiple = sortedIndices.length > 1;
 
         for (let gi = 0; gi < sortedIndices.length; gi++) {
@@ -2274,10 +2700,14 @@ async function generatePdf(
 
           // Section header when there are multiple itineraries
           if (hasMultiple) {
-            const headerLabel = gi === 0
-              ? `ITINERÁRIO ${gi + 1}`
-              : `RETORNO / ITINERÁRIO ${gi + 1}`;
-            const headerDateTime = formatDateTime(group[0]?.data, group[0]?.hora);
+            const headerLabel =
+              gi === 0
+                ? `ITINERÁRIO ${gi + 1}`
+                : `RETORNO / ITINERÁRIO ${gi + 1}`;
+            const headerDateTime = formatDateTime(
+              group[0]?.data,
+              group[0]?.hora,
+            );
             routeSegments.push({
               type: "header",
               text: headerLabel,
@@ -2288,9 +2718,31 @@ async function generatePdf(
           for (let i = 0; i < group.length; i++) {
             const wp = group[i];
             const type: RouteSegment["type"] =
-              i === 0 ? "origem" : i === group.length - 1 ? "destino" : "parada";
+              i === 0
+                ? "origem"
+                : i === group.length - 1
+                  ? "destino"
+                  : "parada";
             const label = sanitizePdfText(wp.label) || "Endereco nao informado";
-            routeSegments.push({ type, text: truncateText(label, template === "medicao_cliente" ? 30 : 55) });
+            const text =
+              template === "medicao_cliente"
+                ? truncateText(label, 30)
+                : template === "repasse_autonomos"
+                  ? truncateText(label, 55)
+                  : label;
+            routeSegments.push({
+              type,
+              text,
+              wrappedLines:
+                template === "repasse_parceiros"
+                  ? wrapTextToLines(
+                      text,
+                      size,
+                      regularFont,
+                      Math.max(120, h.width - 65),
+                    )
+                  : undefined,
+            });
           }
         }
 
@@ -2300,11 +2752,19 @@ async function generatePdf(
 
         // height: header lines are shorter (size+5) to create whitespace between itineraries
         const segH = routeSegments.reduce((acc, seg) => {
-          return acc + (seg.type === "header" ? size + 5 : size + 3);
+          const lineCount = seg.wrappedLines?.length ?? 1;
+          const lineHeight = seg.type === "header" ? size + 5 : size + 3;
+          return acc + lineCount * lineHeight;
         }, 10);
         maxContentHeight = Math.max(maxContentHeight, segH);
       } else if (isMultiLine) {
-        const contentHeight = calculateMultiLineHeight(text, size, font, maxW, lineH);
+        const contentHeight = calculateMultiLineHeight(
+          text,
+          size,
+          font,
+          maxW,
+          lineH,
+        );
         maxContentHeight = Math.max(maxContentHeight, contentHeight + 10);
       } else if (text.includes("\n")) {
         const lines = text.split("\n").length;
@@ -2332,7 +2792,7 @@ async function generatePdf(
       drawHeader(page);
       currentY = pageHeight - 170;
       drawTableHeader(page, currentY, headers);
-      currentY -= 4; 
+      currentY -= 4;
     }
 
     const isEven = index % 2 === 0;
@@ -2353,13 +2813,13 @@ async function generatePdf(
 
       if (h.key === "trajeto" && cell.routeSegments) {
         const segColors: Record<string, RGB> = {
-          origem:  rgb(0.08, 0.48, 0.28),
-          parada:  rgb(0.56, 0.62, 0.72),
+          origem: rgb(0.08, 0.48, 0.28),
+          parada: rgb(0.56, 0.62, 0.72),
           destino: rgb(0.16, 0.42, 0.78),
         };
         const segLabels: Record<string, string> = {
-          origem:  "ORIGEM: ",
-          parada:  "PARADA: ",
+          origem: "ORIGEM: ",
+          parada: "PARADA: ",
           destino: "DESTINO: ",
         };
         const segSize = cell.size;
@@ -2376,7 +2836,10 @@ async function generatePdf(
               color: rgb(0.88, 0.53, 0.12),
             });
             if (seg.dateTime) {
-              const labelWidth = boldFont.widthOfTextAtSize(seg.text, segSize - 1);
+              const labelWidth = boldFont.widthOfTextAtSize(
+                seg.text,
+                segSize - 1,
+              );
               const dash = " - ";
               const dashWidth = boldFont.widthOfTextAtSize(dash, segSize - 1);
               (page as PDFPage).drawText(dash, {
@@ -2402,32 +2865,41 @@ async function generatePdf(
             const col = segColors[seg.type];
             const lbl = segLabels[seg.type];
             const lblWidth = boldFont.widthOfTextAtSize(lbl, segSize - 0.5);
+            const lines = seg.wrappedLines || [seg.text];
+            const lineStep = segSize + 2;
 
-            // bullet circle
-            (page as PDFPage).drawEllipse({
-              x: x + 3,
-              y: segY + segSize * 0.3,
-              xScale: 2.5,
-              yScale: 2.5,
-              color: col,
+            lines.forEach((line, lineIndex) => {
+              const lineY = segY - lineIndex * lineStep;
+
+              if (lineIndex === 0) {
+                // bullet circle
+                (page as PDFPage).drawEllipse({
+                  x: x + 3,
+                  y: lineY + segSize * 0.3,
+                  xScale: 2.5,
+                  yScale: 2.5,
+                  color: col,
+                });
+                // label
+                (page as PDFPage).drawText(lbl, {
+                  x: x + 8,
+                  y: lineY,
+                  size: segSize - 0.5,
+                  font: boldFont,
+                  color: col,
+                });
+              }
+
+              // address
+              (page as PDFPage).drawText(line, {
+                x: x + 12 + lblWidth,
+                y: lineY,
+                size: segSize,
+                font: regularFont,
+                color: c.textDark,
+              });
             });
-            // label
-            (page as PDFPage).drawText(lbl, {
-              x: x + 8,
-              y: segY,
-              size: segSize - 0.5,
-              font: boldFont,
-              color: col,
-            });
-            // address
-            (page as PDFPage).drawText(seg.text, {
-              x: x + 12 + lblWidth,
-              y: segY,
-              size: segSize,
-              font: regularFont,
-              color: c.textDark,
-            });
-            segY -= segSize + (seg.type === "destino" ? 7 : 3);
+            segY -= lines.length * lineStep + (seg.type === "destino" ? 7 : 3);
           }
         }
       } else if (h.key === "protocolo_data") {
@@ -2453,13 +2925,59 @@ async function generatePdf(
             color: c.textMedium,
           });
         }
+      } else if (h.key === "parceiro_motorista") {
+        const [partnerLine = "-", driverLine = "-"] = cell.text.split("\n");
+        const partnerSize = 10;
+        const driverSize = 8.5;
+        const gap = 4;
+        const partnerLines = wrapTextToLines(
+          partnerLine,
+          partnerSize,
+          boldFont,
+          cell.maxWidth,
+        );
+        const driverLines = wrapTextToLines(
+          driverLine,
+          driverSize,
+          regularFont,
+          cell.maxWidth,
+        );
+        const partnerStep = partnerSize + 2;
+        const driverStep = driverSize + 2;
+        let currentTextY = currentY + rowHeight - 10;
+
+        partnerLines.forEach((line) => {
+          (page as PDFPage).drawText(line, {
+            x,
+            y: currentTextY,
+            size: partnerSize,
+            font: boldFont,
+            color: cell.color,
+          });
+          currentTextY -= partnerStep;
+        });
+
+        currentTextY -= gap;
+
+        driverLines.forEach((line) => {
+          (page as PDFPage).drawText(line, {
+            x,
+            y: currentTextY,
+            size: driverSize,
+            font: regularFont,
+            color: c.textMedium,
+          });
+          currentTextY -= driverStep;
+        });
       } else if (h.key === "veiculo") {
         const [placaLine = "-", modeloLine = ""] = cell.text.split("\n");
         const placaSize = 10;
         const modeloSize = 9;
         const gap = 4;
         const centerY = currentY + rowHeight / 2;
-        const placaY = modeloLine ? centerY + gap / 2 + modeloSize / 2 : centerY;
+        const placaY = modeloLine
+          ? centerY + gap / 2 + modeloSize / 2
+          : centerY;
         const modeloY = modeloLine ? centerY - gap / 2 - placaSize / 2 : 0;
 
         (page as PDFPage).drawText(placaLine, {
@@ -2493,11 +3011,14 @@ async function generatePdf(
       } else {
         const drawX =
           cell.align === "right"
-            ? x + h.width - 8 - cell.font.widthOfTextAtSize(cell.text, cell.size)
+            ? x +
+              h.width -
+              8 -
+              cell.font.widthOfTextAtSize(cell.text, cell.size)
             : x;
         (page as PDFPage).drawText(cell.text, {
           x: drawX,
-          y: currentY + (rowHeight / 2) - (cell.size / 2),
+          y: currentY + rowHeight / 2 - cell.size / 2,
           size: cell.size,
           font: cell.font,
           color: cell.color,
