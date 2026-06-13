@@ -45,12 +45,7 @@ begin
       else v_v_bruto
     end;
 
-  select coalesce(percentual, 12)
-  into v_imposto_percentual
-  from public.config_imposto
-  where (vigencia is null or vigencia <= (p_os_data->>'data')::date)
-  order by vigencia desc nulls last
-  limit 1;
+  v_imposto_percentual := 12;
 
   v_imposto := v_base_cobranca * (v_imposto_percentual / 100);
   v_lucro := v_base_cobranca - v_imposto - v_v_custo;

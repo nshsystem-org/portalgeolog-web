@@ -124,12 +124,9 @@ BEGIN
       ELSE v_total_efetivo_cliente
     END;
 
-  SELECT COALESCE(percentual, 12)
-  INTO v_imposto_percentual
-  FROM public.config_imposto
-  WHERE (vigencia IS NULL OR vigencia <= (p_os_data->>'data')::date)
-  ORDER BY vigencia DESC NULLS LAST
-  LIMIT 1;
+  v_imposto_percentual := public.get_imposto_percentual_for_date(
+    COALESCE(NULLIF(p_os_data->>'data', '')::date, CURRENT_DATE)
+  );
 
   v_imposto := v_base_cobranca * (v_imposto_percentual / 100);
   v_lucro   := v_base_cobranca - v_imposto - v_total_efetivo_motorista;
@@ -343,12 +340,9 @@ BEGIN
       ELSE v_total_efetivo_cliente
     END;
 
-  SELECT COALESCE(percentual, 12)
-    INTO v_imposto_percentual
-  FROM public.config_imposto
-  WHERE (vigencia IS NULL OR vigencia <= (p_os_data->>'data')::DATE)
-  ORDER BY vigencia DESC NULLS LAST
-  LIMIT 1;
+  v_imposto_percentual := public.get_imposto_percentual_for_date(
+    COALESCE(NULLIF(p_os_data->>'data', '')::date, CURRENT_DATE)
+  );
 
   -- 1. Atualizar a ordem de serviço (cabeçalho)
   UPDATE public.ordens_servico SET

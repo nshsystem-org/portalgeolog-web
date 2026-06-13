@@ -41,12 +41,7 @@ BEGIN
       WHEN v_no_show THEN v_v_bruto * (COALESCE(v_no_show_percentual, 100) / 100)
       ELSE v_v_bruto
     END;
-  SELECT COALESCE(percentual, 12)
-    INTO v_imposto_percentual
-  FROM public.config_imposto
-  WHERE (vigencia IS NULL OR vigencia <= (p_os_data->>'data')::DATE)
-  ORDER BY vigencia DESC NULLS LAST
-  LIMIT 1;
+  v_imposto_percentual := 12;
 
   -- 1. Atualizar a ordem de serviço (cabeçalho)
   UPDATE public.ordens_servico SET
