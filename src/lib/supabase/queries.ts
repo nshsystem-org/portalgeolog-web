@@ -26,6 +26,9 @@ import { formatPortugueseList } from "@/lib/os-activity";
 import {
   isFinanceStatusSettled,
   isLiberadoParaFaturamento,
+  parseHoraExtraMinutes,
+  calcHoraExtraCliente,
+  calcHoraExtraMotorista,
 } from "@/lib/financeiro";
 
 let _supabase: ReturnType<typeof createClient> | null = null;
@@ -135,6 +138,7 @@ const buildOSUpdateLogContext = (
     if (v == null) return "";
     if (typeof v === "string") return v.trim() || "";
     if (typeof v === "number") return String(v);
+    if (typeof v === "boolean") return v ? "Sim" : "Não";
     return "";
   };
 
@@ -158,6 +162,12 @@ const buildOSUpdateLogContext = (
       ["Veículo de Uso", previousOS.veiculoId || null, osData.veiculoId || null],
       ["Valor Bruto (R$)", previousOS.valorBruto ?? 0, osData.valorBruto ?? 0],
       ["Custo Motorista (R$)", previousOS.custo ?? 0, osData.custo ?? 0],
+      ["NO-SHOW", previousOS.noShow ?? false, osData.noShow ?? false],
+      [
+        "Cobrança NO-SHOW (%)",
+        previousOS.noShowPercentual ?? null,
+        osData.noShow ? osData.noShowPercentual ?? 100 : null,
+      ],
       ["Observações Financeiras", previousOS.obsFinanceiras || "", osData.obsFinanceiras || ""],
     ];
 
@@ -449,6 +459,8 @@ type OSRow = {
   data: string | null;
   hora: string | null;
   hora_extra: string | null;
+  no_show: boolean | null;
+  no_show_percentual: number | null;
   cliente_id: string | null;
   centro_custo?: string | null;
   solicitante: string | null;
@@ -622,6 +634,8 @@ const mapOSRecord = (
     data: o.data || "",
     hora: o.hora,
     horaExtra: o.hora_extra || "",
+    noShow: Boolean(o.no_show),
+    noShowPercentual: o.no_show_percentual ?? null,
     clienteId: o.cliente_id || "",
     solicitante: o.solicitante || "",
     solicitanteId: o.solicitante_id || undefined,
@@ -1164,6 +1178,8 @@ const OS_SELECT_COLUMNS = [
   "data",
   "hora",
   "hora_extra",
+  "no_show",
+  "no_show_percentual",
   "cliente_id",
   "centro_custo",
   "centro_custo_id",
@@ -1658,6 +1674,10 @@ export async function insertOS(
     driver_id: (osData as OSInput & { driverId?: string }).driverId || "",
     veiculo_id: (osData as OSInput & { veiculoId?: string }).veiculoId || "",
     valor_bruto: osData.valorBruto ?? 0,
+    no_show: Boolean(osData.noShow),
+    no_show_percentual: osData.noShow
+      ? osData.noShowPercentual ?? 100
+      : null,
     obs_financeiras:
       (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
     custo: osData.custo ?? 0,
@@ -1706,8 +1726,18 @@ export async function updateOSInDB(
   const impostoPercentual = await getImpostoPercentualForDate(osData.data);
   const vBruto = osData.valorBruto ?? 0;
   const vCusto = osData.custo ?? 0;
-  const imposto = vBruto * (impostoPercentual / 100);
-  const lucro = vBruto - imposto - vCusto;
+  const noShowFator = osData.noShow ? ((osData.noShowPercentual ?? 100) / 100) : 1;
+  const heMin = parseHoraExtraMinutes(osData.horaExtra || "");
+  const heCliente = calcHoraExtraCliente(heMin);
+  const heMotorista = calcHoraExtraMotorista(heMin);
+  const baseCobranca = osData.noShow
+    ? (vBruto + heCliente) * noShowFator
+    : vBruto + heCliente;
+  const repasseEfetivo = osData.noShow
+    ? (vCusto + heMotorista) * noShowFator
+    : vCusto + heMotorista;
+  const imposto = baseCobranca * (impostoPercentual / 100);
+  const lucro = baseCobranca - imposto - repasseEfetivo;
   const centroCusto =
     (osData as OSInput & { centroCusto?: string }).centroCusto ??
     osData.centroCustoId ??
@@ -1807,6 +1837,10 @@ export async function updateOSInDB(
     driver_id: (osData as OSInput & { driverId?: string }).driverId || null,
     veiculo_id: (osData as OSInput & { veiculoId?: string }).veiculoId || null,
     valor_bruto: osData.valorBruto ?? 0,
+    no_show: Boolean(osData.noShow),
+    no_show_percentual: osData.noShow
+      ? osData.noShowPercentual ?? 100
+      : null,
     obs_financeiras:
       (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
     imposto,

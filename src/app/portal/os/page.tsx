@@ -62,6 +62,7 @@ import {
   History,
   Archive,
   Save,
+  Receipt,
 } from "lucide-react";
 import {
   useData,
@@ -104,6 +105,13 @@ import {
   type OperationalCycleState,
 } from "@/lib/os-messages";
 import { getOSLogMetadataHighlights, getOSLogTone } from "@/lib/os-activity";
+import {
+  parseHoraExtraMinutes,
+  calcBilledMinutes,
+  calcHoraExtraCliente,
+  calcHoraExtraMotorista,
+  formatBilledHours,
+} from "@/lib/financeiro";
 
 type FormPassenger = { id: string; solicitanteId: string; nome: string };
 type FormWaypoint = {
@@ -120,6 +128,8 @@ type OSFormData = {
   data: string;
   hora: string;
   horaExtra: string;
+  noShow: boolean;
+  noShowPercentual: number | null;
   os: string;
   clienteId: string;
   solicitante: string;
@@ -160,6 +170,30 @@ const getItineraries = (waypoints: FormWaypoint[]): LocalItineraryGroup[] => {
 };
 
 const getItinerarySectionTitle = (): string => "Rotas e Destinos";
+
+const normalizeHoraExtraForInput = (value?: string | null): string => {
+  if (!value) return "";
+
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.includes(":")) {
+    const [hours = "", minutes = ""] = trimmed.split(":");
+    if (!hours) return "";
+    return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+  }
+
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 1) return `0${digits}:00`;
+  if (digits.length === 2) return `${digits}:00`;
+  if (digits.length === 3) {
+    return `0${digits.slice(0, 1)}:${digits.slice(1, 3)}`;
+  }
+  if (digits.length >= 4) {
+    return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+  }
+
+  return trimmed;
+};
 
 const getItineraryTitle = (itineraryIndex: number): string => {
   if (itineraryIndex < 0) {
@@ -496,6 +530,7 @@ export default function OSOperationalPage() {
   const supabase = createClient();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showObsFinanceiras, setShowObsFinanceiras] = useState(false);
   const [isQuickPassengerModalOpen, setIsQuickPassengerModalOpen] =
     useState(false);
   const [quickPassengerTarget, setQuickPassengerTarget] = useState<{
@@ -1663,6 +1698,8 @@ export default function OSOperationalPage() {
     data: new Date().toISOString().split("T")[0],
     hora: "",
     horaExtra: "",
+    noShow: false,
+    noShowPercentual: null,
     os: "",
     clienteId: "",
     solicitante: "",
@@ -1738,7 +1775,11 @@ export default function OSOperationalPage() {
     const nextFormData: OSFormData = {
       data: osItem.data,
       hora: osItem.hora || "",
-      horaExtra: osItem.horaExtra || "",
+      horaExtra: normalizeHoraExtraForInput(osItem.horaExtra),
+      noShow: Boolean(osItem.noShow),
+      noShowPercentual: osItem.noShow
+        ? osItem.noShowPercentual ?? 100
+        : null,
       os: osItem.os,
       clienteId: osItem.clienteId,
       solicitante: osItem.solicitante,
@@ -4193,9 +4234,24 @@ export default function OSOperationalPage() {
     }).format(value);
   };
 
-  const currentImposto = (formData.valorBruto ?? 0) * (impostoPercentual / 100);
-  const currentLucro =
-    (formData.valorBruto ?? 0) - currentImposto - (formData.custo ?? 0);
+  const vBruto = formData.valorBruto ?? 0;
+  const vCusto = formData.custo ?? 0;
+  const noShowFator = formData.noShow ? ((formData.noShowPercentual ?? 100) / 100) : 1;
+
+  // Hora extra sempre conta no cálculo; no-show apenas reduz proporcionalmente o total
+  const horaExtraMinutos = parseHoraExtraMinutes(formData.horaExtra);
+  const horaExtraBilledMinutes = calcBilledMinutes(horaExtraMinutos);
+  const horaExtraClienteValor = calcHoraExtraCliente(horaExtraMinutos);
+  const horaExtraMotoristaValor = calcHoraExtraMotorista(horaExtraMinutos);
+  const horaExtraBilledLabel = formatBilledHours(horaExtraBilledMinutes);
+
+  const totalEfetivoCliente = vBruto + horaExtraClienteValor;
+  const totalEfetivoMotorista = vCusto + horaExtraMotoristaValor;
+
+  const currentBaseCobranca = formData.noShow ? totalEfetivoCliente * noShowFator : totalEfetivoCliente;
+  const repasseEfetivo = formData.noShow ? totalEfetivoMotorista * noShowFator : totalEfetivoMotorista;
+  const currentImposto = currentBaseCobranca * (impostoPercentual / 100);
+  const currentLucro = currentBaseCobranca - currentImposto - repasseEfetivo;
 
   const availableSolicitantes = useMemo(() => {
     if (!formData.clienteId) return [];
@@ -4267,14 +4323,7 @@ export default function OSOperationalPage() {
   ) => {
     const { name, value } = e.target;
 
-    if (name === "horaExtra") {
-      // Permitir apenas dígitos
-      const numericValue = value.replace(/\D/g, "");
-      setFormData((prev) => ({ ...prev, [name]: numericValue }));
-      return;
-    }
-
-    if (name === "hora") {
+    if (name === "horaExtra" || name === "hora") {
       let cleanValue = value.replace(/\D/g, "");
       if (cleanValue.length > 4) cleanValue = cleanValue.slice(0, 4);
 
@@ -4291,7 +4340,24 @@ export default function OSOperationalPage() {
         formatted = `${hours}:`;
       }
 
-      setFormData((prev) => ({ ...prev, hora: formatted }));
+      setFormData((prev) => ({ ...prev, [name]: formatted }));
+      return;
+    }
+
+    if (name === "noShow") {
+      setFormData((prev) => ({
+        ...prev,
+        noShow: value === "sim",
+        noShowPercentual: value === "sim" ? prev.noShowPercentual ?? 100 : null,
+      }));
+      return;
+    }
+
+    if (name === "noShowPercentual") {
+      setFormData((prev) => ({
+        ...prev,
+        noShowPercentual: value === "" ? null : Number(value),
+      }));
       return;
     }
 
@@ -5807,10 +5873,10 @@ export default function OSOperationalPage() {
                     </h3>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-                    <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-end gap-10">
+                    <div className="flex flex-col gap-2 w-full sm:w-[220px]">
                       <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                        Valor Bruto (R$)
+                        Valor Bruto
                       </label>
                       <div className="relative">
                         <input
@@ -5819,14 +5885,14 @@ export default function OSOperationalPage() {
                           step="0.01"
                           value={formData.valorBruto ?? ""}
                           onChange={handleInputChange}
-                          className="w-full bg-slate-50 border-2 border-slate-200 px-6 h-[58px] rounded-xl font-bold text-lg text-blue-700 outline-none tabular-nums focus:bg-white focus:border-blue-600 transition-all shadow-sm"
+                          className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-lg text-blue-700 outline-none tabular-nums focus:bg-white focus:border-blue-600 transition-all shadow-sm"
                         />
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 w-full sm:w-[220px]">
                       <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                        Custo Motorista (R$)
+                        Repasse ao Motorista
                       </label>
                       <div className="relative">
                         <input
@@ -5835,69 +5901,220 @@ export default function OSOperationalPage() {
                           step="0.01"
                           value={formData.custo ?? ""}
                           onChange={handleInputChange}
-                          className="w-full bg-slate-50 border-2 border-slate-200 px-6 h-[58px] rounded-xl font-bold text-lg text-red-500 outline-none tabular-nums focus:bg-white focus:border-red-300 transition-all shadow-sm"
+                          className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-lg text-red-500 outline-none tabular-nums focus:bg-white focus:border-red-300 transition-all shadow-sm"
                         />
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2">
-                      <label className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    <div className="flex flex-col gap-2 w-full sm:w-[120px]">
+                      <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
                         Hora Extra
                       </label>
                       <div className="relative">
                         <input
-                          type="time"
+                          type="text"
                           name="horaExtra"
+                          placeholder="00:00"
                           value={formData.horaExtra}
-                          disabled
-                          placeholder="Aguardando"
-                          className="w-full lg:max-w-[10rem] px-6 h-[58px] bg-slate-100 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-400 outline-none cursor-not-allowed"
+                          onChange={handleInputChange}
+                          className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm"
                         />
                       </div>
                     </div>
+
+                    <div className={`flex items-end gap-6 pt-4 px-6 pb-8 rounded-[1.5rem] border transition-all duration-300 mb-[-2rem] ${formData.noShow ? "bg-red-50 border-red-200 shadow-sm" : "border-transparent"}`}>
+                      <div className="flex flex-col gap-2 w-full sm:w-[120px]">
+                        <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
+                          NO-SHOW
+                        </label>
+                        <div className="relative">
+                          <select
+                            name="noShow"
+                            value={formData.noShow ? "sim" : "nao"}
+                            onChange={handleInputChange}
+                            className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm cursor-pointer appearance-none pr-10"
+                          >
+                            <option value="nao">Não</option>
+                            <option value="sim">Sim</option>
+                          </select>
+                          <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        </div>
+                      </div>
+
+                      {formData.noShow && (
+                        <div className="flex flex-col gap-2 w-full sm:w-[130px] animate-in fade-in slide-in-from-left-2 duration-500">
+                          <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
+                            Cobrança de
+                          </label>
+                          <div className="relative">
+                            <select
+                              name="noShowPercentual"
+                              value={
+                                formData.noShowPercentual !== null
+                                  ? String(formData.noShowPercentual)
+                                  : ""
+                              }
+                              onChange={handleInputChange}
+                              className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm cursor-pointer appearance-none pr-10"
+                            >
+                              <option value="" disabled>
+                                Selecione
+                              </option>
+                              <option value="50">50%</option>
+                              <option value="100">100%</option>
+                            </select>
+                            <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                      Observações Financeiras
-                    </label>
-                    <textarea
-                      name="obsFinanceiras"
-                      value={formData.obsFinanceiras ?? ""}
-                      onChange={handleInputChange}
-                      rows={3}
-                      placeholder="Adicione observações de cunho financeiro..."
-                      className="w-full bg-slate-50 border-2 border-slate-200 px-6 py-4 rounded-xl font-medium text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm resize-none"
-                    />
+                  <div className={`flex flex-col gap-2 transition-all duration-300 ${formData.noShow ? "mt-14" : ""}`}>
+                    <button
+                      type="button"
+                      onClick={() => setShowObsFinanceiras((prev) => !prev)}
+                      className="flex items-center justify-between w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl hover:bg-slate-100 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <MessageSquareMore size={18} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
+                        <span className="text-sm font-bold text-slate-800 uppercase tracking-tight">
+                          Observações Financeiras
+                        </span>
+                        {formData.obsFinanceiras && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-wider">
+                            Preenchido
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown
+                        size={20}
+                        className={`text-slate-400 transition-transform duration-300 ${showObsFinanceiras ? "rotate-180" : ""}`}
+                      />
+                    </button>
+
+                    {showObsFinanceiras && (
+                      <div className="animate-in slide-in-from-top-2 duration-300">
+                        <textarea
+                          name="obsFinanceiras"
+                          value={formData.obsFinanceiras ?? ""}
+                          onChange={handleInputChange}
+                          rows={3}
+                          placeholder="Adicione observações de cunho financeiro..."
+                          className="w-full bg-slate-50 border-2 border-slate-200 px-6 py-4 rounded-xl font-medium text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm resize-none"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div
                     className={`p-8 md:p-10 rounded-[2.5rem] ${currentLucro >= 0 ? "bg-emerald-600 shadow-emerald-900/10" : "bg-red-600 shadow-red-900/10"} text-white shadow-2xl transition-all duration-500`}
                   >
-                    <div className="flex justify-between items-center">
-                      <div className="space-y-1">
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold uppercase opacity-80 tracking-[0.2em]">
+                          <span className="text-base font-black uppercase tracking-[0.2em]">
                             Lucro Líquido Estimado
                           </span>
                           <div className="px-3 py-1.5 bg-white/20 rounded-full backdrop-blur-md">
-                            <span className="text-[12px] font-black">
+                            <span className="text-[12px] font-black text-white">
                               -{impostoPercentual}% taxa
                             </span>
                           </div>
                         </div>
-                        <p className="text-4xl font-black tracking-tighter tabular-nums leading-none">
+                        <p className="text-5xl font-black tracking-tighter tabular-nums leading-none">
                           {formatCurrency(currentLucro)}
                         </p>
+
+                        {/* Detalhe: Valores */}
+                        <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-white/10 rounded-xl px-4 py-3">
+                              <p className="text-xs font-black uppercase tracking-widest opacity-70 mb-1 flex items-center gap-1.5">
+                                <User size={14} />
+                                Total Cliente
+                              </p>
+                              <div className="flex items-baseline gap-1.5">
+                                <span className="text-base font-black opacity-50 line-through tabular-nums">
+                                  {formData.noShow
+                                    ? formatCurrency(totalEfetivoCliente)
+                                    : formatCurrency(formData.valorBruto ?? 0)}
+                                </span>
+                                <span className="text-2xl font-black tabular-nums">
+                                  {formData.noShow
+                                    ? formatCurrency(currentBaseCobranca)
+                                    : formatCurrency(totalEfetivoCliente)}
+                                </span>
+                              </div>
+                              {horaExtraBilledMinutes > 0 && (
+                                <div className="flex items-center gap-1.5 text-xs mt-2">
+                                  <Clock size={14} className="text-yellow-200" />
+                                  <span className="text-base font-black text-yellow-200">+{formatCurrency(horaExtraClienteValor)}</span>
+                                  <span className="font-medium text-white">{horaExtraBilledLabel} hora extra</span>
+                                </div>
+                              )}
+                              <div className="mt-1.5 flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.2em] opacity-90 text-white/90">
+                                <Receipt size={12} />
+                                TAXA DE {impostoPercentual}%: <div className="bg-white px-2 py-0.5 rounded-lg"><span className="font-black text-sm" style={{ color: "rgb(255, 89, 89)" }}>-{formatCurrency((formData.noShow ? currentBaseCobranca : totalEfetivoCliente) * (impostoPercentual / 100))}</span></div>
+                              </div>
+                              {formData.noShow && (
+                                <div className={`mt-1 text-[10px] font-black uppercase tracking-[0.2em] opacity-90 ${formData.noShowPercentual === 100 ? "text-slate-200" : "text-red-100"}`}>
+                                  {formData.noShowPercentual === 100 ? "Sem redução" : `Reduzido ${formData.noShowPercentual}%`}
+                                </div>
+                              )}
+                            </div>
+                            <div className="bg-white/10 rounded-xl px-4 py-3">
+                              <p className="text-xs font-black uppercase tracking-widest opacity-70 mb-1 flex items-center gap-1.5">
+                                <Truck size={14} />
+                                Total Repasse
+                              </p>
+                              <div className="flex items-baseline gap-1.5">
+                                <span className="text-base font-black opacity-50 line-through tabular-nums">
+                                  {formData.noShow
+                                    ? formatCurrency(totalEfetivoMotorista)
+                                    : formatCurrency(formData.custo ?? 0)}
+                                </span>
+                                <span className="text-2xl font-black tabular-nums">
+                                  {formData.noShow
+                                    ? formatCurrency(repasseEfetivo)
+                                    : formatCurrency(totalEfetivoMotorista)}
+                                </span>
+                              </div>
+                              {horaExtraBilledMinutes > 0 && (
+                                <div className="flex items-center gap-1.5 text-xs mt-2">
+                                  <Clock size={14} className="text-yellow-200" />
+                                  <span className="text-base font-black text-yellow-200">+{formatCurrency(horaExtraMotoristaValor)}</span>
+                                  <span className="font-medium text-white">{horaExtraBilledLabel} hora extra</span>
+                                </div>
+                              )}
+                              {formData.noShow && (
+                                <div className={`mt-1 text-[10px] font-black uppercase tracking-[0.2em] opacity-90 ${formData.noShowPercentual === 100 ? "text-slate-200" : "text-red-100"}`}>
+                                  {formData.noShowPercentual === 100 ? "Sem redução" : `Reduzido ${formData.noShowPercentual}%`}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Detalhe: No-Show */}
+                        {formData.noShow && (
+                          <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2.5">
+                            <span className="text-xs uppercase tracking-[0.2em] flex items-center gap-2 opacity-80">
+                              <AlertTriangle size={14} className="text-red-300" />
+                              <span className="font-black text-white">No-Show {formData.noShowPercentual}%</span>
+                              <span className="opacity-90">— {formData.noShowPercentual === 100 ? "sem redução de valores" : "Valores reduzidos pela metade"}</span>
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <div className="text-right space-y-2">
-                        <span className="text-[10px] font-black uppercase opacity-60 block tracking-widest">
+                      <div className="text-right space-y-2 shrink-0">
+                        <span className="text-xs font-black uppercase block tracking-widest opacity-80">
                           Margem de Lucro
                         </span>
                         <div className="px-5 py-2 bg-white/20 rounded-xl text-2xl font-black tabular-nums backdrop-blur-md">
-                          {(formData.valorBruto ?? 0) > 0
+                          {currentBaseCobranca > 0
                             ? (
-                                (currentLucro / (formData.valorBruto ?? 0)) *
+                                (currentLucro / currentBaseCobranca) *
                                 100
                               ).toFixed(1)
                             : 0}
@@ -6477,7 +6694,7 @@ export default function OSOperationalPage() {
                         {isArchived && (
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                             <div className="absolute w-[200%] h-12 bg-rose-500/10 -rotate-45 flex items-center justify-center">
-                              <span className="text-rose-600 text-sm font-black uppercase tracking-[0.3em]">
+                              <span className="text-rose-600 text-sm font-black uppercase tracking-[0.2em]">
                                 BLOQUEADO
                               </span>
                             </div>

@@ -15,6 +15,11 @@ import { normalizeBrazilPhone } from "@/lib/phone";
 import type { OperationalCycle } from "@/lib/os-messages";
 import { logErrorEntry, logCritical, logInfo } from "@/lib/frontend-logger";
 import {
+  parseHoraExtraMinutes,
+  calcHoraExtraCliente,
+  calcHoraExtraMotorista,
+} from "@/lib/financeiro";
+import {
   fetchClientes,
   fetchSolicitantes,
   fetchPassageiros,
@@ -104,6 +109,8 @@ export interface OrderService {
   data: string;
   hora: string | null;
   horaExtra?: string;
+  noShow?: boolean;
+  noShowPercentual?: number | null;
   clienteId: string;
   solicitante: string;
   solicitanteId?: string;
@@ -1310,8 +1317,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const taxa = impostoPercentual / 100;
     const vBruto = osData.valorBruto ?? 0;
     const vCusto = osData.custo ?? 0;
-    const imposto = vBruto * taxa;
-    const lucro = vBruto - imposto - vCusto;
+    const noShowFator = osData.noShow ? ((osData.noShowPercentual ?? 100) / 100) : 1;
+    const heMin = parseHoraExtraMinutes(osData.horaExtra);
+    const heCliente = calcHoraExtraCliente(heMin);
+    const heMotorista = calcHoraExtraMotorista(heMin);
+    const baseCobranca = osData.noShow
+      ? (vBruto + heCliente) * noShowFator
+      : vBruto + heCliente;
+    const repasseEfetivo = osData.noShow
+      ? (vCusto + heMotorista) * noShowFator
+      : vCusto + heMotorista;
+    const imposto = baseCobranca * taxa;
+    const lucro = baseCobranca - imposto - repasseEfetivo;
     const tempId = `temp-${Date.now()}`;
 
     const optimistic: OrderService = {
@@ -1385,8 +1402,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const taxa = impostoPercentual / 100;
     const vBruto = osData.valorBruto ?? 0;
     const vCusto = osData.custo ?? 0;
-    const imposto = vBruto * taxa;
-    const lucro = vBruto - imposto - vCusto;
+    const noShowFator = osData.noShow ? ((osData.noShowPercentual ?? 100) / 100) : 1;
+    const heMin = parseHoraExtraMinutes(osData.horaExtra);
+    const heCliente = calcHoraExtraCliente(heMin);
+    const heMotorista = calcHoraExtraMotorista(heMin);
+    const baseCobranca = osData.noShow
+      ? (vBruto + heCliente) * noShowFator
+      : vBruto + heCliente;
+    const repasseEfetivo = osData.noShow
+      ? (vCusto + heMotorista) * noShowFator
+      : vCusto + heMotorista;
+    const imposto = baseCobranca * taxa;
+    const lucro = baseCobranca - imposto - repasseEfetivo;
 
     if (currentOS) {
       setOsList((prev) =>

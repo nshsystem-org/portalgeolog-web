@@ -19,12 +19,46 @@ RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_v_bruto numeric;
+  v_v_custo numeric;
+  v_no_show boolean;
+  v_no_show_percentual numeric;
+  v_base_cobranca numeric;
+  v_imposto_percentual numeric;
 BEGIN
+  v_v_bruto := COALESCE((p_os_data->>'valor_bruto')::numeric, 0);
+  v_v_custo := COALESCE((p_os_data->>'custo')::numeric, 0);
+  v_no_show := COALESCE((p_os_data->>'no_show')::boolean, false);
+  v_no_show_percentual :=
+    CASE
+      WHEN v_no_show THEN
+        COALESCE(NULLIF(p_os_data->>'no_show_percentual', '')::numeric, 100)
+      ELSE NULL
+    END;
+  v_base_cobranca :=
+    CASE
+      WHEN v_no_show THEN v_v_bruto * (COALESCE(v_no_show_percentual, 100) / 100)
+      ELSE v_v_bruto
+    END;
+  SELECT COALESCE(percentual, 12)
+    INTO v_imposto_percentual
+  FROM public.config_imposto
+  WHERE (vigencia IS NULL OR vigencia <= (p_os_data->>'data')::DATE)
+  ORDER BY vigencia DESC NULLS LAST
+  LIMIT 1;
+
   -- 1. Atualizar a ordem de serviço (cabeçalho)
   UPDATE public.ordens_servico SET
     data = (p_os_data->>'data')::DATE,
     hora = COALESCE(p_os_data->>'hora', ''),
     hora_extra = COALESCE(p_os_data->>'hora_extra', ''),
+    no_show = v_no_show,
+    no_show_percentual = CASE
+      WHEN v_no_show THEN
+        COALESCE(v_no_show_percentual::smallint, 100)
+      ELSE NULL
+    END,
     os_number = COALESCE(p_os_data->>'os_number', ''),
     cliente_id = (p_os_data->>'cliente_id')::UUID,
     solicitante = COALESCE(p_os_data->>'solicitante', ''),
@@ -36,9 +70,9 @@ BEGIN
     veiculo_id = (p_os_data->>'veiculo_id')::UUID,
     valor_bruto = COALESCE((p_os_data->>'valor_bruto')::NUMERIC, 0),
     obs_financeiras = COALESCE(p_os_data->>'obs_financeiras', ''),
-    imposto = COALESCE((p_os_data->>'imposto')::NUMERIC, 0),
-    custo = COALESCE((p_os_data->>'custo')::NUMERIC, 0),
-    lucro = COALESCE((p_os_data->>'lucro')::NUMERIC, 0),
+    imposto = v_base_cobranca * (v_imposto_percentual / 100),
+    custo = v_v_custo,
+    lucro = v_base_cobranca - (v_base_cobranca * (v_imposto_percentual / 100)) - v_v_custo,
     updated_at = NOW()
   WHERE id = p_os_id;
 

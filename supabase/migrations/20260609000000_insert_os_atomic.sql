@@ -23,12 +23,27 @@ declare
   v_imposto_percentual numeric;
   v_v_bruto numeric;
   v_v_custo numeric;
+  v_no_show boolean;
+  v_no_show_percentual numeric;
+  v_base_cobranca numeric;
   v_imposto numeric;
   v_lucro numeric;
 begin
   -- 1. Calcular valores financeiros
   v_v_bruto := coalesce((p_os_data->>'valor_bruto')::numeric, 0);
   v_v_custo := coalesce((p_os_data->>'custo')::numeric, 0);
+  v_no_show := coalesce((p_os_data->>'no_show')::boolean, false);
+  v_no_show_percentual :=
+    case
+      when v_no_show then
+        coalesce(nullif(p_os_data->>'no_show_percentual', '')::numeric, 100)
+      else null
+    end;
+  v_base_cobranca :=
+    case
+      when v_no_show then v_v_bruto * (coalesce(v_no_show_percentual, 100) / 100)
+      else v_v_bruto
+    end;
 
   select coalesce(percentual, 12)
   into v_imposto_percentual
@@ -37,8 +52,8 @@ begin
   order by vigencia desc nulls last
   limit 1;
 
-  v_imposto := v_v_bruto * (v_imposto_percentual / 100);
-  v_lucro := v_v_bruto - v_imposto - v_v_custo;
+  v_imposto := v_base_cobranca * (v_imposto_percentual / 100);
+  v_lucro := v_base_cobranca - v_imposto - v_v_custo;
 
   -- 2. Inserir ordem de serviço
   insert into public.ordens_servico (
@@ -46,6 +61,8 @@ begin
     data,
     hora,
     hora_extra,
+    no_show,
+    no_show_percentual,
     os_number,
     cliente_id,
     solicitante,
@@ -69,6 +86,12 @@ begin
     (p_os_data->>'data')::date,
     nullif(p_os_data->>'hora', ''),
     coalesce(p_os_data->>'hora_extra', ''),
+    v_no_show,
+    case
+      when v_no_show then
+        coalesce(v_no_show_percentual::smallint, 100)
+      else null
+    end,
     coalesce(p_os_data->>'os_number', ''),
     nullif(p_os_data->>'cliente_id', '')::uuid,
     coalesce(p_os_data->>'solicitante', ''),
