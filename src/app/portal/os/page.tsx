@@ -6014,112 +6014,137 @@ export default function OSOperationalPage() {
                       <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-base font-black uppercase tracking-[0.2em]">
-                            Lucro Líquido Estimado
+                            Valor Total a Cobrar
                           </span>
-                          <div className="px-3 py-1.5 bg-white/20 rounded-full backdrop-blur-md">
-                            <span className="text-[12px] font-black text-white">
-                              -{impostoPercentual}% taxa
-                            </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <p className="text-5xl font-black tracking-tighter tabular-nums leading-none">
+                            {formData.noShow
+                              ? formatCurrency(currentBaseCobranca)
+                              : formatCurrency(totalEfetivoCliente)}
+                          </p>
+                          <div className="flex items-start gap-3 -mt-2">
+                            <div className="animate-pulse mt-5">
+                              <svg xmlns="http://www.w3.org/2000/svg" width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-arrow-right opacity-80"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                            </div>
+                            <div className="text-right space-y-2 -mt-1">
+                              <span className="text-xs font-black uppercase block tracking-widest opacity-80">
+                                Valor Líquido Estimado
+                              </span>
+                              <div className="px-5 py-2 bg-white/20 rounded-xl text-2xl font-black tabular-nums backdrop-blur-md leading-none">
+                                {formatCurrency(currentLucro)}
+                              </div>
+                              <div className="text-xs font-black uppercase tracking-widest opacity-100">
+                                {currentBaseCobranca > 0 ? ((currentLucro / currentBaseCobranca) * 100).toFixed(1) : 0}% <span className="text-[10px] font-medium opacity-70">de lucro</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <p className="text-5xl font-black tracking-tighter tabular-nums leading-none">
-                          {formatCurrency(currentLucro)}
-                        </p>
 
                         {/* Detalhe: Valores */}
-                        <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-white/10 rounded-xl px-4 py-3">
-                              <p className="text-xs font-black uppercase tracking-widest opacity-70 mb-1 flex items-center gap-1.5">
-                                <User size={14} />
-                                Total Cliente
+                        <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-3">
+                          <div className="grid grid-cols-2 gap-5">
+                            <div className="bg-white/10 rounded-xl px-4 py-4 space-y-3">
+                              <p className="text-sm font-black uppercase tracking-widest opacity-100 mb-3 flex items-center gap-2">
+                                <User size={16} />
+                                Fatura do Cliente
                               </p>
-                              <div className="flex items-baseline gap-1.5">
-                                <span className="text-base font-black opacity-50 line-through tabular-nums">
+
+                              {/* Base */}
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="font-medium opacity-90">Valor base do serviço</span>
+                                <span className="font-black tabular-nums">
                                   {formData.noShow
                                     ? formatCurrency(totalEfetivoCliente)
                                     : formatCurrency(formData.valorBruto ?? 0)}
                                 </span>
-                                <span className="text-2xl font-black tabular-nums">
-                                  {formData.noShow
-                                    ? formatCurrency(currentBaseCobranca)
-                                    : formatCurrency(totalEfetivoCliente)}
+                              </div>
+
+                              {/* No-show desconto */}
+                              {formData.noShow && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="font-medium opacity-80">Desconto NO-SHOW ({formData.noShowPercentual ?? 0}%)</span>
+                                  <span className="font-black tabular-nums text-red-200">
+                                    -{formatCurrency((formData.noShow ? totalEfetivoCliente : (formData.valorBruto ?? 0)) * ((formData.noShowPercentual ?? 0) / 100))}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Hora extra */}
+                              {horaExtraBilledMinutes > 0 && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="flex items-center gap-1.5 font-medium opacity-90">
+                                    <Clock size={14} className="text-yellow-200" />
+                                    Acréscimo hora extra ({horaExtraBilledLabel})
+                                  </span>
+                                  <span className="font-black tabular-nums text-yellow-200">
+                                    +{formatCurrency(horaExtraClienteValor)}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Taxa */}
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="font-medium opacity-80">Taxa administrativa ({impostoPercentual}%)</span>
+                                <span className="font-black tabular-nums text-red-200">
+                                  -{formatCurrency((formData.noShow ? currentBaseCobranca : totalEfetivoCliente) * (impostoPercentual / 100))}
                                 </span>
                               </div>
-                              {horaExtraBilledMinutes > 0 && (
-                                <div className="flex items-center gap-1.5 text-xs mt-2">
-                                  <Clock size={14} className="text-yellow-200" />
-                                  <span className="text-base font-black text-yellow-200">+{formatCurrency(horaExtraClienteValor)}</span>
-                                  <span className="font-medium text-white">{horaExtraBilledLabel} hora extra</span>
-                                </div>
-                              )}
-                              <div className="mt-1.5 flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.2em] opacity-90 text-white/90">
-                                <Receipt size={12} />
-                                TAXA DE {impostoPercentual}%: <div className="bg-white px-2 py-0.5 rounded-lg"><span className="font-black text-sm" style={{ color: "rgb(255, 89, 89)" }}>-{formatCurrency((formData.noShow ? currentBaseCobranca : totalEfetivoCliente) * (impostoPercentual / 100))}</span></div>
-                              </div>
-                              {formData.noShow && (
-                                <div className={`mt-1 text-[10px] font-black uppercase tracking-[0.2em] opacity-90 ${formData.noShowPercentual === 100 ? "text-slate-200" : "text-red-100"}`}>
-                                  {formData.noShowPercentual === 100 ? "Sem redução" : `Reduzido ${formData.noShowPercentual}%`}
-                                </div>
-                              )}
                             </div>
-                            <div className="bg-white/10 rounded-xl px-4 py-3">
-                              <p className="text-xs font-black uppercase tracking-widest opacity-70 mb-1 flex items-center gap-1.5">
-                                <Truck size={14} />
-                                Total Repasse
+                            <div className="bg-white/10 rounded-xl px-4 py-4 space-y-3">
+                              <p className="text-sm font-black uppercase tracking-widest opacity-100 mb-3 flex items-center gap-2">
+                                <Truck size={16} />
+                                Repasse ao Motorista
                               </p>
-                              <div className="flex items-baseline gap-1.5">
-                                <span className="text-base font-black opacity-50 line-through tabular-nums">
+
+                              {/* Base */}
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="font-medium opacity-90">Valor base do repasse</span>
+                                <span className="font-black tabular-nums">
                                   {formData.noShow
                                     ? formatCurrency(totalEfetivoMotorista)
                                     : formatCurrency(formData.custo ?? 0)}
                                 </span>
+                              </div>
+
+                              {/* No-show desconto */}
+                              {formData.noShow && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="font-medium opacity-80">Desconto NO-SHOW ({formData.noShowPercentual ?? 0}%)</span>
+                                  <span className="font-black tabular-nums text-red-200">
+                                    -{formatCurrency((formData.noShow ? totalEfetivoMotorista : (formData.custo ?? 0)) * ((formData.noShowPercentual ?? 0) / 100))}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Hora extra */}
+                              {horaExtraBilledMinutes > 0 && (
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="flex items-center gap-1.5 font-medium opacity-90">
+                                    <Clock size={14} className="text-yellow-200" />
+                                    Acréscimo hora extra ({horaExtraBilledLabel})
+                                  </span>
+                                  <span className="font-black tabular-nums text-yellow-200">
+                                    +{formatCurrency(horaExtraMotoristaValor)}
+                                  </span>
+                                </div>
+                              )}
+
+                              <div className="h-px bg-white/30 my-1" />
+
+                              {/* Total */}
+                              <div className="flex justify-between items-baseline">
+                                <span className="text-xs font-black uppercase tracking-[0.2em] opacity-80">Total a repassar</span>
                                 <span className="text-2xl font-black tabular-nums">
                                   {formData.noShow
                                     ? formatCurrency(repasseEfetivo)
                                     : formatCurrency(totalEfetivoMotorista)}
                                 </span>
                               </div>
-                              {horaExtraBilledMinutes > 0 && (
-                                <div className="flex items-center gap-1.5 text-xs mt-2">
-                                  <Clock size={14} className="text-yellow-200" />
-                                  <span className="text-base font-black text-yellow-200">+{formatCurrency(horaExtraMotoristaValor)}</span>
-                                  <span className="font-medium text-white">{horaExtraBilledLabel} hora extra</span>
-                                </div>
-                              )}
-                              {formData.noShow && (
-                                <div className={`mt-1 text-[10px] font-black uppercase tracking-[0.2em] opacity-90 ${formData.noShowPercentual === 100 ? "text-slate-200" : "text-red-100"}`}>
-                                  {formData.noShowPercentual === 100 ? "Sem redução" : `Reduzido ${formData.noShowPercentual}%`}
-                                </div>
-                              )}
                             </div>
                           </div>
                         </div>
 
-                        {/* Detalhe: No-Show */}
-                        {formData.noShow && (
-                          <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2.5">
-                            <span className="text-xs uppercase tracking-[0.2em] flex items-center gap-2 opacity-80">
-                              <AlertTriangle size={14} className="text-red-300" />
-                              <span className="font-black text-white">No-Show {formData.noShowPercentual}%</span>
-                              <span className="opacity-90">— {formData.noShowPercentual === 100 ? "sem redução de valores" : "Valores reduzidos pela metade"}</span>
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-right space-y-2 shrink-0">
-                        <span className="text-xs font-black uppercase block tracking-widest opacity-80">
-                          Margem de Lucro
-                        </span>
-                        <div className="px-5 py-2 bg-white/20 rounded-xl text-2xl font-black tabular-nums backdrop-blur-md">
-                          {currentBaseCobranca > 0
-                            ? (
-                                (currentLucro / currentBaseCobranca) *
-                                100
-                              ).toFixed(1)
-                            : 0}
-                          %
-                        </div>
                       </div>
                     </div>
                   </div>
