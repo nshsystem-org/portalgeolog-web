@@ -466,7 +466,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [heavyLoading, setHeavyLoading] = useState(false);
   const [impostoPercentual, setImpostoPercentualState] = useState<number>(12);
   const [lastOSUpdate, setLastOSUpdate] = useState(0);
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const supabase = useMemo(() => createClient(), []);
 
   // Fetch functions wrapped for stability
@@ -1344,14 +1344,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     setOsList((prev) => [optimistic, ...prev]);
 
-    const actorName = profile?.nome || user?.email || "Sistema";
-    const actorId = user?.id || null;
     try {
-      const real = await insertOS(osDataWithNumbers, actorName, actorId);
+      const real = await insertOS(osDataWithNumbers);
       logInfo("DataContext", "Ordem de Serviço adicionada com sucesso", {
         osId: real.id,
         protocolo: real.protocolo,
-        actorName,
       });
       setOsList((prev) => prev.map((o) => (o.id === tempId ? real : o)));
       console.log(
@@ -1364,7 +1361,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         "Falha ao adicionar Ordem de Serviço",
         err as Error,
         {
-          actorName,
           osData: osDataWithNumbers,
         },
       );
@@ -1434,15 +1430,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
-    const actorName = profile?.nome || user?.email || "Sistema";
-    const actorId = user?.id || null;
     try {
-      const result = await updateOSInDB(id, osData, actorName, actorId, currentOS);
+      const result = await updateOSInDB(id, osData, currentOS);
 
       if (!result.changed) {
         logInfo("DataContext", "Nenhuma alteração real detectada na OS", {
           osId: id,
-          actorName,
         });
         toast.info("Nenhuma alteração detectada.");
         console.log(
@@ -1453,7 +1446,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
       logInfo("DataContext", "Ordem de Serviço atualizada com sucesso", {
         osId: id,
-        actorName,
         updates: osData,
       });
       console.log(
@@ -1467,7 +1459,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         err as Error,
         {
           osId: id,
-          actorName,
         },
       );
       console.error("Error updateOSInDB:", err);
@@ -1497,14 +1488,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ),
     );
 
-    const actorName = profile?.nome || user?.email || "Sistema";
-    const actorId = user?.id || null;
     try {
-      await updateOSStatusInDB(id, updates, actorName, actorId);
+      await updateOSStatusInDB(id, updates);
       logInfo("DataContext", "Status da Ordem de Serviço atualizado", {
         osId: id,
         updates,
-        actorName,
       });
       console.log(
         `[Perf][DataContext] updateOSStatus total ${(performance.now() - startedAt).toFixed(0)}ms`,
@@ -1517,7 +1505,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         {
           osId: id,
           updates,
-          actorName,
         },
       );
       console.error("Error updateOSStatusInDB:", err);
@@ -1532,18 +1519,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const currentOS = osList.find((os) => os.id === id) || null;
     setOsList((prev) => prev.filter((os) => os.id !== id));
 
-    const actorName = profile?.nome || user?.email || "Sistema";
-    const actorId = user?.id || null;
     try {
       await archiveOSFromDB(
         id,
-        actorName,
-        actorId,
         currentOS?.protocolo || currentOS?.os || null,
       );
       logInfo("DataContext", "Ordem de Serviço excluída/arquivada", {
         osId: id,
-        actorName,
       });
     } catch (err) {
       logErrorEntry(
@@ -1552,7 +1534,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         err as Error,
         {
           osId: id,
-          actorName,
         },
       );
       console.error("Error archiveOSFromDB:", err);
@@ -1574,18 +1555,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ),
     );
 
-    const actorName = profile?.nome || user?.email || "Sistema";
-    const actorId = user?.id || null;
     try {
       await unarchiveOSFromDB(
         id,
-        actorName,
-        actorId,
         currentOS?.protocolo || currentOS?.os || null,
       );
       logInfo("DataContext", "Ordem de Serviço desarquivada", {
         osId: id,
-        actorName,
       });
     } catch (err) {
       logErrorEntry(
@@ -1594,7 +1570,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         err as Error,
         {
           osId: id,
-          actorName,
         },
       );
       console.error("Error unarchiveOSFromDB:", err);

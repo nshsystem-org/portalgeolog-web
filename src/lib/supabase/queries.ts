@@ -22,7 +22,7 @@ import {
   fetchOperationalCyclesForOSIds,
   getFirstActiveOperationalCycle,
 } from "@/lib/operational-cycles-db";
-import { formatPortugueseList } from "@/lib/os-activity";
+
 import {
   isFinanceStatusSettled,
   isLiberadoParaFaturamento,
@@ -1649,8 +1649,6 @@ type OSInput = Omit<
 
 export async function insertOS(
   osData: OSInput,
-  actorName?: string,
-  actorId?: string | null,
 ): Promise<OrderService> {
   const waypoints = osData.rota?.waypoints || [];
   const operationalCycles = buildOperationalCyclesFromWaypoints(waypoints);
@@ -1700,8 +1698,6 @@ export async function insertOS(
     p_os_data: osPayload,
     p_waypoints: waypointsPayload,
     p_operational_cycles: operationalCycles,
-    p_actor_name: actorName || "Sistema",
-    p_actor_id: actorId || null,
   });
 
   if (error || !osId) {
@@ -1719,8 +1715,6 @@ export async function insertOS(
 export async function updateOSInDB(
   id: string,
   osData: OSInput,
-  actorName?: string,
-  actorId?: string | null,
   previousOS?: OrderService | null,
 ): Promise<{ changed: boolean }> {
   const impostoPercentual = await getImpostoPercentualForDate(osData.data);
@@ -1861,9 +1855,6 @@ export async function updateOSInDB(
     })),
   }));
 
-  const updateDescription =
-    `Atualização da OS: ${formatPortugueseList(updateLogContext.changedSections)}`;
-
   const { error } = await getSupabase().rpc("update_os_atomic", {
     p_os_id: id,
     p_os_data: osPayload,
@@ -1873,114 +1864,44 @@ export async function updateOSInDB(
 
   if (error) throw error;
 
-  try {
-    await insertOSLog(
-      id,
-      "update",
-      updateDescription,
-      actorName || "Sistema",
-      actorId,
-      updateLogContext.metadata,
-    );
-  } catch (logError) {
-    console.error("Erro ao inserir log de OS:", logError);
-  }
-
   return { changed: true };
 }
 
 export async function updateOSStatusInDB(
   id: string,
   updates: { operacional?: string; financeiro?: string },
-  actorName?: string,
-  actorId?: string | null,
 ): Promise<void> {
-  const updatePayload: Record<string, string> = {};
-  if (updates.operacional)
-    updatePayload.status_operacional = updates.operacional;
-  if (updates.financeiro) updatePayload.status_financeiro = updates.financeiro;
-
-  const { error } = await getSupabase()
-    .from("ordens_servico")
-    .update(updatePayload)
-    .eq("id", id);
+  const { error } = await getSupabase().rpc("update_os_status_atomic", {
+    p_os_id: id,
+    p_operacional: updates.operacional ?? null,
+    p_financeiro: updates.financeiro ?? null,
+  });
 
   if (error) throw error;
-
-  const parts: string[] = [];
-  if (updates.operacional)
-    parts.push(`Status operacional alterado para "${updates.operacional}"`);
-  if (updates.financeiro)
-    parts.push(`Status financeiro alterado para "${updates.financeiro}"`);
-
-  if (parts.length > 0) {
-    try {
-      await insertOSLog(
-        id,
-        "status_change",
-        parts.join(" | "),
-        actorName || "Sistema",
-        actorId,
-        { updates },
-      );
-    } catch (logError) {
-      console.error("Erro ao inserir log de OS:", logError);
-    }
-  }
 }
 
 export async function archiveOSFromDB(
   id: string,
-  actorName?: string,
-  actorId?: string | null,
   osLabel?: string | null,
 ): Promise<void> {
-  const { error } = await getSupabase()
-    .from("ordens_servico")
-    .update({ arquivado: true })
-    .eq("id", id);
+  const { error } = await getSupabase().rpc("archive_os_atomic", {
+    p_os_id: id,
+    p_os_label: osLabel ?? null,
+  });
 
   if (error) throw error;
-
-  try {
-    await insertOSLog(
-      id,
-      "archive",
-      `OS arquivada${osLabel?.trim() ? ` — ${osLabel.trim()}` : ""}`,
-      actorName || "Sistema",
-      actorId,
-      { action: "archive" },
-    );
-  } catch (logError) {
-    console.error("Erro ao inserir log de OS:", logError);
-  }
 }
 
 export async function unarchiveOSFromDB(
   id: string,
-  actorName?: string,
-  actorId?: string | null,
   osLabel?: string | null,
 ): Promise<void> {
-  const { error } = await getSupabase()
-    .from("ordens_servico")
-    .update({ arquivado: false, status_operacional: "Pendente" })
-    .eq("id", id);
+  const { error } = await getSupabase().rpc("unarchive_os_atomic", {
+    p_os_id: id,
+    p_os_label: osLabel ?? null,
+  });
 
   if (error) throw error;
-
-  try {
-    await insertOSLog(
-      id,
-      "unarchive",
-      `OS reaberta${osLabel?.trim() ? ` — ${osLabel.trim()}` : ""}`,
-      actorName || "Sistema",
-      actorId,
-      { action: "unarchive" },
-    );
-  } catch (logError) {
-    console.error("Erro ao inserir log de OS:", logError);
-  }
 }
 
 // ── Centros de Custo ──────────────────────────────────────
@@ -2740,45 +2661,6 @@ export interface OSLog {
   description: string;
   metadata: Record<string, unknown>;
   created_at: string;
-}
-
-export async function insertOSLog(
-  osId: string,
-  type: OSLog["type"],
-  description: string,
-  actorName: string,
-  actorId?: string | null,
-  metadata?: Record<string, unknown>,
-): Promise<void> {
-  let actorAvatarUrl: string | null = null;
-
-  if (actorId) {
-    try {
-      const { data: profile } = await getSupabase()
-        .from("user_roles")
-        .select("avatar_url")
-        .eq("id", actorId)
-        .maybeSingle();
-
-      actorAvatarUrl = profile?.avatar_url ?? null;
-    } catch {
-      actorAvatarUrl = null;
-    }
-  }
-
-  const { error } = await getSupabase()
-    .from("os_logs")
-    .insert({
-      os_id: osId,
-      type,
-      description,
-      actor_name: actorName,
-      actor_id: actorId || null,
-      actor_avatar_url: actorAvatarUrl,
-      metadata: metadata || {},
-    });
-
-  if (error) throw error;
 }
 
 export async function fetchOSCalendarRange({
