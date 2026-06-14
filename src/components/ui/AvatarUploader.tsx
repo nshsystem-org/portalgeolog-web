@@ -4,6 +4,7 @@ import React, { useRef, useState } from "react";
 import { Camera, Trash2, Loader2 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
 import { useConfirm } from "@/hooks/useConfirm";
+import { getThumbnailUrl } from "@/utils/avatar";
 import { toast } from "sonner";
 
 interface AvatarUploaderProps {
@@ -135,6 +136,9 @@ export function AvatarUploader({
     return name.charAt(0).toUpperCase();
   };
 
+  const thumbSize = size === "lg" ? 256 : size === "md" ? 192 : 128;
+  const displayUrl = getThumbnailUrl(avatarUrl, thumbSize);
+
   return (
     <>
       <div className="relative inline-block">
@@ -156,10 +160,10 @@ export function AvatarUploader({
         `}
           onClick={() => !uploading && fileInputRef.current?.click()}
         >
-          {avatarUrl ? (
+          {displayUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={avatarUrl}
+              src={displayUrl}
               alt={nome}
               className="w-full h-full object-cover"
             />

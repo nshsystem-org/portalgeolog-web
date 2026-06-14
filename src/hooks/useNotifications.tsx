@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
+import { getThumbnailUrl } from "@/utils/avatar";
 import { toast } from "sonner";
 import {
   X,
@@ -185,7 +186,7 @@ function showNativeNotification(notif: AppNotification): void {
   if (Notification.permission !== "granted") return;
 
   const body = `${notif.created_by_name ? notif.created_by_name + ": " : ""}${notif.message}`;
-  const icon = notif.created_by_avatar_url || "/logo.png";
+  const icon = getThumbnailUrl(notif.created_by_avatar_url, 100) || "/logo.png";
 
   const native = new Notification(notif.title, {
     body,
@@ -305,7 +306,7 @@ function NotificationToastItem({
         {notif.created_by_avatar_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={notif.created_by_avatar_url}
+            src={getThumbnailUrl(notif.created_by_avatar_url, 88) || ""}
             alt={notif.created_by_name || ""}
             className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-md"
           />

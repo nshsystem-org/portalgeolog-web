@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
+import { getThumbnailUrl } from "@/utils/avatar";
 import {
   PRESENCE_ACTIVE_NOW_TIMEOUT_MS,
   PRESENCE_ONLINE_TIMEOUT_MS,
@@ -111,7 +112,7 @@ function PresenceToastItem({
         {user.avatar_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={user.avatar_url}
+            src={getThumbnailUrl(user.avatar_url, 88) || ""}
             alt={user.nome}
             className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-md"
           />

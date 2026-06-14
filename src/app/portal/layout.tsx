@@ -45,6 +45,7 @@ import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import { ChatWidget } from "@/components/chat/ChatWidget";
+import { getThumbnailUrl } from "@/utils/avatar";
 
 function extractNotificationProtocolo(message: string): {
   protocolo: string | null;
@@ -552,7 +553,7 @@ export default function DashboardLayout({
                           <div className="relative flex-shrink-0">
                             {u.avatar_url ? (
                               <Image
-                                src={u.avatar_url}
+                                src={getThumbnailUrl(u.avatar_url, 80) || ""}
                                 alt={u.nome}
                                 width={40}
                                 height={40}
@@ -827,7 +828,7 @@ export default function DashboardLayout({
                                 <div className="relative flex-shrink-0">
                                   {notification.created_by_avatar_url ? (
                                     <img
-                                      src={notification.created_by_avatar_url}
+                                      src={getThumbnailUrl(notification.created_by_avatar_url, 100) || ""}
                                       alt={notification.created_by_name || ""}
                                       className="w-14 h-14 rounded-full object-cover border border-slate-200"
                                     />
@@ -937,7 +938,7 @@ export default function DashboardLayout({
                 {profile?.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={profile.avatar_url}
+                    src={getThumbnailUrl(profile.avatar_url, 80) || ""}
                     alt={profile.nome || "Avatar"}
                     className="w-full h-full object-cover"
                   />

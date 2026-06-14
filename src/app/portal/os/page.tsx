@@ -14,6 +14,7 @@ import { replaceOperationalCyclesForOS } from "@/lib/operational-cycles-db";
 import StandardModal from "@/components/StandardModal";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
 import { logInfo } from "@/lib/frontend-logger";
+import { getThumbnailUrl } from "@/utils/avatar";
 import {
   Plus,
   Minus,
@@ -7272,7 +7273,7 @@ export default function OSOperationalPage() {
                                 {log.actor_avatar_url ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
-                                    src={log.actor_avatar_url}
+                                    src={getThumbnailUrl(log.actor_avatar_url, 80) || ""}
                                     alt={fullActorName}
                                     className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-md"
                                   />
