@@ -110,6 +110,7 @@ export async function POST(request: Request) {
         | "finish_cycle"
         | "revert_to_pending"
         | "revert_to_accept"
+        | "restart_route"
         | "finish_all";
     };
 
@@ -262,6 +263,7 @@ export async function POST(request: Request) {
 
     let updatedCycles: OperationalCycle[] = cycles;
     let newState: OperationalCycleState = cycle.state;
+    let ordensServicoUpdate: Record<string, unknown> | null = null;
     const targetIndex = cycle_index as number;
 
     switch (action) {
@@ -299,6 +301,30 @@ export async function POST(request: Request) {
         newState = "awaiting_start";
         break;
 
+      case "restart_route":
+        // Reabre a rota após finalização: limpa os marcos operacionais do ciclo
+        updatedCycles = updateCycleInList(cycles, targetIndex, {
+          state: "awaiting_start",
+          acceptedAt: undefined,
+          startedAt: undefined,
+          finishedAt: undefined,
+          messageSentAt: undefined,
+          kmInitial: undefined,
+          kmFinal: undefined,
+        });
+        newState = "awaiting_start";
+        ordensServicoUpdate = {
+          status_operacional: "Em Rota",
+          route_started_at: null,
+          route_started_km: null,
+          route_finished_at: null,
+          route_finished_km: null,
+          driver_flow_start_message_id: null,
+          driver_flow_finish_message_id: null,
+          updated_at: new Date().toISOString(),
+        };
+        break;
+
       default:
         return NextResponse.json(
           { success: false, error: "Ação inválida." },
@@ -329,10 +355,12 @@ export async function POST(request: Request) {
 
     if (allCompletedOrCancelled) {
       const { error: bulkUpdateError } = await ordensServicoBulk
-        .update({
-          status_operacional: "Finalizado",
-          updated_at: new Date().toISOString(),
-        })
+        .update(
+          ordensServicoUpdate ?? {
+            status_operacional: "Finalizado",
+            updated_at: new Date().toISOString(),
+          },
+        )
         .eq("id", os_id);
 
       if (bulkUpdateError) {
@@ -380,7 +408,9 @@ export async function POST(request: Request) {
       // (necessário porque a RPC replace_os_operational_cycles faz DELETE+INSERT
       // e pode não disparar eventos Realtime corretamente)
       await ordensServicoBulk
-        .update({ updated_at: new Date().toISOString() })
+        .update(
+          ordensServicoUpdate ?? { updated_at: new Date().toISOString() },
+        )
         .eq("id", os_id);
     }
 
@@ -421,6 +451,7 @@ export async function POST(request: Request) {
       finish_cycle: "Ciclo finalizado manualmente",
       revert_to_pending: "Ciclo revertido para pendente",
       revert_to_accept: "Ciclo revertido para aceitação",
+      restart_route: "Rota reaberta e reiniciada manualmente",
     };
 
     const { error: logError } = await getAdmin()

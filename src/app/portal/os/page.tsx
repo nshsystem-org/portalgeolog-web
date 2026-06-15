@@ -2726,6 +2726,227 @@ export default function OSOperationalPage() {
     }
   };
 
+  const handleManualCycleAction = async (
+    osId: string,
+    cycleIndex: number,
+    action: "finish_cycle" | "revert_to_pending" | "revert_to_accept" | "restart_route" | "finish_all",
+  ) => {
+    try {
+      const response = await fetch("/api/os-manual-cycle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          os_id: osId,
+          cycle_index: cycleIndex,
+          action,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        toast.error(result.error || "Erro ao executar ação");
+        return;
+      }
+
+      const actionMessages: Record<string, string> = {
+        finish_cycle: "Ciclo finalizado com sucesso!",
+        revert_to_pending: "Status retornado para pendente!",
+        revert_to_accept: "Status retornado para aceite!",
+        restart_route: "Rota reaberta com sucesso!",
+        finish_all: "Todos os ciclos finalizados!",
+      };
+
+      toast.success(actionMessages[action] || "Ação executada com sucesso!");
+      void syncOSSnapshot(osId);
+    } catch (error) {
+      console.error("Erro ao executar ação manual:", error);
+      toast.error("Erro ao executar ação. Tente novamente.");
+    }
+  };
+
+  const sendRestartRouteMessages = async (
+    osData: OrderService,
+    itineraryIndex: number,
+  ) => {
+    const startedAt = performance.now();
+    if (!osData.motorista) {
+      toast.error("Motorista não atribuído a esta OS.");
+      return;
+    }
+
+    const driverObj = osData.driverId
+      ? drivers.find((d) => d.id === osData.driverId)
+      : drivers.find(
+          (d) =>
+            d.name.trim().toLowerCase() ===
+            osData.motorista.trim().toLowerCase(),
+        );
+
+    let phone = driverObj?.phone || "5522997259180";
+
+    if (!driverObj?.phone) {
+      console.warn(
+        `[WhatsApp] Motorista "${osData.motorista}" não encontrado ou sem telefone. Usando fallback.`,
+      );
+    }
+
+    phone = normalizeBrazilPhone(phone);
+
+    if (phone.length < 10) {
+      toast.error("Telefone do motorista é inválido ou não cadastrado.");
+      return;
+    }
+
+    setNotifyLoadingKey("driver-whatsapp");
+    try {
+      console.log(
+        `[WhatsApp] Enviando mensagens de recomeço de rota para ${osData.motorista} (${phone}) - Ciclo ${itineraryIndex}`,
+      );
+
+      // 1. Enviar mensagem explicativa de texto simples
+      const explanationMessage =
+        `Olá, ${osData.motorista}!\n\n` +
+        `A rota da OS *${osData.os}* foi *reaberta* pelo sistema.\n\n` +
+        `Você precisará informar o *KM INICIAL* novamente para iniciar a viagem.\n\n` +
+        `Em seguida, enviaremos o link para você preencher os dados. Obrigado!`;
+
+      const explanationResponse = await fetch("/api/whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone,
+          message: explanationMessage,
+        }),
+      });
+      const explanationData = (await explanationResponse.json()) as {
+        success?: boolean;
+        error?: string;
+      };
+
+      if (!explanationResponse.ok || !explanationData.success) {
+        console.error(
+          "[WhatsApp] Erro ao enviar mensagem explicativa:",
+          explanationData,
+        );
+        toast.error(
+          `Falha ao enviar mensagem explicativa: ${explanationData.error || "Erro na API"}`,
+        );
+        setNotifyLoadingKey(null);
+        return;
+      }
+
+      console.log(
+        `[WhatsApp] Mensagem explicativa enviada ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
+
+      // 2. Enviar template de início de viagem novamente
+      let msgResponse: Response;
+      let msgData: { success?: boolean; error?: string; messageId?: string };
+
+      if (itineraryIndex === 0) {
+        msgResponse = await fetch("/api/whatsapp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone,
+            useTemplate: true,
+            templateName: "appointment_scheduling",
+            templateVariables: [osData.motorista],
+            language: "pt_BR",
+          }),
+        });
+        msgData = await msgResponse.json();
+      } else {
+        const cycles = osData.operationalCycles || [];
+        const targetCycle = cycles.find(
+          (c) => c.itineraryIndex === itineraryIndex,
+        );
+
+        if (targetCycle) {
+          const cycleTitle = getOperationalCycleTitle(targetCycle);
+          const motoristaName = osData.motorista || "Motorista";
+
+          const templateComponents = [
+            {
+              type: "header",
+              parameters: [
+                {
+                  type: "text",
+                  text: cycleTitle,
+                },
+              ],
+            },
+            {
+              type: "body",
+              parameters: [
+                {
+                  type: "text",
+                  text: motoristaName,
+                },
+              ],
+            },
+            {
+              type: "button",
+              sub_type: "flow",
+              index: 0,
+              parameters: [],
+            },
+          ];
+
+          msgResponse = await fetch("/api/whatsapp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              phone,
+              useTemplate: true,
+              templateName: "inicio_viagem_motorista",
+              templateVariables: [],
+              language: "pt_BR",
+              components: templateComponents,
+            }),
+          });
+          msgData = await msgResponse.json();
+        } else {
+          msgData = {
+            success: false,
+            error: "Ciclo não encontrado",
+          };
+          msgResponse = new Response(JSON.stringify(msgData), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      if (!msgResponse!.ok || !msgData.success) {
+        console.error("[WhatsApp] Erro ao enviar template:", msgData);
+        toast.error(
+          `Falha ao enviar template de início: ${msgData.error || "Erro na API"}`,
+        );
+        console.log(
+          `[Perf][WhatsApp] failed os=${osData.id} ${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
+        setNotifyLoadingKey(null);
+        return;
+      }
+
+      toast.success("Mensagens de recomeço enviadas ao motorista!");
+      setDriverNotificationSentByOS((prev) => ({
+        ...prev,
+        [osData.id]: true,
+      }));
+      console.log(
+        `[Perf][WhatsApp] success os=${osData.id} ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
+    } catch (error) {
+      console.error("Erro ao enviar mensagens de recomeço:", error);
+      toast.error("Erro ao enviar mensagens. Tente novamente.");
+    } finally {
+      setNotifyLoadingKey(null);
+    }
+  };
+
   useEffect(() => {
     if (!viewingOSId) {
       setPassengerConfirmations({});
@@ -6943,6 +7164,10 @@ export default function OSOperationalPage() {
                                     if (isArchived) return;
                                     // Check if the step is "finished" to show finish confirmation modal
                                     if (step.id === "finished") {
+                                      if (cycle.state === "completed") {
+                                        toast.info("Este ciclo já foi finalizado.");
+                                        return;
+                                      }
                                       setSelectedCycleIndex(
                                         cycle.itineraryIndex,
                                       );
@@ -9065,39 +9290,90 @@ export default function OSOperationalPage() {
               <Navigation size={12} />
               Opções de Rota
             </p>
-            <button
-              type="button"
-              onClick={async () => {
-                if (!viewingOS || selectedCycleIndex === null) return;
-                await handleManualRevertToAccept(
-                  viewingOS.id,
-                  selectedCycleIndex,
+            {(() => {
+              const selectedCycle =
+                viewingOS?.operationalCycles?.find(
+                  (c) => c.itineraryIndex === selectedCycleIndex,
                 );
-                setShowRouteMenu(false);
-                setRouteMenuPosition(null);
-                setSelectedCycleIndex(null);
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors cursor-pointer"
-            >
-              <ArrowLeft size={14} />
-              Retornar para Visualizado
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                // Send route message
-                if (viewingOS && selectedCycleIndex !== null) {
-                  sendWhatsAppNotification(viewingOS, selectedCycleIndex);
-                }
-                setShowRouteMenu(false);
-                setRouteMenuPosition(null);
-                setSelectedCycleIndex(null);
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors cursor-pointer"
-            >
-              <MessageCircle size={14} />
-              Enviar Mensagem da Rota
-            </button>
+              const canShowRestart =
+                selectedCycle?.startedAt != null ||
+                selectedCycle?.state === "awaiting_finish" ||
+                selectedCycle?.state === "awaiting_km_finish" ||
+                selectedCycle?.state === "awaiting_km_start" ||
+                selectedCycle?.state === "completed";
+              const canShowRevert =
+                !canShowRestart && selectedCycle?.state === "awaiting_start";
+
+              return (
+                <>
+                  {canShowRestart && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!viewingOS || selectedCycleIndex === null) return;
+
+                        await handleManualCycleAction(
+                          viewingOS.id,
+                          selectedCycleIndex,
+                          "restart_route",
+                        );
+
+                        // Enviar mensagens explicativa + template ao motorista
+                        await sendRestartRouteMessages(
+                          viewingOS,
+                          selectedCycleIndex,
+                        );
+
+                        setShowRouteMenu(false);
+                        setRouteMenuPosition(null);
+                        setSelectedCycleIndex(null);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <ArrowLeft size={14} />
+                      Recomeçar Rota novamente
+                    </button>
+                  )}
+                  {canShowRevert && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!viewingOS || selectedCycleIndex === null) return;
+                        await handleManualRevertToAccept(
+                          viewingOS.id,
+                          selectedCycleIndex,
+                        );
+                        setShowRouteMenu(false);
+                        setRouteMenuPosition(null);
+                        setSelectedCycleIndex(null);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <ArrowLeft size={14} />
+                      Retornar para Visualizado
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (viewingOS && selectedCycleIndex !== null) {
+                        sendWhatsAppNotification(
+                          viewingOS,
+                          selectedCycleIndex,
+                        );
+                      }
+                      setShowRouteMenu(false);
+                      setRouteMenuPosition(null);
+                      setSelectedCycleIndex(null);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <MessageCircle size={14} />
+                    Enviar Mensagem da Rota
+                  </button>
+                </>
+              );
+            })()}
           </div>,
           document.body,
         )}
