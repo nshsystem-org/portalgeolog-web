@@ -448,6 +448,7 @@ function getPageName(pathname: string | null): string {
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const hasLoadedData = useRef(false);
+  const hasLoadedOSListRef = useRef(false);
   const debounceTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [solicitantes, setSolicitantes] = useState<Solicitante[]>([]);
@@ -615,25 +616,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       );
 
       // Fase 2: Dados pesados — carregam em background sem bloquear a UI
-      setHeavyLoading(true);
-      try {
-        const phase2StartedAt = performance.now();
-        const osList = await fetchOSList();
-        setOsList(osList);
-        console.log(
-          `[Perf][DataContext] refreshData phase2 ${(performance.now() - phase2StartedAt).toFixed(0)}ms`,
-        );
-
-        // Não registramos logs de sucesso do carregamento global para evitar spam.
-        // Mantemos apenas logs de erro/falha de carregamento.
-      } catch (heavyErr) {
-        logErrorEntry(
-          "DataContext",
-          "Erro inesperado ao processar dados pesados",
-          heavyErr as Error,
-        );
-      } finally {
-        setHeavyLoading(false);
+      // Lazy init: só carrega a lista completa na primeira vez; evita recarregar
+      // 1300+ registros a cada foco de aba ou evento realtime.
+      if (!hasLoadedOSListRef.current) {
+        setHeavyLoading(true);
+        try {
+          const phase2StartedAt = performance.now();
+          const osList = await fetchOSList();
+          setOsList(osList);
+          hasLoadedOSListRef.current = true;
+          console.log(
+            `[Perf][DataContext] refreshData phase2 ${(performance.now() - phase2StartedAt).toFixed(0)}ms`,
+          );
+        } catch (heavyErr) {
+          logErrorEntry(
+            "DataContext",
+            "Erro inesperado ao processar dados pesados",
+            heavyErr as Error,
+          );
+        } finally {
+          setHeavyLoading(false);
+        }
       }
     } catch (err) {
       logCritical(

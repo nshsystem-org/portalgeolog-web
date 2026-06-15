@@ -63,7 +63,6 @@ import {
   History,
   Archive,
   Save,
-  Receipt,
 } from "lucide-react";
 import {
   useData,
@@ -4857,9 +4856,7 @@ export default function OSOperationalPage() {
           {viewMode === "table" ? (
             <DataTable
               data={tableItems}
-              loading={
-                (dataLoading || heavyLoading) && !hasActiveAdvancedFilters
-              }
+              loading={osTable.loading}
               disableClientSearch
               pagination={{
                 page: osTable.page,
@@ -6633,15 +6630,40 @@ export default function OSOperationalPage() {
                 <div className="space-y-6">
                   {cyclesToRender.map((cycle) => {
                     const isArchived = Boolean(viewingOS?.arquivado);
-                    const progressWidth =
-                      cycle.state === "completed"
-                        ? "100%"
-                        : cycle.state === "awaiting_finish" ||
-                            cycle.state === "awaiting_km_finish"
-                          ? "66%"
-                          : cycle.state === "awaiting_start"
-                            ? "33%"
-                            : "0%";
+                    const displayedCycleState: OperationalCycleState = (() => {
+                      if (cycle.state === "completed" || cycle.finishedAt)
+                        return "completed";
+                      if (
+                        cycle.state === "awaiting_finish" ||
+                        cycle.state === "awaiting_km_finish" ||
+                        cycle.startedAt
+                      )
+                        return "awaiting_finish";
+                      if (
+                        cycle.state === "awaiting_start" ||
+                        cycle.state === "awaiting_km_start" ||
+                        cycle.acceptedAt
+                      )
+                        return "awaiting_start";
+                      if (cycle.state === "awaiting_accept" || cycle.messageSentAt)
+                        return "awaiting_accept";
+                      return "pending";
+                    })();
+
+                    const progressWidth = (() => {
+                      switch (displayedCycleState) {
+                        case "completed":
+                          return "100%";
+                        case "awaiting_finish":
+                          return "66.66%";
+                        case "awaiting_start":
+                          return "33.33%";
+                        case "awaiting_accept":
+                          return "16.66%";
+                        default:
+                          return "0%";
+                      }
+                    })();
 
                     const cycleSteps = [
                       {
@@ -6708,9 +6730,8 @@ export default function OSOperationalPage() {
                       },
                     ];
 
-                    const cycleStatus = getCycleDisplayStatus(
-                      cycle.state as OperationalCycleState,
-                    );
+                    const cycleStatus =
+                      getCycleDisplayStatus(displayedCycleState);
 
                     return (
                       <div
@@ -6762,9 +6783,9 @@ export default function OSOperationalPage() {
                         </div>
 
                         <div className="relative flex justify-between items-start px-4">
-                          <div className="absolute top-[26px] left-[60px] right-[60px] h-[3px] bg-slate-100 rounded-full -z-0">
+                          <div className="absolute top-[28px] left-[44px] right-[44px] h-[5px] bg-slate-200/50 rounded-full -z-0">
                             <div
-                              className="h-full rounded-full transition-all duration-700 ease-out shadow-[0_0_10px_rgba(81,222,255,0.3)]"
+                              className="h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(81,222,255,0.4)] animate-gradient bg-[length:200%_100%]"
                               style={{
                                 width: progressWidth,
                                 background:
