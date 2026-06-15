@@ -19,7 +19,6 @@ import { normalizeWhatsAppPhone } from "@/lib/meta";
 import { recordWhatsAppLog } from "@/lib/whatsapp-logs";
 import {
   buildPassengerDetailsMessage,
-  getOperationalCycleTitle,
   deriveCyclesOperationalStatus,
   type ItineraryGroup,
   type ItineraryStop,
@@ -60,6 +59,18 @@ function isDuplicateMessage(messageId: string): boolean {
     if (first) processedMessages.delete(first);
   }
   return false;
+}
+
+function buildStartFlowHeader(
+  cycle: { title?: string | null },
+  protocolo: string,
+): string {
+  const cleanTitle = String(cycle.title || "")
+    .replace(/\s*[—-]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return `${cleanTitle || "Itinerário"} - ${String(protocolo || "N/A").trim()}`;
 }
 
 interface OSRecord {
@@ -475,7 +486,10 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
       }
 
       if (targetCycle && driverPhone !== "Não informado") {
-        const cycleTitle = getOperationalCycleTitle(targetCycle);
+        const cycleTitle = buildStartFlowHeader(
+          targetCycle,
+          String(osRecord?.protocolo || "N/A"),
+        );
         const motoristaName = String(osRecord?.motorista || "Motorista");
 
         const templateComponents = [
@@ -800,7 +814,10 @@ async function sendNextCyclePreviewAndStartFlow(
       );
     }
 
-    const cycleTitle = getOperationalCycleTitle(targetCycle);
+    const cycleTitle = buildStartFlowHeader(
+      targetCycle,
+      String(osRecord.protocolo || "N/A"),
+    );
     const motoristaName = String(osRecord.motorista || "Motorista");
     const templateComponents = [
       {
@@ -984,9 +1001,68 @@ async function handleFlowCompleted(
           if (!odoResult.success && odoResult.error === "KM_BELOW_ODOMETER") {
             const odoMsg =
               `⚠️ *KM Inválido*\n\n` +
-              `O KM informado (${kmValue.toLocaleString("pt-BR")}) é menor ou igual ao último KM registrado para este veículo (${(odoResult.currentKm ?? 0).toLocaleString("pt-BR")} km).\n\n` +
-              `Verifique o hodômetro do veículo e tente novamente enviando o KM correto.`;
+              `📍 Último KM registrado: ${(odoResult.currentKm ?? 0).toLocaleString("pt-BR")} km\n` +
+              `📝 KM informado: ${kmValue.toLocaleString("pt-BR")} km\n\n` +
+              `O KM deve ser *maior* que o último registrado para este veículo. Verifique o hodômetro e clique em *INICIAR VIAGEM* novamente.`;
             await sendMessageWithRetry(phone, odoMsg);
+            const retryStartComponents = [
+              {
+                type: "header",
+                parameters: [
+                  {
+                    type: "text",
+                    text: buildStartFlowHeader(
+                      targetCycle,
+                      String(osRecord.protocolo || "N/A"),
+                    ),
+                  },
+                ],
+              },
+              {
+                type: "body",
+                parameters: [
+                  { type: "text", text: String(osRecord.motorista || "Motorista") },
+                ],
+              },
+              {
+                type: "button",
+                sub_type: "flow",
+                index: 0,
+                parameters: [],
+              },
+            ];
+            const retryStartResult = await sendTemplateWithRetry(
+              phone,
+              "inicio_viagem_motorista",
+              "pt_BR",
+              retryStartComponents,
+            );
+            if (retryStartResult.success && retryStartResult.messageId) {
+              const ordensServicoRetry = getAdmin().from(
+                "ordens_servico",
+              ) as unknown as OrdensServicoUpdateBuilder;
+              await ordensServicoRetry
+                .update({
+                  driver_flow_start_message_id: retryStartResult.messageId,
+                })
+                .eq("id", osRecord.id as string);
+
+              const refreshedCycles = cycles.map((cycle) =>
+                cycle.itineraryIndex === targetCycle.itineraryIndex
+                  ? {
+                      ...cycle,
+                      messageSentAt: new Date().toISOString(),
+                      state: "awaiting_accept" as const,
+                    }
+                  : cycle,
+              );
+              await replaceOperationalCyclesForOS(getAdmin(), osId, refreshedCycles);
+            } else {
+              console.warn(
+                "[meta-webhook] Falha ao reenviar template flow inicio_viagem_motorista após KM inválido:",
+                retryStartResult.error,
+              );
+            }
             console.warn("[meta-webhook] KM inicial rejeitado por odômetro:", kmValue, "<=", odoResult.currentKm);
             return;
           }
@@ -1084,8 +1160,9 @@ async function handleFlowCompleted(
         if (kmValue <= kmInicial) {
           const erroMsg =
             `⚠️ *KM Inválido*\n\n` +
-            `O KM final (${kmValue.toLocaleString("pt-BR")}) não pode ser menor ou igual ao KM inicial deste ciclo (${kmInicial.toLocaleString("pt-BR")}).\n\n` +
-            `Por favor, verifique o hodômetro do veículo e tente novamente.`;
+            `📍 KM inicial: ${kmInicial.toLocaleString("pt-BR")} km\n` +
+            `📝 KM final informado: ${kmValue.toLocaleString("pt-BR")} km\n\n` +
+            `O KM final deve ser *maior* que o KM inicial. Verifique o hodômetro e clique em *FINALIZAR VIAGEM* novamente.`;
           await sendMessageWithRetry(phone, erroMsg);
 
           const kmFormatted = kmInicial.toLocaleString("pt-BR");
@@ -1120,8 +1197,9 @@ async function handleFlowCompleted(
           if (!odoResult.success && odoResult.error === "KM_BELOW_ODOMETER") {
             const odoMsg =
               `⚠️ *KM Inválido*\n\n` +
-              `O KM informado (${kmValue.toLocaleString("pt-BR")}) é menor ou igual ao último KM registrado para este veículo (${(odoResult.currentKm ?? 0).toLocaleString("pt-BR")} km).\n\n` +
-              `Verifique o hodômetro do veículo e tente novamente.`;
+              `📍 Último KM registrado: ${(odoResult.currentKm ?? 0).toLocaleString("pt-BR")} km\n` +
+              `📝 KM informado: ${kmValue.toLocaleString("pt-BR")} km\n\n` +
+              `O KM deve ser *maior* que o último registrado para este veículo. Verifique o hodômetro e clique em *FINALIZAR VIAGEM* novamente.`;
             await sendMessageWithRetry(phone, odoMsg);
             console.warn("[meta-webhook] KM final rejeitado por odômetro:", kmValue, "<=", odoResult.currentKm);
             return;
