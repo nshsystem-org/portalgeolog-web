@@ -19,10 +19,8 @@ import { normalizeWhatsAppPhone } from "@/lib/meta";
 import { recordWhatsAppLog } from "@/lib/whatsapp-logs";
 import {
   buildPassengerDetailsMessage,
-  deriveCyclesOperationalStatus,
   type ItineraryGroup,
   type ItineraryStop,
-  type OperationalCycleState,
 } from "@/lib/os-messages";
 import {
   loadOperationalCycleContextForOS,
@@ -945,7 +943,7 @@ async function handleFlowCompleted(
       getAdmin()
         .from("ordens_servico")
         .select(
-          "id, motorista, veiculo_id, driver_flow_start_message_id, driver_flow_finish_message_id",
+          "id, protocolo, motorista, veiculo_id, driver_flow_start_message_id, driver_flow_finish_message_id",
         )
         .or(
           `driver_flow_start_message_id.eq.${contextId},driver_flow_finish_message_id.eq.${contextId}`,
@@ -1097,21 +1095,8 @@ async function handleFlowCompleted(
           return;
         }
 
-        // 4. Atualizar status_operacional e route_started_at (campos não cobertos pelo RPC)
-        const updatedCycles = cycles.map((cycle) =>
-          cycle.itineraryIndex === targetCycle.itineraryIndex
-            ? { ...cycle, state: "awaiting_finish" as OperationalCycleState, kmInitial: kmValue, startedAt: new Date().toISOString() }
-            : cycle,
-        );
-        const newStatus = deriveCyclesOperationalStatus(updatedCycles);
-        const ordensServico = getAdmin().from("ordens_servico") as unknown as OrdensServicoUpdateBuilder;
-        await ordensServico.update({
-          status_operacional: newStatus,
-          route_started_at: new Date().toISOString(),
-          route_started_km: kmValue,
-        }).eq("id", osRecord.id as string);
-
-        console.log("[meta-webhook] KM inicial registrado (RPC atômica):", kmValue, "OS:", osRecord.id);
+        // 4. status_operacional e route_started_at agora atualizados atomicamente dentro da RPC
+        console.log("[meta-webhook] KM inicial registrado (RPC atômica):", kmValue, "OS:", osRecord.id, "status:", kmStartResult.statusOperacional);
 
         // 5. Enviar template flow "finalizar_viagem_motoristas" com KM inicial no body
         const kmFormatted = kmValue.toLocaleString("pt-BR");
@@ -1236,21 +1221,8 @@ async function handleFlowCompleted(
           return;
         }
 
-        // 4. Atualizar status_operacional e route_finished_at
-        const updatedCycles = cycles.map((cycle) =>
-          cycle.itineraryIndex === targetCycle.itineraryIndex
-            ? { ...cycle, state: "completed" as OperationalCycleState, kmFinal: kmValue, finishedAt: new Date().toISOString() }
-            : cycle,
-        );
-        const newStatus = deriveCyclesOperationalStatus(updatedCycles);
-        const ordensServico3 = getAdmin().from("ordens_servico") as unknown as OrdensServicoUpdateBuilder;
-        await ordensServico3.update({
-          status_operacional: newStatus,
-          route_finished_at: new Date().toISOString(),
-          route_finished_km: kmValue,
-        }).eq("id", osRecord.id as string);
-
-        console.log("[meta-webhook] KM final registrado (RPC atômica):", kmValue, "OS:", osRecord.id, "novo status:", newStatus);
+        // 4. status_operacional e route_finished_at agora atualizados atomicamente dentro da RPC
+        console.log("[meta-webhook] KM final registrado (RPC atômica):", kmValue, "OS:", osRecord.id, "novo status:", kmFinishResult.statusOperacional);
 
         // 5. Enviar mensagem de agradecimento + próximo ciclo
         try {

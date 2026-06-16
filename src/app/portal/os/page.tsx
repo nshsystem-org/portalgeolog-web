@@ -1330,9 +1330,9 @@ export default function OSOperationalPage() {
   const [originalFormSnapshot, setOriginalFormSnapshot] =
     useState<PendingOSData | null>(null);
   const [notificationConfig, setNotificationConfig] = useState({
-    auto: false,
+    auto: true,
     motorista: true,
-    passageiros: true,
+    passageiros: false,
     solicitante: false,
   });
   const [isSubmittingOS, setIsSubmittingOS] = useState(false);
@@ -2295,10 +2295,15 @@ export default function OSOperationalPage() {
         const currentCycles = osData.operationalCycles || [];
         const updatedCycles = currentCycles.map((cycle) => {
           if (cycle.itineraryIndex === itineraryIndex) {
+            const shouldAdvanceToAwaitingAccept =
+              cycle.state === "pending" || cycle.state === "awaiting_accept";
+
             return {
               ...cycle,
               messageSentAt: new Date().toISOString(),
-              state: "awaiting_accept" as const,
+              ...(shouldAdvanceToAwaitingAccept
+                ? { state: "awaiting_accept" as const }
+                : {}),
             };
           }
           return cycle;
@@ -7164,7 +7169,12 @@ export default function OSOperationalPage() {
                                     if (isArchived) return;
                                     // Check if the step is "finished" to show finish confirmation modal
                                     if (step.id === "finished") {
-                                      if (cycle.state === "completed") {
+                                      if (
+                                        displayedCycleState === "completed" ||
+                                        cycle.finishedAt ||
+                                        viewingOS?.status?.operacional ===
+                                          "Finalizado"
+                                      ) {
                                         toast.info("Este ciclo já foi finalizado.");
                                         return;
                                       }
@@ -8976,11 +8986,10 @@ export default function OSOperationalPage() {
                 </div>
                 <div className="flex bg-white p-1.5 rounded-xl border border-slate-200">
                   <button
-                    disabled
                     onClick={() =>
                       setNotificationConfig((prev) => ({ ...prev, auto: true }))
                     }
-                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed ${notificationConfig.auto ? "bg-blue-600 text-white shadow-md" : "text-slate-400 hover:text-slate-600"}`}
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${notificationConfig.auto ? "bg-blue-600 text-white shadow-md" : "text-slate-400 hover:text-slate-600"}`}
                   >
                     AUTOMÁTICO
                   </button>
@@ -8991,7 +9000,7 @@ export default function OSOperationalPage() {
                         auto: false,
                       }))
                     }
-                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${!notificationConfig.auto ? "bg-slate-600 text-white shadow-md" : "text-slate-400 hover:text-slate-600"}`}
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${!notificationConfig.auto ? "bg-slate-600 text-white shadow-md" : "text-slate-400 hover:text-slate-600"}`}
                   >
                     MANUAL
                   </button>
@@ -9033,13 +9042,8 @@ export default function OSOperationalPage() {
                   </button>
 
                   <button
-                    onClick={() =>
-                      setNotificationConfig((prev) => ({
-                        ...prev,
-                        passageiros: !prev.passageiros,
-                      }))
-                    }
-                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${notificationConfig.passageiros ? "bg-blue-50/50 border-blue-200 text-blue-900" : "bg-white border-slate-100 text-slate-400"}`}
+                    disabled
+                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all cursor-not-allowed opacity-60 ${notificationConfig.passageiros ? "bg-blue-50/50 border-blue-200 text-blue-900" : "bg-white border-slate-100 text-slate-400"}`}
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -9295,14 +9299,38 @@ export default function OSOperationalPage() {
                 viewingOS?.operationalCycles?.find(
                   (c) => c.itineraryIndex === selectedCycleIndex,
                 );
+              const selectedCycleRouteState = (() => {
+                if (!selectedCycle) return null;
+                if (
+                  selectedCycle.finishedAt ||
+                  selectedCycle.state === "completed"
+                ) {
+                  return "completed";
+                }
+                if (
+                  selectedCycle.startedAt ||
+                  selectedCycle.state === "awaiting_finish" ||
+                  selectedCycle.state === "awaiting_km_finish"
+                ) {
+                  return "started";
+                }
+                if (
+                  selectedCycle.acceptedAt ||
+                  selectedCycle.state === "awaiting_start" ||
+                  selectedCycle.state === "awaiting_km_start"
+                ) {
+                  return "visualized";
+                }
+                return "pending";
+              })();
+
               const canShowRestart =
-                selectedCycle?.startedAt != null ||
-                selectedCycle?.state === "awaiting_finish" ||
-                selectedCycle?.state === "awaiting_km_finish" ||
-                selectedCycle?.state === "awaiting_km_start" ||
-                selectedCycle?.state === "completed";
+                selectedCycleRouteState === "started" ||
+                selectedCycleRouteState === "completed";
               const canShowRevert =
-                !canShowRestart && selectedCycle?.state === "awaiting_start";
+                selectedCycleRouteState === "visualized";
+              const canShowSendMessage =
+                selectedCycleRouteState === "pending";
 
               return (
                 <>
@@ -9353,24 +9381,26 @@ export default function OSOperationalPage() {
                       Retornar para Visualizado
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (viewingOS && selectedCycleIndex !== null) {
-                        sendWhatsAppNotification(
-                          viewingOS,
-                          selectedCycleIndex,
-                        );
-                      }
-                      setShowRouteMenu(false);
-                      setRouteMenuPosition(null);
-                      setSelectedCycleIndex(null);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors cursor-pointer"
-                  >
-                    <MessageCircle size={14} />
-                    Enviar Mensagem da Rota
-                  </button>
+                  {canShowSendMessage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (viewingOS && selectedCycleIndex !== null) {
+                          sendWhatsAppNotification(
+                            viewingOS,
+                            selectedCycleIndex,
+                          );
+                        }
+                        setShowRouteMenu(false);
+                        setRouteMenuPosition(null);
+                        setSelectedCycleIndex(null);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <MessageCircle size={14} />
+                      Enviar Mensagem da Rota
+                    </button>
+                  )}
                 </>
               );
             })()}

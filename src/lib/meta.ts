@@ -60,6 +60,97 @@ export function isMetaConfigured(): boolean {
   return getMetaConfig() !== null;
 }
 
+// ============================================================================
+// Helper privado: HTTP com timeout + retry automático
+// ============================================================================
+
+/**
+ * Executa uma chamada HTTP POST à API da Meta com timeout por tentativa e retry.
+ *
+ * Retry aplicado em:
+ *   - Exceções de rede / timeout (AbortController)
+ *   - HTTP 429 (rate limit da Meta)
+ *   - HTTP 5xx (erros internos do servidor Meta)
+ *
+ * Sem retry para HTTP 4xx (exceto 429): erros de payload são permanentes.
+ */
+async function fetchMetaApiWithRetry(
+  url: string,
+  body: Record<string, unknown>,
+  accessToken: string,
+  logContext: string,
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const MAX_RETRIES = 3;
+  const TIMEOUT_MS = 10_000;
+  const BACKOFF_DELAYS_MS = [1_000, 2_000];
+
+  let lastError = "Unknown error";
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = (await response.json()) as Record<string, unknown>;
+
+      if (response.ok) {
+        const messages = data.messages as Array<{ id?: string }> | undefined;
+        return { success: true, messageId: messages?.[0]?.id };
+      }
+
+      const apiError = data.error as { message?: string } | undefined;
+      lastError = apiError?.message ?? `HTTP ${response.status}`;
+
+      // 4xx client errors (exceto 429) não têm retry — payload inválido é permanente
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        console.error(
+          `[Meta API] ${logContext} - Erro não-retryable (${response.status}):`,
+          lastError,
+        );
+        return { success: false, error: lastError };
+      }
+
+      console.warn(
+        `[Meta API] ${logContext} - Tentativa ${attempt + 1}/${MAX_RETRIES} falhou (HTTP ${response.status}):`,
+        lastError,
+      );
+    } catch (err) {
+      clearTimeout(timeoutId);
+      lastError = err instanceof Error ? err.message : "Network error";
+      console.warn(
+        `[Meta API] ${logContext} - Tentativa ${attempt + 1}/${MAX_RETRIES} - Exceção de rede:`,
+        lastError,
+      );
+    }
+
+    if (attempt < MAX_RETRIES - 1) {
+      const delayMs = BACKOFF_DELAYS_MS[attempt] ?? 4_000;
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  console.error(
+    `[Meta API] ${logContext} - Todas as ${MAX_RETRIES} tentativas falharam. Último erro:`,
+    lastError,
+  );
+  return { success: false, error: lastError };
+}
+
+// ============================================================================
+// Funções públicas de envio
+// ============================================================================
+
 /**
  * Envia mensagem de texto via Meta WhatsApp Business API
  * NOTA: Mensagens de texto simples só funcionam dentro de janela de 24h de conversa
@@ -135,77 +226,39 @@ export async function sendWhatsAppMessage(
     };
   }
 
-  try {
-    const phoneNumberId = config.phoneNumberId;
-    const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+  const phoneNumberId = config.phoneNumberId;
+  const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.accessToken}`,
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: normalizedPhone,
-        type: "text",
-        text: {
-          body: message,
-        },
-      }),
-    });
+  const result = await fetchMetaApiWithRetry(
+    url,
+    {
+      messaging_product: "whatsapp",
+      to: normalizedPhone,
+      type: "text",
+      text: { body: message },
+    },
+    config.accessToken,
+    `sendMessage(${normalizedPhone})`,
+  );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("[Meta API] Erro na resposta:", data);
-      void recordWhatsAppLog({
-        source: "whatsapp",
-        eventType: "send_message_error",
-        payload: {
-          phone,
-          normalizedPhone,
-          response: data,
-        },
-      });
-      return {
-        success: false,
-        error: data.error?.message || "Erro ao enviar mensagem",
-      };
-    }
-
-    console.log("[Meta API] Mensagem enviada com sucesso:", {
-      messageId: data.messages?.[0]?.id,
-    });
+  if (!result.success) {
     void recordWhatsAppLog({
       source: "whatsapp",
-      eventType: "send_message_success",
-      payload: {
-        phone,
-        normalizedPhone,
-        messageId: data.messages?.[0]?.id || null,
-      },
+      eventType: "send_message_error",
+      payload: { phone, normalizedPhone, error: result.error },
     });
-    return {
-      success: true,
-      messageId: data.messages?.[0]?.id,
-    };
-  } catch (error) {
-    console.error("[Meta API] Exceção:", error);
-    void recordWhatsAppLog({
-      source: "whatsapp",
-      eventType: "send_message_exception",
-      payload: {
-        phone,
-        normalizedPhone,
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
-    });
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Erro desconhecido",
-    };
+    return { success: false, error: result.error || "Erro ao enviar mensagem" };
   }
+
+  console.log("[Meta API] Mensagem enviada com sucesso:", {
+    messageId: result.messageId,
+  });
+  void recordWhatsAppLog({
+    source: "whatsapp",
+    eventType: "send_message_success",
+    payload: { phone, normalizedPhone, messageId: result.messageId || null },
+  });
+  return { success: true, messageId: result.messageId };
 }
 
 /**
@@ -291,82 +344,48 @@ export async function sendWhatsAppTemplate(
     };
   }
 
-  try {
-    const phoneNumberId = config.phoneNumberId;
-    const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+  const phoneNumberId = config.phoneNumberId;
+  const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.accessToken}`,
+  const result = await fetchMetaApiWithRetry(
+    url,
+    {
+      messaging_product: "whatsapp",
+      to: normalizedPhone,
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: language },
+        components,
       },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: normalizedPhone,
-        type: "template",
-        template: {
-          name: templateName,
-          language: { code: language },
-          components,
-        },
-      }),
-    });
+    },
+    config.accessToken,
+    `sendTemplate(${templateName}, ${normalizedPhone})`,
+  );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("[Meta API] Erro no template:", data);
-      void recordWhatsAppLog({
-        source: "whatsapp",
-        eventType: "send_template_error",
-        payload: {
-          phone,
-          normalizedPhone,
-          templateName,
-          response: data,
-        },
-      });
-      return {
-        success: false,
-        error: data.error?.message || "Erro ao enviar template",
-      };
-    }
-
-    console.log("[Meta API] Template enviado com sucesso:", {
-      messageId: data.messages?.[0]?.id,
-    });
+  if (!result.success) {
     void recordWhatsAppLog({
       source: "whatsapp",
-      eventType: "send_template_success",
-      payload: {
-        phone,
-        normalizedPhone,
-        templateName,
-        messageId: data.messages?.[0]?.id || null,
-      },
+      eventType: "send_template_error",
+      payload: { phone, normalizedPhone, templateName, error: result.error },
     });
-    return {
-      success: true,
-      messageId: data.messages?.[0]?.id,
-    };
-  } catch (error) {
-    console.error("[Meta API] Exceção:", error);
-    void recordWhatsAppLog({
-      source: "whatsapp",
-      eventType: "send_template_exception",
-      payload: {
-        phone,
-        normalizedPhone,
-        templateName,
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
-    });
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Erro desconhecido",
-    };
+    return { success: false, error: result.error || "Erro ao enviar template" };
   }
+
+  console.log("[Meta API] Template enviado com sucesso:", {
+    messageId: result.messageId,
+  });
+  void recordWhatsAppLog({
+    source: "whatsapp",
+    eventType: "send_template_success",
+    payload: {
+      phone,
+      normalizedPhone,
+      templateName,
+      messageId: result.messageId || null,
+    },
+  });
+  return { success: true, messageId: result.messageId };
 }
 
 /**
@@ -533,87 +552,49 @@ export async function sendWhatsAppButtonMessage(
     };
   }
 
-  try {
-    const phoneNumberId = config.phoneNumberId;
-    const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+  const phoneNumberId = config.phoneNumberId;
+  const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.accessToken}`,
+  const result = await fetchMetaApiWithRetry(
+    url,
+    {
+      messaging_product: "whatsapp",
+      to: normalizedPhone,
+      type: "interactive",
+      interactive: {
+        type: "cta_url",
+        body: { text: bodyText },
+        action: {
+          name: "cta_url",
+          parameters: { display_text: buttonText, url: buttonUrl },
+        },
       },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: normalizedPhone,
-        type: "interactive",
-        interactive: {
-          type: "cta_url",
-          body: {
-            text: bodyText,
-          },
-          action: {
-            name: "cta_url",
-            parameters: {
-              display_text: buttonText,
-              url: buttonUrl,
-            },
-          },
-        },
-      }),
-    });
+    },
+    config.accessToken,
+    `sendButtonMessage(${normalizedPhone})`,
+  );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("[Meta API] Erro na resposta:", data);
-      void recordWhatsAppLog({
-        source: "whatsapp",
-        eventType: "send_button_message_error",
-        payload: {
-          phone,
-          normalizedPhone,
-          response: data,
-        },
-      });
-      return {
-        success: false,
-        error: data.error?.message || "Erro ao enviar mensagem com botão",
-      };
-    }
-
-    console.log("[Meta API] Mensagem com botão enviada com sucesso:", {
-      messageId: data.messages?.[0]?.id,
-    });
+  if (!result.success) {
     void recordWhatsAppLog({
       source: "whatsapp",
-      eventType: "send_button_message_success",
-      payload: {
-        phone,
-        normalizedPhone,
-        messageId: data.messages?.[0]?.id || null,
-      },
-    });
-    return {
-      success: true,
-      messageId: data.messages?.[0]?.id,
-    };
-  } catch (error) {
-    console.error("[Meta API] Exceção:", error);
-    void recordWhatsAppLog({
-      source: "whatsapp",
-      eventType: "send_button_message_exception",
-      payload: {
-        phone,
-        normalizedPhone,
-        error: error instanceof Error ? error.message : "Erro desconhecido",
-      },
+      eventType: "send_button_message_error",
+      payload: { phone, normalizedPhone, error: result.error },
     });
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Erro desconhecido",
+      error: result.error || "Erro ao enviar mensagem com botão",
     };
   }
+
+  console.log("[Meta API] Mensagem com botão enviada com sucesso:", {
+    messageId: result.messageId,
+  });
+  void recordWhatsAppLog({
+    source: "whatsapp",
+    eventType: "send_button_message_success",
+    payload: { phone, normalizedPhone, messageId: result.messageId || null },
+  });
+  return { success: true, messageId: result.messageId };
 }
 
 /**

@@ -316,12 +316,14 @@ export async function processKmStart(
 ): Promise<{
   success: boolean;
   updatedCycles?: unknown;
+  statusOperacional?: string;
   error?: string;
 }> {
   try {
     const { data, error } = await callRpc<{
       success: boolean;
       updatedCycles?: unknown;
+      statusOperacional?: string;
       error?: string;
     }>(
       supabase,
@@ -392,15 +394,14 @@ export async function validateVehicleKm(
 
     if (error) {
       console.error("[webhook-helpers] Erro ao validar odômetro do veículo:", error);
-      // Em caso de falha na validação do odômetro, permitir prosseguir (não bloquear)
-      return { success: true };
+      return { success: false, error: error.message };
     }
 
-    return data ?? { success: true };
+    return data ?? { success: false, error: "No data returned from odometer RPC" };
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
     console.error("[webhook-helpers] Timeout ao validar odômetro:", err);
-    // Timeout não deve bloquear o processamento
-    return { success: true };
+    return { success: false, error: errorMsg };
   }
 }
 
@@ -416,6 +417,7 @@ export async function processKmFinish(
   hasNextCycle?: boolean;
   nextCycle?: unknown;
   updatedCycles?: unknown;
+  statusOperacional?: string;
   error?: string;
   kmInitial?: number;
   kmFinal?: number;
@@ -426,6 +428,7 @@ export async function processKmFinish(
       hasNextCycle?: boolean;
       nextCycle?: unknown;
       updatedCycles?: unknown;
+      statusOperacional?: string;
       error?: string;
       kmInitial?: number;
       kmFinal?: number;
