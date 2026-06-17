@@ -7018,15 +7018,7 @@ export default function OSOperationalPage() {
                                         cycle.state === "cancelled" ||
                                         !!cycle.finishedAt))
                                   }
-                                  className={`flex flex-col items-center group ${
-                                    isArchived ||
-                                    (step.id === "finished" &&
-                                      (cycle.state === "completed" ||
-                                        cycle.state === "cancelled" ||
-                                        !!cycle.finishedAt))
-                                      ? "cursor-not-allowed"
-                                      : "cursor-pointer"
-                                  }`}
+                                  className="flex flex-col items-center group cursor-pointer"
                                   onClick={() => {
                                     if (step.id === "finished") {
                                       setSelectedCycleIndex(
