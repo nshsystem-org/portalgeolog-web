@@ -84,6 +84,7 @@ export interface OperationalCycle {
   title: string;
   state: OperationalCycleState;
   messageSentAt?: string | null;
+  messageSentById?: string | null;
   acceptedAt?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;

@@ -5,8 +5,23 @@ import {
   sendWhatsAppButtonMessage,
 } from "@/lib/meta";
 import { createClient as createSupabaseAuthClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "edge";
+
+let _supabaseAdmin: ReturnType<typeof createClient> | null = null;
+const getAdmin = () => {
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: { autoRefreshToken: false, persistSession: false },
+      },
+    );
+  }
+  return _supabaseAdmin;
+};
 
 export async function POST(request: Request) {
   try {
@@ -34,6 +49,8 @@ export async function POST(request: Request) {
       buttonText,
       buttonUrl,
       components,
+      os_id,
+      cycle_index,
     } = body;
 
     if (!phone) {
@@ -41,6 +58,45 @@ export async function POST(request: Request) {
         { success: false, error: "Parâmetro phone é obrigatório." },
         { status: 400 },
       );
+    }
+
+    // Validação de estado do ciclo operacional para templates de início de rota.
+    // Outros templates (ex: reset, remarcação) não são bloqueados aqui pois são
+    // enviados intencionalmente para ciclos já em andamento.
+    const INITIAL_ROUTE_TEMPLATES = [
+      "appointment_scheduling",
+      "inicio_viagem_motorista",
+    ];
+    if (
+      os_id &&
+      Number.isFinite(cycle_index) &&
+      templateName &&
+      INITIAL_ROUTE_TEMPLATES.includes(templateName)
+    ) {
+      const { data: cycleRow } = await getAdmin()
+        .from("os_operational_cycles")
+        .select("state, started_at")
+        .eq("ordem_servico_id", os_id)
+        .eq("itinerary_index", cycle_index)
+        .maybeSingle() as unknown as {
+        data: { state: string; started_at: string | null } | null;
+      };
+
+      if (
+        cycleRow &&
+        (cycleRow.state === "awaiting_finish" ||
+          cycleRow.state === "completed" ||
+          cycleRow.started_at)
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Este ciclo já está em andamento ou finalizado. Mensagem inicial não pode ser enviada.",
+          },
+          { status: 400 },
+        );
+      }
     }
 
     // Se usar template

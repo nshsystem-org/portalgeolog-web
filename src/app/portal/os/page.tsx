@@ -2138,6 +2138,24 @@ export default function OSOperationalPage() {
     itineraryIndex: number,
   ) => {
     const startedAt = performance.now();
+
+    // Validar estado do ciclo antes de enviar mensagem inicial
+    const cycles = osData.operationalCycles || [];
+    const targetCycle = cycles.find(
+      (c) => c.itineraryIndex === itineraryIndex,
+    );
+    if (
+      targetCycle &&
+      (targetCycle.state === "awaiting_finish" ||
+        targetCycle.state === "completed" ||
+        targetCycle.startedAt)
+    ) {
+      toast.info(
+        "Este ciclo já está em andamento ou finalizado. Mensagem inicial não pode ser enviada.",
+      );
+      return;
+    }
+
     if (!osData.motorista) {
       toast.error("Motorista não atribuído a esta OS.");
       return;
@@ -2201,6 +2219,8 @@ export default function OSOperationalPage() {
             templateName: "appointment_scheduling",
             templateVariables: [osData.motorista],
             language: "pt_BR",
+            os_id: osData.id,
+            cycle_index: itineraryIndex,
           }),
         });
         msgData = await msgResponse.json();
@@ -2256,6 +2276,8 @@ export default function OSOperationalPage() {
               templateVariables: [], // Flow não usa variáveis no body
               language: "pt_BR",
               components: templateComponents,
+              os_id: osData.id,
+              cycle_index: itineraryIndex,
             }),
           });
           msgData = await msgResponse.json();
@@ -2301,6 +2323,7 @@ export default function OSOperationalPage() {
             return {
               ...cycle,
               messageSentAt: new Date().toISOString(),
+              messageSentById: user.id,
               ...(shouldAdvanceToAwaitingAccept
                 ? { state: "awaiting_accept" as const }
                 : {}),
@@ -2571,6 +2594,13 @@ export default function OSOperationalPage() {
   // State variables for new modals
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [showAcceptRevert, setShowAcceptRevert] = useState(false);
+  const [resetReason, setResetReason] = useState<
+    "km_correction" | "rescheduling" | "other"
+  >("km_correction");
+  const [resetReasonOther, setResetReasonOther] = useState("");
+  const [kmResetTarget, setKmResetTarget] = useState<
+    "initial" | "final" | "both" | null
+  >(null);
   const [showRouteMenu, setShowRouteMenu] = useState(false);
   const [selectedCycleIndex, setSelectedCycleIndex] = useState<number | null>(
     null,
@@ -2593,6 +2623,16 @@ export default function OSOperationalPage() {
   } | null>(null);
   const [driverNotifyTargetCycleIndex, setDriverNotifyTargetCycleIndex] =
     useState<number | null>(null);
+
+  // Modal de confirmação para reenvio de mensagem ao motorista
+  const [showResendConfirm, setShowResendConfirm] = useState(false);
+  const [resendConfirmCycleIndex, setResendConfirmCycleIndex] = useState<
+    number | null
+  >(null);
+  const [resendConfirmInfo, setResendConfirmInfo] = useState<{
+    date: string;
+    userName: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!openNotifyMenuKey) return;
@@ -2674,7 +2714,13 @@ export default function OSOperationalPage() {
     }
   };
 
-  const handleManualRevertAccept = async (osId: string, cycleIndex: number) => {
+  const handleManualRevertAccept = async (
+    osId: string,
+    cycleIndex: number,
+    reason: "km_correction" | "rescheduling" | "other" = "other",
+    reasonText?: string,
+    kmTarget?: "initial" | "final" | "both" | null,
+  ) => {
     try {
       const response = await fetch("/api/os-manual-cycle", {
         method: "POST",
@@ -2683,6 +2729,9 @@ export default function OSOperationalPage() {
           os_id: osId,
           cycle_index: cycleIndex,
           action: "revert_to_pending",
+          reset_reason: reason,
+          ...(reasonText ? { reset_reason_text: reasonText } : {}),
+          ...(kmTarget ? { km_reset_target: kmTarget } : {}),
         }),
       });
 
@@ -2693,7 +2742,12 @@ export default function OSOperationalPage() {
         return;
       }
 
-      toast.success("Status retornado para pendente!");
+      const reasonLabels = {
+        km_correction: "Ciclo resetado — Correção de KM",
+        rescheduling: "Ciclo resetado — Remarcação/Atraso",
+        other: "Ciclo resetado com sucesso",
+      };
+      toast.success(reasonLabels[reason]);
       void syncOSSnapshot(osId);
     } catch (error) {
       console.error("Erro ao reverter aceite:", error);
@@ -6983,6 +7037,22 @@ export default function OSOperationalPage() {
                             </h4>
                           </div>
                           <div className="flex items-center gap-2 flex-wrap justify-end">
+                            {!isArchived &&
+                              displayedCycleState !== "pending" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCycleIndex(
+                                      cycle.itineraryIndex,
+                                    );
+                                    setShowAcceptRevert(true);
+                                  }}
+                                  className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
+                                >
+                                  <RotateCcw size={12} />
+                                  Resetar
+                                </button>
+                              )}
                             <div
                               className={`px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border ${cycle.kind === "return" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
                             >
@@ -7033,6 +7103,14 @@ export default function OSOperationalPage() {
                                     className={`flex flex-col items-center group ${isArchived ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                                     onClick={(e) => {
                                       if (isArchived) return;
+                                      // Ciclo já em rota ou finalizado: mensagem
+                                      // inicial não deve ser reenviada
+                                      if (
+                                        displayedCycleState ===
+                                          "awaiting_finish" ||
+                                        displayedCycleState === "completed"
+                                      )
+                                        return;
                                       const rect = (
                                         e.currentTarget as HTMLElement
                                       ).getBoundingClientRect();
@@ -7136,16 +7214,56 @@ export default function OSOperationalPage() {
                                         </p>
                                         <button
                                           type="button"
-                                          onClick={() => {
-                                            sendWhatsAppNotification(
-                                              viewingOS,
-                                              cycle.itineraryIndex,
+                                          onClick={async () => {
+                                            const cycles = viewingOS?.operationalCycles ?? [];
+                                            const targetCycle = cycles.find(
+                                              (c) => c.itineraryIndex === cycle.itineraryIndex,
                                             );
+
+                                            if (targetCycle?.messageSentAt) {
+                                              let senderName = "usuário";
+                                              if (targetCycle.messageSentById) {
+                                                const { data: senderData, error: senderError } = await supabase
+                                                  .from("user_roles")
+                                                  .select("nome")
+                                                  .eq("id", targetCycle.messageSentById)
+                                                  .maybeSingle();
+                                                if (senderError) {
+                                                  console.error(
+                                                    "[Resend] Erro ao buscar nome do remetente:",
+                                                    senderError,
+                                                  );
+                                                }
+                                                if (senderData?.nome) {
+                                                  senderName = senderData.nome;
+                                                } else {
+                                                  console.warn(
+                                                    "[Resend] Nome não encontrado para senderId:",
+                                                    targetCycle.messageSentById,
+                                                    "senderData:",
+                                                    senderData,
+                                                  );
+                                                }
+                                              } else {
+                                                console.warn(
+                                                  "[Resend] messageSentById está vazio para o ciclo",
+                                                  cycle.itineraryIndex,
+                                                );
+                                              }
+
+                                              setResendConfirmInfo({
+                                                date: targetCycle.messageSentAt,
+                                                userName: senderName,
+                                              });
+                                            } else {
+                                              setResendConfirmInfo(null);
+                                            }
+
+                                            setResendConfirmCycleIndex(cycle.itineraryIndex);
+                                            setShowResendConfirm(true);
                                             setOpenDriverNotifyMenu(false);
                                             setDriverNotifyMenuPos(null);
-                                            setDriverNotifyTargetCycleIndex(
-                                              null,
-                                            );
+                                            setDriverNotifyTargetCycleIndex(null);
                                           }}
                                           disabled={!!notifyLoadingKey}
                                           className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
@@ -7183,10 +7301,9 @@ export default function OSOperationalPage() {
                                       );
                                       setShowFinishConfirm(true);
                                     } else if (step.id === "accepted") {
-                                      setSelectedCycleIndex(
-                                        cycle.itineraryIndex,
-                                      );
-                                      setShowAcceptRevert(true);
+                                      // Intencionalmente sem ação: o reset foi movido
+                                      // para o botão "Resetar" no cabeçalho do ciclo.
+                                      return;
                                     } else if (step.id === "started") {
                                       const rect =
                                         e.currentTarget.getBoundingClientRect();
@@ -9221,35 +9338,168 @@ export default function OSOperationalPage() {
           onClose={() => {
             setShowAcceptRevert(false);
             setSelectedCycleIndex(null);
+            setResetReason("km_correction");
+            setResetReasonOther("");
+            setKmResetTarget(null);
           }}
-          title="Retornar Visualização"
-          subtitle="Desfazer visualização do ciclo"
-          icon={<Eye size={24} />}
+          title="Resetar Ciclo"
+          subtitle="Retornar o ciclo para pendente"
+          icon={<RotateCcw size={24} />}
           maxWidthClassName="max-w-xl"
+          disableBackdropClose
         >
-          <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
-              <div className="flex items-start gap-4">
-                <AlertTriangle className="text-blue-600 shrink-0" size={24} />
-                <div>
-                  <h4 className="font-bold text-blue-900 mb-2">
-                    Confirmar Retorno
-                  </h4>
-                  <p className="text-sm text-blue-800 leading-relaxed">
-                    Deseja retornar o status para{" "}
-                    <span className="font-bold">Pendente</span>? O motorista
-                    poderá aceitar novamente.
-                  </p>
+          <div className="space-y-5">
+            <p className="text-sm text-slate-600 font-medium">
+              Por que você está resetando?
+            </p>
+
+            {/* Option: Correção de KM */}
+            <button
+              type="button"
+              onClick={() => setResetReason("km_correction")}
+              className={`w-full flex items-start gap-4 p-4 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                resetReason === "km_correction"
+                  ? "border-blue-500 bg-blue-50"
+                  : "border-slate-200 bg-white hover:border-slate-300"
+              }`}
+            >
+              <div
+                className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  resetReason === "km_correction"
+                    ? "border-blue-500"
+                    : "border-slate-300"
+                }`}
+              >
+                {resetReason === "km_correction" && (
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                )}
+              </div>
+              <div>
+                <p className="font-black text-sm text-slate-800">
+                  Correção de KM
+                </p>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  Reset + reenvia template ao motorista para digitar novamente
+                </p>
+              </div>
+            </button>
+
+            {/* Sub-seleção: qual KM resetar */}
+            {resetReason === "km_correction" && (
+              <div className="px-1">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">
+                  O que precisa ser corrigido?
+                </p>
+                <div className="flex gap-2">
+                  {(
+                    [
+                      { value: "initial", label: "KM Inicial" },
+                      { value: "final", label: "KM Final" },
+                      { value: "both", label: "Ambos" },
+                    ] as const
+                  ).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setKmResetTarget(value)}
+                      className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider border-2 transition-all cursor-pointer ${
+                        kmResetTarget === value
+                          ? "border-blue-500 bg-blue-500 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
 
-            <div className="flex gap-4">
+            {/* Option: Remarcação / Atraso */}
+            <button
+              type="button"
+              onClick={() => setResetReason("rescheduling")}
+              className={`w-full flex items-start gap-4 p-4 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                resetReason === "rescheduling"
+                  ? "border-amber-500 bg-amber-50"
+                  : "border-slate-200 bg-white hover:border-slate-300"
+              }`}
+            >
+              <div
+                className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  resetReason === "rescheduling"
+                    ? "border-amber-500"
+                    : "border-slate-300"
+                }`}
+              >
+                {resetReason === "rescheduling" && (
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                )}
+              </div>
+              <div>
+                <p className="font-black text-sm text-slate-800">
+                  Remarcação / Atraso
+                </p>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  Reset + avisa motorista que deve aguardar nova instrução
+                </p>
+              </div>
+            </button>
+
+            {/* Option: Outro motivo */}
+            <button
+              type="button"
+              onClick={() => setResetReason("other")}
+              className={`w-full flex items-start gap-4 p-4 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                resetReason === "other"
+                  ? "border-slate-500 bg-slate-50"
+                  : "border-slate-200 bg-white hover:border-slate-300"
+              }`}
+            >
+              <div
+                className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  resetReason === "other" ? "border-slate-500" : "border-slate-300"
+                }`}
+              >
+                {resetReason === "other" && (
+                  <div className="w-2.5 h-2.5 rounded-full bg-slate-500" />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="font-black text-sm text-slate-800">
+                  Outro motivo
+                </p>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  Apenas reseta. Operador notifica manualmente se necessário
+                </p>
+              </div>
+            </button>
+
+            {/* Input de motivo livre */}
+            {resetReason === "other" && (
+              <div className="px-1">
+                <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+                  Descreva o motivo
+                </label>
+                <textarea
+                  value={resetReasonOther}
+                  onChange={(e) => setResetReasonOther(e.target.value)}
+                  placeholder="Ex: cliente cancelou, veículo substituído..."
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:bg-white resize-none transition-all"
+                />
+              </div>
+            )}
+
+            <div className="flex gap-4 pt-6">
               <button
                 type="button"
                 onClick={() => {
                   setShowAcceptRevert(false);
                   setSelectedCycleIndex(null);
+                  setResetReason("km_correction");
+                  setResetReasonOther("");
+                  setKmResetTarget(null);
                 }}
                 className="flex-1 px-6 py-4 bg-slate-100 text-slate-700 font-black rounded-xl hover:bg-slate-200 transition-all text-sm uppercase tracking-widest cursor-pointer"
               >
@@ -9257,18 +9507,110 @@ export default function OSOperationalPage() {
               </button>
               <button
                 type="button"
+                disabled={
+                  resetReason === "km_correction" && kmResetTarget === null
+                }
                 onClick={async () => {
                   if (!viewingOS || selectedCycleIndex === null) return;
                   await handleManualRevertAccept(
                     viewingOS.id,
                     selectedCycleIndex,
+                    resetReason,
+                    resetReason === "other" ? resetReasonOther.trim() : undefined,
+                    resetReason === "km_correction" ? kmResetTarget : null,
                   );
                   setShowAcceptRevert(false);
                   setSelectedCycleIndex(null);
+                  setResetReason("km_correction");
+                  setResetReasonOther("");
+                  setKmResetTarget(null);
                 }}
-                className="flex-1 px-6 py-4 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-700 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                className="flex-1 px-6 py-4 bg-rose-600 text-white font-black rounded-xl shadow-lg hover:bg-rose-700 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-600"
               >
-                Confirmar Retorno
+                Confirmar Reset
+              </button>
+            </div>
+          </div>
+        </StandardModal>
+      )}
+
+      {/* Resend Confirm Modal */}
+      {showResendConfirm && viewingOS && (
+        <StandardModal
+          onClose={() => {
+            setShowResendConfirm(false);
+            setResendConfirmCycleIndex(null);
+            setResendConfirmInfo(null);
+          }}
+          title={resendConfirmInfo ? "Reenviar mensagem?" : "Enviar mensagem?"}
+          subtitle={
+            resendConfirmInfo
+              ? "Esta mensagem já foi enviada anteriormente"
+              : "Confirme o envio da notificação ao motorista"
+          }
+          icon={<MessageCircle size={24} />}
+          maxWidthClassName="max-w-xl"
+        >
+          <div className="space-y-5">
+            {resendConfirmInfo && (
+              <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 space-y-2">
+                <p className="text-sm text-amber-800 font-bold">
+                  Último envio registrado:
+                </p>
+                <p className="text-sm text-amber-700">
+                  <span className="font-black">
+                    {new Date(resendConfirmInfo.date).toLocaleString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                  <span className="text-amber-600"> — </span>
+                  por{" "}
+                  <span className="font-black">{resendConfirmInfo.userName}</span>
+                </p>
+              </div>
+            )}
+            <p className="text-base text-slate-600">
+              {resendConfirmInfo
+                ? "Deseja enviar uma nova mensagem ao motorista mesmo assim?"
+                : "Deseja enviar a mensagem de aceite ao motorista agora?"}
+            </p>
+            <div className="flex gap-4 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowResendConfirm(false);
+                  setResendConfirmCycleIndex(null);
+                  setResendConfirmInfo(null);
+                }}
+                className="flex-1 px-6 py-4 bg-slate-100 text-slate-700 font-black rounded-xl hover:bg-slate-200 transition-all text-sm uppercase tracking-widest cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (resendConfirmCycleIndex !== null) {
+                    sendWhatsAppNotification(
+                      viewingOS,
+                      resendConfirmCycleIndex,
+                    );
+                  }
+                  setShowResendConfirm(false);
+                  setResendConfirmCycleIndex(null);
+                  setResendConfirmInfo(null);
+                }}
+                disabled={!!notifyLoadingKey}
+                className="flex-1 px-6 py-4 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-700 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
+              >
+                {notifyLoadingKey === "driver-whatsapp"
+                  ? "Enviando..."
+                  : resendConfirmInfo
+                    ? "Reenviar"
+                    : "Enviar"}
               </button>
             </div>
           </div>

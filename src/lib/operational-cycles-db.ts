@@ -15,6 +15,7 @@ type OperationalCycleRow = {
   title: string;
   state: OperationalCycle["state"];
   message_sent_at: string | null;
+  message_sent_by_id: string | null;
   accepted_at: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -37,6 +38,7 @@ const OPERATIONAL_CYCLE_COLUMNS = [
   "title",
   "state",
   "message_sent_at",
+  "message_sent_by_id",
   "accepted_at",
   "started_at",
   "finished_at",
@@ -54,6 +56,7 @@ const mapRowToOperationalCycle = (
   title: row.title,
   state: row.state,
   messageSentAt: row.message_sent_at,
+  messageSentById: row.message_sent_by_id,
   acceptedAt: row.accepted_at,
   startedAt: row.started_at,
   finishedAt: row.finished_at,

@@ -112,9 +112,12 @@ export async function POST(request: Request) {
         | "revert_to_accept"
         | "restart_route"
         | "finish_all";
+      reset_reason?: "km_correction" | "rescheduling" | "other";
+      reset_reason_text?: string;
+      km_reset_target?: "initial" | "final" | "both";
     };
 
-    const { os_id, cycle_index, action } = body;
+    const { os_id, cycle_index, action, reset_reason, reset_reason_text, km_reset_target } = body;
 
     if (!os_id) {
       return NextResponse.json(
@@ -276,18 +279,79 @@ export async function POST(request: Request) {
         newState = "completed";
         break;
 
-      case "revert_to_pending":
-        // Revert accept to pending: reset to pending state and clear all progress data
-        updatedCycles = updateCycleInList(cycles, targetIndex, {
-          state: "pending",
-          acceptedAt: undefined,
-          startedAt: undefined,
-          finishedAt: undefined,
-          kmInitial: undefined,
-          kmFinal: undefined,
-        });
-        newState = "pending";
+      case "revert_to_pending": {
+        const isKmCorrection = reset_reason === "km_correction" && km_reset_target;
+
+        if (isKmCorrection) {
+          // Reset parcial: mantém progresso do ciclo, só limpa KM conforme escolha
+          if (km_reset_target === "initial") {
+            // Limpa KM inicial (e final junto): volta pro estado pré-rota
+            // startedAt e finishedAt são limpos para que o frontend não os use
+            // como fallback para determinar o estado visual
+            updatedCycles = updateCycleInList(cycles, targetIndex, {
+              state: "awaiting_start",
+              startedAt: undefined,
+              finishedAt: undefined,
+              kmInitial: undefined,
+              kmFinal: undefined,
+            });
+            newState = "awaiting_start";
+            ordensServicoUpdate = {
+              status_operacional: "Em Rota",
+              route_started_at: null,
+              route_started_km: null,
+              route_finished_at: null,
+              route_finished_km: null,
+              updated_at: new Date().toISOString(),
+            };
+          } else if (km_reset_target === "final") {
+            // Limpa só KM final: rota continua em andamento (startedAt mantido)
+            // finishedAt é limpo para o frontend não mostrar como "completed"
+            updatedCycles = updateCycleInList(cycles, targetIndex, {
+              state: "awaiting_finish",
+              finishedAt: undefined,
+              kmFinal: undefined,
+            });
+            newState = "awaiting_finish";
+            ordensServicoUpdate = {
+              status_operacional: "Em Rota",
+              route_finished_at: null,
+              route_finished_km: null,
+              updated_at: new Date().toISOString(),
+            };
+          } else if (km_reset_target === "both") {
+            // Limpa tudo: volta pro estado pré-rota
+            updatedCycles = updateCycleInList(cycles, targetIndex, {
+              state: "awaiting_start",
+              startedAt: undefined,
+              finishedAt: undefined,
+              kmInitial: undefined,
+              kmFinal: undefined,
+            });
+            newState = "awaiting_start";
+            ordensServicoUpdate = {
+              status_operacional: "Em Rota",
+              route_started_at: null,
+              route_started_km: null,
+              route_finished_at: null,
+              route_finished_km: null,
+              updated_at: new Date().toISOString(),
+            };
+          }
+        } else {
+          // Reset total: rescheduling, other ou sem motivo especificado
+          updatedCycles = updateCycleInList(cycles, targetIndex, {
+            state: "pending",
+            acceptedAt: undefined,
+            startedAt: undefined,
+            finishedAt: undefined,
+            kmInitial: undefined,
+            kmFinal: undefined,
+          });
+          newState = "pending";
+        }
         break;
+      }
 
       case "revert_to_accept":
         // Revert from started/finished to accept: reset to awaiting_start state
@@ -447,12 +511,29 @@ export async function POST(request: Request) {
       modifiedCycles[0].state,
     );
 
-    const actionDescriptions: Record<string, string> = {
-      finish_cycle: "Ciclo finalizado manualmente",
-      revert_to_pending: "Ciclo revertido para pendente",
-      revert_to_accept: "Ciclo revertido para aceitação",
-      restart_route: "Rota reaberta e reiniciada manualmente",
-    };
+    let logDescription: string;
+    if (action === "revert_to_pending" && reset_reason) {
+      const reasonLabels = {
+        km_correction: "Ciclo revertido — Correção de KM",
+        rescheduling: "Ciclo revertido — Remarcação/Atraso",
+        other: "Ciclo revertido",
+      };
+      const targetLabel = km_reset_target
+        ? ` (${km_reset_target === "initial" ? "KM inicial" : km_reset_target === "final" ? "KM final" : "ambos os KMs"})`
+        : "";
+      logDescription = `${reasonLabels[reset_reason]}${targetLabel}`;
+      if (reset_reason === "other" && reset_reason_text) {
+        logDescription += `: ${reset_reason_text}`;
+      }
+    } else {
+      const actionDescriptions: Record<string, string> = {
+        finish_cycle: "Ciclo finalizado manualmente",
+        revert_to_pending: "Ciclo revertido para pendente",
+        revert_to_accept: "Ciclo revertido para aceitação",
+        restart_route: "Rota reaberta e reiniciada manualmente",
+      };
+      logDescription = actionDescriptions[action] || "Ciclo operacional atualizado";
+    }
 
     const { error: logError } = await getAdmin()
       .from("os_logs")
@@ -462,13 +543,15 @@ export async function POST(request: Request) {
         actor_name: actorName,
         actor_id: actorId,
         actor_avatar_url: actorAvatarUrl,
-        description:
-          actionDescriptions[action] || "Ciclo operacional atualizado",
+        description: logDescription,
         metadata: {
           action,
           cycle_index: targetIndex,
           cycle_title: cycle.title,
           new_state: newState,
+          ...(reset_reason ? { reset_reason } : {}),
+          ...(km_reset_target ? { km_reset_target } : {}),
+          ...(reset_reason_text ? { reset_reason_text } : {}),
         },
       } as never);
 
