@@ -6806,7 +6806,7 @@ export default function OSOperationalPage() {
                         </div>
 
                         <div className="relative flex justify-between items-start px-4">
-                          <div className="absolute top-[28px] left-[44px] right-[44px] h-[5px] bg-slate-200/50 rounded-full -z-0">
+                          <div className="absolute top-[28px] left-[44px] right-[44px] h-[5px] bg-slate-200/50 rounded-full z-0">
                             <div
                               className="h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(81,222,255,0.4)] animate-gradient bg-[length:200%_100%]"
                               style={{
@@ -7024,7 +7024,7 @@ export default function OSOperationalPage() {
                                       (cycle.state === "completed" ||
                                         cycle.state === "cancelled" ||
                                         !!cycle.finishedAt))
-                                      ? "cursor-not-allowed opacity-60"
+                                      ? "cursor-not-allowed"
                                       : "cursor-pointer"
                                   }`}
                                   onClick={() => {
