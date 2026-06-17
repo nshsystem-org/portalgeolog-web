@@ -264,6 +264,19 @@ export async function POST(request: Request) {
       cycle.state,
     );
 
+    // Guard de estado: valida transições permitidas com base no estado atual do banco
+    if (action === "finish_cycle") {
+      if (cycle.state === "completed" || cycle.state === "cancelled") {
+        console.warn(
+          `[os-manual-cycle] Tentativa de finalizar ciclo já em estado "${cycle.state}". Bloqueado.`,
+        );
+        return NextResponse.json(
+          { success: false, error: "Este ciclo já está finalizado.", already_finished: true },
+          { status: 409 },
+        );
+      }
+    }
+
     let updatedCycles: OperationalCycle[] = cycles;
     let newState: OperationalCycleState = cycle.state;
     let ordensServicoUpdate: Record<string, unknown> | null = null;
