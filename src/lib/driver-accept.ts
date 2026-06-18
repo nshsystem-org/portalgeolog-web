@@ -573,6 +573,24 @@ export async function processDriverAccept(
     return { success: false, error: "Erro ao registrar aceite do motorista." };
   }
 
+  // Registrar log driver_accept → trigger gera notificação no sino
+  try {
+    await (getAdmin().from("os_logs") as unknown as {
+      insert: (values: Record<string, unknown>) => Promise<unknown>;
+    }).insert({
+      os_id: osId,
+      type: "driver_accept",
+      actor_name: os.motorista || "Motorista",
+      description: `Motorista visualizou o atendimento${cycle ? ` — Ciclo ${cycle.itineraryIndex + 1}` : ""}`,
+      metadata: {
+        cycle_index: cycle?.itineraryIndex ?? null,
+        motorista: os.motorista || "Motorista",
+      },
+    });
+  } catch (logErr) {
+    console.error("[driver-accept] Erro ao registrar log driver_accept:", logErr);
+  }
+
   // Enviar mensagem de confirmação
   let messageSent = false;
   if (skipNotification) {

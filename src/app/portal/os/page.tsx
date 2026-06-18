@@ -7246,7 +7246,7 @@ export default function OSOperationalPage() {
                                     className="text-slate-400 ml-auto transition-transform group-open:rotate-180"
                                   />
                                 </summary>
-                                <div className="mt-3 space-y-2 pl-5 border-l-2 border-slate-100">
+                                <div className="mt-3 space-y-2 pl-5 border-l-2 border-slate-100 max-h-48 overflow-y-auto pr-2">
                                   {cycleLogs.map((log) => {
                                     const logTone = getOSLogTone(log.type as OSLogType);
                                     const logDate = new Date(log.created_at);
@@ -7259,16 +7259,36 @@ export default function OSOperationalPage() {
                                     return (
                                       <div
                                         key={log.id}
-                                        className="flex items-start gap-2 text-xs"
+                                        className="flex items-start gap-2 text-sm py-1.5 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors px-1.5 -mx-1.5"
                                       >
-                                        <span className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${logTone.dotClass}`} />
+                                        <span className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${logTone.dotClass}`} />
                                         <div className="flex-1 min-w-0">
-                                          <p className="font-bold text-slate-700 leading-snug">
-                                            {log.description}
-                                          </p>
-                                          <p className="text-[10px] text-slate-400 mt-0.5">
-                                            {logTime}
-                                          </p>
+                                          <div className="flex items-baseline justify-between gap-2">
+                                            <p className="font-bold text-slate-700 leading-snug text-sm">
+                                              {log.description}
+                                            </p>
+                                            <span className="text-sm text-slate-400 flex-shrink-0 mr-3">
+                                              {logTime}
+                                            </span>
+                                          </div>
+                                          {log.actor_name && (
+                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                              {log.actor_avatar_url ? (
+                                                <img
+                                                  src={getThumbnailUrl(log.actor_avatar_url, 40) || ""}
+                                                  alt={log.actor_name}
+                                                  className="w-5 h-5 rounded-full object-cover border border-slate-200"
+                                                />
+                                              ) : (
+                                                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-white text-[10px] font-black flex items-center justify-center">
+                                                  {log.actor_name.charAt(0).toUpperCase()}
+                                                </div>
+                                              )}
+                                              <p className="text-sm text-slate-500">
+                                                {log.actor_name}
+                                              </p>
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                     );

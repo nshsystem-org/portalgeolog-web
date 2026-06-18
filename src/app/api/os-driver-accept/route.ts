@@ -257,8 +257,11 @@ export async function POST(request: Request) {
         os_id: osId,
         type: "driver_accept",
         actor_name: os.motorista || "Motorista",
-        description: `Viagem aceita pelo motorista${cycle ? ` — ${getOperationalCycleBannerTitle(cycle)}` : ""}`,
-        metadata: { cycle_index: cycle?.itineraryIndex ?? null },
+        description: `Motorista visualizou o atendimento${cycle ? ` — ${getOperationalCycleBannerTitle(cycle)}` : ""}`,
+        metadata: {
+          cycle_index: cycle?.itineraryIndex ?? null,
+          motorista: os.motorista || "Motorista",
+        },
       });
     } catch (logErr) {
       console.error("[os-driver-accept] Erro ao registrar log:", logErr);
