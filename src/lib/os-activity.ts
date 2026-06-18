@@ -385,7 +385,7 @@ export const getOSLogActorPhrase = (
     status_change: "atualizou o status do atendimento",
     archive: "arquivou o atendimento",
     unarchive: "reabriu o atendimento",
-    driver_accept: "visualizou os detalhes do atendimento",
+    driver_accept: "visualizou o atendimento",
     driver_start: "iniciou a rota",
     driver_finish: "finalizou a rota",
     driver_notify: "enviou uma mensagem de serviço",
