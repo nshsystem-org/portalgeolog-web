@@ -231,3 +231,42 @@ export async function replaceOperationalCyclesForOS(
 
   throw error;
 }
+
+export type OperationalCycleUpdate = {
+  state?: OperationalCycle["state"];
+  messageSentAt?: string | null;
+  messageSentById?: string | null;
+  acceptedAt?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  kmInitial?: number | null;
+  kmFinal?: number | null;
+};
+
+export async function updateOperationalCycleForOS(
+  client: SupabaseClient,
+  osId: string,
+  itineraryIndex: number,
+  updates: OperationalCycleUpdate,
+): Promise<void> {
+  const payload: Record<string, unknown> = {};
+
+  if (updates.state !== undefined) payload.state = updates.state;
+  if (updates.messageSentAt !== undefined) payload.message_sent_at = updates.messageSentAt;
+  if (updates.messageSentById !== undefined) payload.message_sent_by_id = updates.messageSentById;
+  if (updates.acceptedAt !== undefined) payload.accepted_at = updates.acceptedAt;
+  if (updates.startedAt !== undefined) payload.started_at = updates.startedAt;
+  if (updates.finishedAt !== undefined) payload.finished_at = updates.finishedAt;
+  if (updates.kmInitial !== undefined) payload.km_initial = updates.kmInitial;
+  if (updates.kmFinal !== undefined) payload.km_final = updates.kmFinal;
+
+  if (Object.keys(payload).length === 0) return;
+
+  const { error } = await client
+    .from("os_operational_cycles")
+    .update(payload)
+    .eq("ordem_servico_id", osId)
+    .eq("itinerary_index", itineraryIndex);
+
+  if (error) throw error;
+}

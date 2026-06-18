@@ -719,11 +719,20 @@ export default function DashboardLayout({
                           notification.message,
                         );
 
+                        const chips = notification.metadata?.changed_fields_list;
+                        const hasChips =
+                          Array.isArray(chips) && chips.length > 0;
+                        const chipLabels = hasChips
+                          ? chips.map((chip) => String(chip)).filter(Boolean)
+                          : [];
+
                         const actionText =
                           notification.title === "Novo atendimento"
                             ? "cadastrou um novo atendimento"
                             : notification.title === "Atendimento atualizado"
-                              ? "atualizou um atendimento"
+                              ? chipLabels.length > 0
+                                ? `atualizou: ${chipLabels.slice(0, 2).join(", ")}${chipLabels.length > 2 ? ` +${chipLabels.length - 2}` : ""}`
+                                : "atualizou um atendimento"
                               : notification.title === "Atendimento finalizado"
                                 ? "finalizou um atendimento"
                                 : notification.title === "Atendimento arquivado"
@@ -731,10 +740,6 @@ export default function DashboardLayout({
                                   : notification.title === "Atendimento reaberto"
                                     ? "reabriu um atendimento"
                                     : notification.title.toLowerCase();
-
-                        const chips = notification.metadata?.changed_fields_list;
-                        const hasChips =
-                          Array.isArray(chips) && chips.length > 0;
 
                         return (
                           <div

@@ -10,6 +10,7 @@ import {
   loadOperationalCycleContextForOS,
   replaceOperationalCyclesForOS,
 } from "@/lib/operational-cycles-db";
+import { sendNextOperationalCycleFlow } from "@/lib/operational-cycle-flow";
 
 export const runtime = "edge";
 
@@ -264,8 +265,15 @@ export async function POST(request: Request) {
       cycle.state,
     );
 
-    // Guard de estado: valida transições permitidas com base no estado atual do banco
+    // ── finish_cycle: delega para RPC atômica ──────────────────────────────────
+    // A RPC finish_cycle_manual:
+    //   - Se km_initial existe: mantém, ignora km_final
+    //   - Se nenhum KM existe: finaliza sem KM
+    //   - Atualiza os_operational_cycles + ordens_servico atomicamente
+    //   - Preenche acceptedAt/startedAt ausentes (ciclo que não passou pelo WhatsApp)
+    //   - Insere log de auditoria
     if (action === "finish_cycle") {
+      // Primeira linha de defesa (segunda está dentro da RPC)
       if (cycle.state === "completed" || cycle.state === "cancelled") {
         console.warn(
           `[os-manual-cycle] Tentativa de finalizar ciclo já em estado "${cycle.state}". Bloqueado.`,
@@ -275,7 +283,100 @@ export async function POST(request: Request) {
           { status: 409 },
         );
       }
+
+      const { data: rpcData, error: rpcError } = await getAdmin().rpc(
+        "finish_cycle_manual",
+        {
+          p_os_id: os_id,
+          p_cycle_index: cycle_index as number,
+          p_actor_name: actorName,
+        },
+      );
+
+      if (rpcError) {
+        console.error("[os-manual-cycle] Erro na RPC finish_cycle_manual:", rpcError);
+        return NextResponse.json(
+          { success: false, error: "Erro ao finalizar ciclo." },
+          { status: 500 },
+        );
+      }
+
+      const rpcResult = rpcData as {
+        success: boolean;
+        error?: string;
+        already_finished?: boolean;
+        statusOperacional?: string;
+        kmInitial?: number | null;
+        updatedCycles?: unknown;
+      };
+
+      if (!rpcResult.success) {
+        if (rpcResult.already_finished || rpcResult.error === "ALREADY_FINISHED") {
+          return NextResponse.json(
+            { success: false, error: "Este ciclo já está finalizado.", already_finished: true },
+            { status: 409 },
+          );
+        }
+        return NextResponse.json(
+          { success: false, error: rpcResult.error || "Erro ao finalizar ciclo." },
+          { status: 400 },
+        );
+      }
+
+      const updatedCyclesAfterFinish = Array.isArray(rpcResult.updatedCycles)
+        ? (rpcResult.updatedCycles as OperationalCycle[])
+        : cycles;
+      const nextCycle = updatedCyclesAfterFinish
+        .filter(
+          (c) =>
+            c.sequenceOrder > cycle.sequenceOrder &&
+            c.state !== "completed" &&
+            c.state !== "cancelled",
+        )
+        .sort((a, b) => a.sequenceOrder - b.sequenceOrder)[0];
+
+      let nextCycleStarted = false;
+      let nextCycleIndex: number | null = null;
+
+      if (nextCycle) {
+        nextCycleIndex = nextCycle.itineraryIndex;
+        const nextCycleResult = await sendNextOperationalCycleFlow(getAdmin(), {
+          osId: os_id,
+          targetCycleIndex: nextCycle.itineraryIndex,
+          cycles: updatedCyclesAfterFinish,
+        });
+
+        if (nextCycleResult.success) {
+          nextCycleStarted = true;
+          console.log(
+            "[os-manual-cycle] Próximo ciclo iniciado automaticamente:",
+            nextCycle.itineraryIndex,
+            nextCycle.title,
+            "msgId:",
+            nextCycleResult.templateMessageId,
+          );
+        } else {
+          console.warn(
+            "[os-manual-cycle] Falha ao iniciar próximo ciclo automaticamente:",
+            nextCycleResult.error,
+          );
+        }
+      }
+
+      console.log(
+        `[Perf][os-manual-cycle] finish_cycle (RPC atômica) km_initial=${rpcResult.kmInitial ?? "null"} status=${rpcResult.statusOperacional} ${(performance.now() - startedAt).toFixed(0)}ms`,
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: "Ciclo finalizado com sucesso.",
+        cycle_state: "completed",
+        status_operacional: rpcResult.statusOperacional,
+        next_cycle_started: nextCycleStarted,
+        next_cycle_index: nextCycleIndex,
+      });
     }
+    // ────────────────────────────────────────────────────────────────────────────
 
     let updatedCycles: OperationalCycle[] = cycles;
     let newState: OperationalCycleState = cycle.state;
@@ -283,15 +384,6 @@ export async function POST(request: Request) {
     const targetIndex = cycle_index as number;
 
     switch (action) {
-      case "finish_cycle":
-        // Finalizar ciclo: transition to completed
-        updatedCycles = updateCycleInList(cycles, targetIndex, {
-          state: "completed",
-          finishedAt: new Date().toISOString(),
-        });
-        newState = "completed";
-        break;
-
       case "revert_to_pending": {
         const isKmCorrection = reset_reason === "km_correction" && km_reset_target;
 
@@ -540,7 +632,6 @@ export async function POST(request: Request) {
       }
     } else {
       const actionDescriptions: Record<string, string> = {
-        finish_cycle: "Ciclo finalizado manualmente",
         revert_to_pending: "Ciclo revertido para pendente",
         revert_to_accept: "Ciclo revertido para aceitação",
         restart_route: "Rota reaberta e reiniciada manualmente",

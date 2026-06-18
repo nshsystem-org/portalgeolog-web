@@ -19,12 +19,13 @@ import { normalizeWhatsAppPhone } from "@/lib/meta";
 import { recordWhatsAppLog } from "@/lib/whatsapp-logs";
 import {
   buildPassengerDetailsMessage,
+  getFirstPendingOperationalCycle,
   type ItineraryGroup,
   type ItineraryStop,
 } from "@/lib/os-messages";
 import {
   loadOperationalCycleContextForOS,
-  replaceOperationalCyclesForOS,
+  updateOperationalCycleForOS,
 } from "@/lib/operational-cycles-db";
 import {
   validateWebhookPayload,
@@ -470,10 +471,7 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         String((osRecord as Record<string, unknown> | null)?.id || osId),
         null,
       );
-      const pendingCycle = cycles.find(
-        (c) => c.state !== "completed" && c.state !== "cancelled",
-      );
-      const targetCycle = pendingCycle || cycles[0];
+      const targetCycle = getFirstPendingOperationalCycle(cycles) || cycles[0];
 
       if (targetCycle) {
         if (driverPhone === "Não informado") {
@@ -515,28 +513,19 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         );
 
         if (templateResult.success && templateResult.messageId) {
-          // Atualizar messageSentAt no ciclo específico na nova tabela
-          const updatedCycles = cycles.map((cycle) => {
-            if (cycle.itineraryIndex === targetCycle.itineraryIndex) {
-              return {
-                ...cycle,
-                messageSentAt: new Date().toISOString(),
-                state: "awaiting_accept" as const,
-              };
-            }
-            return cycle;
-          });
-
           await getAdmin()
             .from("ordens_servico")
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
             .update({
               driver_flow_start_message_id: templateResult.messageId,
+              driver_flow_finish_message_id: null,
             })
             .eq("id", osId);
 
-          await replaceOperationalCyclesForOS(getAdmin(), osId, updatedCycles);
+          await updateOperationalCycleForOS(getAdmin(), osId, targetCycle.itineraryIndex, {
+            messageSentAt: new Date().toISOString(),
+            state: "awaiting_accept",
+          });
+
           console.log(
             "[meta-webhook] Template flow inicio_viagem_motorista enviado para",
             driverPhone,
@@ -842,29 +831,20 @@ async function sendNextCyclePreviewAndStartFlow(
     );
 
     if (templateResult.success && templateResult.messageId) {
-      // Atualizar messageSentAt no ciclo específico na nova tabela
-      const currentCycles = cycles;
-      const updatedCycles = currentCycles.map((cycle) => {
-        if (cycle.itineraryIndex === targetCycleIndex) {
-          return {
-            ...cycle,
-            messageSentAt: new Date().toISOString(),
-            state: "awaiting_accept" as const,
-          };
-        }
-        return cycle;
-      });
+      const now = new Date().toISOString();
 
       await getAdmin()
         .from("ordens_servico")
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
         .update({
           driver_flow_start_message_id: templateResult.messageId,
+          driver_flow_finish_message_id: null,
         })
         .eq("id", osId);
 
-      await replaceOperationalCyclesForOS(getAdmin(), osId, updatedCycles);
+      await updateOperationalCycleForOS(getAdmin(), osId, targetCycleIndex, {
+        messageSentAt: now,
+        state: "awaiting_accept",
+      });
 
       console.log(
         "[meta-webhook] Próximo ciclo preparado com sucesso:",
@@ -977,10 +957,7 @@ async function handleFlowCompleted(
 
     if (osRecord.driver_flow_start_message_id === contextId) {
       // Flow de inicio: registra KM inicial via RPC atômica
-      const pendingCycle = cycles.find(
-        (c) => c.state !== "completed" && c.state !== "cancelled",
-      );
-      const targetCycle = pendingCycle || cycles[0];
+      const targetCycle = getFirstPendingOperationalCycle(cycles) || cycles[0];
 
       if (targetCycle) {
         const actorName = String(osRecord.motorista || "Motorista");
@@ -1042,19 +1019,14 @@ async function handleFlowCompleted(
               await ordensServicoRetry
                 .update({
                   driver_flow_start_message_id: retryStartResult.messageId,
+                  driver_flow_finish_message_id: null,
                 })
                 .eq("id", osRecord.id as string);
 
-              const refreshedCycles = cycles.map((cycle) =>
-                cycle.itineraryIndex === targetCycle.itineraryIndex
-                  ? {
-                      ...cycle,
-                      messageSentAt: new Date().toISOString(),
-                      state: "awaiting_accept" as const,
-                    }
-                  : cycle,
-              );
-              await replaceOperationalCyclesForOS(getAdmin(), osId, refreshedCycles);
+              await updateOperationalCycleForOS(getAdmin(), osId, targetCycle.itineraryIndex, {
+                messageSentAt: new Date().toISOString(),
+                state: "awaiting_accept",
+              });
             } else {
               console.warn(
                 "[meta-webhook] Falha ao reenviar template flow inicio_viagem_motorista após KM inválido:",

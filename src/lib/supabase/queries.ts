@@ -1860,6 +1860,7 @@ export async function updateOSInDB(
     p_os_data: osPayload,
     p_waypoints: waypointsPayload,
     p_operational_cycles: operationalCycles,
+    p_log_metadata: updateLogContext.metadata,
   });
 
   if (error) throw error;
