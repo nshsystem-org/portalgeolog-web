@@ -877,8 +877,8 @@ export default function DashboardLayout({
                                 <span className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}>{actionText}</span>
                                 {isDriverNotify && driverShortName && (
                                   <span className="inline-flex items-center gap-1.5 ml-2">
-                                    <Truck size={12} className={`${!notification.read ? "text-blue-700" : "text-blue-400"}`} />
-                                    <span className={`text-xs font-bold ${!notification.read ? "text-blue-800" : "text-blue-600"}`}>{driverShortName}</span>
+                                    <Truck size={12} className={`${!notification.read ? "text-blue-700" : "text-slate-400"}`} />
+                                    <span className={`text-xs font-bold ${!notification.read ? "text-blue-800" : "text-slate-400"}`}>{driverShortName}</span>
                                   </span>
                                 )}
                               </p>
