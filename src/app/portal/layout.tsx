@@ -726,6 +726,14 @@ export default function DashboardLayout({
                           ? chips.map((chip) => String(chip)).filter(Boolean)
                           : [];
 
+                        const isDriverNotify = notification.title.startsWith("Mensagem enviada ao motorista");
+                        const driverNameMatch = notification.title.match(/Mensagem enviada ao motorista (.+)/);
+                        const driverFullName = driverNameMatch ? driverNameMatch[1] : "";
+                        const driverNameParts = driverFullName.split(" ").filter(Boolean);
+                        const driverShortName = driverNameParts.length > 1
+                          ? `${driverNameParts[0]} ${driverNameParts[driverNameParts.length - 1]}`
+                          : driverFullName;
+
                         const actionText =
                           notification.title === "Novo atendimento"
                             ? "cadastrou um novo atendimento"
@@ -739,7 +747,9 @@ export default function DashboardLayout({
                                   ? "arquivou um atendimento"
                                   : notification.title === "Atendimento reaberto"
                                     ? "reabriu um atendimento"
-                                    : notification.title.toLowerCase();
+                                    : isDriverNotify
+                                      ? "mensagem enviada ao motorista"
+                                      : notification.title.toLowerCase();
 
                         return (
                           <div
@@ -865,6 +875,12 @@ export default function DashboardLayout({
                                 )}
                                 {" "}
                                 <span className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}>{actionText}</span>
+                                {isDriverNotify && driverShortName && (
+                                  <span className="inline-flex items-center gap-1.5 ml-2">
+                                    <Truck size={12} className={`${!notification.read ? "text-blue-700" : "text-blue-400"}`} />
+                                    <span className={`text-xs font-bold ${!notification.read ? "text-blue-800" : "text-blue-600"}`}>{driverShortName}</span>
+                                  </span>
+                                )}
                               </p>
 
                               {/* Chips */}

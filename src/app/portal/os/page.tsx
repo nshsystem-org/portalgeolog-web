@@ -2848,12 +2848,6 @@ export default function OSOperationalPage() {
         return;
       }
 
-      const reasonLabels = {
-        km_correction: "Ciclo resetado — Correção de KM",
-        rescheduling: "Ciclo resetado — Remarcação/Atraso",
-        other: "Ciclo resetado com sucesso",
-      };
-      toast.success(reasonLabels[reason]);
       void syncOSSnapshot(osId);
     } catch (error) {
       console.error("Erro ao reverter aceite:", error);
