@@ -1639,20 +1639,14 @@ export async function POST(request: Request) {
                   }).update({ status: statusType }).eq("message_id", msgId);
 
                   // 4. Inserir log driver_delivered → trigger gera notificação no sino
-                  const motoristaParts = (tracking.motorista || "Motorista")
-                    .split(" ")
-                    .filter(Boolean);
-                  const motoristaShort =
-                    motoristaParts.length <= 2
-                      ? tracking.motorista || "Motorista"
-                      : `${motoristaParts[0]} ${motoristaParts[motoristaParts.length - 1]}`;
+                  const motoristaFullName = tracking.motorista || "Motorista";
 
                   await (adminClient.from("os_logs") as unknown as {
                     insert: (values: Record<string, unknown>) => Promise<unknown>;
                   }).insert({
                     os_id: tracking.os_id,
                     type: "driver_delivered",
-                    actor_name: motoristaShort,
+                    actor_name: motoristaFullName,
                     actor_id: null,
                     description: `Mensagem ${statusType === "read" ? "visualizada" : "entregue"} no WhatsApp do motorista`,
                     metadata: {

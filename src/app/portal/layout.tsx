@@ -734,6 +734,8 @@ export default function DashboardLayout({
                           ? `${driverNameParts[0]} ${driverNameParts[driverNameParts.length - 1]}`
                           : driverFullName;
 
+                        const isDriverDelivered = notification.title === "Mensagem entregue ao motorista";
+
                         const actionText =
                           notification.title === "Novo atendimento"
                             ? "cadastrou um novo atendimento"
@@ -749,7 +751,9 @@ export default function DashboardLayout({
                                     ? "reabriu um atendimento"
                                     : isDriverNotify
                                       ? "mensagem enviada ao motorista"
-                                      : notification.title.toLowerCase();
+                                      : isDriverDelivered
+                                        ? "recebeu a mensagem com sucesso"
+                                        : notification.title.toLowerCase();
 
                         return (
                           <div
@@ -827,6 +831,8 @@ export default function DashboardLayout({
                                   return { icon: Archive, bg: "bg-red-500", text: "text-white" };
                                 if (t === "Atendimento reaberto" || t === "OS Reaberta")
                                   return { icon: RotateCcw, bg: "bg-blue-500", text: "text-white" };
+                                if (t === "Mensagem entregue ao motorista")
+                                  return { icon: CheckCircle, bg: "bg-green-500", text: "text-white" };
                                 switch (notification.type) {
                                   case "success":
                                     return { icon: CheckCircle, bg: "bg-green-500", text: "text-white" };
