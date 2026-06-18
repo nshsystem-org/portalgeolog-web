@@ -63,6 +63,12 @@ import {
   History,
   Archive,
   Save,
+  RefreshCw,
+  Route,
+  Activity,
+  Edit3,
+  Gauge,
+  Layers,
 } from "lucide-react";
 import {
   useData,
@@ -104,7 +110,7 @@ import {
   type CycleOperationalStatus,
   type OperationalCycleState,
 } from "@/lib/os-messages";
-import { getOSLogMetadataHighlights, getOSLogTone } from "@/lib/os-activity";
+import { getOSLogHighlightTags, getOSLogTone, TAG_CATEGORY_STYLES, type OSLogHighlightTag } from "@/lib/os-activity";
 import {
   parseHoraExtraMinutes,
   calcBilledMinutes,
@@ -7255,145 +7261,171 @@ export default function OSOperationalPage() {
                     </div>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto max-h-[500px] space-y-4 pr-2">
-                    {osLogs.length === 0 && viewingOS && (
-                      <div className="flex items-start gap-3 p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-white transition-colors">
-                        <div className="mt-0.5 w-2.5 h-2.5 rounded-full shrink-0 bg-emerald-500" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border bg-emerald-50 text-emerald-700 border-emerald-200">
-                              Criação
-                            </span>
-                            <span className="text-[11px] font-bold text-slate-400 shrink-0">
-                              {viewingOS.createdAt
-                                ? new Date(viewingOS.createdAt).toLocaleString(
-                                    "pt-BR",
-                                    {
+                  <div className="flex-1 overflow-y-auto max-h-[500px] pr-2 relative">
+                    {/* Linha da Timeline */}
+                    <div className="absolute left-[27px] top-4 bottom-4 w-px bg-slate-100" />
+
+                    <div className="space-y-6 relative">
+                      {osLogs.length === 0 && viewingOS && (
+                        <div className="flex items-start gap-4 group">
+                          <div className="relative z-10 flex items-center justify-center w-6 h-6 mt-1 ml-4 rounded-full bg-emerald-500 border-4 border-white shadow-sm" />
+                          <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group-hover:shadow-md transition-all">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                Criação
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-400">
+                                {viewingOS.createdAt
+                                  ? new Date(viewingOS.createdAt).toLocaleString("pt-BR", {
                                       day: "2-digit",
                                       month: "2-digit",
                                       hour: "2-digit",
                                       minute: "2-digit",
-                                    },
-                                  )
-                                : viewingOS.data || "Não informada"}
-                            </span>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-slate-700 leading-snug">
-                            <span>
-                              <span className="text-slate-400 font-bold">
-                                Autor:
-                              </span>{" "}
-                              {users.find((u) => u.id === viewingOS.createdBy)
-                                ?.nome || "Não registrado"}
-                            </span>
-                            <span>
-                              <span className="text-slate-400 font-bold">
-                                Protocolo:
-                              </span>{" "}
-                              {viewingOS.protocolo || "Não informado"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {osLogs.map((log) => {
-                      const date = new Date(log.created_at);
-                      const timeStr = date.toLocaleString("pt-BR", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      });
-                      const tone = getOSLogTone(log.type);
-                      const highlights = getOSLogMetadataHighlights(
-                        log.type,
-                        log.metadata,
-                      );
-                      const fullActorName = log.actor_name || "Sistema";
-                      const actorParts =
-                        fullActorName.split(" ").filter(Boolean) || [];
-                      const actorLabel =
-                        actorParts.length <= 2
-                          ? fullActorName
-                          : `${actorParts[0]} ${actorParts[actorParts.length - 1]}`;
-                      const actorInitials = fullActorName
-                        .split(" ")
-                        .filter(Boolean)
-                        .map((part) => part[0])
-                        .join("")
-                        .slice(0, 2)
-                        .toUpperCase();
-                      return (
-                        <div
-                          key={log.id}
-                          className="flex items-start gap-3 p-4 rounded-2xl border border-slate-100 bg-slate-50/60 hover:bg-white transition-colors"
-                        >
-                          <div
-                            className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${tone.dotClass}`}
-                          />
-                          <div className="flex-1 min-w-0 space-y-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${tone.badgeClass}`}
-                              >
-                                {tone.label}
+                                    })
+                                  : viewingOS.data}
                               </span>
-                              <div className="text-right">
-                                <span className="block text-[11px] font-bold text-slate-400 shrink-0">
-                                  {timeStr}
-                                </span>
-                                <span className="block text-[11px] font-medium text-slate-400">
-                                  por{" "}
-                                  <span className="font-bold">
-                                    {actorLabel}
-                                  </span>
-                                </span>
-                              </div>
                             </div>
-                            <div className="flex items-start gap-3">
-                              <div className="flex-shrink-0">
-                                {log.actor_avatar_url ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={getThumbnailUrl(log.actor_avatar_url, 80) || ""}
-                                    alt={fullActorName}
-                                    className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-md"
-                                  />
-                                ) : (
-                                  <span
-                                    className={`w-11 h-11 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white text-xs font-black flex items-center justify-center border-2 border-white shadow-md`}
-                                  >
-                                    {actorInitials || "S"}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="min-w-0 flex-1 space-y-2">
-                                <p className="text-sm font-black text-slate-800 leading-snug">
-                                  {fullActorName}
-                                </p>
-                                <p className="text-sm font-medium text-slate-600 leading-snug">
-                                  {log.description}
-                                </p>
-                                {highlights.length > 0 && (
-                                  <div className="flex flex-wrap gap-2">
-                                    {highlights.map((highlight) => (
-                                      <span
-                                        key={`${log.id}-${highlight}`}
-                                        className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500"
-                                      >
-                                        {highlight}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-slate-700">
+                              <span>
+                                <span className="text-slate-400 mr-1">Autor:</span>
+                                {users.find((u) => u.id === viewingOS.createdBy)?.nome || "Sistema"}
+                              </span>
+                              <span>
+                                <span className="text-slate-400 mr-1">Protocolo:</span>
+                                {viewingOS.protocolo || "Não informado"}
+                              </span>
                             </div>
                           </div>
                         </div>
-                      );
-                    })}
+                      )}
+
+                      {osLogs.map((log) => {
+                        const date = new Date(log.created_at);
+                        const timeStr = date.toLocaleString("pt-BR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        });
+                        const tone = getOSLogTone(log.type);
+                        const highlightTags = getOSLogHighlightTags(log.type, log.metadata);
+                        const fullActorName = log.actor_name || "Sistema";
+                        const actorParts = fullActorName.split(" ").filter(Boolean) || [];
+                        const actorLabel = actorParts.length <= 2 
+                          ? fullActorName 
+                          : `${actorParts[0]} ${actorParts[actorParts.length - 1]}`;
+                        const actorInitials = fullActorName
+                          .split(" ")
+                          .filter(Boolean)
+                          .map((part) => part[0])
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase();
+
+                        return (
+                          <div key={log.id} className="flex items-start gap-4 group">
+                            {/* Dot na Timeline */}
+                            <div className={`relative z-10 flex items-center justify-center w-6 h-6 mt-1 ml-4 rounded-full border-4 border-white shadow-sm ${tone.dotClass}`} />
+                            
+                            {/* Card de Conteúdo */}
+                            <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group-hover:shadow-md group-hover:border-slate-300 transition-all duration-200">
+                              {/* Header do Card */}
+                              <div className="flex items-center justify-between gap-2 mb-3">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${tone.badgeClass}`}>
+                                  {tone.label}
+                                </span>
+                                <div className="text-right">
+                                  <span className="block text-[11px] font-bold text-slate-500 leading-none mb-1">
+                                    {timeStr}
+                                  </span>
+                                  <span className="block text-[10px] font-medium text-slate-400">
+                                    por <span className="font-bold text-slate-500">{actorLabel}</span>
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Conteúdo Principal */}
+                              <div className="flex items-start gap-3">
+                                <div className="flex-shrink-0">
+                                  {log.actor_avatar_url ? (
+                                    <img
+                                      src={getThumbnailUrl(log.actor_avatar_url, 80) || ""}
+                                      alt={fullActorName}
+                                      className="w-10 h-10 rounded-full object-cover border-2 border-slate-50 shadow-sm"
+                                    />
+                                  ) : (
+                                    <span className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white text-[10px] font-black flex items-center justify-center border-2 border-slate-50 shadow-sm`}>
+                                      {actorInitials || "S"}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-bold text-slate-800 leading-tight mb-1">
+                                    {fullActorName}
+                                  </p>
+                                  <p className="text-sm font-medium text-slate-500 leading-snug mb-3">
+                                    {log.description}
+                                  </p>
+
+                                  {highlightTags.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 pt-1">
+                                      {highlightTags.map((tag) => {
+                                        const style = TAG_CATEGORY_STYLES[tag.category];
+                                        const iconMap: Record<OSLogHighlightTag["category"], React.ReactNode> = {
+                                          action: <RefreshCw size={10} />,
+                                          cycle: <Route size={10} />,
+                                          state: <Activity size={10} />,
+                                          field: <Edit3 size={10} />,
+                                          km: <Gauge size={10} />,
+                                          section: <Layers size={10} />,
+                                        };
+
+                                        const arrowIdx = tag.label.indexOf(" → ");
+                                        const colonIdx = tag.label.indexOf(": ");
+                                        const hasChange = tag.category === "field" && arrowIdx > 0 && colonIdx > 0;
+
+                                        if (hasChange) {
+                                          const field = tag.label.slice(0, colonIdx);
+                                          const before = tag.label.slice(colonIdx + 2, arrowIdx);
+                                          const after = tag.label.slice(arrowIdx + 3);
+                                          return (
+                                            <div key={`${log.id}-${tag.label}`} className="flex flex-col gap-1">
+                                              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                                                {iconMap.field}
+                                                {field}
+                                              </span>
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 border border-rose-100 line-through opacity-80">
+                                                  {before}
+                                                </span>
+                                                <ArrowRight size={10} className="text-slate-300" />
+                                                <span className="inline-flex items-center rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-100 shadow-sm">
+                                                  {after}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+
+                                        return (
+                                          <span
+                                            key={`${log.id}-${tag.label}`}
+                                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-tight transition-colors ${style.badge}`}
+                                          >
+                                            {iconMap[tag.category]}
+                                            {tag.label}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>

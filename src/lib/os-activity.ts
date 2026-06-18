@@ -110,10 +110,51 @@ export const getOSLogTone = (type: OSLogType): OSLogTone => {
   );
 };
 
-export const getOSLogMetadataHighlights = (
+export type OSLogHighlightTag = {
+  label: string;
+  category: "action" | "cycle" | "state" | "field" | "km" | "section";
+};
+
+export const TAG_CATEGORY_STYLES: Record<
+  OSLogHighlightTag["category"],
+  { badge: string; icon: string }
+> = {
+  action: {
+    badge:
+      "bg-amber-50 text-amber-700 border-amber-100",
+    icon: "RefreshCw",
+  },
+  cycle: {
+    badge:
+      "bg-indigo-50 text-indigo-700 border-indigo-100",
+    icon: "Route",
+  },
+  state: {
+    badge:
+      "bg-slate-50 text-slate-600 border-slate-200",
+    icon: "Activity",
+  },
+  field: {
+    badge:
+      "bg-blue-50 text-blue-700 border-blue-100",
+    icon: "Edit3",
+  },
+  km: {
+    badge:
+      "bg-orange-50 text-orange-700 border-orange-100",
+    icon: "Gauge",
+  },
+  section: {
+    badge:
+      "bg-purple-50 text-purple-700 border-purple-100",
+    icon: "Layers",
+  },
+};
+
+export const getOSLogHighlightTags = (
   type: OSLogType,
   metadata: OSLogMetadata,
-): string[] => {
+): OSLogHighlightTag[] => {
   if (!metadata || typeof metadata !== "object") return [];
 
   if (type === "update") {
@@ -123,7 +164,7 @@ export const getOSLogMetadataHighlights = (
 
     if (fieldChanges.length > 0) {
       return fieldChanges
-        .map((change) => {
+        .map((change): OSLogHighlightTag | null => {
           if (!change || typeof change !== "object") return null;
           const c = change as Record<string, unknown>;
           const field = typeof c.field === "string" ? c.field : "";
@@ -134,19 +175,26 @@ export const getOSLogMetadataHighlights = (
           if (!field) return null;
 
           if (action === "added") {
-            return to ? `${field}: ${to} adicionado` : `${field} adicionado`;
+            return {
+              label: to ? `${field}: ${to}` : `${field} adicionado`,
+              category: "field" as const,
+            };
           }
           if (action === "removed") {
-            return from
-              ? `${field}: ${from} removido`
-              : `${field} removido`;
+            return {
+              label: from ? `${field}: ${from}` : `${field} removido`,
+              category: "field" as const,
+            };
           }
           if (from && to) {
-            return `${field}: ${from} → ${to}`;
+            return {
+              label: `${field}: ${from} → ${to}`,
+              category: "field" as const,
+            };
           }
-          return `${field} alterado`;
+          return { label: `${field} alterado`, category: "field" as const };
         })
-        .filter((s): s is string => Boolean(s));
+        .filter((t): t is OSLogHighlightTag => t !== null);
     }
 
     const sections = Array.isArray(metadata.changed_sections)
@@ -155,37 +203,43 @@ export const getOSLogMetadataHighlights = (
             typeof section === "string" && section.trim().length > 0,
         )
       : [];
-    return sections;
+    return sections.map((s) => ({ label: s, category: "section" }));
   }
 
   if (type === "status_change") {
+    const tags: OSLogHighlightTag[] = [];
     const updates = metadata.updates as
       | { operacional?: unknown; financeiro?: unknown }
       | undefined;
-    const highlights: string[] = [];
 
     if (
       typeof updates?.operacional === "string" &&
       updates.operacional.trim()
     ) {
-      highlights.push(`Operacional: ${updates.operacional.trim()}`);
+      tags.push({
+        label: `Operacional: ${updates.operacional.trim()}`,
+        category: "action",
+      });
     }
 
     if (typeof updates?.financeiro === "string" && updates.financeiro.trim()) {
-      highlights.push(`Financeiro: ${updates.financeiro.trim()}`);
+      tags.push({
+        label: `Financeiro: ${updates.financeiro.trim()}`,
+        category: "action",
+      });
     }
 
-    if (highlights.length === 0) {
+    if (tags.length === 0) {
       const action =
         typeof metadata.action === "string" ? metadata.action : null;
       if (action === "finish_all") {
-        highlights.push("Finalização total");
+        tags.push({ label: "Finalização total", category: "action" });
       } else if (action === "finish_cycle") {
-        highlights.push("Ciclo finalizado");
+        tags.push({ label: "Ciclo finalizado", category: "action" });
       } else if (action === "revert_to_pending") {
-        highlights.push("Reversão para pendente");
+        tags.push({ label: "Reversão para pendente", category: "action" });
       } else if (action === "revert_to_accept") {
-        highlights.push("Reversão para aceite");
+        tags.push({ label: "Reversão para aceite", category: "action" });
       }
     }
 
@@ -193,37 +247,53 @@ export const getOSLogMetadataHighlights = (
       typeof metadata.cycle_title === "string" &&
       metadata.cycle_title.trim()
     ) {
-      highlights.push(metadata.cycle_title.trim());
+      tags.push({ label: metadata.cycle_title.trim(), category: "cycle" });
     }
 
     if (typeof metadata.new_state === "string" && metadata.new_state.trim()) {
-      highlights.push(`Estado: ${metadata.new_state.trim()}`);
+      tags.push({
+        label: metadata.new_state.trim(),
+        category: "state",
+      });
     }
 
-    return highlights;
+    return tags;
   }
 
   if (type === "driver_start" || type === "driver_finish") {
-    const highlights: string[] = [];
+    const tags: OSLogHighlightTag[] = [];
     const cycleIndex = metadata.cycle_index;
     const kmValue =
       type === "driver_start" ? metadata.km_initial : metadata.km_final;
 
     if (typeof cycleIndex === "number") {
-      highlights.push(`Ciclo ${cycleIndex + 1}`);
+      tags.push({ label: `Ciclo ${cycleIndex + 1}`, category: "cycle" });
     }
 
     if (typeof kmValue === "number") {
-      highlights.push(`KM ${kmValue.toLocaleString("pt-BR")}`);
+      tags.push({
+        label: `KM ${kmValue.toLocaleString("pt-BR")}`,
+        category: "km",
+      });
     }
 
-    return highlights;
+    return tags;
   }
 
   if (type === "driver_accept") {
     const cycleIndex = metadata.cycle_index;
-    return typeof cycleIndex === "number" ? [`Ciclo ${cycleIndex + 1}`] : [];
+    return typeof cycleIndex === "number"
+      ? [{ label: `Ciclo ${cycleIndex + 1}`, category: "cycle" }]
+      : [];
   }
 
   return [];
+};
+
+// Mantido para compatibilidade legada — preferir getOSLogHighlightTags
+export const getOSLogMetadataHighlights = (
+  type: OSLogType,
+  metadata: OSLogMetadata,
+): string[] => {
+  return getOSLogHighlightTags(type, metadata).map((t) => t.label);
 };

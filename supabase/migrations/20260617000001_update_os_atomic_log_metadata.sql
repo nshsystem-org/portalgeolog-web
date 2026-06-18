@@ -2,15 +2,20 @@
 -- Migration: update_os_atomic_log_metadata
 -- Data: 2026-06-17
 -- =============================================================================
--- Objetivo: Fazer o log de update da OS guardar um resumo especifico do que
+-- Objetivo: Fazer o log de update da OS guardar um resumo específico do que
 --           mudou, para aparecer no modal "Logs de Atendimento" e alimentar
---           as notificacoes com dados estruturados.
+--           as notificações com dados estruturados.
 -- =============================================================================
 -- DROP explícito da assinatura antiga (4 params) para evitar sobrecargas
 -- duplicadas. CREATE OR REPLACE com assinatura diferente cria uma nova
 -- sobrecarga em vez de substituir, o que quebra o roteamento do PostgREST.
 DROP FUNCTION IF EXISTS public.update_os_atomic(uuid, jsonb, jsonb, jsonb);
 
+-- NOTA TÉCNICA: Em PL/pgSQL, aliases de set-returning functions usados
+-- diretamente com operadores JSONB (ex: alias->>'campo') causam o erro
+-- "operator does not exist: text ->> unknown" porque o PL/pgSQL resolve
+-- o alias como TEXT em vez de JSONB. A solução é sempre usar uma subquery
+-- com SELECT explícito da coluna 'value' retornada por jsonb_array_elements.
 CREATE OR REPLACE FUNCTION public.update_os_atomic(
   p_os_id uuid,
   p_os_data jsonb,
@@ -48,50 +53,51 @@ BEGIN
     'Sistema'
   );
 
-  IF p_log_metadata ? 'field_changes'
-     AND jsonb_typeof(p_log_metadata->'field_changes') = 'array' THEN
-    SELECT string_agg(item, ' • ')
+  -- Construir descrição detalhada a partir dos field_changes do metadata
+  -- IMPORTANTE: subquery explícita com value::jsonb evita "text ->> unknown"
+  IF p_log_metadata IS NOT NULL
+     AND jsonb_typeof(p_log_metadata) = 'object'
+     AND p_log_metadata ? 'field_changes'
+     AND jsonb_typeof(p_log_metadata->'field_changes') = 'array'
+     AND jsonb_array_length(p_log_metadata->'field_changes') > 0
+  THEN
+    SELECT string_agg(v_item, ' | ')
       INTO v_changed_fields
     FROM (
       SELECT
         CASE
-          WHEN COALESCE(change->>'action', '') = 'added' THEN
-            CASE
-              WHEN COALESCE(change->>'to', '') <> '' THEN
-                COALESCE(change->>'field', 'Campo') || ': ' || change->>'to' || ' adicionado'
-              ELSE
-                COALESCE(change->>'field', 'Campo') || ' adicionado'
-            END
-          WHEN COALESCE(change->>'action', '') = 'removed' THEN
-            CASE
-              WHEN COALESCE(change->>'from', '') <> '' THEN
-                COALESCE(change->>'field', 'Campo') || ': ' || change->>'from' || ' removido'
-              ELSE
-                COALESCE(change->>'field', 'Campo') || ' removido'
-            END
-          WHEN COALESCE(change->>'from', '') <> '' AND COALESCE(change->>'to', '') <> '' THEN
-            COALESCE(change->>'field', 'Campo') || ': ' || change->>'from' || ' → ' || change->>'to'
-          WHEN COALESCE(change->>'to', '') <> '' THEN
-            COALESCE(change->>'field', 'Campo') || ': ' || change->>'to'
+          WHEN COALESCE(fc_elem.fc->>'action', '') = 'added' THEN
+            COALESCE(fc_elem.fc->>'field', 'Campo') || ' adicionado'
+          WHEN COALESCE(fc_elem.fc->>'action', '') = 'removed' THEN
+            COALESCE(fc_elem.fc->>'field', 'Campo') || ' removido'
           ELSE
-            COALESCE(change->>'field', 'Campo') || ' alterado'
-        END AS item
-      FROM jsonb_array_elements(p_log_metadata->'field_changes') AS change
-    ) items
-    WHERE item IS NOT NULL AND item <> '';
+            COALESCE(fc_elem.fc->>'field', 'Campo') || ' alterado'
+        END AS v_item
+      FROM (
+        SELECT value::jsonb AS fc
+        FROM jsonb_array_elements(p_log_metadata->'field_changes')
+      ) fc_elem
+    ) mapped
+    WHERE v_item IS NOT NULL AND v_item <> '';
   END IF;
 
-  IF p_log_metadata ? 'changed_sections'
-     AND jsonb_typeof(p_log_metadata->'changed_sections') = 'array' THEN
-    SELECT string_agg(section.value, ', ')
+  IF p_log_metadata IS NOT NULL
+     AND jsonb_typeof(p_log_metadata) = 'object'
+     AND p_log_metadata ? 'changed_sections'
+     AND jsonb_typeof(p_log_metadata->'changed_sections') = 'array'
+  THEN
+    SELECT string_agg(sec_elem.sec, ', ')
       INTO v_changed_sections
-    FROM jsonb_array_elements_text(COALESCE(p_log_metadata->'changed_sections', '[]'::jsonb)) AS section(value);
+    FROM (
+      SELECT value::text AS sec
+      FROM jsonb_array_elements_text(p_log_metadata->'changed_sections')
+    ) sec_elem;
   END IF;
 
   IF v_changed_fields IS NOT NULL AND v_changed_fields <> '' THEN
-    v_log_description := format('Atualização: %s', v_changed_fields);
+    v_log_description := 'Atualização: ' || v_changed_fields;
   ELSIF v_changed_sections IS NOT NULL AND v_changed_sections <> '' THEN
-    v_log_description := format('Atualização em: %s', v_changed_sections);
+    v_log_description := 'Atualização em: ' || v_changed_sections;
   ELSE
     v_log_description := 'Dados de edição do atendimento';
   END IF;
@@ -168,7 +174,7 @@ BEGIN
       NULLIF(elem->>'finishedAt', '')::timestamptz,
       NULLIF(elem->>'kmInitial', '')::integer,
       NULLIF(elem->>'kmFinal', '')::integer
-    FROM jsonb_array_elements(p_operational_cycles) AS elem;
+    FROM jsonb_array_elements(p_operational_cycles) AS elem_row(elem);
   END IF;
 
   DELETE FROM public.os_waypoints WHERE ordem_servico_id = p_os_id;
@@ -181,23 +187,27 @@ BEGIN
       SELECT
         p_os_id,
         row_number() OVER () - 1,
-        COALESCE(elem->>'label', ''),
-        NULLIF(elem->>'lat', '')::double precision,
-        NULLIF(elem->>'lng', '')::double precision,
-        COALESCE(elem->>'comment', ''),
-        NULLIF(elem->>'itinerary_index', '')::integer,
-        NULLIF(elem->>'hora', '')::time,
-        NULLIF(elem->>'data', '')::date
-      FROM jsonb_array_elements(p_waypoints) AS elem
+        COALESCE(wp_row.elem->>'label', ''),
+        NULLIF(wp_row.elem->>'lat', '')::double precision,
+        NULLIF(wp_row.elem->>'lng', '')::double precision,
+        COALESCE(wp_row.elem->>'comment', ''),
+        NULLIF(wp_row.elem->>'itinerary_index', '')::integer,
+        NULLIF(wp_row.elem->>'hora', '')::time,
+        NULLIF(wp_row.elem->>'data', '')::date
+      FROM jsonb_array_elements(p_waypoints) AS wp_row(elem)
       RETURNING id, position
     )
     INSERT INTO public.os_waypoint_passengers (waypoint_id, passageiro_id)
-    SELECT iw.id, NULLIF(p_elem->>'solicitante_id', '')::uuid
-    FROM inserted_waypoints iw,
-         jsonb_array_elements(p_waypoints) WITH ORDINALITY AS wp(elem, idx)
-    JOIN jsonb_array_elements(wp.elem->'passengers') AS p_elem ON true
-    WHERE iw.position = (wp.idx - 1)::integer
-      AND jsonb_array_length(COALESCE(wp.elem->'passengers', '[]'::jsonb)) > 0;
+    SELECT iw.id, NULLIF(p_elem.pax->>'solicitante_id', '')::uuid
+    FROM inserted_waypoints iw
+    JOIN (
+      SELECT
+        (row_number() OVER () - 1)::integer AS pos,
+        wp_row2.elem AS wp_elem
+      FROM jsonb_array_elements(p_waypoints) AS wp_row2(elem)
+    ) wp_pos ON iw.position = wp_pos.pos
+    JOIN jsonb_array_elements(wp_pos.wp_elem->'passengers') AS p_elem(pax) ON true
+    WHERE jsonb_array_length(COALESCE(wp_pos.wp_elem->'passengers', '[]'::jsonb)) > 0;
   END IF;
 
   INSERT INTO public.os_logs (os_id, type, description, actor_name, actor_id, metadata)
