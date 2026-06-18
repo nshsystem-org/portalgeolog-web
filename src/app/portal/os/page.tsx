@@ -110,7 +110,7 @@ import {
   type CycleOperationalStatus,
   type OperationalCycleState,
 } from "@/lib/os-messages";
-import { getOSLogHighlightTags, getOSLogTone, TAG_CATEGORY_STYLES, type OSLogHighlightTag } from "@/lib/os-activity";
+import { getOSLogHighlightTags, getOSLogTone, getOSLogActorKind, getOSLogActorPhrase, TAG_CATEGORY_STYLES, type OSLogHighlightTag, type OSLogType } from "@/lib/os-activity";
 import {
   parseHoraExtraMinutes,
   calcBilledMinutes,
@@ -1231,6 +1231,73 @@ export default function OSOperationalPage() {
     );
   }, [osList]);
 
+  // Listener Realtime global para refletir mudanças de status na tabela e
+  // calendário sem precisar recarregar a página. Escuta mudanças em
+  // ordens_servico (status_operacional) e os_operational_cycles (estados dos
+  // ciclos) e atualiza os itens visíveis na tabela paginada e no calendário.
+  useEffect(() => {
+    const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    const debouncedRefreshOS = (osId: string) => {
+      const existing = debounceTimers.get(osId);
+      if (existing) clearTimeout(existing);
+      debounceTimers.set(
+        osId,
+        setTimeout(() => {
+          debounceTimers.delete(osId);
+          void fetchOSById(osId).then((latest) => {
+            if (!latest) return;
+            osTable.updateItems((prev) =>
+              prev.map((item) => (item.id === osId ? latest : item)),
+            );
+            setCalendarOSList((prev) =>
+              prev.map((item) => (item.id === osId ? latest : item)),
+            );
+          });
+        }, 300),
+      );
+    };
+
+    const channel = supabase
+      .channel("os-global-status-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ordens_servico" },
+        (payload) => {
+          const change = payload as {
+            eventType: string;
+            new?: Record<string, unknown> | null;
+            old?: Record<string, unknown> | null;
+          };
+          const osId =
+            (change.new?.id as string) || (change.old?.id as string);
+          if (!osId) return;
+          debouncedRefreshOS(osId);
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "os_operational_cycles" },
+        (payload) => {
+          const change = payload as {
+            eventType: string;
+            new?: Record<string, unknown> | null;
+            old?: Record<string, unknown> | null;
+          };
+          const osId = change.new?.ordem_servico_id as string;
+          if (!osId) return;
+          debouncedRefreshOS(osId);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+      debounceTimers.forEach((timer) => clearTimeout(timer));
+      debounceTimers.clear();
+    };
+  }, [supabase, osTable]);
+
   // Recarregar calendário quando filtro de arquivados mudar
   useEffect(() => {
     if (viewMode !== "calendar" || !calendarRangeRef.current) return;
@@ -2312,11 +2379,66 @@ export default function OSOperationalPage() {
         return;
       }
 
-      toast.success("WhatsApp enviado para o motorista!");
       setDriverNotificationSentByOS((prev) => ({
         ...prev,
         [osData.id]: true,
       }));
+
+      // Buscar nome do operador para notificação
+      let operatorName = user.email?.split("@")[0] || "Operador";
+      try {
+        const { data: profile } = await supabase
+          .from("user_roles")
+          .select("nome")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile?.nome) operatorName = profile.nome;
+      } catch {
+        // fallback já definido
+      }
+
+      const motoristaParts = (osData.motorista || "Motorista")
+        .split(" ")
+        .filter(Boolean);
+      const motoristaShort =
+        motoristaParts.length <= 2
+          ? osData.motorista || "Motorista"
+          : `${motoristaParts[0]} ${motoristaParts[motoristaParts.length - 1]}`;
+
+      // 1. Rastrear message_id para correlação com status updates da Meta
+      if (msgData.messageId) {
+        try {
+          await supabase.from("whatsapp_message_tracking").insert({
+            os_id: osData.id,
+            message_id: msgData.messageId,
+            phone: phone,
+            motorista: osData.motorista || "Motorista",
+            cycle_index: itineraryIndex,
+            status: "sent",
+          });
+        } catch (trackErr) {
+          console.error("[WhatsApp] Erro ao rastrear message_id:", trackErr);
+        }
+      }
+
+      // 2. Registrar log driver_notify → gera notificação no sino:
+      //    "{Operador} enviou uma mensagem de serviço para o motorista {Motorista}."
+      try {
+        await supabase.from("os_logs").insert({
+          os_id: osData.id,
+          type: "driver_notify",
+          actor_name: operatorName,
+          actor_id: user.id,
+          description: `Mensagem WhatsApp enviada ao motorista ${motoristaShort}${itineraryIndex > 0 ? ` — Ciclo ${itineraryIndex + 1}` : ""}`,
+          metadata: {
+            cycle_index: itineraryIndex,
+            message_id: msgData.messageId ?? null,
+            motorista: osData.motorista || "Motorista",
+          },
+        });
+      } catch (logErr) {
+        console.error("[WhatsApp] Erro ao registrar log driver_notify:", logErr);
+      }
 
       // Atualizar apenas o ciclo específico na tabela de ciclos operacionais
       try {
@@ -7107,6 +7229,61 @@ export default function OSOperationalPage() {
                             </div>
                           ))}
                         </div>
+
+                        {/* ── Logs do Ciclo (colapsável) ── */}
+                        {(() => {
+                          const cycleLogs = osLogs.filter((log) => {
+                            if (log.os_id !== viewingOS?.id) return false;
+                            const meta = log.metadata as Record<string, unknown> | null;
+                            const logCycleIndex = typeof meta?.cycle_index === "number" ? meta.cycle_index : null;
+                            return logCycleIndex === cycle.itineraryIndex;
+                          });
+                          if (cycleLogs.length === 0) return null;
+                          return (
+                            <div className="mt-4 border-t border-slate-200 pt-4">
+                              <details className="group">
+                                <summary className="flex items-center gap-2 cursor-pointer list-none">
+                                  <History size={14} className="text-slate-400 group-open:text-blue-500 transition-colors" />
+                                  <span className="text-xs font-bold text-slate-500 group-open:text-slate-800 transition-colors">
+                                    Histórico do ciclo ({cycleLogs.length})
+                                  </span>
+                                  <ChevronDown
+                                    size={14}
+                                    className="text-slate-400 ml-auto transition-transform group-open:rotate-180"
+                                  />
+                                </summary>
+                                <div className="mt-3 space-y-2 pl-5 border-l-2 border-slate-100">
+                                  {cycleLogs.map((log) => {
+                                    const logTone = getOSLogTone(log.type as OSLogType);
+                                    const logDate = new Date(log.created_at);
+                                    const logTime = logDate.toLocaleString("pt-BR", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    });
+                                    return (
+                                      <div
+                                        key={log.id}
+                                        className="flex items-start gap-2 text-xs"
+                                      >
+                                        <span className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${logTone.dotClass}`} />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="font-bold text-slate-700 leading-snug">
+                                            {log.description}
+                                          </p>
+                                          <p className="text-[10px] text-slate-400 mt-0.5">
+                                            {logTime}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </details>
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -7310,6 +7487,8 @@ export default function OSOperationalPage() {
                         const tone = getOSLogTone(log.type);
                         const highlightTags = getOSLogHighlightTags(log.type, log.metadata);
                         const fullActorName = log.actor_name || "Sistema";
+                        const actorKind = getOSLogActorKind(log.type as never, log.actor_id);
+                        const actorPhrase = getOSLogActorPhrase(log.type as never, log.actor_name || "", log.actor_id);
                         const actorParts = fullActorName.split(" ").filter(Boolean) || [];
                         const actorLabel = actorParts.length <= 2 
                           ? fullActorName 
@@ -7339,7 +7518,7 @@ export default function OSOperationalPage() {
                                     {timeStr}
                                   </span>
                                   <span className="block text-[10px] font-medium text-slate-400">
-                                    por <span className="font-bold text-slate-500">{actorLabel}</span>
+                                    por <span className="font-bold text-slate-500">{actorKind === "driver" ? `Motorista ${actorLabel}` : actorLabel}</span>
                                   </span>
                                 </div>
                               </div>
@@ -7353,6 +7532,10 @@ export default function OSOperationalPage() {
                                       alt={fullActorName}
                                       className="w-10 h-10 rounded-full object-cover border-2 border-slate-50 shadow-sm"
                                     />
+                                  ) : actorKind === "driver" ? (
+                                    <span className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white flex items-center justify-center border-2 border-slate-50 shadow-sm`}>
+                                      <Truck size={18} />
+                                    </span>
                                   ) : (
                                     <span className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white text-[10px] font-black flex items-center justify-center border-2 border-slate-50 shadow-sm`}>
                                       {actorInitials || "S"}
@@ -7361,7 +7544,7 @@ export default function OSOperationalPage() {
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm font-bold text-slate-800 leading-tight mb-1">
-                                    {fullActorName}
+                                    {actorPhrase}
                                   </p>
                                   <p className="text-sm font-medium text-slate-500 leading-snug mb-3">
                                     {log.description}

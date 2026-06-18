@@ -513,8 +513,10 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
         );
 
         if (templateResult.success && templateResult.messageId) {
-          await getAdmin()
-            .from("ordens_servico")
+          const ordensServicoUpdate = getAdmin().from(
+            "ordens_servico",
+          ) as unknown as OrdensServicoUpdateBuilder;
+          await ordensServicoUpdate
             .update({
               driver_flow_start_message_id: templateResult.messageId,
               driver_flow_finish_message_id: null,
@@ -833,8 +835,10 @@ async function sendNextCyclePreviewAndStartFlow(
     if (templateResult.success && templateResult.messageId) {
       const now = new Date().toISOString();
 
-      await getAdmin()
-        .from("ordens_servico")
+      const ordensServicoUpdate = getAdmin().from(
+        "ordens_servico",
+      ) as unknown as OrdensServicoUpdateBuilder;
+      await ordensServicoUpdate
         .update({
           driver_flow_start_message_id: templateResult.messageId,
           driver_flow_finish_message_id: null,
@@ -1556,6 +1560,121 @@ export async function POST(request: Request) {
               contextId,
             },
           });
+        }
+
+        // ── Status updates (delivery, read, sent, failed) ──────────────────────
+        const statuses = value?.statuses || [];
+        for (const status of statuses) {
+          const msgId = status?.id;
+          const statusType = status?.status;
+          const recipientPhone = status?.recipient_id;
+
+          if (!msgId) continue;
+
+          console.log("[meta-webhook] Status update recebido:", {
+            msgId,
+            statusType,
+            recipientPhone,
+          });
+
+          void recordWhatsAppLog({
+            source: "meta-webhook",
+            eventType: "status_update_received",
+            payload: {
+              msgId,
+              statusType,
+              recipientPhone,
+            },
+          });
+
+          if (statusType === "delivered" || statusType === "read") {
+            processingTasks.push(
+              (async () => {
+                try {
+                  const adminClient = getAdmin();
+
+                  // 1. Buscar rastreamento pelo message_id
+                  const { data: tracking } = await (adminClient
+                    .from("whatsapp_message_tracking") as unknown as {
+                    select: (cols: string) => {
+                      eq: (col: string, val: string) => {
+                        maybeSingle: () => Promise<{
+                          data: {
+                            os_id: string;
+                            motorista: string;
+                            cycle_index: number;
+                            status: string;
+                          } | null;
+                        }>;
+                      };
+                    };
+                  })
+                    .select("os_id, motorista, cycle_index, status")
+                    .eq("message_id", msgId)
+                    .maybeSingle();
+
+                  if (!tracking) {
+                    console.log(
+                      "[meta-webhook] Nenhum rastreamento encontrado para message_id:",
+                      msgId,
+                    );
+                    return;
+                  }
+
+                  // 2. Evitar duplicatas: só processar se ainda não foi delivered/read
+                  if (tracking.status === "delivered" || tracking.status === "read") {
+                    console.log(
+                      "[meta-webhook] Status já processado anteriormente:",
+                      tracking.status,
+                    );
+                    return;
+                  }
+
+                  // 3. Atualizar status na tabela de rastreamento
+                  await (adminClient
+                    .from("whatsapp_message_tracking") as unknown as {
+                    update: (values: Record<string, unknown>) => {
+                      eq: (col: string, val: string) => Promise<unknown>;
+                    };
+                  }).update({ status: statusType }).eq("message_id", msgId);
+
+                  // 4. Inserir log driver_delivered → trigger gera notificação no sino
+                  const motoristaParts = (tracking.motorista || "Motorista")
+                    .split(" ")
+                    .filter(Boolean);
+                  const motoristaShort =
+                    motoristaParts.length <= 2
+                      ? tracking.motorista || "Motorista"
+                      : `${motoristaParts[0]} ${motoristaParts[motoristaParts.length - 1]}`;
+
+                  await (adminClient.from("os_logs") as unknown as {
+                    insert: (values: Record<string, unknown>) => Promise<unknown>;
+                  }).insert({
+                    os_id: tracking.os_id,
+                    type: "driver_delivered",
+                    actor_name: motoristaShort,
+                    actor_id: null,
+                    description: `Mensagem ${statusType === "read" ? "visualizada" : "entregue"} no WhatsApp do motorista`,
+                    metadata: {
+                      cycle_index: tracking.cycle_index,
+                      message_id: msgId,
+                      delivery_status: statusType,
+                    },
+                  });
+
+                  console.log(
+                    "[meta-webhook] Notificação driver_delivered gerada para OS:",
+                    tracking.os_id,
+                  );
+                } catch (err) {
+                  console.error(
+                    "[meta-webhook] Erro ao processar status update:",
+                    err,
+                  );
+                }
+              })(),
+            );
+          }
         }
       }
     }

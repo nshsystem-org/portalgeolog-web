@@ -9,6 +9,8 @@ export type OSLogType =
   | "driver_accept"
   | "driver_start"
   | "driver_finish"
+  | "driver_notify"
+  | "driver_delivered"
   | "passenger_notify"
   | "passenger_confirm"
   | "comment"
@@ -69,6 +71,18 @@ const OS_LOG_TONES: Record<string, OSLogTone> = {
     badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
     dotClass: "bg-emerald-500",
     avatarClass: "from-emerald-500 to-emerald-600",
+  },
+  driver_notify: {
+    label: "Mensagem enviada",
+    badgeClass: "bg-cyan-50 text-cyan-700 border-cyan-200",
+    dotClass: "bg-cyan-500",
+    avatarClass: "from-cyan-500 to-cyan-600",
+  },
+  driver_delivered: {
+    label: "Mensagem entregue",
+    badgeClass: "bg-teal-50 text-teal-700 border-teal-200",
+    dotClass: "bg-teal-500",
+    avatarClass: "from-teal-500 to-teal-600",
   },
   passenger_notify: {
     label: "Envio ao passageiro",
@@ -287,6 +301,31 @@ export const getOSLogHighlightTags = (
       : [];
   }
 
+  if (type === "driver_notify") {
+    const tags: OSLogHighlightTag[] = [];
+    const cycleIndex = metadata.cycle_index;
+    if (typeof cycleIndex === "number") {
+      tags.push({ label: `Ciclo ${cycleIndex + 1}`, category: "cycle" });
+    }
+    return tags;
+  }
+
+  if (type === "driver_delivered") {
+    const tags: OSLogHighlightTag[] = [];
+    const cycleIndex = metadata.cycle_index;
+    const deliveryStatus = metadata.delivery_status;
+    if (typeof cycleIndex === "number") {
+      tags.push({ label: `Ciclo ${cycleIndex + 1}`, category: "cycle" });
+    }
+    if (typeof deliveryStatus === "string") {
+      tags.push({
+        label: deliveryStatus === "read" ? "Visualizado" : "Entregue",
+        category: "state",
+      });
+    }
+    return tags;
+  }
+
   return [];
 };
 
@@ -296,4 +335,76 @@ export const getOSLogMetadataHighlights = (
   metadata: OSLogMetadata,
 ): string[] => {
   return getOSLogHighlightTags(type, metadata).map((t) => t.label);
+};
+
+/**
+ * Classifica o ator de um log em "user" (operador logado no sistema) ou
+ * "driver" (motorista agindo via flow do WhatsApp). A distinção é feita
+ * pela combinação de `type` e `actor_id`:
+ *   - driver_start / driver_finish / driver_accept → sempre motorista
+ *   - status_change / update / create / etc. com actor_id preenchido → usuário
+ *   - status_change sem actor_id → pode ser "Sistema" (auto) ou motorista
+ *     em fluxos legados; tratamos como sistema para segurança.
+ */
+export type OSLogActorKind = "user" | "driver" | "system";
+
+export const getOSLogActorKind = (
+  type: OSLogType,
+  actorId: string | null,
+): OSLogActorKind => {
+  if (
+    type === "driver_start" ||
+    type === "driver_finish" ||
+    type === "driver_accept"
+  ) {
+    return "driver";
+  }
+  if (actorId) return "user";
+  return "system";
+};
+
+/**
+ * Gera a frase descritiva do ator no formato:
+ *   - Usuário:  "Acacio Vieira atualizou o status do atendimento"
+ *   - Motorista: "Motorista Marcelo de Mattos Agra iniciou a rota"
+ *   - Sistema:  "Sistema atualizou o status do atendimento"
+ *
+ * O verbo é derivado do `type` do log.
+ */
+export const getOSLogActorPhrase = (
+  type: OSLogType,
+  actorName: string,
+  actorId: string | null,
+): string => {
+  const kind = getOSLogActorKind(type, actorId);
+  const name = actorName || "Sistema";
+
+  const verbs: Partial<Record<OSLogType, string>> = {
+    create: "criou o atendimento",
+    update: "editou os dados do atendimento",
+    status_change: "atualizou o status do atendimento",
+    archive: "arquivou o atendimento",
+    unarchive: "reabriu o atendimento",
+    driver_accept: "visualizou os detalhes do atendimento",
+    driver_start: "iniciou a rota",
+    driver_finish: "finalizou a rota",
+    driver_notify: "enviou uma mensagem de serviço",
+    driver_delivered: "recebeu a nova mensagem de atendimento",
+    passenger_notify: "notificou passageiros",
+    passenger_confirm: "confirmou presença",
+    comment: "adicionou um comentário",
+  };
+
+  const verb = verbs[type] ?? "atualizou o atendimento";
+
+  if (type === "driver_notify") {
+    return `${name} ${verb}`;
+  }
+  if (type === "driver_delivered") {
+    return `Motorista ${name} ${verb}`;
+  }
+  if (kind === "driver") {
+    return `Motorista ${name} ${verb}`;
+  }
+  return `${name} ${verb}`;
 };

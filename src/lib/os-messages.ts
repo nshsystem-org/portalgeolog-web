@@ -280,7 +280,8 @@ export function getCycleDisplayStatus(
  *  2. Qualquer ciclo "Aguardando" → "Aguardando"
  *  3. Todos ativos (não cancelados) "Finalizado" → "Finalizado"
  *  4. Todos "Cancelado" → "Cancelado"
- *  5. → "Pendente"
+ *  5. Há ciclos concluídos mas nem todos → "Aguardando" (pendentes aguardam ativação)
+ *  6. → "Pendente" (todos os ciclos ainda estão pending)
  */
 export function deriveCyclesOperationalStatus(
   cycles: OperationalCycle[],
@@ -308,6 +309,11 @@ export function deriveCyclesOperationalStatus(
   )
     return "Finalizado";
   if (activeCycles.length === 0) return "Cancelado";
+
+  // Se há ciclos concluídos mas nem todos os ativos estão concluídos,
+  // os ciclos "pending" restantes estão aguardando ativação.
+  if (activeCycles.some((c) => c.state === "completed"))
+    return "Aguardando";
 
   return "Pendente";
 }
