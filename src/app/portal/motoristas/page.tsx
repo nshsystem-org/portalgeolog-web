@@ -22,6 +22,8 @@ import {
   MapPin,
   Filter,
   FilterX,
+  Camera,
+  Upload,
 } from "lucide-react";
 import DriverDocsModal from "@/components/DriverDocsModal";
 import { DataTable } from "@/components/ui/DataTable";
@@ -64,6 +66,7 @@ interface Driver {
   status: "active" | "inactive";
   vinculo_tipo?: "interno" | "parceiro" | "autonomo";
   parceiro_id?: string;
+  avatar_url?: string;
   created_at?: string;
   driver_vehicles?: DriverVehicle[];
   docsCount?: number;
@@ -234,6 +237,7 @@ export default function MotoristasPage() {
     useState<Driver | null>(null);
   const [viewingDriver, setViewingDriver] = useState<Driver | null>(null);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [editingDriverAvatarUrl, setEditingDriverAvatarUrl] = useState<string | null>(null);
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const supabase = createClient();
   const { parceiros } = useParceiros();
@@ -289,6 +293,8 @@ export default function MotoristasPage() {
     nome: p.razaoSocialOuNomeCompleto,
   }));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [driverAvatarFile, setDriverAvatarFile] = useState<File | null>(null);
+  const [driverAvatarPreview, setDriverAvatarPreview] = useState<string | null>(null);
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [vehiclesUnavailable, setVehiclesUnavailable] = useState(false);
@@ -349,6 +355,8 @@ export default function MotoristasPage() {
         tipo_documento: "cpf",
         vehicle_ids: [],
       });
+      setDriverAvatarFile(null);
+      setDriverAvatarPreview(null);
     }
   }, [isModalOpen]);
 
@@ -1025,6 +1033,21 @@ export default function MotoristasPage() {
 
       if (error) throw error;
 
+      // Upload avatar se selecionado
+      if (data && driverAvatarFile) {
+        try {
+          const avatarForm = new FormData();
+          avatarForm.append("file", driverAvatarFile);
+          avatarForm.append("driverId", data.id);
+          const avatarRes = await fetch("/api/driver-avatar", { method: "POST", body: avatarForm });
+          if (!avatarRes.ok) {
+            console.warn("[driver-avatar] Upload falhou:", await avatarRes.text());
+          }
+        } catch (avatarErr) {
+          console.warn("[driver-avatar] Erro no upload:", avatarErr);
+        }
+      }
+
       // Inserir veículos vinculados
       if (data && formData.vehicle_ids.length > 0) {
         const driverVehicles = formData.vehicle_ids.map((vehicleId) => ({
@@ -1075,6 +1098,7 @@ export default function MotoristasPage() {
 
   const handleOpenEditModal = (driver: Driver) => {
     setEditingDriver(driver);
+    setEditingDriverAvatarUrl(driver.avatar_url || null);
     // Extrair vehicle_ids do driver_vehicles (se existir) ou do vehicle_id legado
     const vehicleIds =
       driver.driver_vehicles?.map((dv) => dv.vehicle_id) ||
@@ -1179,7 +1203,6 @@ export default function MotoristasPage() {
         name: formData.name.trim(),
         cpf: formData.cpf.replace(/\D/g, "").trim(),
         phone: normalizeBrazilPhone(formData.celular),
-        vehicle_id: formData.vehicle_ids[0],
         vinculo_tipo: formData.vinculo_tipo,
         parceiro_id:
           formData.vinculo_tipo === "parceiro" ? formData.parceiro_id : null,
@@ -1193,6 +1216,40 @@ export default function MotoristasPage() {
         .single();
 
       if (error) throw error;
+
+      // Remover avatar se o usuário clicou em "Remover foto"
+      if (
+        editingDriver.avatar_url &&
+        !driverAvatarFile &&
+        !editingDriverAvatarUrl
+      ) {
+        try {
+          const avatarRes = await fetch(
+            `/api/driver-avatar?driverId=${editingDriver.id}`,
+            { method: "DELETE" },
+          );
+          if (!avatarRes.ok) {
+            console.warn("[driver-avatar] Delete falhou:", await avatarRes.text());
+          }
+        } catch (avatarErr) {
+          console.warn("[driver-avatar] Erro no delete:", avatarErr);
+        }
+      }
+
+      // Upload avatar se selecionado
+      if (driverAvatarFile && editingDriver) {
+        try {
+          const avatarForm = new FormData();
+          avatarForm.append("file", driverAvatarFile);
+          avatarForm.append("driverId", editingDriver.id);
+          const avatarRes = await fetch("/api/driver-avatar", { method: "POST", body: avatarForm });
+          if (!avatarRes.ok) {
+            console.warn("[driver-avatar] Upload falhou:", await avatarRes.text());
+          }
+        } catch (avatarErr) {
+          console.warn("[driver-avatar] Erro no upload:", avatarErr);
+        }
+      }
 
       // Atualizar veículos vinculados via RPC atômica
       if (data) {
@@ -1216,8 +1273,10 @@ export default function MotoristasPage() {
         void driversTable.refresh();
       }
 
-      toast.success("Motorista atualizado com sucesso!");
       setEditingDriver(null);
+      setEditingDriverAvatarUrl(null);
+      setDriverAvatarFile(null);
+      setDriverAvatarPreview(null);
       setFormData({
         name: "",
         cpf: "",
@@ -1464,25 +1523,38 @@ export default function MotoristasPage() {
             key: "name",
             title: "Motorista",
             render: (value: unknown, item: Driver) => (
-              <div className="space-y-1">
-                <p className="font-black text-base text-slate-800 tracking-tight uppercase">
-                  {String(value)}
-                </p>
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border ${
-                    item.vinculo_tipo === "interno"
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
+              <div className="flex items-center gap-3">
+                {item.avatar_url ? (
+                  <img
+                    src={item.avatar_url}
+                    alt={item.name}
+                    className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-white text-sm font-black flex items-center justify-center border border-slate-200 shadow-sm flex-shrink-0">
+                    {item.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <p className="font-black text-base text-slate-800 tracking-tight uppercase">
+                    {String(value)}
+                  </p>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border ${
+                      item.vinculo_tipo === "interno"
+                        ? "bg-sky-50/80 text-sky-700/80 border-sky-100/60"
+                        : item.vinculo_tipo === "autonomo"
+                          ? "bg-orange-50/80 text-orange-400/80 border-orange-100/60"
+                          : "bg-cyan-50/80 text-cyan-400/80 border-cyan-100/60"
+                    }`}
+                  >
+                    {item.vinculo_tipo === "interno"
+                      ? "Interno"
                       : item.vinculo_tipo === "autonomo"
-                        ? "bg-amber-50 text-amber-700 border-amber-200"
-                        : "bg-teal-50 text-teal-700 border-teal-200"
-                  }`}
-                >
-                  {item.vinculo_tipo === "interno"
-                    ? "Interno"
-                    : item.vinculo_tipo === "autonomo"
-                      ? "Autônomo"
-                      : "Parceiro"}
-                </span>
+                        ? "Autônomo"
+                        : "Parceiro"}
+                  </span>
+                </div>
               </div>
             ),
           },
@@ -1655,106 +1727,172 @@ export default function MotoristasPage() {
                   Motorista
                 </h3>
               </div>
-              <div className="grid grid-cols-1 gap-6">
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="space-y-2 w-full md:w-[45%]">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      Nome completo{" "}
-                      <span className="text-rose-300 text-base">*</span>
-                    </label>
-                    <input
-                      required
-                      pattern=".*\s+\S.*"
-                      title="Nome completo deve conter pelo menos nome e sobrenome."
-                      placeholder="Ex: João Silva da Rocha"
-                      value={formData.name}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          name: e.target.value.toUpperCase(),
-                        })
-                      }
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-2 w-full md:w-48">
-                    <GeologSearchableSelect
-                      label="Tipo"
-                      options={tipoDocumentoOptions}
-                      value={formData.tipo_documento}
-                      onChange={(value) =>
-                        setFormData({
-                          ...formData,
-                          tipo_documento: value as "cpf" | "passaporte",
-                          cpf: formatDocumento(
-                            formData.cpf,
-                            value as "cpf" | "passaporte",
-                          ),
-                        })
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2 w-full md:w-40">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      {getDocumentoLabel(formData.tipo_documento)}{" "}
-                      <span className="text-rose-300 text-base">*</span>
-                    </label>
-                    <input
-                      required
-                      pattern={
-                        formData.tipo_documento === "cpf"
-                          ? "\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}"
-                          : undefined
-                      }
-                      title={
-                        formData.tipo_documento === "cpf"
-                          ? "CPF incompleto. Use o formato 000.000.000-00"
-                          : undefined
-                      }
-                      placeholder={getDocumentoPlaceholder(
-                        formData.tipo_documento,
-                      )}
-                      value={formData.cpf}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          cpf: formatDocumento(
-                            e.target.value,
-                            formData.tipo_documento,
-                          ),
-                        })
-                      }
-                      className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-2 w-full md:w-44">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      Celular <span className="text-rose-300 text-base">*</span>
-                    </label>
-                    <input
-                      required
-                      title="Celular incompleto. Use o formato (00) 00000-0000"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      placeholder="(00) 9XXXX-XXXX"
-                      value={formatCelular(formData.celular)}
-                      onChange={(e) => {
-                        const digitsOnly = e.target.value
-                          .replace(/\D/g, "")
-                          .slice(0, 11);
-                        setFormData({ ...formData, celular: digitsOnly });
+
+              {/* Linha 1: Avatar + Nome (identidade) */}
+              <div className="flex flex-col md:flex-row gap-6 items-start">
+                {/* Avatar */}
+                <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                  <div className="relative">
+                    {driverAvatarPreview ? (
+                      <img
+                        src={driverAvatarPreview}
+                        alt="Preview"
+                        className="w-20 h-20 rounded-full object-cover border-2 border-slate-200 shadow-sm"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-white text-2xl font-black flex items-center justify-center border-2 border-slate-200 shadow-sm">
+                        <Camera size={28} />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const input = document.getElementById("driver-avatar-input-create");
+                        if (input) input.click();
                       }}
-                      className={`w-full px-4 py-4 bg-slate-50 border-2 rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white transition-all shadow-sm ${
-                        formData.celular && !validateCelular(formData.celular)
-                          ? "border-red-500 focus:border-red-500"
-                          : "border-slate-200 focus:border-blue-600"
-                      }`}
+                      className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-blue-700 transition-colors cursor-pointer"
+                      title="Adicionar foto"
+                    >
+                      <Upload size={14} />
+                    </button>
+                    <input
+                      id="driver-avatar-input-create"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setDriverAvatarFile(file);
+                          setDriverAvatarPreview(URL.createObjectURL(file));
+                        }
+                      }}
                     />
                   </div>
+                  {driverAvatarPreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDriverAvatarFile(null);
+                        setDriverAvatarPreview(null);
+                      }}
+                      className="text-xs text-rose-500 font-bold hover:text-rose-700 transition-colors cursor-pointer"
+                    >
+                      Remover
+                    </button>
+                  )}
                 </div>
-                <div className="flex flex-col md:flex-row gap-6 items-start w-full">
-                  <div className="flex flex-wrap gap-3 w-full md:w-[45%]">
+
+                {/* Nome */}
+                <div className="space-y-2 flex-1 w-full">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Nome completo{" "}
+                    <span className="text-rose-300 text-base">*</span>
+                  </label>
+                  <input
+                    required
+                    pattern=".*\s+\S.*"
+                    title="Nome completo deve conter pelo menos nome e sobrenome."
+                    placeholder="Ex: João Silva da Rocha"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        name: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Linha 2: Tipo + Documento + Celular (documentos/contato) */}
+              <div className="flex flex-col md:flex-row gap-6 items-start">
+                <div className="space-y-2 w-full md:w-48">
+                  <GeologSearchableSelect
+                    label="Tipo"
+                    options={tipoDocumentoOptions}
+                    value={formData.tipo_documento}
+                    onChange={(value) =>
+                      setFormData({
+                        ...formData,
+                        tipo_documento: value as "cpf" | "passaporte",
+                        cpf: formatDocumento(
+                          formData.cpf,
+                          value as "cpf" | "passaporte",
+                        ),
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2 w-full md:w-40">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    {getDocumentoLabel(formData.tipo_documento)}{" "}
+                    <span className="text-rose-300 text-base">*</span>
+                  </label>
+                  <input
+                    required
+                    pattern={
+                      formData.tipo_documento === "cpf"
+                        ? "\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}"
+                        : undefined
+                    }
+                    title={
+                      formData.tipo_documento === "cpf"
+                        ? "CPF incompleto. Use o formato 000.000.000-00"
+                        : undefined
+                    }
+                    placeholder={getDocumentoPlaceholder(
+                      formData.tipo_documento,
+                    )}
+                    value={formData.cpf}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        cpf: formatDocumento(
+                          e.target.value,
+                          formData.tipo_documento,
+                        ),
+                      })
+                    }
+                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2 w-full md:w-44">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Celular <span className="text-rose-300 text-base">*</span>
+                  </label>
+                  <input
+                    required
+                    title="Celular incompleto. Use o formato (00) 00000-0000"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="(00) 9XXXX-XXXX"
+                    value={formatCelular(formData.celular)}
+                    onChange={(e) => {
+                      const digitsOnly = e.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, 11);
+                      setFormData({ ...formData, celular: digitsOnly });
+                    }}
+                    className={`w-full px-4 py-4 bg-slate-50 border-2 rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white transition-all shadow-sm ${
+                      formData.celular && !validateCelular(formData.celular)
+                        ? "border-red-500 focus:border-red-500"
+                        : "border-slate-200 focus:border-blue-600"
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Linha 3: Vínculo (tipo de contratação) */}
+              <div className="space-y-3">
+                <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                  Tipo de Vínculo{" "}
+                  <span className="text-rose-300 text-base">*</span>
+                </label>
+                <div className="flex flex-col md:flex-row gap-4 items-start w-full">
+                  <div className="flex flex-wrap gap-3 w-full md:flex-1">
                     <button
                       type="button"
                       onClick={() =>
@@ -1811,26 +1949,24 @@ export default function MotoristasPage() {
                     </button>
                   </div>
 
-                  <div className="flex-[1.5] w-full min-h-[84px]">
-                    {formData.vinculo_tipo === "parceiro" && (
-                      <div className="w-full animate-in fade-in slide-in-from-left-2 duration-300">
-                        <GeologSearchableSelect
-                          label=""
-                          options={parceiroOptions}
-                          value={formData.parceiro_id}
-                          onChange={(value) =>
-                            setFormData({
-                              ...formData,
-                              parceiro_id: value,
-                              vehicle_ids: [],
-                            })
-                          }
-                          placeholder="Selecione o parceiro de serviço..."
-                          onQuickAdd={handleQuickParceiroOpen}
-                        />
-                      </div>
-                    )}
-                  </div>
+                  {formData.vinculo_tipo === "parceiro" && (
+                    <div className="w-full md:flex-[1.5] min-h-[84px] animate-in fade-in slide-in-from-left-2 duration-300">
+                      <GeologSearchableSelect
+                        label=""
+                        options={parceiroOptions}
+                        value={formData.parceiro_id}
+                        onChange={(value) =>
+                          setFormData({
+                            ...formData,
+                            parceiro_id: value,
+                            vehicle_ids: [],
+                          })
+                        }
+                        placeholder="Selecione o parceiro de serviço..."
+                        onQuickAdd={handleQuickParceiroOpen}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -2114,10 +2250,10 @@ export default function MotoristasPage() {
                     <span
                       className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wide border ${
                         viewingDriver.vinculo_tipo === "interno"
-                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                          ? "bg-sky-50/80 text-sky-700/80 border-sky-100/60"
                           : viewingDriver.vinculo_tipo === "autonomo"
-                            ? "bg-amber-50 text-amber-700 border-amber-200"
-                            : "bg-teal-50 text-teal-700 border-teal-200"
+                            ? "bg-orange-50/80 text-orange-400/80 border-orange-100/60"
+                            : "bg-cyan-50/80 text-cyan-400/80 border-cyan-100/60"
                       }`}
                     >
                       {viewingDriver.vinculo_tipo === "interno" ? (
@@ -2182,6 +2318,9 @@ export default function MotoristasPage() {
         <StandardModal
           onClose={() => {
             setEditingDriver(null);
+            setEditingDriverAvatarUrl(null);
+            setDriverAvatarFile(null);
+            setDriverAvatarPreview(null);
             setFormData({
               name: "",
               cpf: "",
@@ -2212,104 +2351,177 @@ export default function MotoristasPage() {
                   Motorista
                 </h3>
               </div>
-              <div className="grid grid-cols-1 gap-6">
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="space-y-2 w-full md:w-[45%]">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      Nome completo{" "}
-                      <span className="text-rose-300 text-base">*</span>
-                    </label>
-                    <input
-                      required
-                      pattern=".*\s+\S.*"
-                      title="Nome completo deve conter pelo menos nome e sobrenome."
-                      placeholder="Ex: João Silva da Rocha"
-                      value={formData.name}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          name: e.target.value.toUpperCase(),
-                        })
-                      }
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-2 w-full md:w-48">
-                    <GeologSearchableSelect
-                      label="Tipo"
-                      options={tipoDocumentoOptions}
-                      value={formData.tipo_documento}
-                      onChange={(value) =>
-                        setFormData({
-                          ...formData,
-                          tipo_documento: value as "cpf" | "passaporte",
-                          cpf: formatDocumento(
-                            formData.cpf,
-                            value as "cpf" | "passaporte",
-                          ),
-                        })
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2 w-full md:w-40">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      {getDocumentoLabel(formData.tipo_documento)}{" "}
-                      <span className="text-rose-300 text-base">*</span>
-                    </label>
-                    <input
-                      required
-                      pattern={
-                        formData.tipo_documento === "cpf"
-                          ? "\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}"
-                          : undefined
-                      }
-                      title={
-                        formData.tipo_documento === "cpf"
-                          ? "CPF incompleto. Use o formato 000.000.000-00"
-                          : undefined
-                      }
-                      placeholder={getDocumentoPlaceholder(
-                        formData.tipo_documento,
-                      )}
-                      value={formData.cpf}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          cpf: formatDocumento(
-                            e.target.value,
-                            formData.tipo_documento,
-                          ),
-                        })
-                      }
-                      className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-2 w-full md:w-44">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      Celular <span className="text-rose-300 text-base">*</span>
-                    </label>
-                    <input
-                      required
-                      title="Celular incompleto. Use o formato (00) 00000-0000"
-                      placeholder="(00) 9XXXX-XXXX"
-                      value={formatCelular(formData.celular)}
-                      onChange={(e) => {
-                        const digitsOnly = e.target.value
-                          .replace(/\D/g, "")
-                          .slice(0, 11);
-                        setFormData({ ...formData, celular: digitsOnly });
+
+              {/* Linha 1: Avatar + Nome (identidade) */}
+              <div className="flex flex-col md:flex-row gap-6 items-start">
+                {/* Avatar */}
+                <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                  <div className="relative">
+                    {driverAvatarPreview ? (
+                      <img
+                        src={driverAvatarPreview}
+                        alt="Preview"
+                        className="w-20 h-20 rounded-full object-cover border-2 border-slate-200 shadow-sm"
+                      />
+                    ) : editingDriverAvatarUrl ? (
+                      <img
+                        src={editingDriverAvatarUrl}
+                        alt={editingDriver.name}
+                        className="w-20 h-20 rounded-full object-cover border-2 border-slate-200 shadow-sm"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-white text-2xl font-black flex items-center justify-center border-2 border-slate-200 shadow-sm">
+                        {editingDriver.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const input = document.getElementById("driver-avatar-input-edit");
+                        if (input) input.click();
                       }}
-                      className={`w-full px-4 py-4 bg-slate-50 border-2 rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white transition-all shadow-sm ${
-                        formData.celular && !validateCelular(formData.celular)
-                          ? "border-red-500 focus:border-red-500"
-                          : "border-slate-200 focus:border-blue-600"
-                      }`}
+                      className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-blue-700 transition-colors cursor-pointer"
+                      title="Alterar foto"
+                    >
+                      <Upload size={14} />
+                    </button>
+                    <input
+                      id="driver-avatar-input-edit"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setDriverAvatarFile(file);
+                          setDriverAvatarPreview(URL.createObjectURL(file));
+                        }
+                      }}
                     />
                   </div>
+                  {(driverAvatarPreview || editingDriverAvatarUrl) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDriverAvatarFile(null);
+                        setDriverAvatarPreview(null);
+                        setEditingDriverAvatarUrl(null);
+                      }}
+                      className="text-xs text-rose-500 font-bold hover:text-rose-700 transition-colors cursor-pointer"
+                    >
+                      Remover
+                    </button>
+                  )}
                 </div>
-                <div className="flex flex-col md:flex-row gap-6 items-start w-full">
-                  <div className="flex flex-wrap gap-3 w-full md:w-[45%]">
+
+                {/* Nome */}
+                <div className="space-y-2 flex-1 w-full">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Nome completo{" "}
+                    <span className="text-rose-300 text-base">*</span>
+                  </label>
+                  <input
+                    required
+                    pattern=".*\s+\S.*"
+                    title="Nome completo deve conter pelo menos nome e sobrenome."
+                    placeholder="Ex: João Silva da Rocha"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        name: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Linha 2: Tipo + Documento + Celular (documentos/contato) */}
+              <div className="flex flex-col md:flex-row gap-6 items-start">
+                <div className="space-y-2 w-full md:w-48">
+                  <GeologSearchableSelect
+                    label="Tipo"
+                    options={tipoDocumentoOptions}
+                    value={formData.tipo_documento}
+                    onChange={(value) =>
+                      setFormData({
+                        ...formData,
+                        tipo_documento: value as "cpf" | "passaporte",
+                        cpf: formatDocumento(
+                          formData.cpf,
+                          value as "cpf" | "passaporte",
+                        ),
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2 w-full md:w-40">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    {getDocumentoLabel(formData.tipo_documento)}{" "}
+                    <span className="text-rose-300 text-base">*</span>
+                  </label>
+                  <input
+                    required
+                    pattern={
+                      formData.tipo_documento === "cpf"
+                        ? "\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}"
+                        : undefined
+                    }
+                    title={
+                      formData.tipo_documento === "cpf"
+                        ? "CPF incompleto. Use o formato 000.000.000-00"
+                        : undefined
+                    }
+                    placeholder={getDocumentoPlaceholder(
+                      formData.tipo_documento,
+                    )}
+                    value={formData.cpf}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        cpf: formatDocumento(
+                          e.target.value,
+                          formData.tipo_documento,
+                        ),
+                      })
+                    }
+                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2 w-full md:w-44">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Celular <span className="text-rose-300 text-base">*</span>
+                  </label>
+                  <input
+                    required
+                    title="Celular incompleto. Use o formato (00) 00000-0000"
+                    placeholder="(00) 9XXXX-XXXX"
+                    value={formatCelular(formData.celular)}
+                    onChange={(e) => {
+                      const digitsOnly = e.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, 11);
+                      setFormData({ ...formData, celular: digitsOnly });
+                    }}
+                    className={`w-full px-4 py-4 bg-slate-50 border-2 rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white transition-all shadow-sm ${
+                      formData.celular && !validateCelular(formData.celular)
+                        ? "border-red-500 focus:border-red-500"
+                        : "border-slate-200 focus:border-blue-600"
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Linha 3: Vínculo (tipo de contratação) */}
+              <div className="space-y-3">
+                <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                  Tipo de Vínculo{" "}
+                  <span className="text-rose-300 text-base">*</span>
+                </label>
+                <div className="flex flex-col md:flex-row gap-4 items-start w-full">
+                  <div className="flex flex-wrap gap-3 w-full md:flex-1">
                     <button
                       type="button"
                       onClick={() =>
@@ -2366,26 +2578,24 @@ export default function MotoristasPage() {
                     </button>
                   </div>
 
-                  <div className="flex-[1.5] w-full min-h-[84px]">
-                    {formData.vinculo_tipo === "parceiro" && (
-                      <div className="w-full animate-in fade-in slide-in-from-left-2 duration-300">
-                        <GeologSearchableSelect
-                          label=""
-                          options={parceiroOptions}
-                          value={formData.parceiro_id}
-                          onChange={(value) =>
-                            setFormData({
-                              ...formData,
-                              parceiro_id: value,
-                              vehicle_ids: [],
-                            })
-                          }
-                          placeholder="Selecione o parceiro de serviço..."
-                          onQuickAdd={handleQuickParceiroOpen}
-                        />
-                      </div>
-                    )}
-                  </div>
+                  {formData.vinculo_tipo === "parceiro" && (
+                    <div className="w-full md:flex-[1.5] min-h-[84px] animate-in fade-in slide-in-from-left-2 duration-300">
+                      <GeologSearchableSelect
+                        label=""
+                        options={parceiroOptions}
+                        value={formData.parceiro_id}
+                        onChange={(value) =>
+                          setFormData({
+                            ...formData,
+                            parceiro_id: value,
+                            vehicle_ids: [],
+                          })
+                        }
+                        placeholder="Selecione o parceiro de serviço..."
+                        onQuickAdd={handleQuickParceiroOpen}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </section>

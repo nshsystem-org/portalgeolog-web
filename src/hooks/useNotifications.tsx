@@ -185,7 +185,8 @@ function showNativeNotification(notif: AppNotification): void {
   if (!("Notification" in window)) return;
   if (Notification.permission !== "granted") return;
 
-  const body = `${notif.created_by_name ? notif.created_by_name + ": " : ""}${notif.message}`;
+  const cleanMessage = notif.message.replace(/\s*\[OS_ID:[a-f0-9-]+\]/gi, "");
+  const body = `${notif.created_by_name ? notif.created_by_name + ": " : ""}${cleanMessage}`;
   const icon = getThumbnailUrl(notif.created_by_avatar_url, 100) || "/logo.png";
 
   const native = new Notification(notif.title, {

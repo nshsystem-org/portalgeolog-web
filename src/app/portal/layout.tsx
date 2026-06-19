@@ -47,7 +47,7 @@ import AnnouncementBanner from "@/components/AnnouncementBanner";
 import { ChatWidget } from "@/components/chat/ChatWidget";
 import { getThumbnailUrl } from "@/utils/avatar";
 
-function extractNotificationProtocolo(message: string): {
+function extractNotificationProtocolo(message: string, metadata?: Record<string, unknown> | null): {
   protocolo: string | null;
   cleanMessage: string;
 } {
@@ -90,7 +90,7 @@ function extractNotificationProtocolo(message: string): {
     osMatch?.[1] ??
     protocoloMatch?.[1] ??
     quotesMatch?.[1] ??
-    null;
+    (typeof metadata?.protocolo === "string" ? metadata.protocolo : null);
   return { protocolo, cleanMessage };
 }
 
@@ -717,6 +717,7 @@ export default function DashboardLayout({
                       filteredNotifications.map((notification) => {
                         const { protocolo } = extractNotificationProtocolo(
                           notification.message,
+                          notification.metadata,
                         );
 
                         const chips = notification.metadata?.changed_fields_list;
@@ -736,6 +737,18 @@ export default function DashboardLayout({
 
                         const isDriverDelivered = notification.title === "Mensagem entregue ao motorista";
 
+                        const isDriverViewDetails = notification.title === "Motorista visualizou os detalhes do atendimento";
+
+                        const isDriverStart = notification.title === "Rota iniciada";
+                        const isDriverFinish = notification.title === "Rota finalizada";
+                        const isDriverUpdate = notification.title === "Motorista atualizado";
+
+                        const notifCycleKind = notification.metadata?.cycle_kind as string | undefined;
+                        const notifCycleOrdinal = notification.metadata?.cycle_ordinal as number | undefined;
+                        const notifCycleDesc = notifCycleKind
+                          ? `${notifCycleKind.charAt(0).toUpperCase() + notifCycleKind.slice(1)} ${notifCycleOrdinal ?? ""}`.trim()
+                          : null;
+
                         const actionText =
                           notification.title === "Novo atendimento"
                             ? "cadastrou um novo atendimento"
@@ -753,7 +766,21 @@ export default function DashboardLayout({
                                       ? "mensagem enviada ao motorista"
                                       : isDriverDelivered
                                         ? "recebeu a mensagem com sucesso"
-                                        : notification.title.toLowerCase();
+                                        : isDriverViewDetails
+                                          ? notifCycleDesc
+                                            ? `visualizou os detalhes do atendimento (${notifCycleDesc})`
+                                            : "visualizou os detalhes do atendimento"
+                                          : isDriverStart
+                                            ? notifCycleDesc
+                                              ? `iniciou a rota do ${notifCycleDesc}`
+                                              : "iniciou a rota"
+                                            : isDriverFinish
+                                              ? notifCycleDesc
+                                                ? `finalizou a rota do ${notifCycleDesc}`
+                                                : "finalizou a rota"
+                                              : isDriverUpdate
+                                                ? notification.message
+                                                : notification.title.toLowerCase();
 
                         return (
                           <div
@@ -833,6 +860,8 @@ export default function DashboardLayout({
                                   return { icon: RotateCcw, bg: "bg-blue-500", text: "text-white" };
                                 if (t === "Mensagem entregue ao motorista")
                                   return { icon: CheckCircle, bg: "bg-green-500", text: "text-white" };
+                                if (t === "Motorista atualizado")
+                                  return { icon: UserSquare2, bg: "bg-blue-500", text: "text-white" };
                                 switch (notification.type) {
                                   case "success":
                                     return { icon: CheckCircle, bg: "bg-green-500", text: "text-white" };

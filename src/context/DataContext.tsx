@@ -220,6 +220,7 @@ export interface Driver {
   cnh?: string;
   phone?: string;
   email?: string;
+  avatar_url?: string;
   created_at?: string;
   docs?: DriverDoc[];
   docsCount?: number;

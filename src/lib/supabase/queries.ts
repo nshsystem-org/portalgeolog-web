@@ -376,9 +376,9 @@ const PASSAGEIRO_SELECT_COLUMNS =
 const PASSAGEIRO_PAGE_SELECT_COLUMNS =
   "id, nome_completo, email, celular, cpf, notificar, genero";
 const DRIVER_SELECT_COLUMNS =
-  "id, name, cpf, cnh, phone, status, created_at, vinculo_tipo, parceiro_id, driver_vehicles(id, vehicle_id, vehicle:veiculos(id, placa, modelo, marca, tipo)), driver_documents(id)";
+  "id, name, cpf, cnh, phone, status, created_at, vinculo_tipo, parceiro_id, avatar_url, driver_vehicles(id, vehicle_id, vehicle:veiculos(id, placa, modelo, marca, tipo)), driver_documents(id)";
 const DRIVER_PAGE_SELECT_COLUMNS =
-  "id, name, cpf, cnh, phone, status, created_at, vinculo_tipo, parceiro_id, driver_vehicles(id, vehicle_id, vehicle:veiculos(id, placa, modelo, marca, tipo)), driver_documents(id)";
+  "id, name, cpf, cnh, phone, status, created_at, vinculo_tipo, parceiro_id, avatar_url, driver_vehicles(id, vehicle_id, vehicle:veiculos(id, placa, modelo, marca, tipo)), driver_documents(id)";
 const VEICULO_PAGE_SELECT_COLUMNS =
   "id, placa, renavam, modelo, marca, ano, cor, tipo, status, created_at";
 
@@ -575,6 +575,7 @@ type DriverRow = {
   created_at?: string;
   vinculo_tipo?: "interno" | "parceiro" | "autonomo";
   parceiro_id?: string | null;
+  avatar_url?: string | null;
   driver_vehicles?: Array<{
     id: string;
     vehicle_id: string;
@@ -1946,6 +1947,7 @@ export async function fetchDrivers(): Promise<Driver[]> {
       created_at: d.created_at,
       vinculo_tipo: d.vinculo_tipo,
       parceiro_id: d.parceiro_id ?? undefined,
+      avatar_url: d.avatar_url ?? undefined,
       driver_vehicles:
         d.driver_vehicles?.map((dv) => ({
           id: dv.id,
@@ -2000,6 +2002,7 @@ export async function fetchDriversPage({
         created_at: d.created_at,
         vinculo_tipo: d.vinculo_tipo,
         parceiro_id: d.parceiro_id ?? undefined,
+        avatar_url: d.avatar_url ?? undefined,
         driver_vehicles:
           d.driver_vehicles?.map((dv) => ({
             id: dv.id,
