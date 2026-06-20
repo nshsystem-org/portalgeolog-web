@@ -110,7 +110,15 @@ import {
   type CycleOperationalStatus,
   type OperationalCycleState,
 } from "@/lib/os-messages";
-import { getOSLogHighlightTags, getOSLogTone, getOSLogActorKind, getOSLogActorPhrase, TAG_CATEGORY_STYLES, type OSLogHighlightTag, type OSLogType } from "@/lib/os-activity";
+import {
+  getOSLogHighlightTags,
+  getOSLogTone,
+  getOSLogActorKind,
+  getOSLogActorPhrase,
+  TAG_CATEGORY_STYLES,
+  type OSLogHighlightTag,
+  type OSLogType,
+} from "@/lib/os-activity";
 import {
   parseHoraExtraMinutes,
   calcBilledMinutes,
@@ -1269,8 +1277,7 @@ export default function OSOperationalPage() {
             new?: Record<string, unknown> | null;
             old?: Record<string, unknown> | null;
           };
-          const osId =
-            (change.new?.id as string) || (change.old?.id as string);
+          const osId = (change.new?.id as string) || (change.old?.id as string);
           if (!osId) return;
           debouncedRefreshOS(osId);
         },
@@ -1850,9 +1857,7 @@ export default function OSOperationalPage() {
       hora: osItem.hora || "",
       horaExtra: normalizeHoraExtraForInput(osItem.horaExtra),
       noShow: Boolean(osItem.noShow),
-      noShowPercentual: osItem.noShow
-        ? osItem.noShowPercentual ?? 100
-        : null,
+      noShowPercentual: osItem.noShow ? (osItem.noShowPercentual ?? 100) : null,
       os: osItem.os,
       clienteId: osItem.clienteId,
       solicitante: osItem.solicitante,
@@ -2214,9 +2219,7 @@ export default function OSOperationalPage() {
 
     // Validar estado do ciclo antes de enviar mensagem inicial
     const cycles = osData.operationalCycles || [];
-    const targetCycle = cycles.find(
-      (c) => c.itineraryIndex === itineraryIndex,
-    );
+    const targetCycle = cycles.find((c) => c.itineraryIndex === itineraryIndex);
     if (
       targetCycle &&
       (targetCycle.state === "awaiting_finish" ||
@@ -2437,7 +2440,10 @@ export default function OSOperationalPage() {
           },
         });
       } catch (logErr) {
-        console.error("[WhatsApp] Erro ao registrar log driver_notify:", logErr);
+        console.error(
+          "[WhatsApp] Erro ao registrar log driver_notify:",
+          logErr,
+        );
       }
 
       // Atualizar apenas o ciclo específico na tabela de ciclos operacionais
@@ -4365,7 +4371,9 @@ export default function OSOperationalPage() {
 
   const vBruto = formData.valorBruto ?? 0;
   const vCusto = formData.custo ?? 0;
-  const noShowFator = formData.noShow ? ((formData.noShowPercentual ?? 100) / 100) : 1;
+  const noShowFator = formData.noShow
+    ? (formData.noShowPercentual ?? 100) / 100
+    : 1;
 
   // Hora extra sempre conta no cálculo; no-show apenas reduz proporcionalmente o total
   const horaExtraMinutos = parseHoraExtraMinutes(formData.horaExtra);
@@ -4377,8 +4385,12 @@ export default function OSOperationalPage() {
   const totalEfetivoCliente = vBruto + horaExtraClienteValor;
   const totalEfetivoMotorista = vCusto + horaExtraMotoristaValor;
 
-  const currentBaseCobranca = formData.noShow ? totalEfetivoCliente * noShowFator : totalEfetivoCliente;
-  const repasseEfetivo = formData.noShow ? totalEfetivoMotorista * noShowFator : totalEfetivoMotorista;
+  const currentBaseCobranca = formData.noShow
+    ? totalEfetivoCliente * noShowFator
+    : totalEfetivoCliente;
+  const repasseEfetivo = formData.noShow
+    ? totalEfetivoMotorista * noShowFator
+    : totalEfetivoMotorista;
   const currentImposto = currentBaseCobranca * (impostoPercentual / 100);
   const currentLucro = currentBaseCobranca - currentImposto - repasseEfetivo;
 
@@ -4477,7 +4489,8 @@ export default function OSOperationalPage() {
       setFormData((prev) => ({
         ...prev,
         noShow: value === "sim",
-        noShowPercentual: value === "sim" ? prev.noShowPercentual ?? 100 : null,
+        noShowPercentual:
+          value === "sim" ? (prev.noShowPercentual ?? 100) : null,
       }));
       return;
     }
@@ -4666,6 +4679,19 @@ export default function OSOperationalPage() {
             />
           </div>
 
+          {/* Botão Mostrar Rascunhos */}
+          <button
+            onClick={() =>
+              toast.info(
+                "O filtro de Rascunhos ainda está em desenvolvimento.",
+              )
+            }
+            className="flex items-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+          >
+            <FileText size={16} />
+            Rascunho
+          </button>
+
           {/* Botão Mostrar Arquivados */}
           <button
             onClick={() => {
@@ -4696,28 +4722,6 @@ export default function OSOperationalPage() {
             {showArchivedOnly ? "Ocultar" : "Arquivados"}
           </button>
 
-          {/* Botão Filtros Avançados */}
-          <button
-            onClick={() => setShowAdvancedFilters((prev) => !prev)}
-            className={`flex items-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 ${
-              hasActiveAdvancedFilters || showAdvancedFilters
-                ? "bg-blue-50 border-blue-200 text-blue-700"
-                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {hasActiveAdvancedFilters ? (
-              <Filter size={16} />
-            ) : (
-              <FilterX size={16} />
-            )}
-            Filtros
-            {hasActiveAdvancedFilters && (
-              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-[10px] font-black rounded-full">
-                {Object.values(advancedFilters).filter((v) => v !== "").length}
-              </span>
-            )}
-          </button>
-
           {/* Toggle Tabela/Calendário */}
           <div
             className={`flex items-center bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm shrink-0 ${viewMode === "calendar" ? "md:ml-0" : ""}`}
@@ -4729,7 +4733,7 @@ export default function OSOperationalPage() {
               }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm uppercase tracking-widest transition-all cursor-pointer ${
                 viewMode === "table"
-                  ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
+                  ? "bg-emerald-600 text-white shadow-md"
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
               }`}
             >
@@ -4751,6 +4755,29 @@ export default function OSOperationalPage() {
               Calendário
             </button>
           </div>
+
+          {/* Botão Filtros Avançados */}
+          <button
+            onClick={() => setShowAdvancedFilters((prev) => !prev)}
+            aria-label="Filtros"
+            title="Filtros"
+            className={`flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 ${
+              hasActiveAdvancedFilters || showAdvancedFilters
+                ? "bg-blue-50 border-blue-200 text-blue-700"
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {hasActiveAdvancedFilters ? (
+              <Filter size={16} />
+            ) : (
+              <FilterX size={16} />
+            )}
+            {hasActiveAdvancedFilters && (
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-[10px] font-black rounded-full">
+                {Object.values(advancedFilters).filter((v) => v !== "").length}
+              </span>
+            )}
+          </button>
 
           {/* Botão Nova OS */}
           <button
@@ -6049,7 +6076,9 @@ export default function OSOperationalPage() {
                       </div>
                     </div>
 
-                    <div className={`flex items-end gap-6 pt-4 px-6 pb-8 rounded-[1.5rem] border transition-all duration-300 mb-[-2rem] ${formData.noShow ? "bg-red-50 border-red-200 shadow-sm" : "border-transparent"}`}>
+                    <div
+                      className={`flex items-end gap-6 pt-4 px-6 pb-8 rounded-[1.5rem] border transition-all duration-300 mb-[-2rem] ${formData.noShow ? "bg-red-50 border-red-200 shadow-sm" : "border-transparent"}`}
+                    >
                       <div className="flex flex-col gap-2 w-full sm:w-[120px]">
                         <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
                           NO-SHOW
@@ -6064,7 +6093,10 @@ export default function OSOperationalPage() {
                             <option value="nao">Não</option>
                             <option value="sim">Sim</option>
                           </select>
-                          <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          <ChevronDown
+                            size={18}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                          />
                         </div>
                       </div>
 
@@ -6090,21 +6122,29 @@ export default function OSOperationalPage() {
                               <option value="50">50%</option>
                               <option value="100">100%</option>
                             </select>
-                            <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            <ChevronDown
+                              size={18}
+                              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                            />
                           </div>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <div className={`flex flex-col gap-2 transition-all duration-300 ${formData.noShow ? "mt-14" : ""}`}>
+                  <div
+                    className={`flex flex-col gap-2 transition-all duration-300 ${formData.noShow ? "mt-14" : ""}`}
+                  >
                     <button
                       type="button"
                       onClick={() => setShowObsFinanceiras((prev) => !prev)}
                       className="flex items-center justify-between w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl hover:bg-slate-100 transition-all cursor-pointer group"
                     >
                       <div className="flex items-center gap-3">
-                        <MessageSquareMore size={18} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
+                        <MessageSquareMore
+                          size={18}
+                          className="text-slate-400 group-hover:text-blue-500 transition-colors"
+                        />
                         <span className="text-sm font-bold text-slate-800 uppercase tracking-tight">
                           Observações Financeiras
                         </span>
@@ -6152,7 +6192,21 @@ export default function OSOperationalPage() {
                           </p>
                           <div className="flex items-start gap-3 -mt-2">
                             <div className="animate-pulse mt-5">
-                              <svg xmlns="http://www.w3.org/2000/svg" width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-arrow-right opacity-80"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width={32}
+                                height={32}
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="lucide lucide-arrow-right opacity-80"
+                              >
+                                <path d="M5 12h14" />
+                                <path d="m12 5 7 7-7 7" />
+                              </svg>
                             </div>
                             <div className="text-right space-y-2 -mt-1">
                               <span className="text-xs font-black uppercase block tracking-widest opacity-80">
@@ -6162,7 +6216,16 @@ export default function OSOperationalPage() {
                                 {formatCurrency(currentLucro)}
                               </div>
                               <div className="text-xs font-black uppercase tracking-widest opacity-100">
-                                {currentBaseCobranca > 0 ? ((currentLucro / currentBaseCobranca) * 100).toFixed(1) : 0}% <span className="text-[10px] font-medium opacity-70">de lucro</span>
+                                {currentBaseCobranca > 0
+                                  ? (
+                                      (currentLucro / currentBaseCobranca) *
+                                      100
+                                    ).toFixed(1)
+                                  : 0}
+                                %{" "}
+                                <span className="text-[10px] font-medium opacity-70">
+                                  de lucro
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -6179,7 +6242,9 @@ export default function OSOperationalPage() {
 
                               {/* Base */}
                               <div className="flex justify-between items-center text-sm">
-                                <span className="font-medium opacity-90">Valor base do serviço</span>
+                                <span className="font-medium opacity-90">
+                                  Valor base do serviço
+                                </span>
                                 <span className="font-black tabular-nums">
                                   {formData.noShow
                                     ? formatCurrency(totalEfetivoCliente)
@@ -6190,9 +6255,19 @@ export default function OSOperationalPage() {
                               {/* No-show desconto */}
                               {formData.noShow && (
                                 <div className="flex justify-between items-center text-sm">
-                                  <span className="font-medium opacity-80">Desconto NO-SHOW ({formData.noShowPercentual ?? 0}%)</span>
+                                  <span className="font-medium opacity-80">
+                                    Desconto NO-SHOW (
+                                    {formData.noShowPercentual ?? 0}%)
+                                  </span>
                                   <span className="font-black tabular-nums text-red-200">
-                                    -{formatCurrency((formData.noShow ? totalEfetivoCliente : (formData.valorBruto ?? 0)) * ((formData.noShowPercentual ?? 0) / 100))}
+                                    -
+                                    {formatCurrency(
+                                      (formData.noShow
+                                        ? totalEfetivoCliente
+                                        : (formData.valorBruto ?? 0)) *
+                                        ((formData.noShowPercentual ?? 0) /
+                                          100),
+                                    )}
                                   </span>
                                 </div>
                               )}
@@ -6201,8 +6276,12 @@ export default function OSOperationalPage() {
                               {horaExtraBilledMinutes > 0 && (
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="flex items-center gap-1.5 font-medium opacity-90">
-                                    <Clock size={14} className="text-yellow-200" />
-                                    Acréscimo hora extra ({horaExtraBilledLabel})
+                                    <Clock
+                                      size={14}
+                                      className="text-yellow-200"
+                                    />
+                                    Acréscimo hora extra ({horaExtraBilledLabel}
+                                    )
                                   </span>
                                   <span className="font-black tabular-nums text-yellow-200">
                                     +{formatCurrency(horaExtraClienteValor)}
@@ -6212,9 +6291,17 @@ export default function OSOperationalPage() {
 
                               {/* Taxa */}
                               <div className="flex justify-between items-center text-sm">
-                                <span className="font-medium opacity-80">Taxa administrativa ({impostoPercentual}%)</span>
+                                <span className="font-medium opacity-80">
+                                  Taxa administrativa ({impostoPercentual}%)
+                                </span>
                                 <span className="font-black tabular-nums text-red-200">
-                                  -{formatCurrency((formData.noShow ? currentBaseCobranca : totalEfetivoCliente) * (impostoPercentual / 100))}
+                                  -
+                                  {formatCurrency(
+                                    (formData.noShow
+                                      ? currentBaseCobranca
+                                      : totalEfetivoCliente) *
+                                      (impostoPercentual / 100),
+                                  )}
                                 </span>
                               </div>
                             </div>
@@ -6226,7 +6313,9 @@ export default function OSOperationalPage() {
 
                               {/* Base */}
                               <div className="flex justify-between items-center text-sm">
-                                <span className="font-medium opacity-90">Valor base do repasse</span>
+                                <span className="font-medium opacity-90">
+                                  Valor base do repasse
+                                </span>
                                 <span className="font-black tabular-nums">
                                   {formData.noShow
                                     ? formatCurrency(totalEfetivoMotorista)
@@ -6237,9 +6326,19 @@ export default function OSOperationalPage() {
                               {/* No-show desconto */}
                               {formData.noShow && (
                                 <div className="flex justify-between items-center text-sm">
-                                  <span className="font-medium opacity-80">Desconto NO-SHOW ({formData.noShowPercentual ?? 0}%)</span>
+                                  <span className="font-medium opacity-80">
+                                    Desconto NO-SHOW (
+                                    {formData.noShowPercentual ?? 0}%)
+                                  </span>
                                   <span className="font-black tabular-nums text-red-200">
-                                    -{formatCurrency((formData.noShow ? totalEfetivoMotorista : (formData.custo ?? 0)) * ((formData.noShowPercentual ?? 0) / 100))}
+                                    -
+                                    {formatCurrency(
+                                      (formData.noShow
+                                        ? totalEfetivoMotorista
+                                        : (formData.custo ?? 0)) *
+                                        ((formData.noShowPercentual ?? 0) /
+                                          100),
+                                    )}
                                   </span>
                                 </div>
                               )}
@@ -6248,8 +6347,12 @@ export default function OSOperationalPage() {
                               {horaExtraBilledMinutes > 0 && (
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="flex items-center gap-1.5 font-medium opacity-90">
-                                    <Clock size={14} className="text-yellow-200" />
-                                    Acréscimo hora extra ({horaExtraBilledLabel})
+                                    <Clock
+                                      size={14}
+                                      className="text-yellow-200"
+                                    />
+                                    Acréscimo hora extra ({horaExtraBilledLabel}
+                                    )
                                   </span>
                                   <span className="font-black tabular-nums text-yellow-200">
                                     +{formatCurrency(horaExtraMotoristaValor)}
@@ -6261,7 +6364,9 @@ export default function OSOperationalPage() {
 
                               {/* Total */}
                               <div className="flex justify-between items-baseline">
-                                <span className="text-xs font-black uppercase tracking-[0.2em] opacity-80">Total a repassar</span>
+                                <span className="text-xs font-black uppercase tracking-[0.2em] opacity-80">
+                                  Total a repassar
+                                </span>
                                 <span className="text-2xl font-black tabular-nums">
                                   {formData.noShow
                                     ? formatCurrency(repasseEfetivo)
@@ -6271,7 +6376,6 @@ export default function OSOperationalPage() {
                             </div>
                           </div>
                         </div>
-
                       </div>
                     </div>
                   </div>
@@ -6774,7 +6878,10 @@ export default function OSOperationalPage() {
                         cycle.acceptedAt
                       )
                         return "awaiting_start";
-                      if (cycle.state === "awaiting_accept" || cycle.messageSentAt)
+                      if (
+                        cycle.state === "awaiting_accept" ||
+                        cycle.messageSentAt
+                      )
                         return "awaiting_accept";
                       return "pending";
                     })();
@@ -6891,9 +6998,7 @@ export default function OSOperationalPage() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setSelectedCycleIndex(
-                                      cycle.itineraryIndex,
-                                    );
+                                    setSelectedCycleIndex(cycle.itineraryIndex);
                                     setShowAcceptRevert(true);
                                   }}
                                   className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
@@ -7064,18 +7169,28 @@ export default function OSOperationalPage() {
                                         <button
                                           type="button"
                                           onClick={async () => {
-                                            const cycles = viewingOS?.operationalCycles ?? [];
+                                            const cycles =
+                                              viewingOS?.operationalCycles ??
+                                              [];
                                             const targetCycle = cycles.find(
-                                              (c) => c.itineraryIndex === cycle.itineraryIndex,
+                                              (c) =>
+                                                c.itineraryIndex ===
+                                                cycle.itineraryIndex,
                                             );
 
                                             if (targetCycle?.messageSentAt) {
                                               let senderName = "usuário";
                                               if (targetCycle.messageSentById) {
-                                                const { data: senderData, error: senderError } = await supabase
+                                                const {
+                                                  data: senderData,
+                                                  error: senderError,
+                                                } = await supabase
                                                   .from("user_roles")
                                                   .select("nome")
-                                                  .eq("id", targetCycle.messageSentById)
+                                                  .eq(
+                                                    "id",
+                                                    targetCycle.messageSentById,
+                                                  )
                                                   .maybeSingle();
                                                 if (senderError) {
                                                   console.error(
@@ -7108,11 +7223,15 @@ export default function OSOperationalPage() {
                                               setResendConfirmInfo(null);
                                             }
 
-                                            setResendConfirmCycleIndex(cycle.itineraryIndex);
+                                            setResendConfirmCycleIndex(
+                                              cycle.itineraryIndex,
+                                            );
                                             setShowResendConfirm(true);
                                             setOpenDriverNotifyMenu(false);
                                             setDriverNotifyMenuPos(null);
-                                            setDriverNotifyTargetCycleIndex(null);
+                                            setDriverNotifyTargetCycleIndex(
+                                              null,
+                                            );
                                           }}
                                           disabled={!!notifyLoadingKey}
                                           className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
@@ -7228,8 +7347,14 @@ export default function OSOperationalPage() {
                         {(() => {
                           const cycleLogs = osLogs.filter((log) => {
                             if (log.os_id !== viewingOS?.id) return false;
-                            const meta = log.metadata as Record<string, unknown> | null;
-                            const logCycleIndex = typeof meta?.cycle_index === "number" ? meta.cycle_index : null;
+                            const meta = log.metadata as Record<
+                              string,
+                              unknown
+                            > | null;
+                            const logCycleIndex =
+                              typeof meta?.cycle_index === "number"
+                                ? meta.cycle_index
+                                : null;
                             return logCycleIndex === cycle.itineraryIndex;
                           });
                           if (cycleLogs.length === 0) return null;
@@ -7237,7 +7362,10 @@ export default function OSOperationalPage() {
                             <div className="mt-4 border-t border-slate-200 pt-4">
                               <details className="group">
                                 <summary className="flex items-center gap-2 cursor-pointer list-none">
-                                  <History size={14} className="text-slate-400 group-open:text-blue-500 transition-colors" />
+                                  <History
+                                    size={14}
+                                    className="text-slate-400 group-open:text-blue-500 transition-colors"
+                                  />
                                   <span className="text-xs font-bold text-slate-500 group-open:text-slate-800 transition-colors">
                                     Histórico do ciclo ({cycleLogs.length})
                                   </span>
@@ -7248,20 +7376,27 @@ export default function OSOperationalPage() {
                                 </summary>
                                 <div className="mt-3 space-y-2 pl-5 border-l-2 border-slate-100 max-h-48 overflow-y-auto pr-2">
                                   {cycleLogs.map((log) => {
-                                    const logTone = getOSLogTone(log.type as OSLogType);
+                                    const logTone = getOSLogTone(
+                                      log.type as OSLogType,
+                                    );
                                     const logDate = new Date(log.created_at);
-                                    const logTime = logDate.toLocaleString("pt-BR", {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    });
+                                    const logTime = logDate.toLocaleString(
+                                      "pt-BR",
+                                      {
+                                        day: "2-digit",
+                                        month: "2-digit",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      },
+                                    );
                                     return (
                                       <div
                                         key={log.id}
                                         className="flex items-start gap-2 text-sm py-1.5 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors px-1.5 -mx-1.5"
                                       >
-                                        <span className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${logTone.dotClass}`} />
+                                        <span
+                                          className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${logTone.dotClass}`}
+                                        />
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-baseline justify-between gap-2">
                                             <p className="font-bold text-slate-700 leading-snug text-sm">
@@ -7275,13 +7410,20 @@ export default function OSOperationalPage() {
                                             <div className="flex items-center gap-1.5 mt-0.5">
                                               {log.actor_avatar_url ? (
                                                 <img
-                                                  src={getThumbnailUrl(log.actor_avatar_url, 40) || ""}
+                                                  src={
+                                                    getThumbnailUrl(
+                                                      log.actor_avatar_url,
+                                                      40,
+                                                    ) || ""
+                                                  }
                                                   alt={log.actor_name}
                                                   className="w-5 h-5 rounded-full object-cover border border-slate-200"
                                                 />
                                               ) : (
                                                 <div className="w-5 h-5 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-white text-[10px] font-black flex items-center justify-center">
-                                                  {log.actor_name.charAt(0).toUpperCase()}
+                                                  {log.actor_name
+                                                    .charAt(0)
+                                                    .toUpperCase()}
                                                 </div>
                                               )}
                                               <p className="text-sm text-slate-500">
@@ -7467,7 +7609,9 @@ export default function OSOperationalPage() {
                               </span>
                               <span className="text-[11px] font-bold text-slate-400">
                                 {viewingOS.createdAt
-                                  ? new Date(viewingOS.createdAt).toLocaleString("pt-BR", {
+                                  ? new Date(
+                                      viewingOS.createdAt,
+                                    ).toLocaleString("pt-BR", {
                                       day: "2-digit",
                                       month: "2-digit",
                                       hour: "2-digit",
@@ -7478,11 +7622,16 @@ export default function OSOperationalPage() {
                             </div>
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-slate-700">
                               <span>
-                                <span className="text-slate-400 mr-1">Autor:</span>
-                                {users.find((u) => u.id === viewingOS.createdBy)?.nome || "Sistema"}
+                                <span className="text-slate-400 mr-1">
+                                  Autor:
+                                </span>
+                                {users.find((u) => u.id === viewingOS.createdBy)
+                                  ?.nome || "Sistema"}
                               </span>
                               <span>
-                                <span className="text-slate-400 mr-1">Protocolo:</span>
+                                <span className="text-slate-400 mr-1">
+                                  Protocolo:
+                                </span>
                                 {viewingOS.protocolo || "Não informado"}
                               </span>
                             </div>
@@ -7499,14 +7648,26 @@ export default function OSOperationalPage() {
                           minute: "2-digit",
                         });
                         const tone = getOSLogTone(log.type);
-                        const highlightTags = getOSLogHighlightTags(log.type, log.metadata);
+                        const highlightTags = getOSLogHighlightTags(
+                          log.type,
+                          log.metadata,
+                        );
                         const fullActorName = log.actor_name || "Sistema";
-                        const actorKind = getOSLogActorKind(log.type as never, log.actor_id);
-                        const actorPhrase = getOSLogActorPhrase(log.type as never, log.actor_name || "", log.actor_id);
-                        const actorParts = fullActorName.split(" ").filter(Boolean) || [];
-                        const actorLabel = actorParts.length <= 2 
-                          ? fullActorName 
-                          : `${actorParts[0]} ${actorParts[actorParts.length - 1]}`;
+                        const actorKind = getOSLogActorKind(
+                          log.type as never,
+                          log.actor_id,
+                        );
+                        const actorPhrase = getOSLogActorPhrase(
+                          log.type as never,
+                          log.actor_name || "",
+                          log.actor_id,
+                        );
+                        const actorParts =
+                          fullActorName.split(" ").filter(Boolean) || [];
+                        const actorLabel =
+                          actorParts.length <= 2
+                            ? fullActorName
+                            : `${actorParts[0]} ${actorParts[actorParts.length - 1]}`;
                         const actorInitials = fullActorName
                           .split(" ")
                           .filter(Boolean)
@@ -7516,15 +7677,22 @@ export default function OSOperationalPage() {
                           .toUpperCase();
 
                         return (
-                          <div key={log.id} className="flex items-start gap-4 group">
+                          <div
+                            key={log.id}
+                            className="flex items-start gap-4 group"
+                          >
                             {/* Dot na Timeline */}
-                            <div className={`relative z-10 flex items-center justify-center w-6 h-6 mt-1 ml-4 rounded-full border-4 border-white shadow-sm ${tone.dotClass}`} />
-                            
+                            <div
+                              className={`relative z-10 flex items-center justify-center w-6 h-6 mt-1 ml-4 rounded-full border-4 border-white shadow-sm ${tone.dotClass}`}
+                            />
+
                             {/* Card de Conteúdo */}
                             <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group-hover:shadow-md group-hover:border-slate-300 transition-all duration-200">
                               {/* Header do Card */}
                               <div className="flex items-center justify-between gap-2 mb-3">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${tone.badgeClass}`}>
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${tone.badgeClass}`}
+                                >
                                   {tone.label}
                                 </span>
                                 <div className="text-right">
@@ -7532,7 +7700,12 @@ export default function OSOperationalPage() {
                                     {timeStr}
                                   </span>
                                   <span className="block text-[10px] font-medium text-slate-400">
-                                    por <span className="font-bold text-slate-500">{actorKind === "driver" ? `Motorista ${actorLabel}` : actorLabel}</span>
+                                    por{" "}
+                                    <span className="font-bold text-slate-500">
+                                      {actorKind === "driver"
+                                        ? `Motorista ${actorLabel}`
+                                        : actorLabel}
+                                    </span>
                                   </span>
                                 </div>
                               </div>
@@ -7542,16 +7715,25 @@ export default function OSOperationalPage() {
                                 <div className="flex-shrink-0">
                                   {log.actor_avatar_url ? (
                                     <img
-                                      src={getThumbnailUrl(log.actor_avatar_url, 80) || ""}
+                                      src={
+                                        getThumbnailUrl(
+                                          log.actor_avatar_url,
+                                          80,
+                                        ) || ""
+                                      }
                                       alt={fullActorName}
                                       className="w-10 h-10 rounded-full object-cover border-2 border-slate-50 shadow-sm"
                                     />
                                   ) : actorKind === "driver" ? (
-                                    <span className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white flex items-center justify-center border-2 border-slate-50 shadow-sm`}>
+                                    <span
+                                      className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white flex items-center justify-center border-2 border-slate-50 shadow-sm`}
+                                    >
                                       <Truck size={18} />
                                     </span>
                                   ) : (
-                                    <span className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white text-[10px] font-black flex items-center justify-center border-2 border-slate-50 shadow-sm`}>
+                                    <span
+                                      className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white text-[10px] font-black flex items-center justify-center border-2 border-slate-50 shadow-sm`}
+                                    >
                                       {actorInitials || "S"}
                                     </span>
                                   )}
@@ -7567,8 +7749,12 @@ export default function OSOperationalPage() {
                                   {highlightTags.length > 0 && (
                                     <div className="flex flex-wrap gap-2 pt-1">
                                       {highlightTags.map((tag) => {
-                                        const style = TAG_CATEGORY_STYLES[tag.category];
-                                        const iconMap: Record<OSLogHighlightTag["category"], React.ReactNode> = {
+                                        const style =
+                                          TAG_CATEGORY_STYLES[tag.category];
+                                        const iconMap: Record<
+                                          OSLogHighlightTag["category"],
+                                          React.ReactNode
+                                        > = {
                                           action: <RefreshCw size={10} />,
                                           cycle: <Route size={10} />,
                                           state: <Activity size={10} />,
@@ -7577,16 +7763,32 @@ export default function OSOperationalPage() {
                                           section: <Layers size={10} />,
                                         };
 
-                                        const arrowIdx = tag.label.indexOf(" → ");
-                                        const colonIdx = tag.label.indexOf(": ");
-                                        const hasChange = tag.category === "field" && arrowIdx > 0 && colonIdx > 0;
+                                        const arrowIdx =
+                                          tag.label.indexOf(" → ");
+                                        const colonIdx =
+                                          tag.label.indexOf(": ");
+                                        const hasChange =
+                                          tag.category === "field" &&
+                                          arrowIdx > 0 &&
+                                          colonIdx > 0;
 
                                         if (hasChange) {
-                                          const field = tag.label.slice(0, colonIdx);
-                                          const before = tag.label.slice(colonIdx + 2, arrowIdx);
-                                          const after = tag.label.slice(arrowIdx + 3);
+                                          const field = tag.label.slice(
+                                            0,
+                                            colonIdx,
+                                          );
+                                          const before = tag.label.slice(
+                                            colonIdx + 2,
+                                            arrowIdx,
+                                          );
+                                          const after = tag.label.slice(
+                                            arrowIdx + 3,
+                                          );
                                           return (
-                                            <div key={`${log.id}-${tag.label}`} className="flex flex-col gap-1">
+                                            <div
+                                              key={`${log.id}-${tag.label}`}
+                                              className="flex flex-col gap-1"
+                                            >
                                               <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
                                                 {iconMap.field}
                                                 {field}
@@ -7595,7 +7797,10 @@ export default function OSOperationalPage() {
                                                 <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 border border-rose-100 line-through opacity-80">
                                                   {before}
                                                 </span>
-                                                <ArrowRight size={10} className="text-slate-300" />
+                                                <ArrowRight
+                                                  size={10}
+                                                  className="text-slate-300"
+                                                />
                                                 <span className="inline-flex items-center rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-100 shadow-sm">
                                                   {after}
                                                 </span>
@@ -9398,7 +9603,9 @@ export default function OSOperationalPage() {
             >
               <div
                 className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                  resetReason === "other" ? "border-slate-500" : "border-slate-300"
+                  resetReason === "other"
+                    ? "border-slate-500"
+                    : "border-slate-300"
                 }`}
               >
                 {resetReason === "other" && (
@@ -9456,7 +9663,9 @@ export default function OSOperationalPage() {
                     viewingOS.id,
                     selectedCycleIndex,
                     resetReason,
-                    resetReason === "other" ? resetReasonOther.trim() : undefined,
+                    resetReason === "other"
+                      ? resetReasonOther.trim()
+                      : undefined,
                     resetReason === "km_correction" ? kmResetTarget : null,
                   );
                   setShowAcceptRevert(false);
@@ -9509,7 +9718,9 @@ export default function OSOperationalPage() {
                   </span>
                   <span className="text-amber-600"> — </span>
                   por{" "}
-                  <span className="font-black">{resendConfirmInfo.userName}</span>
+                  <span className="font-black">
+                    {resendConfirmInfo.userName}
+                  </span>
                 </p>
               </div>
             )}
