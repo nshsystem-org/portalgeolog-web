@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildOperationalCyclesFromWaypoints,
   findOperationalCycleByIndex,
+  getOperationalCycleTitle,
   type OperationalCycle,
 } from "@/lib/os-messages";
 
@@ -53,7 +54,7 @@ const mapRowToOperationalCycle = (
   sequenceOrder: row.sequence_order,
   kind: row.kind,
   ordinal: row.ordinal,
-  title: row.title,
+  title: getOperationalCycleTitle({ kind: row.kind, ordinal: row.ordinal }),
   state: row.state,
   messageSentAt: row.message_sent_at,
   messageSentById: row.message_sent_by_id,

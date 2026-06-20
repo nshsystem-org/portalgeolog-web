@@ -16,6 +16,7 @@ import type {
 import {
   buildOperationalCyclesFromWaypoints,
   deriveCyclesOperationalStatus,
+  getOperationalCycleTitle,
   type OperationalCycle,
 } from "@/lib/os-messages";
 import {
@@ -1771,7 +1772,7 @@ export async function updateOSInDB(
       sequenceOrder: cycle.sequence_order,
       kind: cycle.kind,
       ordinal: cycle.ordinal,
-      title: cycle.title,
+      title: getOperationalCycleTitle({ kind: cycle.kind, ordinal: cycle.ordinal }),
       state: cycle.state,
       messageSentAt: cycle.message_sent_at,
       acceptedAt: cycle.accepted_at,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import StandardModal from "@/components/StandardModal";
 import {
@@ -46,6 +46,7 @@ import {
 } from "@/lib/phone";
 import { fetchDriversPage } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
+import { getThumbnailUrl } from "@/utils/avatar";
 
 interface DriverVehicle {
   id: string;
@@ -407,6 +408,21 @@ export default function MotoristasPage() {
     if (hasActiveAdvancedFilters) return clientPaginatedItems;
     return driversTable.items;
   }, [hasActiveAdvancedFilters, clientPaginatedItems, driversTable.items]);
+
+  const preloadedDriverAvatarsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const avatarUrls = tableItems
+      .map((d) => d.avatar_url)
+      .filter((url): url is string => typeof url === "string" && url.length > 0)
+      .filter((url) => !preloadedDriverAvatarsRef.current.has(url));
+
+    avatarUrls.forEach((url) => {
+      const img = document.createElement("img");
+      img.src = getThumbnailUrl(url, 100) || url;
+      preloadedDriverAvatarsRef.current.add(url);
+    });
+  }, [tableItems]);
 
   const tableTotalCount = useMemo(() => {
     if (hasActiveAdvancedFilters) return filteredDrivers.length;
@@ -1526,7 +1542,7 @@ export default function MotoristasPage() {
               <div className="flex items-center gap-3">
                 {item.avatar_url ? (
                   <img
-                    src={item.avatar_url}
+                    src={getThumbnailUrl(item.avatar_url, 100) || item.avatar_url}
                     alt={item.name}
                     className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm flex-shrink-0"
                   />
@@ -1710,7 +1726,7 @@ export default function MotoristasPage() {
           title="Novo Motorista"
           subtitle="Cadastro de condutor para a frota Geolog"
           icon={<UserPlus size={24} />}
-          maxWidthClassName="max-w-6xl"
+          maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-12"
         >
           <form onSubmit={handleAddDriver} noValidate className="space-y-12">
@@ -1728,7 +1744,7 @@ export default function MotoristasPage() {
                 </h3>
               </div>
 
-              {/* Linha 1: Avatar + Nome (identidade) */}
+              {/* Linha 1: Avatar + Nome + Tipo + Documento + Celular */}
               <div className="flex flex-col md:flex-row gap-6 items-start">
                 {/* Avatar */}
                 <div className="flex flex-col items-center gap-2 flex-shrink-0">
@@ -1784,7 +1800,7 @@ export default function MotoristasPage() {
                 </div>
 
                 {/* Nome */}
-                <div className="space-y-2 flex-1 w-full">
+                <div className="space-y-2 w-full md:flex-1">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
                     Nome completo{" "}
                     <span className="text-rose-300 text-base">*</span>
@@ -1801,16 +1817,17 @@ export default function MotoristasPage() {
                         name: e.target.value.toUpperCase(),
                       })
                     }
-                    className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm h-14"
                   />
                 </div>
-              </div>
 
-              {/* Linha 2: Tipo + Documento + Celular (documentos/contato) */}
-              <div className="flex flex-col md:flex-row gap-6 items-start">
-                <div className="space-y-2 w-full md:w-48">
+                {/* Tipo */}
+                <div className="space-y-2 w-full md:w-40">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1 mt-[3px]">
+                    Tipo{" "}
+                    <span className="text-rose-300 text-base">*</span>
+                  </label>
                   <GeologSearchableSelect
-                    label="Tipo"
                     options={tipoDocumentoOptions}
                     value={formData.tipo_documento}
                     onChange={(value) =>
@@ -1823,9 +1840,11 @@ export default function MotoristasPage() {
                         ),
                       })
                     }
-                    required
+                    triggerClassName="px-4 py-4 text-base h-14 -mt-[8px]"
                   />
                 </div>
+
+                {/* Documento */}
                 <div className="space-y-2 w-full md:w-40">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
                     {getDocumentoLabel(formData.tipo_documento)}{" "}
@@ -1856,7 +1875,7 @@ export default function MotoristasPage() {
                         ),
                       })
                     }
-                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm h-14"
                   />
                 </div>
                 <div className="space-y-2 w-full md:w-44">
@@ -1876,7 +1895,7 @@ export default function MotoristasPage() {
                         .slice(0, 11);
                       setFormData({ ...formData, celular: digitsOnly });
                     }}
-                    className={`w-full px-4 py-4 bg-slate-50 border-2 rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white transition-all shadow-sm ${
+                    className={`w-full px-4 py-4 bg-slate-50 border-2 rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white transition-all shadow-sm h-14 ${
                       formData.celular && !validateCelular(formData.celular)
                         ? "border-red-500 focus:border-red-500"
                         : "border-slate-200 focus:border-blue-600"
@@ -1903,7 +1922,7 @@ export default function MotoristasPage() {
                           tipo_documento: "cpf",
                         })
                       }
-                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
+                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 h-14 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
                         formData.vinculo_tipo === "interno"
                           ? "bg-blue-600 border-blue-600 text-white shadow-md"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600"
@@ -1921,7 +1940,7 @@ export default function MotoristasPage() {
                           tipo_documento: "cpf",
                         })
                       }
-                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
+                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 h-14 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
                         formData.vinculo_tipo === "autonomo"
                           ? "bg-amber-500 border-amber-500 text-white shadow-md"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:border-amber-300 hover:text-amber-600"
@@ -1939,7 +1958,7 @@ export default function MotoristasPage() {
                           tipo_documento: "cpf",
                         })
                       }
-                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
+                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 h-14 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
                         formData.vinculo_tipo === "parceiro"
                           ? "bg-teal-500 border-teal-500 text-white shadow-md"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:border-teal-300 hover:text-teal-600"
@@ -1964,6 +1983,7 @@ export default function MotoristasPage() {
                         }
                         placeholder="Selecione o parceiro de serviço..."
                         onQuickAdd={handleQuickParceiroOpen}
+                        triggerClassName="h-14"
                       />
                     </div>
                   )}
@@ -2334,7 +2354,7 @@ export default function MotoristasPage() {
           title="Editar Motorista"
           subtitle={`Editando: ${editingDriver.name}`}
           icon={<Edit2 size={24} />}
-          maxWidthClassName="max-w-6xl"
+          maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-12"
         >
           <form onSubmit={handleEditDriver} noValidate className="space-y-12">
@@ -2352,7 +2372,7 @@ export default function MotoristasPage() {
                 </h3>
               </div>
 
-              {/* Linha 1: Avatar + Nome (identidade) */}
+              {/* Linha 1: Avatar + Nome + Tipo + Documento + Celular */}
               <div className="flex flex-col md:flex-row gap-6 items-start">
                 {/* Avatar */}
                 <div className="flex flex-col items-center gap-2 flex-shrink-0">
@@ -2415,7 +2435,7 @@ export default function MotoristasPage() {
                 </div>
 
                 {/* Nome */}
-                <div className="space-y-2 flex-1 w-full">
+                <div className="space-y-2 w-full md:flex-1">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
                     Nome completo{" "}
                     <span className="text-rose-300 text-base">*</span>
@@ -2432,16 +2452,17 @@ export default function MotoristasPage() {
                         name: e.target.value.toUpperCase(),
                       })
                     }
-                    className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm h-14"
                   />
                 </div>
-              </div>
 
-              {/* Linha 2: Tipo + Documento + Celular (documentos/contato) */}
-              <div className="flex flex-col md:flex-row gap-6 items-start">
-                <div className="space-y-2 w-full md:w-48">
+                {/* Tipo */}
+                <div className="space-y-2 w-full md:w-40">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1 mt-[3px]">
+                    Tipo{" "}
+                    <span className="text-rose-300 text-base">*</span>
+                  </label>
                   <GeologSearchableSelect
-                    label="Tipo"
                     options={tipoDocumentoOptions}
                     value={formData.tipo_documento}
                     onChange={(value) =>
@@ -2454,9 +2475,11 @@ export default function MotoristasPage() {
                         ),
                       })
                     }
-                    required
+                    triggerClassName="px-4 py-4 text-base h-14 -mt-[8px]"
                   />
                 </div>
+
+                {/* Documento */}
                 <div className="space-y-2 w-full md:w-40">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
                     {getDocumentoLabel(formData.tipo_documento)}{" "}
@@ -2487,7 +2510,7 @@ export default function MotoristasPage() {
                         ),
                       })
                     }
-                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm h-14"
                   />
                 </div>
                 <div className="space-y-2 w-full md:w-44">
@@ -2505,7 +2528,7 @@ export default function MotoristasPage() {
                         .slice(0, 11);
                       setFormData({ ...formData, celular: digitsOnly });
                     }}
-                    className={`w-full px-4 py-4 bg-slate-50 border-2 rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white transition-all shadow-sm ${
+                    className={`w-full px-4 py-4 bg-slate-50 border-2 rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white transition-all shadow-sm h-14 ${
                       formData.celular && !validateCelular(formData.celular)
                         ? "border-red-500 focus:border-red-500"
                         : "border-slate-200 focus:border-blue-600"
@@ -2532,7 +2555,7 @@ export default function MotoristasPage() {
                           tipo_documento: "cpf",
                         })
                       }
-                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
+                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 h-14 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
                         formData.vinculo_tipo === "interno"
                           ? "bg-blue-600 border-blue-600 text-white shadow-md"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600"
@@ -2550,7 +2573,7 @@ export default function MotoristasPage() {
                           tipo_documento: "cpf",
                         })
                       }
-                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
+                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 h-14 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
                         formData.vinculo_tipo === "autonomo"
                           ? "bg-amber-500 border-amber-500 text-white shadow-md"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:border-amber-300 hover:text-amber-600"
@@ -2568,7 +2591,7 @@ export default function MotoristasPage() {
                           tipo_documento: "cpf",
                         })
                       }
-                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 py-4 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
+                      className={`cursor-pointer flex items-center justify-center gap-2 px-4 h-14 rounded-xl border-2 font-black text-sm uppercase tracking-widest transition-all whitespace-nowrap ${
                         formData.vinculo_tipo === "parceiro"
                           ? "bg-teal-500 border-teal-500 text-white shadow-md"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:border-teal-300 hover:text-teal-600"
@@ -2593,6 +2616,7 @@ export default function MotoristasPage() {
                         }
                         placeholder="Selecione o parceiro de serviço..."
                         onQuickAdd={handleQuickParceiroOpen}
+                        triggerClassName="h-14"
                       />
                     </div>
                   )}

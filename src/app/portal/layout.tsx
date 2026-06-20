@@ -46,6 +46,15 @@ import AnnouncementModal from "@/components/AnnouncementModal";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import { ChatWidget } from "@/components/chat/ChatWidget";
 import { getThumbnailUrl } from "@/utils/avatar";
+import { getOperationalCycleTitle } from "@/lib/os-messages";
+
+function formatShortName(fullName: string | null | undefined): string {
+  if (!fullName) return "";
+  const parts = fullName.split(" ").filter(Boolean);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1]}`;
+}
 
 function extractNotificationProtocolo(message: string, metadata?: Record<string, unknown> | null): {
   protocolo: string | null;
@@ -130,6 +139,23 @@ export default function DashboardLayout({
     if (notificationFilter === "read") return notifications.filter((n) => n.read);
     return notifications;
   }, [notifications, notificationFilter]);
+
+  const preloadedAvatarsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!showNotifications) return;
+
+    const avatarUrls = filteredNotifications
+      .map((n) => n.created_by_avatar_url)
+      .filter((url): url is string => Boolean(url) && !preloadedAvatarsRef.current.has(url));
+
+    avatarUrls.forEach((url) => {
+      const img = document.createElement("img");
+      img.src = getThumbnailUrl(url, 100) || url;
+      preloadedAvatarsRef.current.add(url);
+    });
+  }, [showNotifications, filteredNotifications]);
+
   const [showEmployees, setShowEmployees] = useState(false);
   const [announcementStep, setAnnouncementStep] = useState<
     "intro" | "explanation" | "closed"
@@ -746,8 +772,12 @@ export default function DashboardLayout({
                         const notifCycleKind = notification.metadata?.cycle_kind as string | undefined;
                         const notifCycleOrdinal = notification.metadata?.cycle_ordinal as number | undefined;
                         const notifCycleDesc = notifCycleKind
-                          ? `${notifCycleKind.charAt(0).toUpperCase() + notifCycleKind.slice(1)} ${notifCycleOrdinal ?? ""}`.trim()
+                          ? getOperationalCycleTitle({
+                              kind: notifCycleKind as "itinerary" | "return",
+                              ordinal: (notifCycleOrdinal ?? 1) as number,
+                            }).replace(" - ", " ")
                           : null;
+                        const notifCycleIsReturn = notifCycleKind === "return";
 
                         const actionText =
                           notification.title === "Novo atendimento"
@@ -768,19 +798,68 @@ export default function DashboardLayout({
                                         ? "recebeu a mensagem com sucesso"
                                         : isDriverViewDetails
                                           ? notifCycleDesc
-                                            ? `visualizou os detalhes do atendimento (${notifCycleDesc})`
+                                            ? "visualizou os detalhes do atendimento"
                                             : "visualizou os detalhes do atendimento"
                                           : isDriverStart
                                             ? notifCycleDesc
-                                              ? `iniciou a rota do ${notifCycleDesc}`
+                                              ? "iniciou a rota do"
                                               : "iniciou a rota"
                                             : isDriverFinish
                                               ? notifCycleDesc
-                                                ? `finalizou a rota do ${notifCycleDesc}`
+                                                ? "finalizou a rota do"
                                                 : "finalizou a rota"
                                               : isDriverUpdate
                                                 ? notification.message
                                                 : notification.title.toLowerCase();
+
+                        const renderActionContent = () => {
+                          const kmText = (() => {
+                            if (isDriverStart && notification.metadata?.km_initial) {
+                              return ` com KM inicial ${notification.metadata.km_initial}`;
+                            }
+                            if (isDriverFinish && notification.metadata?.km_final) {
+                              return ` com KM final ${notification.metadata.km_final}`;
+                            }
+                            return "";
+                          })();
+
+                          if (isDriverViewDetails && notifCycleDesc) {
+                            return (
+                              <>
+                                {actionText}{" "}
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                                    notifCycleIsReturn
+                                      ? "bg-purple-50 text-purple-700 border-purple-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
+                                  }`}
+                                >
+                                  {notifCycleDesc}
+                                </span>
+                              </>
+                            );
+                          }
+
+                          if ((isDriverStart || isDriverFinish) && notifCycleDesc) {
+                            return (
+                              <>
+                                {actionText}{" "}
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                                    notifCycleIsReturn
+                                      ? "bg-purple-50 text-purple-700 border-purple-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
+                                  }`}
+                                >
+                                  {notifCycleDesc}
+                                </span>
+                                {kmText}
+                              </>
+                            );
+                          }
+
+                          return <>{actionText}</>;
+                        };
 
                         return (
                           <div
@@ -879,12 +958,12 @@ export default function DashboardLayout({
                                   {notification.created_by_avatar_url ? (
                                     <img
                                       src={getThumbnailUrl(notification.created_by_avatar_url, 100) || ""}
-                                      alt={notification.created_by_name || ""}
+                                      alt={formatShortName(notification.created_by_name)}
                                       className="w-14 h-14 rounded-full object-cover border border-slate-200"
                                     />
                                   ) : (
                                     <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white text-lg font-black flex items-center justify-center">
-                                      {notification.created_by_name?.charAt(0).toUpperCase() || "?"}
+                                      {formatShortName(notification.created_by_name).charAt(0).toUpperCase() || "?"}
                                     </div>
                                   )}
                                   <span className={`absolute -bottom-0.5 -right-0.5 w-6 h-6 ${badgeConfig.bg} ${badgeConfig.text} rounded-full flex items-center justify-center border-2 border-white shadow-sm`}>
@@ -905,11 +984,11 @@ export default function DashboardLayout({
                                         : "text-slate-400"
                                     }`}
                                   >
-                                    {notification.created_by_name}
+                                    {formatShortName(notification.created_by_name)}
                                   </span>
                                 )}
                                 {" "}
-                                <span className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}>{actionText}</span>
+                                <span className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}>{renderActionContent()}</span>
                                 {isDriverNotify && driverShortName && (
                                   <span className="inline-flex items-center gap-1.5 ml-2">
                                     <Truck size={12} className={`${!notification.read ? "text-blue-700" : "text-slate-400"}`} />
