@@ -133,9 +133,180 @@ export type AppDatabase = {
         };
         Relationships: [];
       };
+      docagens: {
+        Row: {
+          id: string;
+          cliente_id: string;
+          centro_custo_id: string | null;
+          solicitante_id: string | null;
+          motorista_id: string | null;
+          veiculo_id: string | null;
+          endereco: string;
+          data_inicio: string;
+          data_fim: string;
+          horario_inicio: string;
+          horario_fim: string;
+          dias_semana: number[];
+          valor_diario: number;
+          custo_diario: number | null;
+          observacao: string | null;
+          status: "ativa" | "cancelada" | "finalizada";
+          created_at: string;
+          created_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          cliente_id: string;
+          centro_custo_id?: string | null;
+          solicitante_id?: string | null;
+          motorista_id?: string | null;
+          veiculo_id?: string | null;
+          endereco?: string;
+          data_inicio?: string;
+          data_fim?: string;
+          horario_inicio?: string;
+          horario_fim?: string;
+          dias_semana?: number[];
+          valor_diario?: number;
+          custo_diario?: number | null;
+          observacao?: string | null;
+          status?: "ativa" | "cancelada" | "finalizada";
+          created_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          cliente_id?: string;
+          centro_custo_id?: string | null;
+          solicitante_id?: string | null;
+          motorista_id?: string | null;
+          veiculo_id?: string | null;
+          endereco?: string;
+          data_inicio?: string;
+          data_fim?: string;
+          horario_inicio?: string;
+          horario_fim?: string;
+          dias_semana?: number[];
+          valor_diario?: number;
+          custo_diario?: number | null;
+          observacao?: string | null;
+          status?: "ativa" | "cancelada" | "finalizada";
+          created_by?: string | null;
+        };
+        Relationships: [];
+      };
+      docagem_instancias: {
+        Row: {
+          id: string;
+          docagem_id: string;
+          data: string;
+          horario_inicio: string;
+          horario_fim: string;
+          endereco: string;
+          motorista_id: string | null;
+          veiculo_id: string | null;
+          valor: number;
+          custo: number | null;
+          status: "pendente" | "finalizada" | "excluida";
+          finalizada_em: string | null;
+          finalizada_por: string | null;
+        };
+        Insert: {
+          id?: string;
+          docagem_id?: string;
+          data?: string;
+          horario_inicio?: string;
+          horario_fim?: string;
+          endereco?: string;
+          motorista_id?: string | null;
+          veiculo_id?: string | null;
+          valor?: number;
+          custo?: number | null;
+          status?: "pendente" | "finalizada" | "excluida";
+        };
+        Update: {
+          id?: string;
+          docagem_id?: string;
+          data?: string;
+          horario_inicio?: string;
+          horario_fim?: string;
+          endereco?: string;
+          motorista_id?: string | null;
+          veiculo_id?: string | null;
+          valor?: number;
+          custo?: number | null;
+          status?: "pendente" | "finalizada" | "excluida";
+        };
+        Relationships: [];
+      };
+      docagem_lancamentos: {
+        Row: {
+          id: string;
+          docagem_instancia_id: string;
+          data: string;
+          cliente_id: string | null;
+          centro_custo_id: string | null;
+          motorista_id: string | null;
+          valor: number;
+          custo: number | null;
+          status: "previsto" | "realizado";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          docagem_instancia_id?: string;
+          data?: string;
+          cliente_id?: string | null;
+          centro_custo_id?: string | null;
+          motorista_id?: string | null;
+          valor?: number;
+          custo?: number | null;
+          status?: "previsto" | "realizado";
+        };
+        Update: {
+          id?: string;
+          docagem_instancia_id?: string;
+          data?: string;
+          cliente_id?: string | null;
+          centro_custo_id?: string | null;
+          motorista_id?: string | null;
+          valor?: number;
+          custo?: number | null;
+          status?: "previsto" | "realizado";
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      criar_docagem: {
+        Args: {
+          p_cliente_id: string;
+          p_centro_custo_id: string | null;
+          p_solicitante_id: string | null;
+          p_motorista_id: string | null;
+          p_veiculo_id: string | null;
+          p_endereco: string;
+          p_data_inicio: string;
+          p_data_fim: string;
+          p_horario_inicio: string;
+          p_horario_fim: string;
+          p_dias_semana: number[];
+          p_valor_diario: number;
+          p_custo_diario: number | null;
+          p_observacao: string | null;
+        };
+        Returns: string;
+      };
+      finalizar_docagem_dia: {
+        Args: { p_instancia_id: string };
+        Returns: string;
+      };
+      alterar_status_docagem_instancia: {
+        Args: { p_instancia_id: string; p_status: string };
+        Returns: void;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

@@ -30,6 +30,34 @@ const worker = {
 
     return handler(request, ctx);
   },
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async scheduled(controller, env, _ctx) {
+    const cronSecret = env.CRON_SECRET;
+    if (!cronSecret) {
+      console.warn("[worker] CRON_SECRET não configurado — pulando cron");
+      return;
+    }
+
+    const url = "https://portalgeolog.com.br/api/cron/os-reminders";
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${cronSecret}`,
+          "content-type": "application/json",
+        },
+      });
+
+      const body = await response.text();
+      console.log(
+        `[worker] Cron os-reminders respondeu ${response.status}: ${body}`,
+      );
+    } catch (error) {
+      console.error("[worker] Erro no cron os-reminders:", error);
+    }
+  },
 };
 
 export default worker;

@@ -45,6 +45,7 @@ import {
   Users,
   AlertTriangle,
   ChevronDown,
+  ChevronRight,
   IdCard,
   Building2,
   Handshake,
@@ -69,6 +70,7 @@ import {
   Edit3,
   Gauge,
   Layers,
+  Package,
 } from "lucide-react";
 import {
   useData,
@@ -85,6 +87,18 @@ import {
   type OSLog,
   type OSPageFilters,
 } from "@/lib/supabase/queries";
+import {
+  createDocagem,
+  fetchDocagemInstancesByRange,
+  fetchDocagens,
+  finalizarDocagemDia,
+  excluirDocagemDia,
+  reativarDocagemDia,
+  cancelarDocagem,
+  type DocagemInstance,
+  type DocagemInput,
+  type DocagemSummary,
+} from "@/lib/supabase/docagem-queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import GeologDateInput from "@/components/ui/GeologDateInput";
@@ -565,6 +579,38 @@ export default function OSOperationalPage() {
   const [calendarOSList, setCalendarOSList] = useState<OrderService[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarHasLoaded, setCalendarHasLoaded] = useState(false);
+  const [docagemInstances, setDocagemInstances] = useState<DocagemInstance[]>(
+    [],
+  );
+  const [docagemList, setDocagemList] = useState<DocagemSummary[]>([]);
+  const [docagemListLoading, setDocagemListLoading] = useState(false);
+  const [docagemListFilter, setDocagemListFilter] = useState<
+    "all" | "os" | "docagem" | "rascunho"
+  >("all");
+  const [isDocagemModalOpen, setIsDocagemModalOpen] = useState(false);
+  const [isAttendanceChoiceModalOpen, setIsAttendanceChoiceModalOpen] =
+    useState(false);
+  const [docagemFormData, setDocagemFormData] = useState<DocagemInput>({
+    clienteId: "",
+    centroCustoId: null,
+    solicitanteId: null,
+    motoristaId: null,
+    veiculoId: null,
+    endereco: "",
+    dataInicio: "",
+    dataFim: "",
+    horarioInicio: "",
+    horarioFim: "",
+    diasSemana: [1, 2, 3, 4, 5],
+    valorDiario: 0,
+    custoDiario: null,
+    observacao: null,
+  });
+  const [docagemMenuTarget, setDocagemMenuTarget] = useState<{
+    id: string;
+    position: { x: number; y: number };
+  } | null>(null);
+  const [isSubmittingDocagem, setIsSubmittingDocagem] = useState(false);
   const [users, setUsers] = useState<{ id: string; nome: string }[]>([]);
 
   const [driverNotificationSentByOS, setDriverNotificationSentByOS] = useState<
@@ -701,6 +747,8 @@ export default function OSOperationalPage() {
   );
 
   const filteredCalendarOSList = useMemo(() => {
+    if (docagemListFilter === "docagem" || docagemListFilter === "rascunho")
+      return [];
     return calendarOSList.filter((item) => {
       const clienteNome =
         clientes.find((c) => c.id === item.clienteId)?.nome || "";
@@ -799,7 +847,23 @@ export default function OSOperationalPage() {
     advancedFilters,
     getOperationalStatusForOS,
     showArchivedOnly,
+    docagemListFilter,
   ]);
+
+  const filteredCalendarDocagemInstances = useMemo(() => {
+    if (docagemListFilter === "os" || docagemListFilter === "rascunho")
+      return [];
+    const searchValue = osTable.searchTerm.toLowerCase().trim();
+    return docagemInstances.filter((item) => {
+      const clienteNome =
+        clientes.find((c) => c.id === item.clienteId)?.nome || "";
+      return (
+        searchValue === "" ||
+        clienteNome.toLowerCase().includes(searchValue) ||
+        item.endereco.toLowerCase().includes(searchValue)
+      );
+    });
+  }, [docagemInstances, clientes, osTable.searchTerm, docagemListFilter]);
 
   const syncViewingOS = useCallback(async () => {
     if (!viewingOSId) return;
@@ -1178,21 +1242,26 @@ export default function OSOperationalPage() {
       }, 30000);
 
       try {
-        const data = await fetchOSCalendarRange({
-          from,
-          to,
-          arquivado: showArchivedOnly ? true : undefined,
-        });
-        setCalendarOSList(data);
+        const [osData, docagemData] = await Promise.all([
+          fetchOSCalendarRange({
+            from,
+            to,
+            arquivado: showArchivedOnly ? true : undefined,
+          }),
+          fetchDocagemInstancesByRange({ from, to }),
+        ]);
+        setCalendarOSList(osData);
+        setDocagemInstances(docagemData);
         setCalendarHasLoaded(true);
         logInfo(
           "OS/Calendar",
-          `Calendário carregado: ${data.length} OS no período ${from} a ${to}${showArchivedOnly ? " (arquivadas)" : ""}`,
+          `Calendário carregado: ${osData.length} OS e ${docagemData.length} docagens no período ${from} a ${to}${showArchivedOnly ? " (arquivadas)" : ""}`,
           {
             from,
             to,
             arquivado: showArchivedOnly,
-            totalOS: data.length,
+            totalOS: osData.length,
+            totalDocagem: docagemData.length,
           },
         );
       } catch (err) {
@@ -1228,6 +1297,23 @@ export default function OSOperationalPage() {
     void handleCalendarRangeChange(from, to);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
+
+  const loadDocagemList = useCallback(async () => {
+    setDocagemListLoading(true);
+    try {
+      const data = await fetchDocagens();
+      setDocagemList(data);
+    } catch (err) {
+      console.error("Erro ao carregar docagens:", err);
+      toast.error("Erro ao carregar docagens.");
+    } finally {
+      setDocagemListLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDocagemList();
+  }, [loadDocagemList]);
 
   // Sincronizar calendarOSList com mudanças do osList via Realtime
   useEffect(() => {
@@ -4679,49 +4765,6 @@ export default function OSOperationalPage() {
             />
           </div>
 
-          {/* Botão Mostrar Rascunhos */}
-          <button
-            onClick={() =>
-              toast.info(
-                "O filtro de Rascunhos ainda está em desenvolvimento.",
-              )
-            }
-            className="flex items-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-          >
-            <FileText size={16} />
-            Rascunho
-          </button>
-
-          {/* Botão Mostrar Arquivados */}
-          <button
-            onClick={() => {
-              setIsArchivedFilterLoading(true);
-              setShowArchivedOnly((prev) => !prev);
-            }}
-            className={`flex items-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 ${
-              showArchivedOnly
-                ? "bg-amber-50 border-amber-200 text-amber-700"
-                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect width="20" height="5" x="2" y="3" rx="1"></rect>
-              <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path>
-              <path d="M10 12h4"></path>
-            </svg>
-            {showArchivedOnly ? "Ocultar" : "Arquivados"}
-          </button>
-
           {/* Toggle Tabela/Calendário */}
           <div
             className={`flex items-center bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm shrink-0 ${viewMode === "calendar" ? "md:ml-0" : ""}`}
@@ -4731,7 +4774,7 @@ export default function OSOperationalPage() {
                 logInfo("OS/ViewMode", "Mudou para visualização em tabela");
                 setViewMode("table");
               }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm uppercase tracking-widest transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer ${
                 viewMode === "table"
                   ? "bg-emerald-600 text-white shadow-md"
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -4745,7 +4788,7 @@ export default function OSOperationalPage() {
                 logInfo("OS/ViewMode", "Mudou para visualização em calendário");
                 setViewMode("calendar");
               }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm uppercase tracking-widest transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer ${
                 viewMode === "calendar"
                   ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -4756,12 +4799,91 @@ export default function OSOperationalPage() {
             </button>
           </div>
 
+          {/* Filtro OS/Docagem/Todos */}
+          <div className="group flex items-center bg-white border border-slate-200 rounded-2xl py-1.5 px-0 group-hover:pl-2.5 group-hover:pr-1.5 ml-0 group-hover:ml-4 shadow-sm shrink-0 overflow-hidden transition-all duration-300 ease-out">
+            <ChevronRight
+              className="text-slate-400 shrink-0 transition-all duration-300 ease-out group-hover:max-w-0 group-hover:opacity-0 group-hover:ml-0 group-hover:mr-0 group-hover:rotate-0 max-w-4 ml-2.5 mr-2.5 rotate-180 overflow-hidden"
+              size={14}
+              strokeWidth={2.5}
+            />
+            <button
+              onClick={() => setDocagemListFilter("all")}
+              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out group-hover:ml-[5px] ${
+                docagemListFilter === "all" && !showArchivedOnly
+                  ? "px-3.5 py-2.5 mr-1.5 max-w-[120px] opacity-100 bg-slate-800 text-white shadow-md"
+                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => setDocagemListFilter("os")}
+              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
+                docagemListFilter === "os"
+                  ? "px-3.5 py-2.5 mr-1.5 max-w-[120px] opacity-100 bg-blue-500 text-white shadow-md"
+                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-blue-50"
+              }`}
+            >
+              <Truck className="text-blue-500" size={16} strokeWidth={2.5} />
+              OS
+            </button>
+            <button
+              onClick={() => setDocagemListFilter("docagem")}
+              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
+                docagemListFilter === "docagem"
+                  ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-violet-600 text-white shadow-md"
+                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-violet-50"
+              }`}
+            >
+              <Package className="text-violet-500" size={16} strokeWidth={2.5} />
+              Docagem
+            </button>
+            <button
+              onClick={() =>
+                toast.info(
+                  "O filtro de Rascunhos ainda está em desenvolvimento.",
+                )
+              }
+              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
+                docagemListFilter === "rascunho"
+                  ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-amber-500 text-white shadow-md"
+                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-amber-50"
+              }`}
+            >
+              <FileText className="text-amber-500" size={16} strokeWidth={2.5} />
+              Rascunho
+            </button>
+            <button
+              onClick={() => {
+                setIsArchivedFilterLoading(true);
+                setShowArchivedOnly((prev) => !prev);
+              }}
+              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
+                showArchivedOnly
+                  ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 text-white shadow-md"
+                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-1.5 group-hover:max-w-[140px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-red-50"
+              }`}
+              style={
+                showArchivedOnly
+                  ? { backgroundColor: "rgba(255, 133, 139, 1)" }
+                  : undefined
+              }
+            >
+              <Archive
+                className={showArchivedOnly ? "text-white" : "text-red-500"}
+                size={16}
+                strokeWidth={2.5}
+              />
+              Arquivados
+            </button>
+          </div>
+
           {/* Botão Filtros Avançados */}
           <button
             onClick={() => setShowAdvancedFilters((prev) => !prev)}
             aria-label="Filtros"
             title="Filtros"
-            className={`flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 ${
+            className={`flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 ${
               hasActiveAdvancedFilters || showAdvancedFilters
                 ? "bg-blue-50 border-blue-200 text-blue-700"
                 : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -4779,13 +4901,13 @@ export default function OSOperationalPage() {
             )}
           </button>
 
-          {/* Botão Nova OS */}
+          {/* Botão Novo Atendimento */}
           <button
-            onClick={handleOpenCreateOSModal}
-            className="flex items-center justify-center gap-2 bg-[var(--color-geolog-blue)] text-white px-8 py-3.5 rounded-2xl font-black shadow-lg shadow-blue-900/10 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest shrink-0 w-full md:w-auto cursor-pointer whitespace-nowrap"
+            onClick={() => setIsAttendanceChoiceModalOpen(true)}
+            className="flex items-center justify-center gap-2 bg-[var(--color-geolog-blue)] text-white px-7 py-3.5 rounded-2xl font-black shadow-lg shadow-blue-900/10 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest shrink-0 w-full md:w-auto cursor-pointer whitespace-nowrap"
           >
             <Plus size={18} strokeWidth={3} />
-            Nova OS
+            Novo Atendimento
           </button>
         </div>
       </div>
@@ -5009,7 +5131,133 @@ export default function OSOperationalPage() {
       {/* Conteúdo: Tabela ou Calendário */}
       {!isArchivedFilterLoading && (
         <>
-          {viewMode === "table" ? (
+          {viewMode === "table" && docagemListFilter === "docagem" ? (
+            <DataTable
+              data={docagemList}
+              loading={docagemListLoading}
+              disableClientSearch
+              columns={[
+                {
+                  key: "cliente",
+                  title: "Cliente",
+                  render: (_value: unknown, item: DocagemSummary) => {
+                    const cliente = clientes.find(
+                      (c) => c.id === item.clienteId,
+                    );
+                    return (
+                      <div className="space-y-1">
+                        <p className="font-black text-base text-slate-800 tracking-tight">
+                          {cliente?.nome || "N/A"}
+                        </p>
+                        <p className="text-sm font-bold text-slate-500">
+                          {item.endereco}
+                        </p>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "periodo",
+                  title: "Período",
+                  align: "center",
+                  render: (_value: unknown, item: DocagemSummary) => (
+                    <div className="text-sm font-bold text-slate-700">
+                      {item.dataInicio} até {item.dataFim}
+                    </div>
+                  ),
+                },
+                {
+                  key: "horario",
+                  title: "Horário",
+                  align: "center",
+                  render: (_value: unknown, item: DocagemSummary) => (
+                    <div className="text-sm font-bold text-slate-700">
+                      {item.horarioInicio} às {item.horarioFim}
+                    </div>
+                  ),
+                },
+                {
+                  key: "dias",
+                  title: "Dias",
+                  align: "center",
+                  render: (_value: unknown, item: DocagemSummary) => {
+                    const labels = [
+                      "Dom",
+                      "Seg",
+                      "Ter",
+                      "Qua",
+                      "Qui",
+                      "Sex",
+                      "Sáb",
+                    ];
+                    const dias = item.diasSemana
+                      .map((d) => labels[d === 7 ? 0 : d])
+                      .join(", ");
+                    return (
+                      <div className="text-sm font-bold text-slate-700">
+                        {dias}
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "valor",
+                  title: "Valor Diário",
+                  align: "right",
+                  render: (_value: unknown, item: DocagemSummary) => (
+                    <div className="text-sm font-black text-slate-800">
+                      R$ {item.valorDiario.toFixed(2)}
+                    </div>
+                  ),
+                },
+                {
+                  key: "acoes",
+                  title: "Ações",
+                  align: "center",
+                  render: (_value: unknown, item: DocagemSummary) => (
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => {
+                          setDocagemList((prev) =>
+                            prev.filter((d) => d.id !== item.id),
+                          );
+                          void cancelarDocagem(item.id).then(() => {
+                            toast.success("Docagem cancelada.");
+                            if (calendarRangeRef.current) {
+                              void handleCalendarRangeChange(
+                                calendarRangeRef.current.from,
+                                calendarRangeRef.current.to,
+                                true,
+                              );
+                            }
+                          });
+                        }}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                        title="Cancelar docagem"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+              searchPlaceholder=""
+              emptyMessage="Nenhuma docagem encontrada."
+              emptyIcon={<Package size={48} />}
+              showHeader={false}
+            />
+          ) : viewMode === "table" && docagemListFilter === "rascunho" ? (
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 p-16 flex flex-col items-center justify-center text-center">
+              <FileText size={48} className="text-slate-300 mb-4" />
+              <p className="text-base font-black text-slate-700">
+                Filtro de rascunhos em desenvolvimento.
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-400">
+                Em breve será possível visualizar e gerenciar os rascunhos de
+                atendimento.
+              </p>
+            </div>
+          ) : viewMode === "table" ? (
             <DataTable
               data={tableItems}
               loading={osTable.loading}
@@ -5338,6 +5586,7 @@ export default function OSOperationalPage() {
             <>
               <OSCalendar
                 osList={filteredCalendarOSList}
+                docagemInstances={filteredCalendarDocagemInstances}
                 clientes={clientes}
                 loading={calendarLoading}
                 hasLoaded={calendarHasLoaded}
@@ -5349,6 +5598,15 @@ export default function OSOperationalPage() {
                 ) => {
                   setOpenActionMenuId(osId);
                   setCalendarMenuPosition(position || null);
+                }}
+                onDocagemEventClick={(
+                  instanceId: string,
+                  position?: { x: number; y: number },
+                ) => {
+                  setDocagemMenuTarget({
+                    id: instanceId,
+                    position: position || { x: 0, y: 0 },
+                  });
                 }}
               />
 
@@ -5448,6 +5706,142 @@ export default function OSOperationalPage() {
                             style={{ color: "rgb(219, 132, 153)" }}
                           />
                           Arquivar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
+              {/* Menu de Ações para Docagem */}
+              {viewMode === "calendar" &&
+                docagemMenuTarget &&
+                (() => {
+                  const instance = docagemInstances.find(
+                    (d) => d.id === docagemMenuTarget.id,
+                  );
+                  if (!instance) return null;
+                  const menuHeight = 220;
+                  const spaceBelow =
+                    window.innerHeight - docagemMenuTarget.position.y;
+                  const shouldOpenUp = spaceBelow < menuHeight + 16;
+                  return (
+                    <div
+                      className="fixed min-w-[220px] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 space-y-1 z-[9999]"
+                      style={{
+                        top: shouldOpenUp
+                          ? docagemMenuTarget.position.y - menuHeight - 8
+                          : docagemMenuTarget.position.y + 8,
+                        left: docagemMenuTarget.position.x,
+                      }}
+                    >
+                      <div className="px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-500 border-b border-slate-100 mb-1">
+                        Docagem - {instance.data}
+                      </div>
+                      {instance.status === "pendente" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await finalizarDocagemDia(instance.id);
+                              toast.success("Dia de docagem finalizado.");
+                              setDocagemMenuTarget(null);
+                              // Recarregar calendário
+                              if (calendarRangeRef.current) {
+                                void handleCalendarRangeChange(
+                                  calendarRangeRef.current.from,
+                                  calendarRangeRef.current.to,
+                                  true,
+                                );
+                              }
+                            } catch (err) {
+                              console.error(err);
+                              toast.error(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Erro ao finalizar dia de docagem.",
+                              );
+                            }
+                          }}
+                          className="group w-full px-4 py-2 text-left text-sm font-bold text-emerald-600 hover:text-emerald-700 rounded-xl bg-emerald-50 hover:bg-emerald-100 flex items-center gap-3 cursor-pointer"
+                        >
+                          <CheckCircle2
+                            size={16}
+                            className="text-emerald-600"
+                          />
+                          Finalizar dia
+                        </button>
+                      )}
+                      {instance.status === "finalizada" && (
+                        <div className="px-4 py-2 text-sm font-bold text-slate-500 flex items-center gap-3">
+                          <CheckCircle2
+                            size={16}
+                            className="text-emerald-600"
+                          />
+                          Finalizado
+                        </div>
+                      )}
+                      {instance.status === "pendente" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await excluirDocagemDia(instance.id);
+                              toast.success("Dia de docagem excluído.");
+                              setDocagemMenuTarget(null);
+                              if (calendarRangeRef.current) {
+                                void handleCalendarRangeChange(
+                                  calendarRangeRef.current.from,
+                                  calendarRangeRef.current.to,
+                                  true,
+                                );
+                              }
+                            } catch (err) {
+                              console.error(err);
+                              toast.error(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Erro ao excluir dia de docagem.",
+                              );
+                            }
+                          }}
+                          className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
+                          style={{ color: "rgb(219, 132, 153)" }}
+                        >
+                          <Trash2
+                            size={16}
+                            style={{ color: "rgb(219, 132, 153)" }}
+                          />
+                          Excluir dia
+                        </button>
+                      )}
+                      {instance.status === "excluida" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await reativarDocagemDia(instance.id);
+                              toast.success("Dia de docagem reativado.");
+                              setDocagemMenuTarget(null);
+                              if (calendarRangeRef.current) {
+                                void handleCalendarRangeChange(
+                                  calendarRangeRef.current.from,
+                                  calendarRangeRef.current.to,
+                                  true,
+                                );
+                              }
+                            } catch (err) {
+                              console.error(err);
+                              toast.error(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Erro ao reativar dia de docagem.",
+                              );
+                            }
+                          }}
+                          className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 rounded-xl hover:bg-blue-50 hover:text-blue-600 flex items-center gap-3 cursor-pointer"
+                        >
+                          <RotateCcw
+                            size={16}
+                            className="text-slate-400 group-hover:text-blue-600"
+                          />
+                          Reativar dia
                         </button>
                       )}
                     </div>
@@ -9787,6 +10181,467 @@ export default function OSOperationalPage() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Modal de escolha: Novo Atendimento */}
+      {isAttendanceChoiceModalOpen && (
+        <StandardModal
+          onClose={() => setIsAttendanceChoiceModalOpen(false)}
+          title="Novo Atendimento"
+          subtitle="Escolha o tipo de atendimento para criar"
+          icon={<Plus className="w-6 h-6 md:w-7 md:h-7" />}
+          maxWidthClassName="max-w-2xl"
+          bodyClassName="p-6 md:p-10"
+          footer={null}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAttendanceChoiceModalOpen(false);
+                handleOpenCreateOSModal();
+              }}
+              className="group flex flex-col items-center gap-5 p-8 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-blue-400 hover:bg-blue-50 hover:shadow-xl hover:shadow-blue-900/5 transition-all active:scale-[0.98]"
+            >
+              <div className="w-20 h-20 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                <Truck size={40} strokeWidth={2} />
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-black text-slate-800 tracking-tight">
+                  OS
+                </h3>
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  Ordem de Serviço única com motorista, rota e passageiros
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsAttendanceChoiceModalOpen(false);
+                setIsDocagemModalOpen(true);
+              }}
+              className="group flex flex-col items-center gap-5 p-8 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-violet-400 hover:bg-violet-50 hover:shadow-xl hover:shadow-violet-900/5 transition-all active:scale-[0.98]"
+            >
+              <div className="w-20 h-20 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center group-hover:bg-violet-600 group-hover:text-white transition-colors">
+                <Package size={40} strokeWidth={2} />
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-black text-slate-800 tracking-tight">
+                  Docagem
+                </h3>
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  OS recorrente fixa em doca com dias da semana e valor diário
+                </p>
+              </div>
+            </button>
+          </div>
+        </StandardModal>
+      )}
+
+      {/* Modal Nova Docagem */}
+      {isDocagemModalOpen && (
+        <StandardModal
+          onClose={() => {
+            setIsDocagemModalOpen(false);
+            setDocagemFormData({
+              clienteId: "",
+              centroCustoId: null,
+              solicitanteId: null,
+              motoristaId: null,
+              veiculoId: null,
+              endereco: "",
+              dataInicio: "",
+              dataFim: "",
+              horarioInicio: "",
+              horarioFim: "",
+              diasSemana: [1, 2, 3, 4, 5],
+              valorDiario: 0,
+              custoDiario: null,
+              observacao: null,
+            });
+          }}
+          title="Nova Docagem"
+          subtitle="Criar OS recorrente (docagem)"
+          icon={<Package className="w-6 h-6 md:w-7 md:h-7" />}
+          maxWidthClassName="max-w-4xl"
+          bodyClassName="p-6 md:p-10 space-y-8"
+          footer={
+            <div className="p-6 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDocagemModalOpen(false);
+                  setDocagemFormData({
+                    clienteId: "",
+                    centroCustoId: null,
+                    solicitanteId: null,
+                    motoristaId: null,
+                    veiculoId: null,
+                    endereco: "",
+                    dataInicio: "",
+                    dataFim: "",
+                    horarioInicio: "",
+                    horarioFim: "",
+                    diasSemana: [1, 2, 3, 4, 5],
+                    valorDiario: 0,
+                    custoDiario: null,
+                    observacao: null,
+                  });
+                }}
+                className="px-6 py-3 text-slate-500 font-black rounded-xl border border-slate-200 hover:bg-white transition-all uppercase tracking-widest text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (isSubmittingDocagem) return;
+                  if (!docagemFormData.clienteId) {
+                    toast.error("Selecione o cliente.");
+                    return;
+                  }
+                  if (!docagemFormData.endereco.trim()) {
+                    toast.error("Informe o endereço / doca.");
+                    return;
+                  }
+                  if (!docagemFormData.dataInicio || !docagemFormData.dataFim) {
+                    toast.error("Informe a data de início e fim.");
+                    return;
+                  }
+                  if (
+                    !docagemFormData.horarioInicio ||
+                    !docagemFormData.horarioFim
+                  ) {
+                    toast.error("Informe o horário de início e fim.");
+                    return;
+                  }
+                  if (docagemFormData.diasSemana.length === 0) {
+                    toast.error("Selecione pelo menos um dia da semana.");
+                    return;
+                  }
+                  if (docagemFormData.valorDiario <= 0) {
+                    toast.error("Informe o valor diário.");
+                    return;
+                  }
+                  setIsSubmittingDocagem(true);
+                  try {
+                    const id = await createDocagem(docagemFormData);
+                    toast.success("Docagem criada com sucesso.");
+                    setIsDocagemModalOpen(false);
+                    setDocagemFormData({
+                      clienteId: "",
+                      centroCustoId: null,
+                      solicitanteId: null,
+                      motoristaId: null,
+                      veiculoId: null,
+                      endereco: "",
+                      dataInicio: "",
+                      dataFim: "",
+                      horarioInicio: "",
+                      horarioFim: "",
+                      diasSemana: [1, 2, 3, 4, 5],
+                      valorDiario: 0,
+                      custoDiario: null,
+                      observacao: null,
+                    });
+                    if (calendarRangeRef.current) {
+                      void handleCalendarRangeChange(
+                        calendarRangeRef.current.from,
+                        calendarRangeRef.current.to,
+                        true,
+                      );
+                    }
+                    void fetchDocagens().then(setDocagemList);
+                    logInfo("Docagem/Create", `Docagem criada: ${id}`);
+                  } catch (err) {
+                    console.error(err);
+                    toast.error(
+                      err instanceof Error
+                        ? err.message
+                        : "Erro ao criar docagem.",
+                    );
+                  } finally {
+                    setIsSubmittingDocagem(false);
+                  }
+                }}
+                disabled={isSubmittingDocagem}
+                className="px-8 py-3 bg-violet-600 text-white font-black rounded-xl shadow-lg shadow-violet-900/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs disabled:opacity-50"
+              >
+                {isSubmittingDocagem ? "Criando..." : "Criar Docagem"}
+              </button>
+            </div>
+          }
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <GeologSearchableSelect
+              label="Cliente"
+              options={[
+                { id: "", nome: "Selecione..." },
+                ...clientes.map((c) => ({ id: c.id, nome: c.nome })),
+              ]}
+              value={docagemFormData.clienteId}
+              onChange={(id) =>
+                setDocagemFormData((prev) => ({
+                  ...prev,
+                  clienteId: id,
+                  centroCustoId: null,
+                  solicitanteId: null,
+                }))
+              }
+              triggerClassName="px-4 py-3 text-base"
+              disableSearch={false}
+            />
+            <GeologSearchableSelect
+              label="Centro de Custo"
+              options={[
+                { id: "", nome: "Todos" },
+                ...(docagemFormData.clienteId
+                  ? getCentrosCustoByCliente(docagemFormData.clienteId).map(
+                      (cc) => ({ id: cc.id, nome: cc.nome }),
+                    )
+                  : []),
+              ]}
+              value={docagemFormData.centroCustoId ?? ""}
+              onChange={(id) =>
+                setDocagemFormData((prev) => ({
+                  ...prev,
+                  centroCustoId: id || null,
+                }))
+              }
+              disabled={!docagemFormData.clienteId}
+              triggerClassName="px-4 py-3 text-base"
+              disableSearch={false}
+            />
+            <GeologSearchableSelect
+              label="Solicitante"
+              options={[
+                { id: "", nome: "Todos" },
+                ...solicitantes
+                  .filter(
+                    (s) =>
+                      !docagemFormData.clienteId ||
+                      s.clienteId === docagemFormData.clienteId,
+                  )
+                  .map((s) => ({ id: s.id, nome: s.nome })),
+              ]}
+              value={docagemFormData.solicitanteId ?? ""}
+              onChange={(id) =>
+                setDocagemFormData((prev) => ({
+                  ...prev,
+                  solicitanteId: id || null,
+                }))
+              }
+              disabled={!docagemFormData.clienteId}
+              triggerClassName="px-4 py-3 text-base"
+              disableSearch={false}
+            />
+            <GeologSearchableSelect
+              label="Motorista"
+              options={[
+                { id: "", nome: "Sem motorista" },
+                ...drivers.map((d) => ({ id: d.id, nome: d.name })),
+              ]}
+              value={docagemFormData.motoristaId ?? ""}
+              onChange={(id) =>
+                setDocagemFormData((prev) => ({
+                  ...prev,
+                  motoristaId: id || null,
+                }))
+              }
+              triggerClassName="px-4 py-3 text-base"
+              disableSearch={false}
+            />
+            <GeologSearchableSelect
+              label="Veículo"
+              options={[
+                { id: "", nome: "Sem veículo" },
+                ...vehicles.map((v) => ({
+                  id: v.id,
+                  nome: `${v.placa} - ${v.modelo}`,
+                })),
+              ]}
+              value={docagemFormData.veiculoId ?? ""}
+              onChange={(id) =>
+                setDocagemFormData((prev) => ({
+                  ...prev,
+                  veiculoId: id || null,
+                }))
+              }
+              triggerClassName="px-4 py-3 text-base"
+              disableSearch={false}
+            />
+            <div className="space-y-1">
+              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                Endereço / Doca
+              </label>
+              <input
+                type="text"
+                value={docagemFormData.endereco}
+                onChange={(e) =>
+                  setDocagemFormData((prev) => ({
+                    ...prev,
+                    endereco: e.target.value,
+                  }))
+                }
+                placeholder="Ex: Rua X, 100 - Doca 5"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+              />
+            </div>
+            <GeologDateInput
+              label="Data Início"
+              value={docagemFormData.dataInicio}
+              onChange={(value) =>
+                setDocagemFormData((prev) => ({
+                  ...prev,
+                  dataInicio: value || "",
+                }))
+              }
+              className="w-full"
+            />
+            <GeologDateInput
+              label="Data Fim"
+              value={docagemFormData.dataFim}
+              onChange={(value) =>
+                setDocagemFormData((prev) => ({
+                  ...prev,
+                  dataFim: value || "",
+                }))
+              }
+              className="w-full"
+            />
+            <div className="space-y-1">
+              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                Horário Início
+              </label>
+              <input
+                type="time"
+                value={docagemFormData.horarioInicio}
+                onChange={(e) =>
+                  setDocagemFormData((prev) => ({
+                    ...prev,
+                    horarioInicio: e.target.value,
+                  }))
+                }
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                Horário Fim
+              </label>
+              <input
+                type="time"
+                value={docagemFormData.horarioFim}
+                onChange={(e) =>
+                  setDocagemFormData((prev) => ({
+                    ...prev,
+                    horarioFim: e.target.value,
+                  }))
+                }
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                Dias da Semana
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "Dom", value: 7 },
+                  { label: "Seg", value: 1 },
+                  { label: "Ter", value: 2 },
+                  { label: "Qua", value: 3 },
+                  { label: "Qui", value: 4 },
+                  { label: "Sex", value: 5 },
+                  { label: "Sáb", value: 6 },
+                ].map((dia) => {
+                  const active = docagemFormData.diasSemana.includes(dia.value);
+                  return (
+                    <button
+                      key={dia.value}
+                      type="button"
+                      onClick={() =>
+                        setDocagemFormData((prev) => {
+                          const has = prev.diasSemana.includes(dia.value);
+                          const next = has
+                            ? prev.diasSemana.filter((v) => v !== dia.value)
+                            : [...prev.diasSemana, dia.value];
+                          return { ...prev, diasSemana: next.sort() };
+                        })
+                      }
+                      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                        active
+                          ? "bg-violet-600 text-white"
+                          : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      }`}
+                    >
+                      {dia.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                Valor Diário (R$)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={docagemFormData.valorDiario || ""}
+                onChange={(e) =>
+                  setDocagemFormData((prev) => ({
+                    ...prev,
+                    valorDiario:
+                      e.target.value === "" ? 0 : parseFloat(e.target.value),
+                  }))
+                }
+                placeholder="0,00"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                Custo Diário (R$)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={docagemFormData.custoDiario ?? ""}
+                onChange={(e) =>
+                  setDocagemFormData((prev) => ({
+                    ...prev,
+                    custoDiario:
+                      e.target.value === "" ? null : parseFloat(e.target.value),
+                  }))
+                }
+                placeholder="0,00"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                Observação
+              </label>
+              <textarea
+                value={docagemFormData.observacao ?? ""}
+                onChange={(e) =>
+                  setDocagemFormData((prev) => ({
+                    ...prev,
+                    observacao: e.target.value || null,
+                  }))
+                }
+                rows={3}
+                placeholder="Observações internas sobre a docagem..."
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all resize-none"
+              />
+            </div>
+          </div>
+        </StandardModal>
       )}
     </div>
   );

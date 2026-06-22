@@ -7,6 +7,7 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import ptBrLocale from "@fullcalendar/core/locales/pt-br";
 import type { OrderService } from "@/context/DataContext";
+import type { DocagemInstance } from "@/lib/supabase/docagem-queries";
 import {
   deriveCyclesOperationalStatus,
   getCycleDisplayStatus,
@@ -22,6 +23,7 @@ import {
   Loader2,
   Route,
   User,
+  MapPin,
 } from "lucide-react";
 import { logInfo } from "@/lib/frontend-logger";
 
@@ -30,10 +32,13 @@ interface Cliente {
   nome: string;
 }
 
+type CalendarEventKind = "os" | "docagem";
+
 interface EventContentProps {
-  os: OrderService;
+  os?: OrderService;
+  docagem?: DocagemInstance;
   clientes: Cliente[];
-  status: CycleOperationalStatus;
+  status: CycleOperationalStatus | "Docagem";
   timeText?: string;
   eventStartStr?: string;
   displayDateTime?: string;
@@ -45,8 +50,13 @@ interface EventContentProps {
 
 interface OSCalendarProps {
   osList: OrderService[];
+  docagemInstances?: DocagemInstance[];
   clientes: Cliente[];
   onEventClick: (osId: string, position?: { x: number; y: number }) => void;
+  onDocagemEventClick?: (
+    instanceId: string,
+    position?: { x: number; y: number },
+  ) => void;
   loading?: boolean;
   hasLoaded?: boolean;
   showArchivedOnly?: boolean;
@@ -153,6 +163,13 @@ const statusColors: Record<
     dot: "#ef4444",
     clockColor: "#ef4444",
   },
+  Docagem: {
+    bg: "#f5f3ff",
+    border: "#8b5cf6",
+    text: "#5b21b6",
+    dot: "#7c3aed",
+    clockColor: "#7c3aed",
+  },
 };
 
 type CalendarEvent = {
@@ -165,9 +182,11 @@ type CalendarEvent = {
   borderColor: string;
   textColor: string;
   extendedProps: {
-    os: OrderService;
+    kind: CalendarEventKind;
+    os?: OrderService;
+    docagem?: DocagemInstance;
     clienteNome: string;
-    status: CycleOperationalStatus;
+    status: CycleOperationalStatus | "Docagem";
     itineraryLabel?: string;
     itineraryIndex?: number;
     displayDateTime?: string;
@@ -239,6 +258,7 @@ const toDateKey = (date: Date): string => {
 // Componente de Evento Customizado
 const EventContent = ({
   os,
+  docagem,
   clientes,
   status,
   timeText,
@@ -249,18 +269,22 @@ const EventContent = ({
   isMonthView,
   isDayView,
 }: EventContentProps) => {
+  const isDocagem = status === "Docagem";
   const colors = showArchivedOnly
     ? statusColors["Arquivado"]
     : statusColors[status] || statusColors["Pendente"];
-  const clienteNome =
-    clientes.find((c) => c.id === os.clienteId)?.nome || "N/A";
 
-  const firstWaypointHora = os.rota?.waypoints?.[0]?.hora;
+  const clienteNome = isDocagem
+    ? clientes.find((c) => c.id === docagem?.clienteId)?.nome || "N/A"
+    : clientes.find((c) => c.id === os?.clienteId)?.nome || "N/A";
 
-  const explicitTime =
-    extractTimeFromDateTime(propStartTime) ||
-    extractTimeFromDateTime(os.hora) ||
-    extractTimeFromDateTime(firstWaypointHora);
+  const firstWaypointHora = os?.rota?.waypoints?.[0]?.hora;
+
+  const explicitTime = isDocagem
+    ? extractTimeFromDateTime(docagem?.horarioInicio)
+    : extractTimeFromDateTime(propStartTime) ||
+      extractTimeFromDateTime(os?.hora) ||
+      extractTimeFromDateTime(firstWaypointHora);
 
   const calendarFallbackTime =
     isMonthView === true
@@ -312,7 +336,7 @@ const EventContent = ({
             zIndex: 1,
           }}
         >
-          {status}
+          {isDocagem ? "Docagem" : status}
         </span>
       )}
 
@@ -335,52 +359,97 @@ const EventContent = ({
         {clienteNome}
       </div>
 
-      {/* Linha 2: Motorista */}
-      <div
-        style={{
-          color: "#475569",
-          fontWeight: 700,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          fontSize: isDayView ? "12px" : "10.5px",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-        }}
-      >
-        <User size={isDayView ? 12 : 8} strokeWidth={3} />
-        {(() => {
-          const partes = os.motorista.trim().split(/\s+/);
-          if (partes.length === 1) return partes[0].toUpperCase();
-          return `${partes[0]} ${partes[partes.length - 1]}`.toUpperCase();
-        })()}
-      </div>
-
-      {/* Linha 3: Solicitante */}
-      <div
-        style={{
-          color: "#475569",
-          fontWeight: 600,
-          fontSize: isDayView ? "11px" : "8.5px",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-        }}
-      >
+      {/* Linha 2: Motorista (OS) ou Endereço (Docagem) */}
+      {isDocagem ? (
         <div
           style={{
-            width: "5px",
-            height: "5px",
-            borderRadius: "50%",
-            backgroundColor: colors.dot,
+            color: "#475569",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            fontSize: isDayView ? "12px" : "10.5px",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
           }}
-        />
-        {os.solicitante.toUpperCase()}
-      </div>
+        >
+          <MapPin size={isDayView ? 12 : 8} strokeWidth={3} />
+          {docagem?.endereco?.toUpperCase() || "DOCAGEM"}
+        </div>
+      ) : (
+        <div
+          style={{
+            color: "#475569",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            fontSize: isDayView ? "12px" : "10.5px",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          <User size={isDayView ? 12 : 8} strokeWidth={3} />
+          {(() => {
+            const partes = (os?.motorista ?? "").trim().split(/\s+/);
+            if (partes.length === 1) return partes[0].toUpperCase();
+            return `${partes[0]} ${partes[partes.length - 1]}`.toUpperCase();
+          })()}
+        </div>
+      )}
+
+      {/* Linha 3: Solicitante (OS) ou Motorista alocado (Docagem) */}
+      {isDocagem ? (
+        <div
+          style={{
+            color: "#475569",
+            fontWeight: 600,
+            fontSize: isDayView ? "11px" : "8.5px",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          <div
+            style={{
+              width: "5px",
+              height: "5px",
+              borderRadius: "50%",
+              backgroundColor: colors.dot,
+            }}
+          />
+          {docagem?.motoristaId ? "Motorista alocado" : "Sem motorista"}
+        </div>
+      ) : (
+        <div
+          style={{
+            color: "#475569",
+            fontWeight: 600,
+            fontSize: isDayView ? "11px" : "8.5px",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          <div
+            style={{
+              width: "5px",
+              height: "5px",
+              borderRadius: "50%",
+              backgroundColor: colors.dot,
+            }}
+          />
+          {(os?.solicitante ?? "").toUpperCase()}
+        </div>
+      )}
 
       {/* Linha 4: Horário */}
       <div
@@ -413,8 +482,10 @@ const EventContent = ({
 
 export default function OSCalendar({
   osList,
+  docagemInstances = [],
   clientes,
   onEventClick,
+  onDocagemEventClick,
   loading,
   hasLoaded,
   showArchivedOnly,
@@ -489,6 +560,7 @@ export default function OSCalendar({
           borderColor: "transparent",
           textColor: colors.text,
           extendedProps: {
+            kind: "os",
             os,
             clienteNome,
             status: effectiveStatus,
@@ -550,6 +622,7 @@ export default function OSCalendar({
             borderColor: "transparent",
             textColor: colors.text,
             extendedProps: {
+              kind: "os",
               os,
               clienteNome,
               status: eventStatus,
@@ -562,8 +635,45 @@ export default function OSCalendar({
         });
     });
 
+    // Converter instâncias de docagem para eventos
+    docagemInstances.forEach((instance) => {
+      const clienteNome =
+        clientes.find((c) => c.id === instance.clienteId)?.nome || "Docagem";
+      const startDateTime = formatCalendarDateTime(
+        instance.data,
+        instance.horarioInicio,
+      );
+      if (!startDateTime) return;
+
+      const endDateTime = formatCalendarDateTime(
+        instance.data,
+        instance.horarioFim,
+      );
+      const safeEndDateTime = endDateTime || startDateTime;
+      const colors = statusColors["Docagem"];
+
+      derivedEvents.push({
+        id: `docagem-${instance.id}`,
+        title: `Docagem - ${clienteNome}`,
+        start: startDateTime,
+        end: safeEndDateTime,
+        allDay: false,
+        backgroundColor: "transparent",
+        borderColor: "transparent",
+        textColor: colors.text,
+        extendedProps: {
+          kind: "docagem",
+          docagem: instance,
+          clienteNome,
+          status: "Docagem",
+          displayDateTime: startDateTime,
+          startTime: instance.horarioInicio,
+        },
+      });
+    });
+
     return derivedEvents;
-  }, [osList, clientes]);
+  }, [osList, docagemInstances, clientes]);
 
   const weekStatusCountsByDate = useMemo(() => {
     const countsByDate: Record<string, WeekStatusCounts> = {};
@@ -588,13 +698,29 @@ export default function OSCalendar({
   const handleEventClick = useCallback(
     (info: {
       jsEvent: MouseEvent;
-      event: { id: string; extendedProps?: { os?: OrderService } };
+      event: {
+        id: string;
+        extendedProps?: {
+          kind?: CalendarEventKind;
+          os?: OrderService;
+          docagem?: DocagemInstance;
+        };
+      };
     }) => {
       info.jsEvent.preventDefault();
-      const osId = info.event.extendedProps?.os?.id || info.event.id;
+      const props = info.event.extendedProps;
+      const isDocagem = props?.kind === "docagem";
+      if (isDocagem && props?.docagem && onDocagemEventClick) {
+        onDocagemEventClick(props.docagem.id, {
+          x: info.jsEvent.clientX,
+          y: info.jsEvent.clientY,
+        });
+        return;
+      }
+      const osId = props?.os?.id || info.event.id;
       onEventClick(osId, { x: info.jsEvent.clientX, y: info.jsEvent.clientY });
     },
-    [onEventClick],
+    [onEventClick, onDocagemEventClick],
   );
 
   const handleDateSelect = useCallback((selectInfo: { startStr: string }) => {
@@ -673,18 +799,21 @@ export default function OSCalendar({
       event: {
         startStr?: string;
         extendedProps: {
-          os: OrderService;
-          status: CycleOperationalStatus;
+          kind: CalendarEventKind;
+          os?: OrderService;
+          docagem?: DocagemInstance;
+          status: CycleOperationalStatus | "Docagem";
           itineraryLabel?: string;
           displayDateTime?: string;
           startTime?: string;
         };
       };
     }) => {
-      const os = eventInfo.event.extendedProps.os;
+      const isDocagem = eventInfo.event.extendedProps.kind === "docagem";
       return (
         <EventContent
-          os={os}
+          os={isDocagem ? undefined : eventInfo.event.extendedProps.os}
+          docagem={eventInfo.event.extendedProps.docagem}
           clientes={clientes}
           status={eventInfo.event.extendedProps.status}
           timeText={eventInfo.timeText}
