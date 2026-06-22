@@ -28,15 +28,17 @@ import {
   DollarSign,
   Percent,
   Car,
+  Bell,
+  MessageSquareWarning,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import StandardModal from "@/components/StandardModal";
 import { AvatarUploader } from "@/components/ui/AvatarUploader";
 import { useData } from "@/context/DataContext";
-import { logInfo } from "@/lib/frontend-logger";
 import { DataTable } from "@/components/ui/DataTable";
-type TabType = "acesso" | "perfil" | "financeiro";
+type TabType = "acesso" | "perfil" | "financeiro" | "notificacoes";
 
 export default function ConfigPage() {
   const { user, profile, logout } = useAuth();
@@ -63,6 +65,9 @@ export default function ConfigPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState("");
   const [isUpdatingName, setIsUpdatingName] = useState(false);
+  const [remindersEnabled, setRemindersEnabled] = useState(true);
+  const [isLoadingReminders, setIsLoadingReminders] = useState(false);
+  const [isSavingReminders, setIsSavingReminders] = useState(false);
   const [newUser, setNewUser] = useState({
     primeiroNome: "",
     sobrenome: "",
@@ -109,6 +114,51 @@ export default function ConfigPage() {
       void fetchUsers();
     }
   }, [activeTab, profile?.categoria, fetchUsers]);
+
+  useEffect(() => {
+    if (activeTab !== "notificacoes") return;
+    const load = async () => {
+      setIsLoadingReminders(true);
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("app_settings")
+          .select("value")
+          .eq("key", "os_reminders_enabled")
+          .maybeSingle();
+        setRemindersEnabled(data?.value !== "false");
+      } catch {
+        // silently keep default true
+      } finally {
+        setIsLoadingReminders(false);
+      }
+    };
+    void load();
+  }, [activeTab]);
+
+  const handleToggleReminders = async (value: boolean) => {
+    setIsSavingReminders(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("app_settings")
+        .upsert(
+          { key: "os_reminders_enabled", value: String(value), updated_at: new Date().toISOString() },
+          { onConflict: "key" },
+        );
+      if (error) throw error;
+      setRemindersEnabled(value);
+      toast.success(
+        value
+          ? "Avisos de atraso ativados com sucesso!"
+          : "Avisos de atraso desativados com sucesso!",
+      );
+    } catch (err: unknown) {
+      toast.error("Erro ao salvar configuração: " + formatErrorMessage(err));
+    } finally {
+      setIsSavingReminders(false);
+    }
+  };
 
   const updateUserRole = async (
     userId: string,
@@ -350,6 +400,7 @@ export default function ConfigPage() {
     { id: "acesso", label: "Gestão de Acessos", icon: Shield },
     { id: "perfil", label: "Meu Perfil", icon: User },
     { id: "financeiro", label: "Financeiro", icon: DollarSign },
+    { id: "notificacoes", label: "Notificações", icon: Bell },
   ];
 
   return (
@@ -822,6 +873,94 @@ export default function ConfigPage() {
                       Salvar Configuração
                     </button>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "notificacoes" && (
+              <div className="max-w-2xl mx-auto">
+                <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 p-10 space-y-8">
+                  {/* Header */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center">
+                      <Bell size={26} className="text-violet-600" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black text-slate-800">Notificações</h2>
+                      <p className="text-sm font-medium text-slate-400">
+                        Gerencie o envio automático de avisos via WhatsApp
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="h-px bg-slate-100" />
+
+                  {/* Toggle: Avisos de atraso */}
+                  <div className="flex items-start justify-between gap-6">
+                    <div className="flex items-start gap-4">
+                      <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                        <MessageSquareWarning size={20} className="text-amber-500" />
+                      </div>
+                      <div>
+                        <p className="text-base font-black text-slate-800">
+                          Avisos de atraso para motoristas
+                        </p>
+                        <p className="text-sm font-medium text-slate-400 mt-1 leading-relaxed">
+                          Envia mensagem automática via WhatsApp quando um motorista não inicia
+                          o atendimento no horário previsto (T+5min e T+30min).
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Toggle switch */}
+                    <button
+                      type="button"
+                      disabled={isLoadingReminders || isSavingReminders}
+                      onClick={() => void handleToggleReminders(!remindersEnabled)}
+                      className={`
+                        relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent
+                        transition-colors duration-200 ease-in-out focus:outline-none
+                        disabled:opacity-50 disabled:cursor-not-allowed
+                        ${remindersEnabled ? "bg-violet-600" : "bg-slate-200"}
+                      `}
+                      aria-label="Ativar/desativar avisos de atraso"
+                    >
+                      <span
+                        className={`
+                          pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0
+                          transition duration-200 ease-in-out
+                          ${remindersEnabled ? "translate-x-5" : "translate-x-0.5"}
+                        `}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Status badge */}
+                  {!isLoadingReminders && (
+                    <div
+                      className={`
+                        flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-bold
+                        ${remindersEnabled
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-slate-100 text-slate-500"
+                        }
+                      `}
+                    >
+                      <div
+                        className={`w-2 h-2 rounded-full ${remindersEnabled ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`}
+                      />
+                      {remindersEnabled
+                        ? "Avisos ativos — o sistema enviará mensagens de atraso automaticamente"
+                        : "Avisos pausados — nenhuma mensagem de atraso será enviada"}
+                    </div>
+                  )}
+
+                  {isLoadingReminders && (
+                    <div className="flex items-center gap-3 text-slate-400 text-sm font-medium">
+                      <div className="w-4 h-4 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin" />
+                      Carregando configuração...
+                    </div>
+                  )}
                 </div>
               </div>
             )}

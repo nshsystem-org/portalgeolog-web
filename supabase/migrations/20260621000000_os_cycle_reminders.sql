@@ -52,6 +52,9 @@ DECLARE
   v_action text;
   v_cycle_index integer;
   v_cycle_label text;
+  v_cycle_kind text;
+  v_cycle_ordinal integer;
+  v_cycle_desc text;
   v_km_value text;
   v_title text;
   v_message text;
@@ -60,10 +63,11 @@ DECLARE
   v_minutes_late integer;
   v_driver_id uuid;
   v_motorista_nome text;
+  v_notif_metadata jsonb;
 BEGIN
   IF NEW.type NOT IN (
     'update', 'status_change', 'archive', 'unarchive',
-    'driver_accept', 'driver_start', 'driver_finish', 'driver_notify', 'comment',
+    'driver_accept', 'driver_start', 'driver_finish', 'driver_notify', 'driver_delivered', 'comment',
     'driver_delay'
   ) THEN
     RETURN NEW;
@@ -84,6 +88,11 @@ BEGIN
   IF v_avatar_url IS NULL AND v_driver_id IS NOT NULL THEN
     SELECT avatar_url INTO v_avatar_url
     FROM public.drivers WHERE id = v_driver_id;
+  ELSIF v_avatar_url IS NULL AND NEW.actor_id IS NULL THEN
+    SELECT avatar_url INTO v_avatar_url
+    FROM public.drivers
+    WHERE LOWER(name) = LOWER(NEW.actor_name)
+    LIMIT 1;
   END IF;
 
   IF NEW.metadata IS NOT NULL AND jsonb_typeof(NEW.metadata) = 'object' THEN
@@ -108,12 +117,32 @@ BEGIN
       );
     END IF;
 
+    -- cycle_index (suporta tanto cycle_index quanto cycleIndex)
     IF NEW.metadata ? 'cycle_index' THEN
       BEGIN
         v_cycle_index := (NEW.metadata->>'cycle_index')::integer;
-        v_cycle_label := format('no ciclo %s', v_cycle_index + 1);
-      EXCEPTION WHEN OTHERS THEN v_cycle_label := NULL;
+      EXCEPTION WHEN OTHERS THEN v_cycle_index := NULL;
       END;
+    ELSIF NEW.metadata ? 'cycleIndex' THEN
+      BEGIN
+        v_cycle_index := (NEW.metadata->>'cycleIndex')::integer;
+      EXCEPTION WHEN OTHERS THEN v_cycle_index := NULL;
+      END;
+    END IF;
+
+    IF v_cycle_index IS NOT NULL THEN
+      v_cycle_label := format('no ciclo %s', v_cycle_index + 1);
+      -- Buscar kind e ordinal do ciclo na tabela os_operational_cycles
+      SELECT kind, ordinal INTO v_cycle_kind, v_cycle_ordinal
+      FROM public.os_operational_cycles
+      WHERE ordem_servico_id = NEW.os_id AND itinerary_index = v_cycle_index
+      LIMIT 1;
+      IF v_cycle_kind IS NOT NULL THEN
+        v_cycle_desc := format('%s %s',
+          public.cycle_ordinal_to_pt(COALESCE(v_cycle_ordinal, v_cycle_index + 1)),
+          CASE WHEN v_cycle_kind = 'return' THEN 'Retorno' ELSE 'Itinerário' END
+        );
+      END IF;
     END IF;
 
     IF NEW.metadata ? 'action' THEN
@@ -122,8 +151,12 @@ BEGIN
 
     IF NEW.metadata ? 'km_initial' THEN
       v_km_value := NEW.metadata->>'km_initial';
+    ELSIF NEW.metadata ? 'kmInitial' THEN
+      v_km_value := NEW.metadata->>'kmInitial';
     ELSIF NEW.metadata ? 'km_final' THEN
       v_km_value := NEW.metadata->>'km_final';
+    ELSIF NEW.metadata ? 'kmFinal' THEN
+      v_km_value := NEW.metadata->>'kmFinal';
     END IF;
 
     IF NEW.metadata ? 'minutes_late' THEN
@@ -180,6 +213,14 @@ BEGIN
 
   END IF;
 
+  v_notif_metadata := jsonb_build_object('changed_fields_list', COALESCE(v_changed_fields_list, '[]'::jsonb));
+  IF v_cycle_kind IS NOT NULL THEN
+    v_notif_metadata := v_notif_metadata || jsonb_build_object('cycle_kind', v_cycle_kind, 'cycle_ordinal', COALESCE(v_cycle_ordinal, v_cycle_index + 1));
+  END IF;
+  IF v_protocolo IS NOT NULL THEN
+    v_notif_metadata := v_notif_metadata || jsonb_build_object('protocolo', v_protocolo);
+  END IF;
+
   CASE NEW.type
     WHEN 'update' THEN
       v_title := 'Atendimento atualizado';
@@ -227,25 +268,27 @@ BEGIN
       v_message := format('A OS %s foi reaberta com sucesso.', COALESCE(v_protocolo, NEW.os_id::text));
       v_notification_type := 'success';
     WHEN 'driver_accept' THEN
-      v_title := 'Motorista confirmou o atendimento';
-      v_message := format('A OS %s foi aceita por %s%s.',
-        COALESCE(v_protocolo, NEW.os_id::text),
-        COALESCE(NEW.actor_name, 'Sistema'),
-        CASE WHEN v_cycle_label IS NOT NULL THEN format(' (%s)', v_cycle_label) ELSE '' END);
+      v_title := 'Motorista visualizou os detalhes do atendimento';
+      v_message := format('%s visualizou os detalhes do atendimento%s. [OS_ID:%s]',
+        COALESCE(NEW.actor_name, 'Motorista'),
+        CASE WHEN v_cycle_desc IS NOT NULL THEN format(' (%s)', v_cycle_desc) ELSE '' END,
+        NEW.os_id);
       v_notification_type := 'info';
     WHEN 'driver_start' THEN
       v_title := 'Rota iniciada';
-      v_message := format('A OS %s iniciou a rota%s%s.',
-        COALESCE(v_protocolo, NEW.os_id::text),
-        CASE WHEN v_cycle_label IS NOT NULL THEN format(' (%s)', v_cycle_label) ELSE '' END,
-        CASE WHEN v_km_value IS NOT NULL THEN format(' com KM inicial %s', v_km_value) ELSE '' END);
+      v_message := format('%s iniciou a rota do %s%s. [OS_ID:%s]',
+        COALESCE(NEW.actor_name, 'Motorista'),
+        COALESCE(v_cycle_desc, format('Ciclo %s', COALESCE(v_cycle_index + 1, 1))),
+        CASE WHEN v_km_value IS NOT NULL THEN format(' com KM inicial %s', v_km_value) ELSE '' END,
+        NEW.os_id);
       v_notification_type := 'info';
     WHEN 'driver_finish' THEN
       v_title := 'Rota finalizada';
-      v_message := format('A OS %s finalizou a rota%s%s.',
-        COALESCE(v_protocolo, NEW.os_id::text),
-        CASE WHEN v_cycle_label IS NOT NULL THEN format(' (%s)', v_cycle_label) ELSE '' END,
-        CASE WHEN v_km_value IS NOT NULL THEN format(' com KM final %s', v_km_value) ELSE '' END);
+      v_message := format('%s finalizou a rota do %s%s. [OS_ID:%s]',
+        COALESCE(NEW.actor_name, 'Motorista'),
+        COALESCE(v_cycle_desc, format('Ciclo %s', COALESCE(v_cycle_index + 1, 1))),
+        CASE WHEN v_km_value IS NOT NULL THEN format(' com KM final %s', v_km_value) ELSE '' END,
+        NEW.os_id);
       v_notification_type := 'success';
     WHEN 'driver_notify' THEN
       -- Título inclui o nome do motorista para o frontend extrair via regex
@@ -256,13 +299,19 @@ BEGIN
         COALESCE(v_motorista_nome, 'Motorista'),
         NEW.os_id);
       v_notification_type := 'success';
+    WHEN 'driver_delivered' THEN
+      v_title := 'Mensagem entregue ao motorista';
+      v_message := format('Motorista %s visualizou a mensagem. [OS_ID:%s]',
+        COALESCE(NEW.actor_name, 'Motorista'), NEW.os_id);
+      v_notification_type := 'success';
     WHEN 'driver_delay' THEN
       v_title := 'Motorista em atraso';
-      v_message := format('A OS %s (motorista %s) está atrasada há %s minuto(s) e ainda não iniciou%s.',
+      v_message := format('A OS %s (motorista %s) está atrasada há %s minuto(s) e ainda não iniciou%s. [OS_ID:%s]',
         COALESCE(v_protocolo, NEW.os_id::text),
         COALESCE(NEW.actor_name, 'Motorista'),
         COALESCE(v_minutes_late::text, '?'),
-        CASE WHEN v_cycle_label IS NOT NULL THEN format(' %s', v_cycle_label) ELSE '' END);
+        CASE WHEN v_cycle_desc IS NOT NULL THEN format(' o %s', v_cycle_desc) ELSE '' END,
+        NEW.os_id);
       v_notification_type := 'warning';
     WHEN 'comment' THEN
       v_title := 'Novo comentário no atendimento';
@@ -272,10 +321,6 @@ BEGIN
       RETURN NEW;
   END CASE;
 
-  IF NEW.type != 'driver_notify' THEN
-    v_message := v_message || format(' [OS_ID:%s]', NEW.os_id);
-  END IF;
-
   INSERT INTO public.app_notifications (
     type, title, message, target_audience, empresa_id,
     created_by, created_by_name, created_by_avatar_url, metadata
@@ -283,7 +328,7 @@ BEGIN
   VALUES (
     v_notification_type, v_title, v_message, 'interno', v_cliente_id,
     NEW.actor_id, NEW.actor_name, v_avatar_url,
-    jsonb_build_object('changed_fields_list', COALESCE(v_changed_fields_list, '[]'::jsonb))
+    v_notif_metadata
   );
 
   RETURN NEW;

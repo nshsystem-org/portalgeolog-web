@@ -425,6 +425,21 @@ export async function getTodaysDelayedCycles(
  *   - Funciona 24h (sem janela noturna — há viagens de manhã, tarde, noite e madrugada)
  */
 export async function processOSReminders(): Promise<ReminderResult[]> {
+  // Verifica se o envio de lembretes está habilitado nas configurações
+  const { data: settingRow } = await (
+    getAdminClient().from("app_settings") as unknown as {
+      select: (cols: string) => {
+        eq: (col: string, val: string) => Promise<{ data: { value: string } | null }>;
+      };
+    }
+  )
+    .select("value")
+    .eq("key", "os_reminders_enabled");
+  if (settingRow?.value === "false") {
+    console.log("[os-reminders] Envio de lembretes desativado nas configurações. Saindo sem enviar.");
+    return [];
+  }
+
   const now = new Date();
   const tz = getReminderTimezone();
 
