@@ -71,6 +71,7 @@ import {
   Gauge,
   Layers,
   Package,
+  Briefcase,
 } from "lucide-react";
 import {
   useData,
@@ -4807,50 +4808,91 @@ export default function OSOperationalPage() {
               strokeWidth={2.5}
             />
             <button
-              onClick={() => setDocagemListFilter("all")}
+              onClick={() => {
+                setShowArchivedOnly(false);
+                setDocagemListFilter("all");
+              }}
               className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out group-hover:ml-[5px] ${
                 docagemListFilter === "all" && !showArchivedOnly
                   ? "px-3.5 py-2.5 mr-1.5 max-w-[120px] opacity-100 bg-slate-800 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-slate-50"
+                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-slate-50"
               }`}
             >
+              <Layers
+                className={`${
+                  docagemListFilter === "all" && !showArchivedOnly
+                    ? "text-white"
+                    : "text-slate-500"
+                }`}
+                size={16}
+                strokeWidth={2.5}
+              />
               Todos
             </button>
             <button
-              onClick={() => setDocagemListFilter("os")}
+              onClick={() => {
+                setShowArchivedOnly(false);
+                setDocagemListFilter("os");
+              }}
               className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
-                docagemListFilter === "os"
+                docagemListFilter === "os" && !showArchivedOnly
                   ? "px-3.5 py-2.5 mr-1.5 max-w-[120px] opacity-100 bg-blue-500 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-blue-50"
+                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-blue-50"
               }`}
             >
-              <Truck className="text-blue-500" size={16} strokeWidth={2.5} />
+              <Truck
+                className={`${
+                  docagemListFilter === "os" && !showArchivedOnly
+                    ? "text-white"
+                    : "text-blue-500"
+                }`}
+                size={16}
+                strokeWidth={2.5}
+              />
               OS
             </button>
             <button
-              onClick={() => setDocagemListFilter("docagem")}
+              onClick={() => {
+                setShowArchivedOnly(false);
+                setDocagemListFilter("docagem");
+              }}
               className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
-                docagemListFilter === "docagem"
+                docagemListFilter === "docagem" && !showArchivedOnly
                   ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-violet-600 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-violet-50"
+                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-violet-50"
               }`}
             >
-              <Package className="text-violet-500" size={16} strokeWidth={2.5} />
+              <Package
+                className={`${
+                  docagemListFilter === "docagem" && !showArchivedOnly
+                    ? "text-white"
+                    : "text-violet-500"
+                }`}
+                size={16}
+                strokeWidth={2.5}
+              />
               Docagem
             </button>
             <button
-              onClick={() =>
-                toast.info(
-                  "O filtro de Rascunhos ainda está em desenvolvimento.",
-                )
-              }
+              onClick={() => {
+                setShowArchivedOnly(false);
+                setDocagemListFilter("rascunho");
+              }}
               className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
-                docagemListFilter === "rascunho"
+                docagemListFilter === "rascunho" && !showArchivedOnly
                   ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-amber-500 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-amber-50"
+                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-amber-50"
               }`}
             >
-              <FileText className="text-amber-500" size={16} strokeWidth={2.5} />
+              <FileText
+                className={`${
+                  docagemListFilter === "rascunho" && !showArchivedOnly
+                    ? "text-white"
+                    : "text-amber-500"
+                }`}
+                size={16}
+                strokeWidth={2.5}
+              />
               Rascunho
             </button>
             <button
@@ -4861,7 +4903,7 @@ export default function OSOperationalPage() {
               className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
                 showArchivedOnly
                   ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-1.5 group-hover:max-w-[140px] group-hover:opacity-100 text-slate-300 group-hover:text-slate-500 hover:bg-red-50"
+                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-1.5 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-red-50"
               }`}
               style={
                 showArchivedOnly
@@ -5872,6 +5914,9 @@ export default function OSOperationalPage() {
           }
           maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-80 space-y-12"
+          headerClassName="bg-[rgb(42,82,144)]"
+          headerGlowClassName="bg-[rgb(42,82,144)]/10"
+          subtitleClassName="text-white/70"
           footer={
             <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
               <button
@@ -5884,7 +5929,7 @@ export default function OSOperationalPage() {
               <button
                 type="submit"
                 form="nova-os-form"
-                className="px-12 py-4 bg-[var(--color-geolog-blue)] text-white font-black rounded-xl shadow-xl shadow-blue-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
               >
                 {editingOSId ? "Salvar e Continuar" : "Confirmar OS"}
               </button>
@@ -10190,27 +10235,27 @@ export default function OSOperationalPage() {
           title="Novo Atendimento"
           subtitle="Escolha o tipo de atendimento para criar"
           icon={<Plus className="w-6 h-6 md:w-7 md:h-7" />}
-          maxWidthClassName="max-w-2xl"
-          bodyClassName="p-6 md:p-10"
+          maxWidthClassName="max-w-4xl"
+          bodyClassName="p-8 md:p-12"
           footer={null}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             <button
               type="button"
               onClick={() => {
                 setIsAttendanceChoiceModalOpen(false);
                 handleOpenCreateOSModal();
               }}
-              className="group flex flex-col items-center gap-5 p-8 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-blue-400 hover:bg-blue-50 hover:shadow-xl hover:shadow-blue-900/5 transition-all active:scale-[0.98]"
+              className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-blue-400 hover:bg-blue-50 hover:shadow-xl hover:shadow-blue-900/5 transition-all active:scale-[0.98]"
             >
-              <div className="w-20 h-20 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <Truck size={40} strokeWidth={2} />
+              <div className="w-24 h-24 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                <Truck size={48} strokeWidth={2} />
               </div>
               <div className="text-center">
-                <h3 className="text-lg font-black text-slate-800 tracking-tight">
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">
                   OS
                 </h3>
-                <p className="mt-2 text-sm font-semibold text-slate-500">
+                <p className="mt-3 text-sm font-semibold text-slate-500">
                   Ordem de Serviço única com motorista, rota e passageiros
                 </p>
               </div>
@@ -10222,17 +10267,41 @@ export default function OSOperationalPage() {
                 setIsAttendanceChoiceModalOpen(false);
                 setIsDocagemModalOpen(true);
               }}
-              className="group flex flex-col items-center gap-5 p-8 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-violet-400 hover:bg-violet-50 hover:shadow-xl hover:shadow-violet-900/5 transition-all active:scale-[0.98]"
+              className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-violet-400 hover:bg-violet-50 hover:shadow-xl hover:shadow-violet-900/5 transition-all active:scale-[0.98]"
             >
-              <div className="w-20 h-20 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center group-hover:bg-violet-600 group-hover:text-white transition-colors">
-                <Package size={40} strokeWidth={2} />
+              <div className="w-24 h-24 rounded-3xl bg-violet-50 text-violet-600 flex items-center justify-center group-hover:bg-violet-600 group-hover:text-white transition-colors">
+                <Package size={48} strokeWidth={2} />
               </div>
               <div className="text-center">
-                <h3 className="text-lg font-black text-slate-800 tracking-tight">
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">
                   Docagem
                 </h3>
-                <p className="mt-2 text-sm font-semibold text-slate-500">
+                <p className="mt-3 text-sm font-semibold text-slate-500">
                   OS recorrente fixa em doca com dias da semana e valor diário
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsAttendanceChoiceModalOpen(false);
+                toast.info(
+                  "O tipo de atendimento Freelance ainda está em desenvolvimento.",
+                );
+              }}
+              className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 hover:shadow-xl hover:shadow-emerald-900/5 transition-all active:scale-[0.98]"
+            >
+              <div className="w-24 h-24 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                <Briefcase size={48} strokeWidth={2} />
+              </div>
+              <div className="text-center">
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                  Freelance
+                </h3>
+                <p className="mt-3 text-sm font-semibold text-slate-500">
+                  Atendimento avulso por profissional autônomo com valor
+                  combinado
                 </p>
               </div>
             </button>
@@ -10267,6 +10336,9 @@ export default function OSOperationalPage() {
           icon={<Package className="w-6 h-6 md:w-7 md:h-7" />}
           maxWidthClassName="max-w-4xl"
           bodyClassName="p-6 md:p-10 space-y-8"
+          headerClassName="bg-[rgb(89,47,147)]"
+          headerGlowClassName="bg-[rgb(89,47,147)]/10"
+          subtitleClassName="text-white/70"
           footer={
             <div className="p-6 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-4">
               <button
@@ -10367,7 +10439,7 @@ export default function OSOperationalPage() {
                   }
                 }}
                 disabled={isSubmittingDocagem}
-                className="px-8 py-3 bg-violet-600 text-white font-black rounded-xl shadow-lg shadow-violet-900/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs disabled:opacity-50"
+                className="px-8 py-3 bg-[rgb(89,47,147)] text-white font-black rounded-xl shadow-lg shadow-[rgb(89,47,147)]/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs disabled:opacity-50"
               >
                 {isSubmittingDocagem ? "Criando..." : "Criar Docagem"}
               </button>

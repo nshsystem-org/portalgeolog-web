@@ -13,6 +13,9 @@ interface StandardModalProps {
   maxWidthClassName?: string;
   containerClassName?: string;
   bodyClassName?: string;
+  headerClassName?: string;
+  headerGlowClassName?: string;
+  subtitleClassName?: string;
   disableBackdropClose?: boolean;
 }
 
@@ -26,6 +29,9 @@ export default function StandardModal({
   maxWidthClassName = "max-w-2xl",
   containerClassName = "",
   bodyClassName = "p-6 md:p-10 pb-16 space-y-12",
+  headerClassName = "bg-[var(--color-geolog-blue)]",
+  headerGlowClassName = "bg-blue-500/10",
+  subtitleClassName = "text-blue-300/80",
   disableBackdropClose = false,
 }: StandardModalProps) {
   useEffect(() => {
@@ -68,10 +74,12 @@ export default function StandardModal({
         style={{ textRendering: "geometricPrecision" }}
       >
         <div
-          className="bg-[var(--color-geolog-blue)] p-6 md:p-8 flex items-center justify-between shrink-0 relative overflow-hidden"
+          className={`${headerClassName} p-6 md:p-8 flex items-center justify-between shrink-0 relative overflow-hidden`}
           style={{ paddingBottom: "1.75rem" }}
         >
-          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full -mr-32 -mt-32 blur-3xl opacity-50" />
+          <div
+            className={`absolute top-0 right-0 w-64 h-64 rounded-full -mr-32 -mt-32 blur-3xl opacity-50 ${headerGlowClassName}`}
+          />
           <div className="flex items-center gap-5 relative z-10">
             <div className="w-12 h-12 md:w-14 md:h-14 bg-white/10 rounded-2xl flex items-center justify-center text-white backdrop-blur-xl border border-white/20">
               {icon}
@@ -87,7 +95,7 @@ export default function StandardModal({
               {subtitle && (
                 <p
                   id={`modal-subtitle-${title.replace(/\s+/g, "-").toLowerCase()}`}
-                  className="text-blue-300/80 text-[11px] font-bold uppercase tracking-[0.2em]"
+                  className={`text-[11px] font-bold uppercase tracking-[0.2em] ${subtitleClassName}`}
                   style={{ lineHeight: "1.3" }}
                 >
                   {subtitle}

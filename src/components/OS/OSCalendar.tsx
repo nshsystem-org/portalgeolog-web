@@ -944,7 +944,8 @@ export default function OSCalendar({
   const isInitialLoading = !hasLoaded && loading;
   // Mostrar overlay de loading sempre que estiver carregando, independente de ter dados anteriores
   const showCalendarWithOverlay = loading;
-  const isEmpty = !loading && hasLoaded && osList.length === 0;
+  const isEmpty =
+    !loading && hasLoaded && osList.length === 0 && docagemInstances.length === 0;
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden relative">
