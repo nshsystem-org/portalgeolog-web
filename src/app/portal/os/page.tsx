@@ -95,6 +95,7 @@ import {
   finalizarDocagemDia,
   excluirDocagemDia,
   reativarDocagemDia,
+  resetarDocagemDia,
   cancelarDocagem,
   type DocagemInstance,
   type DocagemInput,
@@ -620,6 +621,7 @@ export default function OSOperationalPage() {
   const [osLogs, setOsLogs] = useState<OSLog[]>([]);
   const actionMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const calendarMenuRef = useRef<HTMLDivElement | null>(null);
+  const docagemMenuRef = useRef<HTMLDivElement | null>(null);
   const passengerDraftIdRef = useRef(0);
   const viewingOSPollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -1391,6 +1393,47 @@ export default function OSOperationalPage() {
       debounceTimers.clear();
     };
   }, [supabase, osTable]);
+
+  // Realtime: docagem_instancias e docagens
+  // Quando outro usuário finalizar/resetar/excluir/criar uma docagem,
+  // este canal recebe o evento via WebSocket e recarrega o range atual.
+  useEffect(() => {
+    if (viewMode !== "calendar") return;
+
+    let docagemDebounce: ReturnType<typeof setTimeout> | null = null;
+
+    const debouncedReloadDocagem = () => {
+      if (docagemDebounce) clearTimeout(docagemDebounce);
+      docagemDebounce = setTimeout(() => {
+        const range = calendarRangeRef.current;
+        if (!range) return;
+        void handleCalendarRangeChange(range.from, range.to, true);
+      }, 500);
+    };
+
+    const docagemChannel = supabase
+      .channel("docagem-realtime-calendar")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "docagem_instancias" },
+        () => {
+          debouncedReloadDocagem();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "docagens" },
+        () => {
+          debouncedReloadDocagem();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(docagemChannel);
+      if (docagemDebounce) clearTimeout(docagemDebounce);
+    };
+  }, [supabase, viewMode, handleCalendarRangeChange]);
 
   // Recarregar calendário quando filtro de arquivados mudar
   useEffect(() => {
@@ -2806,6 +2849,23 @@ export default function OSOperationalPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [openActionMenuId]);
+
+  // Fechar menu de docagem ao clicar fora
+  useEffect(() => {
+    if (!docagemMenuTarget) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const menu = docagemMenuRef.current;
+      if (menu && !menu.contains(event.target as Node)) {
+        setDocagemMenuTarget(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [docagemMenuTarget]);
 
   const [openNotifyMenuKey, setOpenNotifyMenuKey] = useState<string | null>(
     null,
@@ -5630,6 +5690,7 @@ export default function OSOperationalPage() {
                 osList={filteredCalendarOSList}
                 docagemInstances={filteredCalendarDocagemInstances}
                 clientes={clientes}
+                drivers={drivers}
                 loading={calendarLoading}
                 hasLoaded={calendarHasLoaded}
                 showArchivedOnly={showArchivedOnly}
@@ -5768,6 +5829,7 @@ export default function OSOperationalPage() {
                   const shouldOpenUp = spaceBelow < menuHeight + 16;
                   return (
                     <div
+                      ref={docagemMenuRef}
                       className="fixed min-w-[220px] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 space-y-1 z-[9999]"
                       style={{
                         top: shouldOpenUp
@@ -5813,13 +5875,44 @@ export default function OSOperationalPage() {
                         </button>
                       )}
                       {instance.status === "finalizada" && (
-                        <div className="px-4 py-2 text-sm font-bold text-slate-500 flex items-center gap-3">
-                          <CheckCircle2
-                            size={16}
-                            className="text-emerald-600"
-                          />
-                          Finalizado
-                        </div>
+                        <>
+                          <div className="px-4 py-2 text-sm font-bold text-slate-500 flex items-center gap-3">
+                            <CheckCircle2
+                              size={16}
+                              className="text-emerald-600"
+                            />
+                            Finalizado
+                          </div>
+                          <button
+                            onClick={async () => {
+                              try {
+                                await resetarDocagemDia(instance.id);
+                                toast.success(
+                                  "Dia de docagem resetado para pendente.",
+                                );
+                                setDocagemMenuTarget(null);
+                                if (calendarRangeRef.current) {
+                                  void handleCalendarRangeChange(
+                                    calendarRangeRef.current.from,
+                                    calendarRangeRef.current.to,
+                                    true,
+                                  );
+                                }
+                              } catch (err) {
+                                console.error(err);
+                                toast.error(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "Erro ao resetar dia de docagem.",
+                                );
+                              }
+                            }}
+                            className="group w-full px-4 py-2 text-left text-sm font-bold text-amber-600 hover:text-amber-700 rounded-xl bg-amber-50 hover:bg-amber-100 flex items-center gap-3 cursor-pointer"
+                          >
+                            <RotateCcw size={16} className="text-amber-600" />
+                            Resetar dia
+                          </button>
+                        </>
                       )}
                       {instance.status === "pendente" && (
                         <button

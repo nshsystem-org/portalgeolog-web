@@ -56,7 +56,10 @@ function formatShortName(fullName: string | null | undefined): string {
   return `${parts[0]} ${parts[1]}`;
 }
 
-function extractNotificationProtocolo(message: string, metadata?: Record<string, unknown> | null): {
+function extractNotificationProtocolo(
+  message: string,
+  metadata?: Record<string, unknown> | null,
+): {
   protocolo: string | null;
   cleanMessage: string;
 } {
@@ -90,7 +93,10 @@ function extractNotificationProtocolo(message: string, metadata?: Record<string,
   }
 
   // Capitaliza primeira letra se necessario
-  if (cleanMessage.length > 0 && cleanMessage[0] === cleanMessage[0].toLowerCase()) {
+  if (
+    cleanMessage.length > 0 &&
+    cleanMessage[0] === cleanMessage[0].toLowerCase()
+  ) {
     cleanMessage = cleanMessage[0].toUpperCase() + cleanMessage.slice(1);
   }
 
@@ -104,7 +110,8 @@ function extractNotificationProtocolo(message: string, metadata?: Record<string,
 }
 
 function timeAgo(date: string, now: number): string {
-  const d = date.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(date) ? date : date + "Z";
+  const d =
+    date.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(date) ? date : date + "Z";
   const diff = Math.max(now - new Date(d).getTime(), 0);
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
@@ -131,12 +138,17 @@ export default function DashboardLayout({
   } = useNotifications();
   const { currentVersion, updateAvailable, updateCountdown } = useAppVersion();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notificationFilter, setNotificationFilter] = useState<"all" | "unread" | "read">("all");
-  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<
+    "all" | "unread" | "read"
+  >("all");
+  const [showNotificationSettings, setShowNotificationSettings] =
+    useState(false);
   const relativeTimeNow = useRelativeTimeTicker(showNotifications);
   const filteredNotifications = useMemo(() => {
-    if (notificationFilter === "unread") return notifications.filter((n) => !n.read);
-    if (notificationFilter === "read") return notifications.filter((n) => n.read);
+    if (notificationFilter === "unread")
+      return notifications.filter((n) => !n.read);
+    if (notificationFilter === "read")
+      return notifications.filter((n) => n.read);
     return notifications;
   }, [notifications, notificationFilter]);
 
@@ -147,7 +159,9 @@ export default function DashboardLayout({
 
     const avatarUrls = filteredNotifications
       .map((n) => n.created_by_avatar_url)
-      .filter((url): url is string => Boolean(url) && !preloadedAvatarsRef.current.has(url));
+      .filter(
+        (url): url is string => !!url && !preloadedAvatarsRef.current.has(url),
+      );
 
     avatarUrls.forEach((url) => {
       const img = document.createElement("img");
@@ -249,7 +263,12 @@ export default function DashboardLayout({
 
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
-  }, [showNotifications, showNotificationSettings, showEmployees, announcementStep]);
+  }, [
+    showNotifications,
+    showNotificationSettings,
+    showEmployees,
+    announcementStep,
+  ]);
 
   // Forçar dropdown aberto durante explicação
   useEffect(() => {
@@ -674,7 +693,10 @@ export default function DashboardLayout({
               </button>
 
               {showNotifications && (
-                <div ref={notificationsDropdownRef} className="absolute right-0 mt-2 w-[400px] bg-white rounded-2xl shadow-2xl z-[9999] overflow-hidden border border-slate-100">
+                <div
+                  ref={notificationsDropdownRef}
+                  className="absolute right-0 mt-2 w-[400px] bg-white rounded-2xl shadow-2xl z-[9999] overflow-hidden border border-slate-100"
+                >
                   {/* Header */}
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                     <h3 className="font-black text-lg text-slate-800">
@@ -696,7 +718,11 @@ export default function DashboardLayout({
                                 : "text-slate-500 hover:text-slate-700"
                             }`}
                           >
-                            {f === "all" ? "Todas" : f === "unread" ? "Não lidas" : "Lidas"}
+                            {f === "all"
+                              ? "Todas"
+                              : f === "unread"
+                                ? "Não lidas"
+                                : "Lidas"}
                           </button>
                         ))}
                       </div>
@@ -705,7 +731,9 @@ export default function DashboardLayout({
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            setShowNotificationSettings(!showNotificationSettings);
+                            setShowNotificationSettings(
+                              !showNotificationSettings,
+                            );
                           }}
                           className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                           title="Opções"
@@ -713,7 +741,10 @@ export default function DashboardLayout({
                           <Settings size={16} />
                         </button>
                         {showNotificationSettings && (
-                          <div ref={notificationSettingsRef} className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-[10000]">
+                          <div
+                            ref={notificationSettingsRef}
+                            className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-[10000]"
+                          >
                             <button
                               onClick={(e) => {
                                 e.preventDefault();
@@ -746,31 +777,50 @@ export default function DashboardLayout({
                           notification.metadata,
                         );
 
-                        const chips = notification.metadata?.changed_fields_list;
+                        const chips =
+                          notification.metadata?.changed_fields_list;
                         const hasChips =
                           Array.isArray(chips) && chips.length > 0;
                         const chipLabels = hasChips
                           ? chips.map((chip) => String(chip)).filter(Boolean)
                           : [];
 
-                        const isDriverNotify = notification.title.startsWith("Mensagem enviada ao motorista");
-                        const driverNameMatch = notification.title.match(/Mensagem enviada ao motorista (.+)/);
-                        const driverFullName = driverNameMatch ? driverNameMatch[1] : "";
-                        const driverNameParts = driverFullName.split(" ").filter(Boolean);
-                        const driverShortName = driverNameParts.length > 1
-                          ? `${driverNameParts[0]} ${driverNameParts[driverNameParts.length - 1]}`
-                          : driverFullName;
+                        const isDriverNotify = notification.title.startsWith(
+                          "Mensagem enviada ao motorista",
+                        );
+                        const driverNameMatch = notification.title.match(
+                          /Mensagem enviada ao motorista (.+)/,
+                        );
+                        const driverFullName = driverNameMatch
+                          ? driverNameMatch[1]
+                          : "";
+                        const driverNameParts = driverFullName
+                          .split(" ")
+                          .filter(Boolean);
+                        const driverShortName =
+                          driverNameParts.length > 1
+                            ? `${driverNameParts[0]} ${driverNameParts[driverNameParts.length - 1]}`
+                            : driverFullName;
 
-                        const isDriverDelivered = notification.title === "Mensagem entregue ao motorista";
+                        const isDriverDelivered =
+                          notification.title ===
+                          "Mensagem entregue ao motorista";
 
-                        const isDriverViewDetails = notification.title === "Motorista visualizou os detalhes do atendimento";
+                        const isDriverViewDetails =
+                          notification.title ===
+                          "Motorista visualizou os detalhes do atendimento";
 
-                        const isDriverStart = notification.title === "Rota iniciada";
-                        const isDriverFinish = notification.title === "Rota finalizada";
-                        const isDriverUpdate = notification.title === "Motorista atualizado";
+                        const isDriverStart =
+                          notification.title === "Rota iniciada";
+                        const isDriverFinish =
+                          notification.title === "Rota finalizada";
+                        const isDriverUpdate =
+                          notification.title === "Motorista atualizado";
 
-                        const notifCycleKind = notification.metadata?.cycle_kind as string | undefined;
-                        const notifCycleOrdinal = notification.metadata?.cycle_ordinal as number | undefined;
+                        const notifCycleKind = notification.metadata
+                          ?.cycle_kind as string | undefined;
+                        const notifCycleOrdinal = notification.metadata
+                          ?.cycle_ordinal as number | undefined;
                         const notifCycleDesc = notifCycleKind
                           ? getOperationalCycleTitle({
                               kind: notifCycleKind as "itinerary" | "return",
@@ -790,34 +840,59 @@ export default function DashboardLayout({
                                 ? "finalizou um atendimento"
                                 : notification.title === "Atendimento arquivado"
                                   ? "arquivou um atendimento"
-                                  : notification.title === "Atendimento reaberto"
+                                  : notification.title ===
+                                      "Atendimento reaberto"
                                     ? "reabriu um atendimento"
-                                    : isDriverNotify
-                                      ? "mensagem enviada ao motorista"
-                                      : isDriverDelivered
-                                        ? "recebeu a mensagem com sucesso"
-                                        : isDriverViewDetails
-                                          ? notifCycleDesc
-                                            ? "visualizou os detalhes do atendimento"
-                                            : "visualizou os detalhes do atendimento"
-                                          : isDriverStart
-                                            ? notifCycleDesc
-                                              ? "iniciou a rota do"
-                                              : "iniciou a rota"
-                                            : isDriverFinish
-                                              ? notifCycleDesc
-                                                ? "finalizou a rota do"
-                                                : "finalizou a rota"
-                                              : isDriverUpdate
-                                                ? notification.message
-                                                : notification.title.toLowerCase();
+                                    : notification.title ===
+                                        "Dia de docagem resetado"
+                                      ? `docagem do dia ${notification.metadata?.data ?? ""} foi resetada`
+                                      : notification.title ===
+                                          "Dia de docagem finalizado"
+                                        ? `docagem do dia ${notification.metadata?.data ?? ""} foi finalizada`
+                                        : notification.title ===
+                                            "Dia de docagem reativado"
+                                          ? `docagem do dia ${notification.metadata?.data ?? ""} foi reativada`
+                                          : notification.title ===
+                                              "Dia de docagem excluído"
+                                            ? `docagem do dia ${notification.metadata?.data ?? ""} foi excluída`
+                                            : notification.title ===
+                                                "Nova docagem"
+                                              ? "criou uma docagem"
+                                              : notification.title ===
+                                                  "Docagem cancelada"
+                                                ? "cancelou uma docagem"
+                                                : isDriverNotify
+                                                  ? "mensagem enviada ao motorista"
+                                                  : isDriverDelivered
+                                                    ? "recebeu a mensagem com sucesso"
+                                                    : isDriverViewDetails
+                                                      ? notifCycleDesc
+                                                        ? "visualizou os detalhes do atendimento"
+                                                        : "visualizou os detalhes do atendimento"
+                                                      : isDriverStart
+                                                        ? notifCycleDesc
+                                                          ? "iniciou a rota do"
+                                                          : "iniciou a rota"
+                                                        : isDriverFinish
+                                                          ? notifCycleDesc
+                                                            ? "finalizou a rota do"
+                                                            : "finalizou a rota"
+                                                          : isDriverUpdate
+                                                            ? notification.message
+                                                            : notification.title.toLowerCase();
 
                         const renderActionContent = () => {
                           const kmText = (() => {
-                            if (isDriverStart && notification.metadata?.km_initial) {
+                            if (
+                              isDriverStart &&
+                              notification.metadata?.km_initial
+                            ) {
                               return ` com KM inicial ${notification.metadata.km_initial}`;
                             }
-                            if (isDriverFinish && notification.metadata?.km_final) {
+                            if (
+                              isDriverFinish &&
+                              notification.metadata?.km_final
+                            ) {
                               return ` com KM final ${notification.metadata.km_final}`;
                             }
                             return "";
@@ -840,7 +915,10 @@ export default function DashboardLayout({
                             );
                           }
 
-                          if ((isDriverStart || isDriverFinish) && notifCycleDesc) {
+                          if (
+                            (isDriverStart || isDriverFinish) &&
+                            notifCycleDesc
+                          ) {
                             return (
                               <>
                                 {actionText}{" "}
@@ -854,6 +932,50 @@ export default function DashboardLayout({
                                   {notifCycleDesc}
                                 </span>
                                 {kmText}
+                              </>
+                            );
+                          }
+
+                          const docagemDayTitles = [
+                            "Dia de docagem resetado",
+                            "Dia de docagem finalizado",
+                            "Dia de docagem reativado",
+                            "Dia de docagem excluído",
+                          ] as const;
+                          if (
+                            docagemDayTitles.includes(
+                              notification.title as (typeof docagemDayTitles)[number],
+                            )
+                          ) {
+                            const rawDate = notification.metadata?.data as
+                              | string
+                              | undefined;
+                            const formattedDate = rawDate
+                              ? rawDate.split("-").reverse().join("/")
+                              : "";
+                            const acao =
+                              notification.title === "Dia de docagem resetado"
+                                ? "resetada"
+                                : notification.title ===
+                                    "Dia de docagem finalizado"
+                                  ? "finalizada"
+                                  : notification.title ===
+                                      "Dia de docagem reativado"
+                                    ? "reativada"
+                                    : "excluída";
+                            return (
+                              <>
+                                docagem do dia{" "}
+                                <span
+                                  className={`font-bold ${
+                                    !notification.read
+                                      ? "text-slate-900"
+                                      : "text-slate-500"
+                                  }`}
+                                >
+                                  {formattedDate}
+                                </span>{" "}
+                                foi {acao}
                               </>
                             );
                           }
@@ -928,28 +1050,81 @@ export default function DashboardLayout({
                               const badgeConfig = (() => {
                                 const t = notification.title;
                                 if (t === "Novo atendimento")
-                                  return { icon: FilePlus, bg: "bg-green-500", text: "text-white" };
-                                if (t === "Atendimento atualizado" || t === "Status do atendimento atualizado")
-                                  return { icon: Info, bg: "bg-blue-500", text: "text-white" };
+                                  return {
+                                    icon: FilePlus,
+                                    bg: "bg-green-500",
+                                    text: "text-white",
+                                  };
+                                if (
+                                  t === "Atendimento atualizado" ||
+                                  t === "Status do atendimento atualizado"
+                                )
+                                  return {
+                                    icon: Info,
+                                    bg: "bg-blue-500",
+                                    text: "text-white",
+                                  };
                                 if (t === "Atendimento finalizado")
-                                  return { icon: CircleCheckBig, bg: "bg-emerald-500", text: "text-white" };
-                                if (t === "Atendimento arquivado" || t === "OS Arquivada")
-                                  return { icon: Archive, bg: "bg-red-500", text: "text-white" };
-                                if (t === "Atendimento reaberto" || t === "OS Reaberta")
-                                  return { icon: RotateCcw, bg: "bg-blue-500", text: "text-white" };
+                                  return {
+                                    icon: CircleCheckBig,
+                                    bg: "bg-emerald-500",
+                                    text: "text-white",
+                                  };
+                                if (
+                                  t === "Atendimento arquivado" ||
+                                  t === "OS Arquivada"
+                                )
+                                  return {
+                                    icon: Archive,
+                                    bg: "bg-red-500",
+                                    text: "text-white",
+                                  };
+                                if (
+                                  t === "Atendimento reaberto" ||
+                                  t === "OS Reaberta"
+                                )
+                                  return {
+                                    icon: RotateCcw,
+                                    bg: "bg-blue-500",
+                                    text: "text-white",
+                                  };
                                 if (t === "Mensagem entregue ao motorista")
-                                  return { icon: CheckCircle, bg: "bg-green-500", text: "text-white" };
+                                  return {
+                                    icon: CheckCircle,
+                                    bg: "bg-green-500",
+                                    text: "text-white",
+                                  };
                                 if (t === "Motorista atualizado")
-                                  return { icon: UserSquare2, bg: "bg-blue-500", text: "text-white" };
+                                  return {
+                                    icon: UserSquare2,
+                                    bg: "bg-blue-500",
+                                    text: "text-white",
+                                  };
                                 switch (notification.type) {
                                   case "success":
-                                    return { icon: CheckCircle, bg: "bg-green-500", text: "text-white" };
+                                    return {
+                                      icon: CheckCircle,
+                                      bg: "bg-green-500",
+                                      text: "text-white",
+                                    };
                                   case "warning":
-                                    return { icon: AlertTriangle, bg: "bg-red-500", text: "text-white" };
+                                    return {
+                                      icon: AlertTriangle,
+                                      bg: "bg-red-500",
+                                      text: "text-white",
+                                    };
                                   case "error":
-                                    return { icon: XCircle, bg: "bg-red-500", text: "text-white" };
+                                    return {
+                                      icon: XCircle,
+                                      bg: "bg-red-500",
+                                      text: "text-white",
+                                    };
                                   default:
-                                    return { icon: Info, bg: "bg-blue-500", text: "text-white" };
+                                    return {
+                                      icon: Info,
+                                      bg: "bg-blue-500",
+                                      text: "text-white",
+                                    };
                                 }
                               })();
                               const BadgeIcon = badgeConfig.icon;
@@ -957,16 +1132,29 @@ export default function DashboardLayout({
                                 <div className="relative flex-shrink-0">
                                   {notification.created_by_avatar_url ? (
                                     <img
-                                      src={getThumbnailUrl(notification.created_by_avatar_url, 100) || ""}
-                                      alt={formatShortName(notification.created_by_name)}
+                                      src={
+                                        getThumbnailUrl(
+                                          notification.created_by_avatar_url,
+                                          100,
+                                        ) || ""
+                                      }
+                                      alt={formatShortName(
+                                        notification.created_by_name,
+                                      )}
                                       className="w-14 h-14 rounded-full object-cover border border-slate-200"
                                     />
                                   ) : (
                                     <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white text-lg font-black flex items-center justify-center">
-                                      {formatShortName(notification.created_by_name).charAt(0).toUpperCase() || "?"}
+                                      {formatShortName(
+                                        notification.created_by_name,
+                                      )
+                                        .charAt(0)
+                                        .toUpperCase() || "?"}
                                     </div>
                                   )}
-                                  <span className={`absolute -bottom-0.5 -right-0.5 w-6 h-6 ${badgeConfig.bg} ${badgeConfig.text} rounded-full flex items-center justify-center border-2 border-white shadow-sm`}>
+                                  <span
+                                    className={`absolute -bottom-0.5 -right-0.5 w-6 h-6 ${badgeConfig.bg} ${badgeConfig.text} rounded-full flex items-center justify-center border-2 border-white shadow-sm`}
+                                  >
                                     <BadgeIcon size={12} strokeWidth={2.5} />
                                   </span>
                                 </div>
@@ -984,15 +1172,27 @@ export default function DashboardLayout({
                                         : "text-slate-400"
                                     }`}
                                   >
-                                    {formatShortName(notification.created_by_name)}
+                                    {formatShortName(
+                                      notification.created_by_name,
+                                    )}
                                   </span>
-                                )}
-                                {" "}
-                                <span className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}>{renderActionContent()}</span>
+                                )}{" "}
+                                <span
+                                  className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}
+                                >
+                                  {renderActionContent()}
+                                </span>
                                 {isDriverNotify && driverShortName && (
                                   <span className="inline-flex items-center gap-1.5 ml-2">
-                                    <Truck size={12} className={`${!notification.read ? "text-blue-700" : "text-slate-400"}`} />
-                                    <span className={`text-xs font-bold ${!notification.read ? "text-blue-800" : "text-slate-400"}`}>{driverShortName}</span>
+                                    <Truck
+                                      size={12}
+                                      className={`${!notification.read ? "text-blue-700" : "text-slate-400"}`}
+                                    />
+                                    <span
+                                      className={`text-xs font-bold ${!notification.read ? "text-blue-800" : "text-slate-400"}`}
+                                    >
+                                      {driverShortName}
+                                    </span>
                                   </span>
                                 )}
                               </p>
@@ -1013,11 +1213,18 @@ export default function DashboardLayout({
 
                               {/* Meta */}
                               <div className="flex items-center gap-1.5 mt-1.5">
-                                <span className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}>
-                                  {timeAgo(notification.created_at, relativeTimeNow)}
+                                <span
+                                  className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}
+                                >
+                                  {timeAgo(
+                                    notification.created_at,
+                                    relativeTimeNow,
+                                  )}
                                 </span>
                                 <span className="text-slate-300">•</span>
-                                <span className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"} capitalize`}>
+                                <span
+                                  className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"} capitalize`}
+                                >
                                   {notification.type === "success"
                                     ? "Cadastro"
                                     : notification.type === "info"
@@ -1027,7 +1234,9 @@ export default function DashboardLayout({
                                 {protocolo && (
                                   <>
                                     <span className="text-slate-300">•</span>
-                                    <span className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}>
+                                    <span
+                                      className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}
+                                    >
                                       {protocolo}
                                     </span>
                                   </>

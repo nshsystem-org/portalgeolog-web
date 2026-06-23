@@ -25,7 +25,11 @@ async function withRetry<T>(
 // =============================================================================
 
 export type DocagemStatus = "ativa" | "cancelada" | "finalizada";
-export type DocagemInstanceStatus = "pendente" | "finalizada" | "excluida";
+export type DocagemInstanceStatus =
+  | "pendente"
+  | "andamento"
+  | "finalizada"
+  | "excluida";
 
 export type DocagemDiaSemana = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -49,6 +53,7 @@ export type DocagemInput = {
 export type DocagemInstance = {
   id: string;
   docagemId: string;
+  protocolo: string | null;
   data: string;
   horarioInicio: string;
   horarioFim: string;
@@ -79,6 +84,7 @@ export type DocagemInstanceUpdate = {
 
 export type DocagemSummary = {
   id: string;
+  protocolo: string | null;
   clienteId: string;
   centroCustoId: string | null;
   solicitanteId: string | null;
@@ -105,6 +111,7 @@ function mapDocagemInstance(row: Record<string, unknown>): DocagemInstance {
   return {
     id: String(row.id),
     docagemId: String(row.docagem_id),
+    protocolo: row.protocolo ? String(row.protocolo) : null,
     data: String(row.data),
     horarioInicio: String(row.horario_inicio),
     horarioFim: String(row.horario_fim),
@@ -126,6 +133,7 @@ function mapDocagemInstance(row: Record<string, unknown>): DocagemInstance {
 function mapDocagemSummary(row: Record<string, unknown>): DocagemSummary {
   return {
     id: String(row.id),
+    protocolo: row.protocolo ? String(row.protocolo) : null,
     clienteId: String(row.cliente_id),
     centroCustoId: row.centro_custo_id ? String(row.centro_custo_id) : null,
     solicitanteId: row.solicitante_id ? String(row.solicitante_id) : null,
@@ -206,6 +214,7 @@ export async function fetchDocagemInstancesByRange({
         finalizada_em,
         finalizada_por,
         docagem:docagem_id (
+          protocolo,
           cliente_id,
           centro_custo_id,
           solicitante_id,
@@ -227,6 +236,7 @@ export async function fetchDocagemInstancesByRange({
       const docagem = (row.docagem as Record<string, unknown>) || {};
       return mapDocagemInstance({
         ...row,
+        protocolo: docagem.protocolo,
         cliente_id: docagem.cliente_id,
         centro_custo_id: docagem.centro_custo_id,
         solicitante_id: docagem.solicitante_id,
@@ -294,6 +304,15 @@ export async function reativarDocagemDia(instanciaId: string): Promise<void> {
         p_status: "pendente",
       },
     );
+    if (error) throw error;
+  });
+}
+
+export async function resetarDocagemDia(instanciaId: string): Promise<void> {
+  return withRetry(async () => {
+    const { error } = await getSupabase().rpc("resetar_docagem_dia", {
+      p_instancia_id: instanciaId,
+    });
     if (error) throw error;
   });
 }

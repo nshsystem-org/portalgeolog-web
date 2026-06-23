@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useMemo, useState, useCallback } from "react";
+import React, {
+  useMemo,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -8,6 +14,7 @@ import interactionPlugin from "@fullcalendar/interaction";
 import ptBrLocale from "@fullcalendar/core/locales/pt-br";
 import type { OrderService } from "@/context/DataContext";
 import type { DocagemInstance } from "@/lib/supabase/docagem-queries";
+import { createNotification } from "@/lib/supabase/queries";
 import {
   deriveCyclesOperationalStatus,
   getCycleDisplayStatus,
@@ -24,6 +31,13 @@ import {
   Route,
   User,
   MapPin,
+  Package,
+  ArrowRight,
+  FileText,
+  Briefcase,
+  Truck,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { logInfo } from "@/lib/frontend-logger";
 
@@ -32,13 +46,21 @@ interface Cliente {
   nome: string;
 }
 
-type CalendarEventKind = "os" | "docagem";
+interface Driver {
+  id: string;
+  name: string;
+}
+
+type CalendarEventKind = "os" | "docagem" | "rascunho" | "freelance";
 
 interface EventContentProps {
   os?: OrderService;
   docagem?: DocagemInstance;
   clientes: Cliente[];
+  drivers: Driver[];
   status: CycleOperationalStatus | "Docagem";
+  isDocagemFlag?: boolean;
+  eventKind?: CalendarEventKind;
   timeText?: string;
   eventStartStr?: string;
   displayDateTime?: string;
@@ -52,6 +74,7 @@ interface OSCalendarProps {
   osList: OrderService[];
   docagemInstances?: DocagemInstance[];
   clientes: Cliente[];
+  drivers: Driver[];
   onEventClick: (osId: string, position?: { x: number; y: number }) => void;
   onDocagemEventClick?: (
     instanceId: string,
@@ -123,7 +146,16 @@ const emptyWeekStatusCounts = (): WeekStatusCounts => ({
 // Cores por status — backgrounds mais saturados para legibilidade no calendário
 const statusColors: Record<
   string,
-  { bg: string; border: string; text: string; dot: string; clockColor?: string }
+  {
+    bg: string;
+    border: string;
+    text: string;
+    dot: string;
+    clockColor?: string;
+    iconCircle?: string;
+    badgeText?: string;
+    badgeBg?: string;
+  }
 > = {
   Pendente: {
     bg: "#f1f5f9",
@@ -131,6 +163,9 @@ const statusColors: Record<
     text: "#1e293b",
     dot: "#cbd5e1",
     clockColor: "#64748b",
+    iconCircle: "#475569",
+    badgeText: "#475569",
+    badgeBg: "#e2e8f0",
   },
   Aguardando: {
     bg: "#e0e7ff",
@@ -139,6 +174,12 @@ const statusColors: Record<
     dot: "#4338ca",
   },
   "Em Rota": {
+    bg: "#e0f6ff",
+    border: "#7dd3fc",
+    text: "#0c4a6e",
+    dot: "#38bdf8",
+  },
+  Andamento: {
     bg: "#e0f6ff",
     border: "#7dd3fc",
     text: "#0c4a6e",
@@ -170,6 +211,25 @@ const statusColors: Record<
     dot: "#7c3aed",
     clockColor: "#7c3aed",
   },
+  "Docagem Andamento": {
+    bg: "#f5f3ff",
+    border: "#8b5cf6",
+    text: "#5b21b6",
+    dot: "#7c3aed",
+    clockColor: "#7c3aed",
+    iconCircle: "#7c3aed",
+  },
+};
+
+// Mapeamento de tipo de evento → ícone + cor do círculo (canto superior esquerdo)
+const typeIcons: Record<
+  CalendarEventKind,
+  { icon: typeof Route; color: string }
+> = {
+  os: { icon: Truck, color: "#2563eb" },
+  docagem: { icon: Package, color: "#7c3aed" },
+  rascunho: { icon: FileText, color: "#f59e0b" },
+  freelance: { icon: Briefcase, color: "#059669" },
 };
 
 type CalendarEvent = {
@@ -260,7 +320,10 @@ const EventContent = ({
   os,
   docagem,
   clientes,
+  drivers,
   status,
+  isDocagemFlag,
+  eventKind,
   timeText,
   eventStartStr,
   displayDateTime,
@@ -269,10 +332,19 @@ const EventContent = ({
   isMonthView,
   isDayView,
 }: EventContentProps) => {
-  const isDocagem = status === "Docagem";
+  const isDocagem = isDocagemFlag ?? false;
+  const kind: CalendarEventKind = eventKind ?? (isDocagem ? "docagem" : "os");
+  const typeIconCfg = typeIcons[kind] || typeIcons.os;
+  const TypeIcon = typeIconCfg.icon;
   const colors = showArchivedOnly
     ? statusColors["Arquivado"]
     : statusColors[status] || statusColors["Pendente"];
+
+  // Círculo do ícone: docagem pendente/andamento sempre roxo
+  const iconCircleColor =
+    isDocagem && (status === "Pendente" || status === "Andamento")
+      ? "#7c3aed"
+      : colors.iconCircle || colors.dot;
 
   const clienteNome = isDocagem
     ? clientes.find((c) => c.id === docagem?.clienteId)?.nome || "N/A"
@@ -301,7 +373,7 @@ const EventContent = ({
       style={{
         backgroundColor: colors.bg,
         borderLeft: `4px solid ${colors.dot}`,
-        padding: isDayView ? "32px 12px 12px 12px" : "28px 6px 5px 6px",
+        padding: isDayView ? "32px 8px 12px 28px" : "28px 4px 5px 24px",
         borderRadius: "12px 8px 8px 12px",
         fontSize: isDayView ? "13px" : "11px",
         lineHeight: "1.4",
@@ -318,15 +390,41 @@ const EventContent = ({
         transition: "all 0.2s ease-in-out",
       }}
     >
-      {/* Status no canto superior direito */}
+      {/* Círculo com ícone do tipo (canto superior esquerdo) */}
+      <div
+        style={{
+          position: "absolute",
+          top: "6px",
+          left: "6px",
+          width: isDayView ? "28px" : "20px",
+          height: isDayView ? "28px" : "20px",
+          borderRadius: "50%",
+          backgroundColor: iconCircleColor,
+          color: "#ffffff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2,
+          flexShrink: 0,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+        }}
+      >
+        <TypeIcon
+          size={isDayView ? 16 : 12}
+          strokeWidth={2.5}
+          style={{ flexShrink: 0 }}
+        />
+      </div>
+
+      {/* Badges no canto superior direito */}
       {statusColors[status] && (
         <span
           style={{
             position: "absolute",
             top: "8px",
             right: "8px",
-            backgroundColor: colors.dot,
-            color: "#ffffff",
+            backgroundColor: colors.badgeBg || colors.dot,
+            color: colors.badgeText || "#ffffff",
             padding: "3px 8px",
             borderRadius: "6px",
             fontSize: isDayView ? "9px" : "7px",
@@ -334,9 +432,12 @@ const EventContent = ({
             textTransform: "uppercase",
             letterSpacing: "0.05em",
             zIndex: 1,
+            display: "flex",
+            alignItems: "center",
+            gap: "3px",
           }}
         >
-          {isDocagem ? "Docagem" : status}
+          {status}
         </span>
       )}
 
@@ -423,7 +524,15 @@ const EventContent = ({
               backgroundColor: colors.dot,
             }}
           />
-          {docagem?.motoristaId ? "Motorista alocado" : "Sem motorista"}
+          {(() => {
+            if (!docagem?.motoristaId) return "Sem motorista";
+            const driverName =
+              drivers.find((d) => d.id === docagem.motoristaId)?.name || "";
+            if (!driverName) return "Motorista alocado";
+            const partes = driverName.trim().split(/\s+/);
+            if (partes.length === 1) return partes[0].toUpperCase();
+            return `${partes[0]} ${partes[partes.length - 1]}`.toUpperCase();
+          })()}
         </div>
       ) : (
         <div
@@ -451,31 +560,68 @@ const EventContent = ({
         </div>
       )}
 
-      {/* Linha 4: Horário */}
-      <div
-        style={{
-          marginTop: "auto",
-          paddingTop: isDayView ? "8px" : "2px",
-        }}
-      >
-        <span
+      {/* Linha 4: Horários (Docagem) */}
+      {isDocagem && (
+        <div
           style={{
-            display: "inline-flex",
+            display: "flex",
             alignItems: "center",
             gap: "6px",
-            backgroundColor: colors.clockColor || colors.dot,
-            color: "#ffffff",
-            padding: isDayView ? "5px 12px" : "3px 8px",
-            borderRadius: "8px",
-            fontWeight: 800,
-            fontSize: isDayView ? "12px" : "10px",
-            textTransform: "uppercase",
+            marginTop: "auto",
+            marginBottom: isDayView ? "8px" : "4px",
+            paddingTop: isDayView ? "12px" : "6px",
           }}
         >
-          <Clock size={isDayView ? 16 : 14} strokeWidth={3} />
-          {startTime || "--:--"}
-        </span>
-      </div>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              backgroundColor: iconCircleColor,
+              color: "#ffffff",
+              padding: "3px 10px",
+              borderRadius: "8px",
+              fontWeight: 800,
+              fontSize: isDayView ? "11px" : "10px",
+              textTransform: "uppercase",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <Clock size={14} strokeWidth={3} />
+            {extractTimeFromDateTime(docagem?.horarioInicio) || "--:--"}
+            <ArrowRight size={12} strokeWidth={3} style={{ opacity: 0.8 }} />
+            {extractTimeFromDateTime(docagem?.horarioFim) || "--:--"}
+          </span>
+        </div>
+      )}
+
+      {/* Linha 4: Horário (apenas OS) */}
+      {!isDocagem && (
+        <div
+          style={{
+            marginTop: "auto",
+            paddingTop: isDayView ? "8px" : "2px",
+          }}
+        >
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              backgroundColor: colors.clockColor || colors.dot,
+              color: "#ffffff",
+              padding: isDayView ? "5px 12px" : "3px 8px",
+              borderRadius: "8px",
+              fontWeight: 800,
+              fontSize: isDayView ? "12px" : "10px",
+              textTransform: "uppercase",
+            }}
+          >
+            <Clock size={isDayView ? 16 : 14} strokeWidth={3} />
+            {startTime || "--:--"}
+          </span>
+        </div>
+      )}
     </div>
   );
 };
@@ -484,6 +630,7 @@ export default function OSCalendar({
   osList,
   docagemInstances = [],
   clientes,
+  drivers = [],
   onEventClick,
   onDocagemEventClick,
   loading,
@@ -496,6 +643,77 @@ export default function OSCalendar({
   >("dayGridWeek");
   const calendarRef = React.useRef<FullCalendar>(null);
   const lastRangeRef = React.useRef<{ from: string; to: string } | null>(null);
+
+  // Estado do botão eye: qual dateKey está em foco
+  const [focusedDateKey, setFocusedDateKey] = useState<string | null>(null);
+
+  // Realtime: "agora" atualizado via timeouts precisos (sem polling)
+  const [now, setNow] = useState<Date>(() => new Date());
+  // Ref para acessar a lista atual de instâncias dentro de callbacks assíncronos
+  const docagemInstancesRef = useRef(docagemInstances);
+  useEffect(() => {
+    docagemInstancesRef.current = docagemInstances;
+  }, [docagemInstances]);
+  // Notificações de "precisa finalizar" já disparadas nesta sessão
+  const firedNotifRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const scheduled: ReturnType<typeof setTimeout>[] = [];
+    const currentNow = new Date();
+
+    docagemInstances.forEach((instance) => {
+      if (instance.status === "finalizada" || instance.status === "excluida")
+        return;
+
+      const startDT = formatCalendarDateTime(
+        instance.data,
+        instance.horarioInicio,
+      );
+      const endDT = formatCalendarDateTime(instance.data, instance.horarioFim);
+      if (!startDT) return;
+
+      // Timeout preciso: atualiza `now` quando chegar a hora de início
+      const msToStart = new Date(startDT).getTime() - currentNow.getTime();
+      if (msToStart > 0) {
+        scheduled.push(setTimeout(() => setNow(new Date()), msToStart));
+      }
+
+      // Notificação 5min após horário final
+      if (endDT) {
+        const notifKey = `${instance.id}-end-notif`;
+        const msToNotif =
+          new Date(endDT).getTime() + 5 * 60 * 1000 - currentNow.getTime();
+        if (msToNotif > 0 && !firedNotifRef.current.has(notifKey)) {
+          scheduled.push(
+            setTimeout(async () => {
+              // Verificar se ainda não foi finalizada no momento do disparo
+              const current = docagemInstancesRef.current.find(
+                (i) => i.id === instance.id,
+              );
+              if (!current || current.status === "finalizada") return;
+              firedNotifRef.current.add(notifKey);
+              const clienteNome =
+                clientes.find((c) => c.id === instance.clienteId)?.nome ||
+                "Docagem";
+              const [ano, mes, dia] = instance.data.split("-");
+              const dataFormatada = `${dia}/${mes}/${ano}`;
+              const hora = instance.horarioFim?.slice(0, 5) || "";
+              await createNotification(
+                "warning",
+                "Docagem precisa ser finalizada",
+                `A docagem de <strong>${clienteNome}</strong> do dia <span style="color:#6d28d9;font-weight:700">${dataFormatada}</span> (término ${hora}) já passou 5 minutos do horário final e ainda não foi finalizada.`,
+                "all",
+              );
+            }, msToNotif),
+          );
+        }
+      }
+    });
+
+    return () => {
+      scheduled.forEach(clearTimeout);
+    };
+  }, [docagemInstances, clientes]);
 
   // Converter OS para eventos do FullCalendar
   const events = useMemo(() => {
@@ -650,7 +868,16 @@ export default function OSCalendar({
         instance.horarioFim,
       );
       const safeEndDateTime = endDateTime || startDateTime;
-      const colors = statusColors["Docagem"];
+      const isFinalizada = instance.status === "finalizada";
+      const isAndamento = !isFinalizada && new Date(startDateTime) <= now;
+      const eventStatus = isFinalizada
+        ? "Finalizado"
+        : isAndamento
+          ? "Andamento"
+          : "Pendente";
+      const colorKey =
+        isAndamento && !isFinalizada ? "Docagem Andamento" : eventStatus;
+      const colors = statusColors[colorKey] || statusColors["Docagem"];
 
       derivedEvents.push({
         id: `docagem-${instance.id}`,
@@ -665,7 +892,7 @@ export default function OSCalendar({
           kind: "docagem",
           docagem: instance,
           clienteNome,
-          status: "Docagem",
+          status: eventStatus,
           displayDateTime: startDateTime,
           startTime: instance.horarioInicio,
         },
@@ -673,7 +900,174 @@ export default function OSCalendar({
     });
 
     return derivedEvents;
-  }, [osList, docagemInstances, clientes]);
+  }, [osList, docagemInstances, clientes, now]);
+
+  // Hover expandir coluna no modo semana
+  // O FullCalendar renderiza DUAS tabelas separadas: header e body.
+  // É necessário setar width diretamente nos <th> e <td> de ambas.
+  useEffect(() => {
+    if (currentView !== "dayGridWeek") return;
+
+    const setupHover = () => {
+      const weekView = document.querySelector(
+        ".fc-dayGridWeek-view",
+      ) as HTMLElement | null;
+      if (!weekView) return null;
+
+      // Cabeçalho: tabela fc-col-header
+      const headerCells = Array.from(
+        weekView.querySelectorAll(".fc-col-header-cell"),
+      ) as HTMLElement[];
+      // Body: primeira linha com .fc-daygrid-day
+      const bodyCells = Array.from(
+        weekView.querySelectorAll(".fc-daygrid-day"),
+      ) as HTMLElement[];
+
+      const n = headerCells.length;
+      if (n === 0 || bodyCells.length === 0) return null;
+
+      const BIG = 18; // % da coluna em hover (colunas comprimidas ficam maiores)
+      const baseW = `${(100 / n).toFixed(3)}%`;
+      const bigW = `${BIG}%`;
+      const smallW = `${((100 - BIG) / (n - 1)).toFixed(3)}%`;
+
+      // Forçar table-layout: fixed nas duas tabelas
+      weekView
+        .querySelectorAll("table")
+        .forEach((t) => ((t as HTMLElement).style.tableLayout = "fixed"));
+
+      // Hover: muda largura E aplica fundo escuro na coluna em hover
+      const apply = (hovered: number | null) => {
+        headerCells.forEach((cell, i) => {
+          cell.style.width =
+            hovered === null ? baseW : i === hovered ? bigW : smallW;
+          cell.classList.toggle("fc-week-col-hovered", i === hovered);
+        });
+        bodyCells.forEach((cell, i) => {
+          cell.style.width =
+            hovered === null ? baseW : i === hovered ? bigW : smallW;
+          cell.classList.toggle("fc-week-col-hovered", i === hovered);
+        });
+      };
+
+      apply(null);
+
+      type Handler = { el: HTMLElement; enter: () => void; leave: () => void };
+      const handlers: Handler[] = [];
+
+      const allCells = [...headerCells, ...bodyCells];
+      allCells.forEach((cell, idx) => {
+        const col = idx < n ? idx : idx - n;
+        const enter = () => apply(col);
+        const leave = () => apply(null);
+        cell.addEventListener("mouseenter", enter);
+        cell.addEventListener("mouseleave", leave);
+        handlers.push({ el: cell, enter, leave });
+      });
+
+      return () => {
+        handlers.forEach(({ el, enter, leave }) => {
+          el.removeEventListener("mouseenter", enter);
+          el.removeEventListener("mouseleave", leave);
+        });
+        apply(null);
+      };
+    };
+
+    let cleanup: (() => void) | null = null;
+    const timer = setTimeout(() => {
+      cleanup = setupHover();
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      if (cleanup) cleanup();
+    };
+  }, [currentView, events, hasLoaded]);
+
+  // Interceptar cliques no botão eye na fase de captura (antes do FullCalendar
+  // e do React). Faz o toggle de foco aqui mesmo, pois stopImmediatePropagation
+  // impede que o onClick do React (na fase de bubble) seja acionado.
+  useEffect(() => {
+    if (currentView !== "dayGridWeek") return;
+
+    const blockNav = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (target.closest(".fc-week-eye-btn")) {
+        e.stopPropagation();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+
+    const handleEyeClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const btn = target.closest(".fc-week-eye-btn");
+      if (!btn) return;
+      e.stopPropagation();
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const cell = btn.closest("[data-date]");
+      const dateKey = cell?.getAttribute("data-date");
+      if (!dateKey) return;
+      setFocusedDateKey((prev) => (prev === dateKey ? null : dateKey));
+    };
+
+    // Bloqueia navlink em mousedown/pointerdown; faz o toggle no click
+    document.addEventListener("mousedown", blockNav, true);
+    document.addEventListener("pointerdown", blockNav, true);
+    document.addEventListener("click", handleEyeClick, true);
+
+    return () => {
+      document.removeEventListener("mousedown", blockNav, true);
+      document.removeEventListener("pointerdown", blockNav, true);
+      document.removeEventListener("click", handleEyeClick, true);
+    };
+  }, [currentView, setFocusedDateKey]);
+
+  // Aplicar/remover efeito de foco (eye button) nas colunas da semana
+  useEffect(() => {
+    if (currentView !== "dayGridWeek") return;
+
+    const weekView = document.querySelector(
+      ".fc-dayGridWeek-view",
+    ) as HTMLElement | null;
+    if (!weekView) return;
+
+    const headerCells = Array.from(
+      weekView.querySelectorAll(".fc-col-header-cell"),
+    ) as HTMLElement[];
+    const bodyCells = Array.from(
+      weekView.querySelectorAll(".fc-daygrid-day"),
+    ) as HTMLElement[];
+
+    if (focusedDateKey === null) {
+      weekView.classList.remove("fc-week-col-hover-active");
+      [...headerCells, ...bodyCells].forEach((c) =>
+        c.classList.remove("fc-week-col-focused"),
+      );
+      return;
+    }
+
+    // FullCalendar coloca data-date="YYYY-MM-DD" diretamente no <th> e <td>
+    const idx = headerCells.findIndex(
+      (cell) => cell.getAttribute("data-date") === focusedDateKey,
+    );
+    const bodyIdx = bodyCells.findIndex(
+      (cell) => cell.getAttribute("data-date") === focusedDateKey,
+    );
+    const resolvedIdx = idx >= 0 ? idx : bodyIdx;
+
+    if (resolvedIdx < 0) return;
+
+    weekView.classList.add("fc-week-col-hover-active");
+    headerCells.forEach((c, i) =>
+      c.classList.toggle("fc-week-col-focused", i === resolvedIdx),
+    );
+    bodyCells.forEach((c, i) =>
+      c.classList.toggle("fc-week-col-focused", i === resolvedIdx),
+    );
+  }, [focusedDateKey, currentView, events]);
 
   const weekStatusCountsByDate = useMemo(() => {
     const countsByDate: Record<string, WeekStatusCounts> = {};
@@ -803,6 +1197,7 @@ export default function OSCalendar({
           os?: OrderService;
           docagem?: DocagemInstance;
           status: CycleOperationalStatus | "Docagem";
+          isDocagemFlag?: boolean;
           itineraryLabel?: string;
           displayDateTime?: string;
           startTime?: string;
@@ -815,7 +1210,10 @@ export default function OSCalendar({
           os={isDocagem ? undefined : eventInfo.event.extendedProps.os}
           docagem={eventInfo.event.extendedProps.docagem}
           clientes={clientes}
+          drivers={drivers}
           status={eventInfo.event.extendedProps.status}
+          isDocagemFlag={isDocagem}
+          eventKind={eventInfo.event.extendedProps.kind}
           timeText={eventInfo.timeText}
           eventStartStr={eventInfo.event.startStr}
           displayDateTime={eventInfo.event.extendedProps.displayDateTime}
@@ -899,11 +1297,32 @@ export default function OSCalendar({
       const isToday =
         arg.view.type === "dayGridWeek" && dateKey === toDateKey(new Date());
 
+      const isFocused = focusedDateKey === dateKey;
+
       return (
         <div
           className={`fc-os-header fc-os-header--${headerVariant}`}
           key={`header-${dateKey}-${headerVariant}`}
         >
+          {headerVariant === "week" && (
+            <button
+              className={`fc-week-eye-btn${isFocused ? " active" : ""}`}
+              title={isFocused ? "Desfocar coluna" : "Focar nesta coluna"}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setFocusedDateKey((prev) =>
+                  prev === dateKey ? null : dateKey,
+                );
+              }}
+            >
+              {isFocused ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
+          )}
           <span className="fc-os-week-header__day">{arg.text}</span>
           <div className="fc-os-week-header__status-row">
             {weekStatusOrder.map((status) => {
@@ -937,7 +1356,7 @@ export default function OSCalendar({
         </div>
       );
     },
-    [weekStatusCountsByDate],
+    [weekStatusCountsByDate, focusedDateKey, setFocusedDateKey],
   );
 
   // Lógica de exibição baseada em hasLoaded
@@ -945,7 +1364,10 @@ export default function OSCalendar({
   // Mostrar overlay de loading sempre que estiver carregando, independente de ter dados anteriores
   const showCalendarWithOverlay = loading;
   const isEmpty =
-    !loading && hasLoaded && osList.length === 0 && docagemInstances.length === 0;
+    !loading &&
+    hasLoaded &&
+    osList.length === 0 &&
+    docagemInstances.length === 0;
 
   return (
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden relative">
@@ -1021,7 +1443,9 @@ export default function OSCalendar({
               events={events}
               eventClick={handleEventClick}
               selectable={true}
+              unselectAuto={true}
               select={handleDateSelect}
+              eventLongPressDelay={0}
               datesSet={handleDatesSet}
               headerToolbar={
                 currentView === "dayGridMonth"
@@ -1034,6 +1458,13 @@ export default function OSCalendar({
               }
               titleFormat={{ year: "numeric", month: "long" }}
               eventContent={renderEventContent}
+              eventDidMount={(info) => {
+                // Remove tabindex e pointer-events que causam o overlay escuro no foco/botão direito
+                info.el.removeAttribute("tabindex");
+                info.el.style.outline = "none";
+                info.el.style.userSelect = "none";
+                info.el.style.webkitUserSelect = "none";
+              }}
               dayCellContent={renderMonthDayCellContent}
               dayCellClassNames={(dateInfo) => {
                 if (dateInfo.isOtherMonth) {
@@ -1220,6 +1651,195 @@ export default function OSCalendar({
             vertical-align: top !important;
           }
 
+          /* Hover expandir coluna no modo semana (transições suaves) */
+          .fc-dayGridWeek-view .fc-col-header-cell,
+          .fc-dayGridWeek-view .fc-daygrid-day {
+            transition:
+              width 0.45s cubic-bezier(0.25, 0.1, 0.25, 1),
+              opacity 0.4s ease,
+              filter 0.4s ease,
+              background 0.4s ease,
+              background-color 0.4s ease !important;
+            overflow: hidden !important;
+          }
+
+          /* Cards no modo semana: 98% normal, 90% no hover (diminui levemente) */
+          .fc-dayGridWeek-view .fc-daygrid-event-harness,
+          .fc-dayGridWeek-view .fc-daygrid-block-event {
+            width: 98% !important;
+            margin-left: 1% !important;
+            margin-right: 1% !important;
+            transition: width 0.35s cubic-bezier(0.25, 0.1, 0.25, 1),
+              margin 0.35s cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+          }
+
+          .fc-dayGridWeek-view .fc-daygrid-event-harness:hover,
+          .fc-dayGridWeek-view .fc-daygrid-block-event:hover {
+            width: 90% !important;
+            margin-left: 5% !important;
+            margin-right: 5% !important;
+          }
+
+          /* Coluna em hover: cards ocupam 98% (aproveitando a coluna expandida) */
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered
+            .fc-daygrid-event-harness,
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered
+            .fc-daygrid-block-event {
+            width: 98% !important;
+            margin-left: 1% !important;
+            margin-right: 1% !important;
+          }
+
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered
+            .fc-daygrid-event-harness:hover,
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered
+            .fc-daygrid-block-event:hover {
+            width: 93% !important;
+            margin-left: 3.5% !important;
+            margin-right: 3.5% !important;
+          }
+
+          /* HOVER: coluna em hover ganha fundo azul degradê (escuro→claro) exceto hoje */
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered:not(.fc-day-today),
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered:not(.fc-day-today)
+            .fc-daygrid-day-frame,
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered:not(.fc-day-today)
+            .fc-scrollgrid-sync-inner {
+            background: linear-gradient(
+              180deg,
+              #011c3a 0%,
+              #0d3266 50%,
+              #1e4d8f 100%
+            ) !important;
+          }
+
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today),
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-scrollgrid-sync-inner,
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-col-header-cell-cushion {
+            background: linear-gradient(
+              180deg,
+              #011c3a 0%,
+              #1e4d8f 100%
+            ) !important;
+          }
+
+          /* Chips de status com cores neon quando coluna está hovered (fundo escuro) */
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip {
+            background-color: rgba(255, 255, 255, 0.06) !important;
+            border-color: rgba(255, 255, 255, 0.18) !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip[title^="Pendente"] {
+            color: #94a3b8 !important;
+            border-color: rgba(148, 163, 184, 0.5) !important;
+            background-color: rgba(148, 163, 184, 0.12) !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip[title^="Pendente"]
+            span {
+            color: #e2e8f0 !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip[title^="Aguardando"] {
+            color: #818cf8 !important;
+            border-color: rgba(129, 140, 248, 0.5) !important;
+            background-color: rgba(129, 140, 248, 0.15) !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip[title^="Aguardando"]
+            span {
+            color: #c7d2fe !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip[title^="Em Rota"] {
+            color: #38bdf8 !important;
+            border-color: rgba(56, 189, 248, 0.5) !important;
+            background-color: rgba(56, 189, 248, 0.15) !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip[title^="Em Rota"]
+            span {
+            color: #bae6fd !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip[title^="Finalizado"] {
+            color: #34d399 !important;
+            border-color: rgba(52, 211, 153, 0.5) !important;
+            background-color: rgba(52, 211, 153, 0.15) !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__status-chip[title^="Finalizado"]
+            span {
+            color: #a7f3d0 !important;
+          }
+
+          /* EYE focus: colunas NÃO focadas ficam desfocadas/escurecidas */
+          .fc-dayGridWeek-view.fc-week-col-hover-active
+            .fc-col-header-cell:not(.fc-week-col-focused),
+          .fc-dayGridWeek-view.fc-week-col-hover-active
+            .fc-daygrid-day:not(.fc-week-col-focused) {
+            opacity: 0.25 !important;
+            filter: brightness(0.5) grayscale(0.3) !important;
+          }
+
+          /* Botão eye no header da semana */
+          .fc-os-header--week {
+            position: relative !important;
+          }
+          .fc-week-eye-btn {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            color: #94a3b8;
+            opacity: 0;
+            transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+            z-index: 10;
+            padding: 0;
+          }
+          .fc-col-header-cell:hover .fc-week-eye-btn,
+          .fc-week-eye-btn.active {
+            opacity: 1 !important;
+          }
+          .fc-week-eye-btn:hover {
+            background: rgba(1, 28, 58, 0.08);
+            color: #1e40af;
+          }
+          .fc-week-eye-btn.active {
+            color: #1e40af;
+            background: rgba(30, 64, 175, 0.1);
+          }
+
           .fc-dayGridMonth-view .fc-col-header-cell,
           .fc-dayGridDay-view .fc-col-header-cell {
             vertical-align: top !important;
@@ -1278,6 +1898,13 @@ export default function OSCalendar({
             text-transform: capitalize;
             color: #0f172a;
             line-height: 1.1;
+          }
+
+          /* Texto do dia em branco quando coluna está hovered (fundo escuro) */
+          .fc-dayGridWeek-view
+            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
+            .fc-os-week-header__day {
+            color: #ffffff !important;
           }
 
           .fc-os-header--day .fc-os-week-header__day {
@@ -1566,6 +2193,57 @@ export default function OSCalendar({
             background: transparent !important;
             border: none !important;
             box-shadow: none !important;
+          }
+
+          /* Remover shadow/outline ao clicar ou focar em evento */
+          .fc-event,
+          .fc-event:focus,
+          .fc-event:active,
+          .fc-event-selected {
+            outline: none !important;
+            box-shadow: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+          }
+
+          .fc-event-custom:focus,
+          .fc-event-custom:active {
+            outline: none !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+          }
+
+          /* Remover fundo escuro sem border-radius do wrapper FullCalendar */
+          .fc-h-event,
+          .fc-h-event:focus,
+          .fc-h-event:active,
+          .fc-h-event.fc-event-selected,
+          .fc-daygrid-event,
+          .fc-daygrid-event:focus,
+          .fc-daygrid-event:active,
+          .fc-daygrid-event.fc-event-selected,
+          .fc-daygrid-block-event,
+          .fc-daygrid-block-event:focus,
+          .fc-daygrid-block-event:active,
+          .fc-daygrid-block-event.fc-event-selected {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+          }
+
+          /* Remover overlay escuro do pseudo-elemento ::after do FullCalendar */
+          .fc-event::after,
+          .fc-event::before,
+          .fc-event-selected::after,
+          .fc-event-selected::before,
+          .fc-h-event::after,
+          .fc-h-event::before,
+          .fc-daygrid-event::after,
+          .fc-daygrid-event::before,
+          .fc-daygrid-block-event::after,
+          .fc-daygrid-block-event::before {
+            display: none !important;
+            background: transparent !important;
+            content: none !important;
           }
 
           /* Melhorar visual do scroll */

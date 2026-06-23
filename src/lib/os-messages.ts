@@ -249,6 +249,7 @@ export type CycleOperationalStatus =
   | "Pendente"
   | "Aguardando"
   | "Em Rota"
+  | "Andamento"
   | "Finalizado"
   | "Cancelado";
 
@@ -312,8 +313,7 @@ export function deriveCyclesOperationalStatus(
 
   // Se há ciclos concluídos mas nem todos os ativos estão concluídos,
   // os ciclos "pending" restantes estão aguardando ativação.
-  if (activeCycles.some((c) => c.state === "completed"))
-    return "Aguardando";
+  if (activeCycles.some((c) => c.state === "completed")) return "Aguardando";
 
   return "Pendente";
 }
