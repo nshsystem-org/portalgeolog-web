@@ -1224,7 +1224,7 @@ export default function OSCalendar({
         />
       );
     },
-    [clientes, showArchivedOnly, currentView],
+    [clientes, drivers, showArchivedOnly, currentView],
   );
 
   const renderMonthDayCellContent = useCallback(
