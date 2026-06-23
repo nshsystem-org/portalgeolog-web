@@ -34,6 +34,10 @@ import {
   Package,
   ArrowRight,
   FileText,
+  Sun,
+  Sunrise,
+  Sunset,
+  Moon,
   Briefcase,
   Truck,
   Eye,
@@ -51,14 +55,14 @@ interface Driver {
   name: string;
 }
 
-type CalendarEventKind = "os" | "docagem" | "rascunho" | "freelance";
+type CalendarEventKind = "os" | "docagem" | "rascunho" | "freelance" | "divider";
 
 interface EventContentProps {
   os?: OrderService;
   docagem?: DocagemInstance;
   clientes: Cliente[];
   drivers: Driver[];
-  status: CycleOperationalStatus | "Docagem";
+  status: CycleOperationalStatus | "Docagem" | "Divider";
   isDocagemFlag?: boolean;
   eventKind?: CalendarEventKind;
   timeText?: string;
@@ -68,6 +72,9 @@ interface EventContentProps {
   showArchivedOnly?: boolean;
   isMonthView?: boolean;
   isDayView?: boolean;
+  dividerLabel?: string;
+  dividerIcon?: typeof Route;
+  dividerColor?: string;
 }
 
 interface OSCalendarProps {
@@ -168,10 +175,10 @@ const statusColors: Record<
     badgeBg: "#e2e8f0",
   },
   Aguardando: {
-    bg: "#e0e7ff",
-    border: "#4f46e5",
-    text: "#312e81",
-    dot: "#4338ca",
+    bg: "#dbeafe",
+    border: "#1e3a8a",
+    text: "#172554",
+    dot: "#1e40af",
   },
   "Em Rota": {
     bg: "#e0f6ff",
@@ -212,12 +219,14 @@ const statusColors: Record<
     clockColor: "#7c3aed",
   },
   "Docagem Andamento": {
-    bg: "#f5f3ff",
-    border: "#8b5cf6",
-    text: "#5b21b6",
-    dot: "#7c3aed",
-    clockColor: "#7c3aed",
-    iconCircle: "#7c3aed",
+    bg: "#ede9fe",
+    border: "#7c3aed",
+    text: "#4c1d95",
+    dot: "#6d28d9",
+    clockColor: "#6d28d9",
+    iconCircle: "#6d28d9",
+    badgeBg: "#e1cdff",
+    badgeText: "#3d0a3c",
   },
 };
 
@@ -230,6 +239,7 @@ const typeIcons: Record<
   docagem: { icon: Package, color: "#7c3aed" },
   rascunho: { icon: FileText, color: "#f59e0b" },
   freelance: { icon: Briefcase, color: "#059669" },
+  divider: { icon: Route, color: "#64748b" },
 };
 
 type CalendarEvent = {
@@ -246,11 +256,14 @@ type CalendarEvent = {
     os?: OrderService;
     docagem?: DocagemInstance;
     clienteNome: string;
-    status: CycleOperationalStatus | "Docagem";
+    status: CycleOperationalStatus | "Docagem" | "Divider";
     itineraryLabel?: string;
     itineraryIndex?: number;
     displayDateTime?: string;
     startTime?: string;
+    dividerLabel?: string;
+    dividerIcon?: typeof Route;
+    dividerColor?: string;
   };
 };
 
@@ -331,20 +344,91 @@ const EventContent = ({
   showArchivedOnly,
   isMonthView,
   isDayView,
+  dividerLabel,
+  dividerIcon: DividerIcon,
+  dividerColor,
 }: EventContentProps) => {
+  if (eventKind === "divider") {
+    const iconColor = dividerColor || "#64748b";
+    return (
+      <div
+        className="fc-divider-event"
+        data-period={dividerLabel}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "4px 0",
+          margin: "8px 0 4px 0",
+          pointerEvents: "none",
+          width: "100%",
+        }}
+      >
+        <div
+          style={{
+            height: "1px",
+            flex: 1,
+            background: `linear-gradient(90deg, transparent, ${iconColor}55 20%, ${iconColor}55 80%, transparent)`,
+          }}
+        />
+        {DividerIcon && (
+          <DividerIcon
+            size={13}
+            strokeWidth={2.5}
+            style={{ color: iconColor, flexShrink: 0 }}
+          />
+        )}
+        <span
+          style={{
+            fontSize: "10px",
+            fontWeight: 900,
+            color: iconColor,
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            whiteSpace: "nowrap",
+            backgroundColor: `${iconColor}15`,
+            padding: "3px 10px",
+            borderRadius: "6px",
+            border: `1px solid ${iconColor}30`,
+          }}
+        >
+          {dividerLabel}
+        </span>
+        <div
+          style={{
+            height: "1px",
+            flex: 1,
+            background: `linear-gradient(90deg, transparent, ${iconColor}55 20%, ${iconColor}55 80%, transparent)`,
+          }}
+        />
+      </div>
+    );
+  }
+
   const isDocagem = isDocagemFlag ?? false;
   const kind: CalendarEventKind = eventKind ?? (isDocagem ? "docagem" : "os");
   const typeIconCfg = typeIcons[kind] || typeIcons.os;
   const TypeIcon = typeIconCfg.icon;
   const colors = showArchivedOnly
     ? statusColors["Arquivado"]
-    : statusColors[status] || statusColors["Pendente"];
+    : isDocagem && status === "Andamento"
+      ? statusColors["Docagem Andamento"]
+      : statusColors[status] || statusColors["Pendente"];
 
   // Círculo do ícone: docagem pendente/andamento sempre roxo
   const iconCircleColor =
     isDocagem && (status === "Pendente" || status === "Andamento")
       ? "#7c3aed"
       : colors.iconCircle || colors.dot;
+
+  // Cor de fundo do badge de horário: docagem pendente usa cinza escuro (igual OS)
+  // Docagem andamento usa roxo escuro
+  const docagemClockBg =
+    isDocagem && status === "Pendente"
+      ? "#475569"
+      : isDocagem && status === "Andamento"
+        ? "#5a2ca3"
+        : iconCircleColor;
 
   const clienteNome = isDocagem
     ? clientes.find((c) => c.id === docagem?.clienteId)?.nome || "N/A"
@@ -577,7 +661,7 @@ const EventContent = ({
               display: "inline-flex",
               alignItems: "center",
               gap: "6px",
-              backgroundColor: iconCircleColor,
+              backgroundColor: docagemClockBg,
               color: "#ffffff",
               padding: "3px 10px",
               borderRadius: "8px",
@@ -608,7 +692,12 @@ const EventContent = ({
               display: "inline-flex",
               alignItems: "center",
               gap: "6px",
-              backgroundColor: colors.clockColor || colors.dot,
+              backgroundColor:
+                status === "Pendente"
+                  ? "#475569"
+                  : status === "Em Rota"
+                    ? "#0284c7"
+                    : colors.clockColor || colors.dot,
               color: "#ffffff",
               padding: isDayView ? "5px 12px" : "3px 8px",
               borderRadius: "8px",
@@ -899,8 +988,77 @@ export default function OSCalendar({
       });
     });
 
+    // Gerar eventos divisores de período do dia (Manhã/Tarde/Noite/Madrugada)
+    // Apenas para visualizações de semana e dia
+    if (currentView === "dayGridWeek" || currentView === "dayGridDay") {
+      // Coletar todas as datas únicas dos eventos
+      const dateSet = new Set<string>();
+      derivedEvents.forEach((ev) => {
+        if (ev.start) {
+          dateSet.add(ev.start.split("T")[0]);
+        }
+      });
+
+      const periods = [
+        {
+          label: "Madrugada",
+          startHour: 0,
+          endHour: 6,
+          icon: Moon,
+          color: "#6366f1",
+        },
+        {
+          label: "Manhã",
+          startHour: 6,
+          endHour: 12,
+          icon: Sunrise,
+          color: "#f59e0b",
+        },
+        {
+          label: "Tarde",
+          startHour: 12,
+          endHour: 18,
+          icon: Sun,
+          color: "#ea580c",
+        },
+        {
+          label: "Noite",
+          startHour: 18,
+          endHour: 24,
+          icon: Sunset,
+          color: "#7c3aed",
+        },
+      ];
+
+      dateSet.forEach((dateStr) => {
+        periods.forEach((period) => {
+          const startDateTime = `${dateStr}T${String(period.startHour).padStart(2, "0")}:00:00`;
+          const endDateTime = `${dateStr}T${String(period.endHour).padStart(2, "0")}:00:00`;
+          derivedEvents.push({
+            id: `divider-${dateStr}-${period.label}`,
+            title: period.label,
+            start: startDateTime,
+            end: endDateTime,
+            allDay: false,
+            backgroundColor: "transparent",
+            borderColor: "transparent",
+            textColor: period.color,
+            extendedProps: {
+              kind: "divider",
+              clienteNome: "",
+              status: "Divider",
+              displayDateTime: startDateTime,
+              dividerLabel: period.label,
+              dividerIcon: period.icon,
+              dividerColor: period.color,
+            },
+          });
+        });
+      });
+    }
+
     return derivedEvents;
-  }, [osList, docagemInstances, clientes, now]);
+  }, [osList, docagemInstances, clientes, now, currentView]);
 
   // Hover expandir coluna no modo semana
   // O FullCalendar renderiza DUAS tabelas separadas: header e body.
@@ -1103,6 +1261,10 @@ export default function OSCalendar({
     }) => {
       info.jsEvent.preventDefault();
       const props = info.event.extendedProps;
+      if (props?.kind === "divider") {
+        info.jsEvent.stopPropagation();
+        return;
+      }
       const isDocagem = props?.kind === "docagem";
       if (isDocagem && props?.docagem && onDocagemEventClick) {
         onDocagemEventClick(props.docagem.id, {
@@ -1196,11 +1358,14 @@ export default function OSCalendar({
           kind: CalendarEventKind;
           os?: OrderService;
           docagem?: DocagemInstance;
-          status: CycleOperationalStatus | "Docagem";
+          status: CycleOperationalStatus | "Docagem" | "Divider";
           isDocagemFlag?: boolean;
           itineraryLabel?: string;
           displayDateTime?: string;
           startTime?: string;
+          dividerLabel?: string;
+          dividerIcon?: typeof Route;
+          dividerColor?: string;
         };
       };
     }) => {
@@ -1221,6 +1386,9 @@ export default function OSCalendar({
           showArchivedOnly={showArchivedOnly}
           isMonthView={currentView === "dayGridMonth"}
           isDayView={currentView === "dayGridDay"}
+          dividerLabel={eventInfo.event.extendedProps.dividerLabel}
+          dividerIcon={eventInfo.event.extendedProps.dividerIcon}
+          dividerColor={eventInfo.event.extendedProps.dividerColor}
         />
       );
     },
@@ -1262,11 +1430,11 @@ export default function OSCalendar({
                   style={{
                     color: meta.color,
                     borderColor: isToday
-                      ? `${meta.color}66`
-                      : `${meta.color}33`,
+                      ? `${meta.color}CC`
+                      : `${meta.color}80`,
                     backgroundColor: isToday
-                      ? `${meta.color}26`
-                      : `${meta.color}12`,
+                      ? `${meta.color}4D`
+                      : `${meta.color}33`,
                     opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
                   }}
                 >
@@ -1320,7 +1488,7 @@ export default function OSCalendar({
                 );
               }}
             >
-              {isFocused ? <EyeOff size={13} /> : <Eye size={13} />}
+              {isFocused ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           )}
           <span className="fc-os-week-header__day">{arg.text}</span>
@@ -1339,11 +1507,11 @@ export default function OSCalendar({
                   style={{
                     color: meta.color,
                     borderColor: isToday
-                      ? `${meta.color}66`
-                      : `${meta.color}33`,
+                      ? `${meta.color}CC`
+                      : `${meta.color}80`,
                     backgroundColor: isToday
-                      ? `${meta.color}26`
-                      : `${meta.color}12`,
+                      ? `${meta.color}4D`
+                      : `${meta.color}33`,
                     opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
                   }}
                 >
@@ -1714,9 +1882,9 @@ export default function OSCalendar({
             .fc-scrollgrid-sync-inner {
             background: linear-gradient(
               180deg,
-              #011c3a 0%,
-              #0d3266 50%,
-              #1e4d8f 100%
+              #0d3266 0%,
+              #1e4d8f 50%,
+              #2e6db5 100%
             ) !important;
           }
 
@@ -1730,69 +1898,17 @@ export default function OSCalendar({
             .fc-col-header-cell-cushion {
             background: linear-gradient(
               180deg,
-              #011c3a 0%,
+              #0d3266 0%,
               #1e4d8f 100%
             ) !important;
           }
 
-          /* Chips de status com cores neon quando coluna está hovered (fundo escuro) */
+          /* Chips de status mantêm cores originais mesmo com fundo escuro (hover) */
           .fc-dayGridWeek-view
             .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
             .fc-os-week-header__status-chip {
-            background-color: rgba(255, 255, 255, 0.06) !important;
-            border-color: rgba(255, 255, 255, 0.18) !important;
-          }
-          .fc-dayGridWeek-view
-            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
-            .fc-os-week-header__status-chip[title^="Pendente"] {
-            color: #94a3b8 !important;
-            border-color: rgba(148, 163, 184, 0.5) !important;
-            background-color: rgba(148, 163, 184, 0.12) !important;
-          }
-          .fc-dayGridWeek-view
-            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
-            .fc-os-week-header__status-chip[title^="Pendente"]
-            span {
-            color: #e2e8f0 !important;
-          }
-          .fc-dayGridWeek-view
-            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
-            .fc-os-week-header__status-chip[title^="Aguardando"] {
-            color: #818cf8 !important;
-            border-color: rgba(129, 140, 248, 0.5) !important;
-            background-color: rgba(129, 140, 248, 0.15) !important;
-          }
-          .fc-dayGridWeek-view
-            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
-            .fc-os-week-header__status-chip[title^="Aguardando"]
-            span {
-            color: #c7d2fe !important;
-          }
-          .fc-dayGridWeek-view
-            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
-            .fc-os-week-header__status-chip[title^="Em Rota"] {
-            color: #38bdf8 !important;
-            border-color: rgba(56, 189, 248, 0.5) !important;
-            background-color: rgba(56, 189, 248, 0.15) !important;
-          }
-          .fc-dayGridWeek-view
-            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
-            .fc-os-week-header__status-chip[title^="Em Rota"]
-            span {
-            color: #bae6fd !important;
-          }
-          .fc-dayGridWeek-view
-            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
-            .fc-os-week-header__status-chip[title^="Finalizado"] {
-            color: #34d399 !important;
-            border-color: rgba(52, 211, 153, 0.5) !important;
-            background-color: rgba(52, 211, 153, 0.15) !important;
-          }
-          .fc-dayGridWeek-view
-            .fc-col-header-cell.fc-week-col-hovered:not(.fc-day-today)
-            .fc-os-week-header__status-chip[title^="Finalizado"]
-            span {
-            color: #a7f3d0 !important;
+            background-color: white !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
           }
 
           /* EYE focus: colunas NÃO focadas ficam desfocadas/escurecidas */
@@ -1810,14 +1926,14 @@ export default function OSCalendar({
           }
           .fc-week-eye-btn {
             position: absolute;
-            top: 2px;
-            right: 2px;
-            width: 22px;
-            height: 22px;
+            top: -8px;
+            right: 0px;
+            width: 28px;
+            height: 28px;
             display: flex;
             align-items: center;
             justify-content: center;
-            border-radius: 6px;
+            border-radius: 8px;
             border: none;
             background: transparent;
             cursor: pointer;
@@ -1832,12 +1948,12 @@ export default function OSCalendar({
             opacity: 1 !important;
           }
           .fc-week-eye-btn:hover {
-            background: rgba(1, 28, 58, 0.08);
-            color: #1e40af;
+            background: rgba(255, 255, 255, 0.35);
+            color: #ffffff;
           }
           .fc-week-eye-btn.active {
-            color: #1e40af;
-            background: rgba(30, 64, 175, 0.1);
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.4);
           }
 
           .fc-dayGridMonth-view .fc-col-header-cell,
@@ -2209,6 +2325,52 @@ export default function OSCalendar({
           .fc-event-custom:active {
             outline: none !important;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+          }
+
+          /* Divisores de período (Manhã/Tarde/Noite/Madrugada) */
+          .fc-daygrid-event:has(.fc-divider-event) {
+            pointer-events: none !important;
+            cursor: default !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+          }
+          .fc-daygrid-event:has(.fc-divider-event):hover {
+            transform: none !important;
+            box-shadow: none !important;
+          }
+          .fc-divider-event {
+            pointer-events: none !important;
+            cursor: default !important;
+          }
+
+          /* Divisores de período em coluna hovered (fundo escuro) */
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered:not(.fc-day-today)
+            .fc-divider-event
+            span {
+            background-color: rgba(255, 255, 255, 0.92) !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25) !important;
+          }
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered:not(.fc-day-today)
+            .fc-divider-event
+            > div {
+            background: linear-gradient(
+              90deg,
+              transparent,
+              rgba(255, 255, 255, 0.25) 20%,
+              rgba(255, 255, 255, 0.25) 80%,
+              transparent
+            ) !important;
+          }
+          /* Ícone Noite em fundo escuro: roxo mais claro puxado pro branco */
+          .fc-dayGridWeek-view
+            .fc-daygrid-day.fc-week-col-hovered:not(.fc-day-today)
+            .fc-divider-event[data-period="Noite"]
+            svg {
+            color: #c4b5fd !important;
           }
 
           /* Remover fundo escuro sem border-radius do wrapper FullCalendar */
