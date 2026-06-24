@@ -76,6 +76,7 @@ import {
 import {
   useData,
   type OrderService,
+  type Passageiro,
   type ParceiroServico,
 } from "@/context/DataContext";
 import {
@@ -85,6 +86,8 @@ import {
   fetchOSLogs,
   fetchOSCalendarRange,
   checkActiveOSForDriverVehicle,
+  fetchPassageirosPage,
+  fetchPassageirosByIds,
   type OSLog,
   type OSPageFilters,
 } from "@/lib/supabase/queries";
@@ -523,6 +526,13 @@ const formatarPlacaOS = (value: string): string => {
   return cleaned;
 };
 
+/** Tipo local para opções do combobox assíncrono de passageiros. */
+type PassengerOption = {
+  id: string;
+  nome: string;
+  sublabel?: string;
+};
+
 const validarPlacaOS = (placa: string): boolean => {
   const c = placa.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
   return (
@@ -749,6 +759,47 @@ export default function OSOperationalPage() {
     [],
   );
 
+  // ── Cache de passageiros (dois níveis) ──────────────────────────────────
+  // Declarado aqui (antes dos useMemos que dependem dele) para evitar TDZ.
+  // A hidratação (useEffect) fica abaixo, após formData e viewingOS estarem
+  // disponíveis.
+  //
+  // fullPassengersRef  → registros completos (com enderecos), via fetchPassageirosByIds.
+  //   Alimenta getPassengerRecord: detail panel, filtro, resumo, notificações.
+  //
+  // lightPassengersRef → registros leves (sem enderecos), via fetchPassageirosPage.
+  //   Alimenta somente o dropdown (getPassengerOption) para exibir o nome no trigger.
+  //   Não interfere na decisão de hidratação do fullPassengersRef.
+  const fullPassengersRef = useRef<Record<string, Passageiro>>({});
+  const lightPassengersRef = useRef<Record<string, PassengerOption>>({});
+  const [passengerOptionsVer, setPassengerOptionsVer] = useState(0);
+
+  const getPassengerRecord = useCallback(
+    (id: string): Passageiro | null => {
+      if (!id) return null;
+      const fromCtx = passageiros.find((p) => p.id === id);
+      if (fromCtx) return fromCtx;
+      return fullPassengersRef.current[id] || null;
+    },
+    [passageiros],
+  );
+
+  const getPassengerOption = useCallback(
+    (id: string): PassengerOption | null => {
+      if (!id) return null;
+      const full = getPassengerRecord(id);
+      if (full) {
+        return {
+          id: full.id,
+          nome: full.nomeCompleto,
+          sublabel: full.celular || undefined,
+        };
+      }
+      return lightPassengersRef.current[id] || null;
+    },
+    [getPassengerRecord],
+  );
+
   const filteredCalendarOSList = useMemo(() => {
     if (docagemListFilter === "docagem" || docagemListFilter === "rascunho")
       return [];
@@ -812,7 +863,7 @@ export default function OSOperationalPage() {
         const passageirosOS =
           item.rota?.waypoints?.flatMap((w) =>
             w.passengers.map((p) => {
-              const rec = passageiros.find((x) => x.id === p.solicitanteId);
+              const rec = getPassengerRecord(p.solicitanteId || "");
               return (rec?.nomeCompleto || "").toLowerCase();
             }),
           ) || [];
@@ -840,12 +891,15 @@ export default function OSOperationalPage() {
 
       return true;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     calendarOSList,
     clientes,
     drivers,
     solicitantes,
-    passageiros,
+    getPassengerRecord,
+    // passengerOptionsVer sinaliza atualizações do cache assíncrono (ref mutável).
+    passengerOptionsVer,
     osTable.searchTerm,
     advancedFilters,
     getOperationalStatusForOS,
@@ -1973,13 +2027,11 @@ export default function OSOperationalPage() {
           data: waypoint.data || "",
           passengers: (waypoint.passengers || []).map(
             (passenger, passengerIndex) => {
-              const rec = passageiros.find(
-                (x) => x.id === passenger.solicitanteId,
-              );
+              const opt = getPassengerOption(passenger.solicitanteId || "");
               return {
                 id: passenger.id || `${osItem.id}-${index}-${passengerIndex}`,
                 solicitanteId: passenger.solicitanteId || "",
-                nome: rec?.nomeCompleto || "",
+                nome: opt?.nome || passenger.nome || "",
               };
             },
           ),
@@ -2678,12 +2730,15 @@ export default function OSOperationalPage() {
       ? vehicleInfo.tipo.charAt(0).toUpperCase() + vehicleInfo.tipo.slice(1)
       : "Não informado";
 
-    // Passageiros
+    // Passageiros (resolve via cache/banco, sem limite de 1000)
+    const passengerRecords = await resolvePassengerRecordsForOS(osData);
     const allPassengers: { nome: string; celular: string }[] = [];
     const waypoints = osData.rota?.waypoints || [];
     waypoints.forEach((wp) => {
       (wp.passengers || []).forEach((p) => {
-        const passRecord = passageiros.find((x) => x.id === p.solicitanteId);
+        const passRecord = passengerRecords.find(
+          (x) => x.id === p.solicitanteId,
+        );
         const cel = passRecord?.celular || "";
         const nomeAtual = passRecord?.nomeCompleto || "Não identificado";
         if (!allPassengers.some((x) => x.nome === nomeAtual)) {
@@ -2886,12 +2941,18 @@ export default function OSOperationalPage() {
   // KM edit modal state
   const [showKmEdit, setShowKmEdit] = useState(false);
   const [kmEditCycleIndex, setKmEditCycleIndex] = useState<number | null>(null);
-  const [kmEditField, setKmEditField] = useState<"initial" | "final">("initial");
-  const [kmEditCurrentValue, setKmEditCurrentValue] = useState<number | null>(null);
+  const [kmEditField, setKmEditField] = useState<"initial" | "final">(
+    "initial",
+  );
+  const [kmEditCurrentValue, setKmEditCurrentValue] = useState<number | null>(
+    null,
+  );
   const [kmEditNewValue, setKmEditNewValue] = useState("");
   const [kmEditReason, setKmEditReason] = useState("");
   const [kmEditBypass, setKmEditBypass] = useState(false);
-  const [kmEditOdometerWarning, setKmEditOdometerWarning] = useState<number | null>(null);
+  const [kmEditOdometerWarning, setKmEditOdometerWarning] = useState<
+    number | null
+  >(null);
   const [isKmEditing, setIsKmEditing] = useState(false);
   const [selectedCycleIndex, setSelectedCycleIndex] = useState<number | null>(
     null,
@@ -3043,13 +3104,16 @@ export default function OSOperationalPage() {
           km_bypass_odometer: kmEditBypass,
         }),
       });
-      const result = await response.json() as {
+      const result = (await response.json()) as {
         success: boolean;
         error?: string;
         current_odometer?: number;
       };
       if (!result.success) {
-        if (result.error === "KM_BELOW_ODOMETER" && result.current_odometer !== undefined) {
+        if (
+          result.error === "KM_BELOW_ODOMETER" &&
+          result.current_odometer !== undefined
+        ) {
           setKmEditOdometerWarning(result.current_odometer);
         } else {
           toast.error(result.error || "Erro ao editar KM.");
@@ -3267,8 +3331,8 @@ export default function OSOperationalPage() {
 
     return viewingOS.rota.waypoints.flatMap((waypoint, waypointIndex) =>
       (waypoint.passengers || []).map((passenger, passengerIndex) => {
-        const passengerRecord = passageiros.find(
-          (p) => p.id === passenger.solicitanteId,
+        const passengerRecord = getPassengerRecord(
+          passenger.solicitanteId || "",
         );
         return {
           key: `${waypointIndex}-${passenger.id}-${passengerIndex}`,
@@ -3291,7 +3355,13 @@ export default function OSOperationalPage() {
         };
       }),
     );
-  }, [viewingOS, passageiros]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    viewingOS,
+    getPassengerRecord,
+    // passengerOptionsVer sinaliza atualizações do cache assíncrono (ref mutável).
+    passengerOptionsVer,
+  ]);
 
   const driverFlow = useMemo(() => {
     const status =
@@ -3698,6 +3768,121 @@ export default function OSOperationalPage() {
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
   };
 
+  // ── Busca assíncrona de passageiros (server-side) ──────────────────────
+  // Resolve o problema de bases grandes que excedem o limite padrão de
+  // paginação do Supabase (~1000 linhas). O dropdown busca sob demanda no
+  // banco em vez de filtrar a lista completa em memória.
+  //
+  // fullPassengersRef/lightPassengersRef e os callbacks getPassengerRecord/
+  // getPassengerOption estão declarados antes de filteredCalendarOSList
+  // (linha ~760) para evitar TDZ. Apenas o useEffect de hidratação (que
+  // depende de formData e viewingOS) e resolvePassengerRecordsForOS ficam aqui.
+
+  const searchPassageiros = useCallback(
+    async (term: string): Promise<PassengerOption[]> => {
+      try {
+        const res = await fetchPassageirosPage({
+          page: 1,
+          pageSize: 20,
+          searchTerm: term,
+        });
+        const opts = res.items.map((p) => ({
+          id: p.id,
+          nome: p.nomeCompleto,
+          sublabel: p.celular || undefined,
+        }));
+        // Popula apenas o cache leve (sem enderecos). O fullPassengersRef
+        // é preenchido exclusivamente pelo fetchPassageirosByIds.
+        opts.forEach((o) => {
+          lightPassengersRef.current[o.id] = o;
+        });
+        return opts;
+      } catch {
+        return [];
+      }
+    },
+    [],
+  );
+
+  // Hidrata registros COMPLETOS (incluindo enderecos) para passageiros
+  // referenciados pelo form, OS em visualização e listagem.
+  // Só considera ausente se não estiver em passageiros (DataContext) nem em
+  // fullPassengersRef — ignora lightPassengersRef propositalmente, para que
+  // um registro parcial (do dropdown) não bloqueie a busca do completo.
+  useEffect(() => {
+    const ids = new Set<string>();
+    formData.waypoints.forEach((w) =>
+      (w.passengers || []).forEach((p) => {
+        if (p.solicitanteId) ids.add(p.solicitanteId);
+      }),
+    );
+    viewingOS?.rota?.waypoints?.forEach((w) =>
+      (w.passengers || []).forEach((p) => {
+        if (p.solicitanteId) ids.add(p.solicitanteId);
+      }),
+    );
+    osList.forEach((os) =>
+      os.rota?.waypoints?.forEach((w) =>
+        (w.passengers || []).forEach((p) => {
+          if (p.solicitanteId) ids.add(p.solicitanteId);
+        }),
+      ),
+    );
+
+    const missing = [...ids].filter(
+      (id) =>
+        !fullPassengersRef.current[id] && !passageiros.some((p) => p.id === id),
+    );
+    if (missing.length === 0) return;
+    let cancelled = false;
+    fetchPassageirosByIds(missing)
+      .then((recs) => {
+        if (cancelled) return;
+        recs.forEach((r) => {
+          fullPassengersRef.current[r.id] = r;
+        });
+        setPassengerOptionsVer((v) => v + 1);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.waypoints, viewingOS, osList, passageiros]);
+
+  // Resolve passageiros completos de uma OS específica. Usado por funções
+  // assíncronas (notificações, mensagem admin) que precisam de celular/email.
+  const resolvePassengerRecordsForOS = useCallback(
+    async (osData: OrderService): Promise<Passageiro[]> => {
+      const ids = new Set<string>();
+      osData.rota?.waypoints?.forEach((w) =>
+        (w.passengers || []).forEach((p) => {
+          if (p.solicitanteId) ids.add(p.solicitanteId);
+        }),
+      );
+      const idsArray = [...ids];
+      const missing = idsArray.filter(
+        (id) =>
+          !fullPassengersRef.current[id] &&
+          !passageiros.some((p) => p.id === id),
+      );
+      if (missing.length > 0) {
+        try {
+          const recs = await fetchPassageirosByIds(missing);
+          recs.forEach((r) => {
+            fullPassengersRef.current[r.id] = r;
+          });
+          setPassengerOptionsVer((v) => v + 1);
+        } catch {
+          // continua com o cache disponível
+        }
+      }
+      return idsArray
+        .map((id) => getPassengerRecord(id))
+        .filter((p): p is Passageiro => p !== null);
+    },
+    [getPassengerRecord, passageiros],
+  );
+
   const handlePassengerChange = (
     waypointIndex: number,
     passengerId: string,
@@ -3705,15 +3890,13 @@ export default function OSOperationalPage() {
   ) => {
     const newWaypoints = [...formData.waypoints];
     const waypoint = { ...newWaypoints[waypointIndex] };
-    const passageiroSelecionado = passageiros.find(
-      (p) => p.id === novoPassageiroId,
-    );
+    const opt = getPassengerOption(novoPassageiroId);
     waypoint.passengers = (waypoint.passengers || []).map((p) =>
       p.id === passengerId
         ? {
             ...p,
             solicitanteId: novoPassageiroId,
-            nome: passageiroSelecionado?.nomeCompleto || "",
+            nome: opt?.nome || "",
           }
         : p,
     );
@@ -4314,12 +4497,14 @@ export default function OSOperationalPage() {
     // 2. Notificar Passageiros
     if (notificationConfig.passageiros) {
       try {
+        const passengerRecords = await resolvePassengerRecordsForOS(latestOS);
+        const recordById = new Map(passengerRecords.map((r) => [r.id, r]));
         if (latestOS.rota?.waypoints) {
           for (const wp of latestOS.rota.waypoints) {
             for (const p of wp.passengers) {
-              const passRecord = passageiros.find(
-                (x) => x.id === p.solicitanteId,
-              );
+              const passRecord = p.solicitanteId
+                ? recordById.get(p.solicitanteId)
+                : undefined;
               if (passRecord && passRecord.celular) {
                 await handleNotifyPassengerDirect(
                   latestOS,
@@ -6568,14 +6753,12 @@ export default function OSOperationalPage() {
                                                     <GeologSearchableSelect
                                                       label=""
                                                       placeholder="Selecione o passageiro..."
-                                                      options={passageiros.map(
-                                                        (p) => ({
-                                                          id: p.id,
-                                                          nome: p.nomeCompleto,
-                                                          sublabel:
-                                                            p.celular ||
-                                                            undefined,
-                                                        }),
+                                                      onSearch={
+                                                        searchPassageiros
+                                                      }
+                                                      selectedOption={getPassengerOption(
+                                                        passenger.solicitanteId ||
+                                                          "",
                                                       )}
                                                       value={
                                                         passenger.solicitanteId ||
@@ -7957,10 +8140,20 @@ export default function OSOperationalPage() {
                                             type="button"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              setKmEditCycleIndex(cycle.itineraryIndex);
-                                              setKmEditField(step.id === "started" ? "initial" : "final");
-                                              setKmEditCurrentValue(step.km ?? null);
-                                              setKmEditNewValue(String(step.km));
+                                              setKmEditCycleIndex(
+                                                cycle.itineraryIndex,
+                                              );
+                                              setKmEditField(
+                                                step.id === "started"
+                                                  ? "initial"
+                                                  : "final",
+                                              );
+                                              setKmEditCurrentValue(
+                                                step.km ?? null,
+                                              );
+                                              setKmEditNewValue(
+                                                String(step.km),
+                                              );
                                               setKmEditReason("");
                                               setKmEditBypass(false);
                                               setKmEditOdometerWarning(null);
@@ -8199,8 +8392,8 @@ export default function OSOperationalPage() {
                                       <div className="mt-3 flex flex-wrap gap-2">
                                         {(waypoint.passengers || []).map(
                                           (p, pi) => {
-                                            const pRec = passageiros.find(
-                                              (x) => x.id === p.solicitanteId,
+                                            const pRec = getPassengerRecord(
+                                              p.solicitanteId || "",
                                             );
                                             return (
                                               <span
@@ -10302,7 +10495,10 @@ export default function OSOperationalPage() {
             {kmEditOdometerWarning !== null && (
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                  <AlertTriangle
+                    className="text-amber-600 shrink-0 mt-0.5"
+                    size={18}
+                  />
                   <div>
                     <p className="text-sm font-black text-amber-900">
                       KM abaixo do odômetro do veículo
@@ -10323,7 +10519,8 @@ export default function OSOperationalPage() {
                     className="w-4 h-4 rounded border-amber-400 accent-amber-500 cursor-pointer"
                   />
                   <span className="text-sm font-bold text-amber-800">
-                    Confirmo que o valor está correto e desejo ignorar a validação
+                    Confirmo que o valor está correto e desejo ignorar a
+                    validação
                   </span>
                 </label>
               </div>

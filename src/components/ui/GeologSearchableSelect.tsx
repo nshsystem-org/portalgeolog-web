@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Search, Plus, User } from "lucide-react";
+import { ChevronDown, Search, Plus, User, Loader2 } from "lucide-react";
 import { getThumbnailUrl } from "@/utils/avatar";
 
 function VehiclePlate({
@@ -87,7 +87,7 @@ interface Option {
 
 interface GeologSearchableSelectProps {
   label?: string;
-  options: Option[];
+  options?: Option[];
   value: string;
   onChange: (id: string) => void;
   disabled?: boolean;
@@ -99,11 +99,25 @@ interface GeologSearchableSelectProps {
   className?: string;
   disableSearch?: boolean;
   dropdownPosition?: "auto" | "down" | "up";
+  /**
+   * Modo assíncrono: quando fornecido, o dropdown busca opções no servidor
+   * (com debounce) em vez de filtrar a lista `options` em memória.
+   * Ideal para bases grandes que excedem o limite padrão de paginação.
+   */
+  onSearch?: (term: string) => Promise<Option[]>;
+  /**
+   * Opção selecionada explícita (modo assíncrono). Garante que o trigger
+   * mostre o label correto mesmo quando o selecionado não está na página
+   * atual de resultados da busca.
+   */
+  selectedOption?: Option | null;
+  asyncDebounceMs?: number;
+  asyncPlaceholder?: string;
 }
 
 export default function GeologSearchableSelect({
   label,
-  options,
+  options = [],
   value,
   onChange,
   disabled = false,
@@ -115,9 +129,16 @@ export default function GeologSearchableSelect({
   className = "",
   disableSearch = false,
   dropdownPosition = "auto",
+  onSearch,
+  selectedOption: selectedOptionProp,
+  asyncDebounceMs = 300,
+  asyncPlaceholder = "Digite para buscar...",
 }: GeologSearchableSelectProps) {
+  const isAsync = Boolean(onSearch);
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [asyncOptions, setAsyncOptions] = useState<Option[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [coords, setCoords] = useState({
     top: 0,
     left: 0,
@@ -128,8 +149,63 @@ export default function GeologSearchableSelect({
   const mounted = true;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reqIdRef = useRef(0);
 
-  const selectedOption = options.find((opt) => opt.id === value);
+  // Busca assíncrona com debounce (apenas quando o dropdown está aberto)
+  const runAsyncSearch = useCallback(
+    (term: string) => {
+      if (!onSearch) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      // Marca loading ANTES do debounce para evitar flash de "Nenhum resultado"
+      // durante os primeiros 300ms enquanto o timer não dispara.
+      setIsLoading(true);
+      debounceRef.current = setTimeout(async () => {
+        const reqId = ++reqIdRef.current;
+        try {
+          const results = await onSearch(term);
+          if (reqId === reqIdRef.current) setAsyncOptions(results);
+        } catch {
+          if (reqId === reqIdRef.current) setAsyncOptions([]);
+        } finally {
+          if (reqId === reqIdRef.current) setIsLoading(false);
+        }
+      }, asyncDebounceMs);
+    },
+    [onSearch, asyncDebounceMs],
+  );
+
+  useEffect(() => {
+    if (!isOpen || !isAsync) return;
+    runAsyncSearch(searchTerm);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [isOpen, searchTerm, isAsync, runAsyncSearch]);
+
+  // Reseta resultados assíncronos ao fechar (evita flash de resultados antigos)
+  useEffect(() => {
+    if (!isOpen && isAsync) {
+      setAsyncOptions([]);
+      setSearchTerm("");
+      setIsLoading(false);
+    }
+  }, [isOpen, isAsync]);
+
+  // Base de opções: resultados do servidor (async) ou lista passada (sync)
+  const baseOptions = isAsync ? asyncOptions : options;
+
+  // Garante que a opção selecionada apareça no topo mesmo fora da página atual
+  const effectiveOptions =
+    selectedOptionProp &&
+    !baseOptions.some((o) => o.id === selectedOptionProp.id)
+      ? [selectedOptionProp, ...baseOptions]
+      : baseOptions;
+
+  const selectedOption =
+    selectedOptionProp ??
+    options.find((opt) => opt.id === value) ??
+    (isAsync ? asyncOptions.find((opt) => opt.id === value) : undefined);
   const triggerPaddingClass = compact ? "px-2 py-1.5" : "px-5 py-4";
   const triggerTextClass = triggerClassName?.includes("text-")
     ? ""
@@ -218,23 +294,27 @@ export default function GeologSearchableSelect({
 
   const normalizedSearch = normalizeSearch(searchTerm);
   const searchDigits = normalizePhoneDigits(searchTerm);
-  const filteredOptions = options.filter((opt) => {
-    const matchesText =
-      normalizeSearch(opt.nome).includes(normalizedSearch) ||
-      (opt.sublabel &&
-        normalizeSearch(opt.sublabel).includes(normalizedSearch));
 
-    if (matchesText) {
-      return true;
-    }
+  // No modo assíncrono o servidor já filtra; no modo síncrono filtra em memória.
+  const filteredOptions = isAsync
+    ? effectiveOptions
+    : effectiveOptions.filter((opt) => {
+        const matchesText =
+          normalizeSearch(opt.nome).includes(normalizedSearch) ||
+          (opt.sublabel &&
+            normalizeSearch(opt.sublabel).includes(normalizedSearch));
 
-    if (!searchDigits || !opt.sublabel) {
-      return false;
-    }
+        if (matchesText) {
+          return true;
+        }
 
-    const optionDigits = normalizePhoneDigits(opt.sublabel);
-    return optionDigits.includes(searchDigits);
-  });
+        if (!searchDigits || !opt.sublabel) {
+          return false;
+        }
+
+        const optionDigits = normalizePhoneDigits(opt.sublabel);
+        return optionDigits.includes(searchDigits);
+      });
 
   const dropdownContent = (
     <div
@@ -257,11 +337,17 @@ export default function GeologSearchableSelect({
           <input
             autoFocus
             type="text"
-            placeholder="Digite para filtrar..."
+            placeholder={isAsync ? asyncPlaceholder : "Digite para filtrar..."}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 bg-white rounded-xl text-sm font-bold text-slate-900 outline-none border-2 border-transparent focus:border-blue-500 shadow-sm"
+            className="w-full pl-12 pr-10 py-3 bg-white rounded-xl text-sm font-bold text-slate-900 outline-none border-2 border-transparent focus:border-blue-500 shadow-sm"
           />
+          {isAsync && isLoading && (
+            <Loader2
+              size={16}
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-blue-500 animate-spin"
+            />
+          )}
         </div>
       )}
 
@@ -303,9 +389,16 @@ export default function GeologSearchableSelect({
               </div>
             </div>
           ))
+        ) : isAsync && isLoading ? (
+          <div className="px-4 py-6 text-center text-slate-400 font-bold text-sm flex items-center justify-center gap-2">
+            <Loader2 size={16} className="animate-spin text-blue-500" />
+            Buscando...
+          </div>
         ) : (
           <div className="px-4 py-6 text-center text-slate-400 font-bold text-sm">
-            Nenhum resultado
+            {isAsync && searchTerm
+              ? "Nenhum resultado encontrado"
+              : "Nenhum resultado"}
           </div>
         )}
       </div>

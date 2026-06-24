@@ -55,7 +55,12 @@ interface Driver {
   name: string;
 }
 
-type CalendarEventKind = "os" | "docagem" | "rascunho" | "freelance" | "divider";
+type CalendarEventKind =
+  | "os"
+  | "docagem"
+  | "rascunho"
+  | "freelance"
+  | "divider";
 
 interface EventContentProps {
   os?: OrderService;
@@ -1885,9 +1890,9 @@ export default function OSCalendar({
             .fc-scrollgrid-sync-inner {
             background: linear-gradient(
               180deg,
-              #0d3266 0%,
-              #1e4d8f 50%,
-              #2e6db5 100%
+              #1e4d8f 0%,
+              #2e6db5 50%,
+              #4a90d9 100%
             ) !important;
           }
 
@@ -1901,8 +1906,8 @@ export default function OSCalendar({
             .fc-col-header-cell-cushion {
             background: linear-gradient(
               180deg,
-              #0d3266 0%,
-              #1e4d8f 100%
+              #1e4d8f 0%,
+              #4a90d9 100%
             ) !important;
           }
 

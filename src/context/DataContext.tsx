@@ -163,6 +163,7 @@ export interface OSStatus {
     | "Pendente"
     | "Aguardando"
     | "Em Rota"
+    | "Andamento"
     | "Finalizado"
     | "Cancelado";
   financeiro: "Pendente" | "Faturado" | "Recebido" | "Pago";
@@ -1322,7 +1323,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const taxa = impostoPercentual / 100;
     const vBruto = osData.valorBruto ?? 0;
     const vCusto = osData.custo ?? 0;
-    const noShowFator = osData.noShow ? ((osData.noShowPercentual ?? 100) / 100) : 1;
+    const noShowFator = osData.noShow
+      ? (osData.noShowPercentual ?? 100) / 100
+      : 1;
     const heMin = parseHoraExtraMinutes(osData.horaExtra);
     const heCliente = calcHoraExtraCliente(heMin);
     const heMotorista = calcHoraExtraMotorista(heMin);
@@ -1387,8 +1390,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     >,
   ): Promise<{ changed: boolean }> => {
     const startedAt = performance.now();
-    let currentOS: OrderService | null | undefined =
-      osList.find((os) => os.id === id);
+    let currentOS: OrderService | null | undefined = osList.find(
+      (os) => os.id === id,
+    );
 
     // Fallback: se a OS não estiver no estado local (ex: filtro, paginação),
     // buscar do banco para garantir que o diff de mudanças seja calculado
@@ -1403,7 +1407,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const taxa = impostoPercentual / 100;
     const vBruto = osData.valorBruto ?? 0;
     const vCusto = osData.custo ?? 0;
-    const noShowFator = osData.noShow ? ((osData.noShowPercentual ?? 100) / 100) : 1;
+    const noShowFator = osData.noShow
+      ? (osData.noShowPercentual ?? 100) / 100
+      : 1;
     const heMin = parseHoraExtraMinutes(osData.horaExtra);
     const heCliente = calcHoraExtraCliente(heMin);
     const heMotorista = calcHoraExtraMotorista(heMin);
@@ -1525,10 +1531,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setOsList((prev) => prev.filter((os) => os.id !== id));
 
     try {
-      await archiveOSFromDB(
-        id,
-        currentOS?.protocolo || currentOS?.os || null,
-      );
+      await archiveOSFromDB(id, currentOS?.protocolo || currentOS?.os || null);
       logInfo("DataContext", "Ordem de Serviço excluída/arquivada", {
         osId: id,
       });

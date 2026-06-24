@@ -155,21 +155,41 @@ const buildOSUpdateLogContext = (
       ["Hora Extra", previousOS.horaExtra || "", osData.horaExtra || ""],
       ["Código OS", previousOS.os, osData.os],
       ["Cliente", previousOS.clienteId, osData.clienteId],
-      ["Solicitante", previousOS.solicitante || "", upperText(osData.solicitante)],
-      ["Solicitante Responsável", previousOS.solicitanteId || null, osData.solicitanteId || null],
+      [
+        "Solicitante",
+        previousOS.solicitante || "",
+        upperText(osData.solicitante),
+      ],
+      [
+        "Solicitante Responsável",
+        previousOS.solicitanteId || null,
+        osData.solicitanteId || null,
+      ],
       ["Centro de Custo", previousOS.centroCustoId || null, nextCentroCusto],
       ["Motorista", previousOS.motorista || "", upperText(osData.motorista)],
-      ["Motorista Alocado", previousOS.driverId || null, osData.driverId || null],
-      ["Veículo de Uso", previousOS.veiculoId || null, osData.veiculoId || null],
+      [
+        "Motorista Alocado",
+        previousOS.driverId || null,
+        osData.driverId || null,
+      ],
+      [
+        "Veículo de Uso",
+        previousOS.veiculoId || null,
+        osData.veiculoId || null,
+      ],
       ["Valor Bruto (R$)", previousOS.valorBruto ?? 0, osData.valorBruto ?? 0],
       ["Custo Motorista (R$)", previousOS.custo ?? 0, osData.custo ?? 0],
       ["NO-SHOW", previousOS.noShow ?? false, osData.noShow ?? false],
       [
         "Cobrança NO-SHOW (%)",
         previousOS.noShowPercentual ?? null,
-        osData.noShow ? osData.noShowPercentual ?? 100 : null,
+        osData.noShow ? (osData.noShowPercentual ?? 100) : null,
       ],
-      ["Observações Financeiras", previousOS.obsFinanceiras || "", osData.obsFinanceiras || ""],
+      [
+        "Observações Financeiras",
+        previousOS.obsFinanceiras || "",
+        osData.obsFinanceiras || "",
+      ],
     ];
 
     for (const [label, prev, next] of simpleFields) {
@@ -187,11 +207,18 @@ const buildOSUpdateLogContext = (
     const prevWaypoints = previousOS.rota?.waypoints || [];
     const nextWaypoints = waypoints;
 
-    if (!isDeepEqual(
-      normalizeWaypointComparison(prevWaypoints),
-      normalizeWaypointComparison(nextWaypoints),
-    )) {
-      markChange("Rota", "Waypoints", normalizeWaypointComparison(prevWaypoints), normalizeWaypointComparison(nextWaypoints));
+    if (
+      !isDeepEqual(
+        normalizeWaypointComparison(prevWaypoints),
+        normalizeWaypointComparison(nextWaypoints),
+      )
+    ) {
+      markChange(
+        "Rota",
+        "Waypoints",
+        normalizeWaypointComparison(prevWaypoints),
+        normalizeWaypointComparison(nextWaypoints),
+      );
 
       const maxLen = Math.max(prevWaypoints.length, nextWaypoints.length);
       for (let i = 0; i < maxLen; i++) {
@@ -227,7 +254,9 @@ const buildOSUpdateLogContext = (
             });
           }
 
-          if ((prevWp.comment?.trim() || "") !== (nextWp.comment?.trim() || "")) {
+          if (
+            (prevWp.comment?.trim() || "") !== (nextWp.comment?.trim() || "")
+          ) {
             addFieldChange({
               field: `${idxLabel} — Comentário`,
               from: prevWp.comment?.trim() || "",
@@ -259,8 +288,12 @@ const buildOSUpdateLogContext = (
           const prevIds = new Set(prevPax.map((p) => p.solicitanteId || p.id));
           const nextIds = new Set(nextPax.map((p) => p.solicitanteId || p.id));
 
-          const added = nextPax.filter((p) => !prevIds.has(p.solicitanteId || p.id));
-          const removed = prevPax.filter((p) => !nextIds.has(p.solicitanteId || p.id));
+          const added = nextPax.filter(
+            (p) => !prevIds.has(p.solicitanteId || p.id),
+          );
+          const removed = prevPax.filter(
+            (p) => !nextIds.has(p.solicitanteId || p.id),
+          );
 
           for (const p of added) {
             addFieldChange({
@@ -280,10 +313,12 @@ const buildOSUpdateLogContext = (
       }
     }
 
-    if (!isDeepEqual(
-      normalizeCycleComparison(previousOS.operationalCycles || []),
-      normalizeCycleComparison(operationalCycles),
-    )) {
+    if (
+      !isDeepEqual(
+        normalizeCycleComparison(previousOS.operationalCycles || []),
+        normalizeCycleComparison(operationalCycles),
+      )
+    ) {
       markChange(
         "Ciclos operacionais",
         "Ciclos",
@@ -1126,6 +1161,46 @@ export async function fetchPassageirosPage({
   });
 }
 
+/**
+ * Busca passageiros por IDs (usado para hidratar passageiros já selecionados
+ * em formulários que usam busca assíncrona, onde o selecionado pode estar fora
+ * da página atual de resultados). Retorna apenas passageiros não arquivados.
+ */
+export async function fetchPassageirosByIds(
+  ids: string[],
+): Promise<Passageiro[]> {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  if (uniqueIds.length === 0) return [];
+
+  return withRetry(async () => {
+    const { data: passRaw, error } = await getSupabase()
+      .from("passageiros")
+      .select(PASSAGEIRO_SELECT_COLUMNS)
+      .in("id", uniqueIds)
+      .eq("arquivado", false);
+
+    if (error) throw error;
+
+    return (passRaw || []).map((p: Record<string, unknown>) => ({
+      id: String(p.id),
+      nomeCompleto: String(p.nome_completo),
+      email: p.email ? String(p.email) : undefined,
+      celular: p.celular ? String(p.celular) : "",
+      cpf: p.cpf ? String(p.cpf) : undefined,
+      notificar: typeof p.notificar === "boolean" ? p.notificar : undefined,
+      genero: typeof p.genero === "string" ? p.genero : undefined,
+      enderecos: (
+        (p.passageiro_enderecos || []) as Record<string, unknown>[]
+      ).map((e) => ({
+        id: String(e.id),
+        rotulo: String(e.rotulo),
+        enderecoCompleto: String(e.endereco_completo),
+        referencia: e.referencia ? String(e.referencia) : undefined,
+      })),
+    }));
+  });
+}
+
 // ── Veículos ───────────────────────────────────────────
 
 export async function updateVeiculoInDB(
@@ -1652,9 +1727,7 @@ type OSInput = Omit<
   "id" | "lucro" | "imposto" | "status" | "protocolo"
 >;
 
-export async function insertOS(
-  osData: OSInput,
-): Promise<OrderService> {
+export async function insertOS(osData: OSInput): Promise<OrderService> {
   const waypoints = osData.rota?.waypoints || [];
   const operationalCycles = buildOperationalCyclesFromWaypoints(waypoints);
   const centroCusto =
@@ -1678,9 +1751,7 @@ export async function insertOS(
     veiculo_id: (osData as OSInput & { veiculoId?: string }).veiculoId || "",
     valor_bruto: osData.valorBruto ?? 0,
     no_show: Boolean(osData.noShow),
-    no_show_percentual: osData.noShow
-      ? osData.noShowPercentual ?? 100
-      : null,
+    no_show_percentual: osData.noShow ? (osData.noShowPercentual ?? 100) : null,
     obs_financeiras:
       (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
     custo: osData.custo ?? 0,
@@ -1728,7 +1799,9 @@ export async function updateOSInDB(
   const impostoPercentual = await getImpostoPercentualForDate(osData.data);
   const vBruto = osData.valorBruto ?? 0;
   const vCusto = osData.custo ?? 0;
-  const noShowFator = osData.noShow ? ((osData.noShowPercentual ?? 100) / 100) : 1;
+  const noShowFator = osData.noShow
+    ? (osData.noShowPercentual ?? 100) / 100
+    : 1;
   const heMin = parseHoraExtraMinutes(osData.horaExtra || "");
   const heCliente = calcHoraExtraCliente(heMin);
   const heMotorista = calcHoraExtraMotorista(heMin);
@@ -1778,7 +1851,10 @@ export async function updateOSInDB(
       sequenceOrder: cycle.sequence_order,
       kind: cycle.kind,
       ordinal: cycle.ordinal,
-      title: getOperationalCycleTitle({ kind: cycle.kind, ordinal: cycle.ordinal }),
+      title: getOperationalCycleTitle({
+        kind: cycle.kind,
+        ordinal: cycle.ordinal,
+      }),
       state: cycle.state,
       messageSentAt: cycle.message_sent_at,
       acceptedAt: cycle.accepted_at,
@@ -1840,9 +1916,7 @@ export async function updateOSInDB(
     veiculo_id: (osData as OSInput & { veiculoId?: string }).veiculoId || null,
     valor_bruto: osData.valorBruto ?? 0,
     no_show: Boolean(osData.noShow),
-    no_show_percentual: osData.noShow
-      ? osData.noShowPercentual ?? 100
-      : null,
+    no_show_percentual: osData.noShow ? (osData.noShowPercentual ?? 100) : null,
     obs_financeiras:
       (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
     imposto,
