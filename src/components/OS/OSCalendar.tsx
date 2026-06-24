@@ -1013,28 +1013,28 @@ export default function OSCalendar({
           startHour: 0,
           endHour: 6,
           icon: Moon,
-          color: "#6366f1",
+          color: "#a5b4fc",
         },
         {
           label: "Manhã",
           startHour: 6,
           endHour: 12,
           icon: Sunrise,
-          color: "#f59e0b",
+          color: "#fcd34d",
         },
         {
           label: "Tarde",
           startHour: 12,
           endHour: 18,
           icon: Sun,
-          color: "#ea580c",
+          color: "#fdba74",
         },
         {
           label: "Noite",
           startHour: 18,
           endHour: 24,
           icon: Sunset,
-          color: "#7c3aed",
+          color: "#c4b5fd",
         },
       ];
 
@@ -1514,17 +1514,13 @@ export default function OSCalendar({
                   aria-label={`${meta.label}: ${count}`}
                   style={{
                     color: meta.color,
-                    borderColor: isToday
-                      ? `${meta.color}CC`
-                      : `${meta.color}80`,
-                    backgroundColor: isToday
-                      ? `${meta.color}4D`
-                      : `${meta.color}33`,
+                    borderColor: '#e2e8f0',
+                    backgroundColor: '#ffffff',
                     opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
                   }}
                 >
                   <Icon size={iconSize} strokeWidth={iconStrokeWidth} />
-                  <span style={{ color: meta.textColor }}>{count}</span>
+                  <span style={{ color: '#334155' }}>{count}</span>
                 </div>
               );
             })}
