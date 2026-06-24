@@ -371,15 +371,11 @@ const EventContent = ({
             background: `linear-gradient(90deg, transparent, ${iconColor}55 20%, ${iconColor}55 80%, transparent)`,
           }}
         />
-        {DividerIcon && (
-          <DividerIcon
-            size={13}
-            strokeWidth={2.5}
-            style={{ color: iconColor, flexShrink: 0 }}
-          />
-        )}
         <span
           style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
             fontSize: "10px",
             fontWeight: 900,
             color: iconColor,
@@ -392,6 +388,13 @@ const EventContent = ({
             border: `1px solid ${iconColor}30`,
           }}
         >
+          {DividerIcon && (
+            <DividerIcon
+              size={13}
+              strokeWidth={2.5}
+              style={{ color: iconColor, flexShrink: 0 }}
+            />
+          )}
           {dividerLabel}
         </span>
         <div

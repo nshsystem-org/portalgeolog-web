@@ -67,6 +67,7 @@ type FinanceRow = {
   status_financeiro: string | null;
   status_operacional: string | null;
   repasse_pago: boolean | null;
+  is_freelance: boolean | null;
 };
 
 type DriverDetail = {
@@ -267,7 +268,7 @@ async function fetchReportData(
   let query = adminClient
     .from("ordens_servico")
     .select(
-      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, veiculo_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, repasse_pago",
+      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, veiculo_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, repasse_pago, is_freelance",
     )
     .eq("arquivado", false);
 
@@ -483,6 +484,8 @@ async function fetchReportData(
 
   if (template === "repasse_autonomos") {
     rows = rows.filter((row) => {
+      // Inclui autônomos normais E OS freelance (parceiros fazendo job avulso)
+      if (row.is_freelance) return true;
       const driver = row.driver_id
         ? driverDetailMap.get(row.driver_id)
         : undefined;
@@ -492,6 +495,8 @@ async function fetchReportData(
     });
   } else if (template === "repasse_parceiros") {
     rows = rows.filter((row) => {
+      // Exclui OS freelance — não vão para o repasse do parceiro
+      if (row.is_freelance) return false;
       const driver = row.driver_id
         ? driverDetailMap.get(row.driver_id)
         : undefined;
@@ -623,7 +628,9 @@ function computeSummary(
 
       if (driverId) {
         const driver = driverDetailMap.get(driverId);
-        if (driver && driver.parceiro_id) {
+        // OS Freelance sempre conta como Autônomo, independente do vínculo do motorista
+        const isFreelance = Boolean(row.is_freelance);
+        if (!isFreelance && driver && driver.parceiro_id) {
           acc.totalCustoParceiros += custo;
           if (repassePago) acc.totalPagoParceiros += custo;
         } else {

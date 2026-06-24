@@ -1531,6 +1531,9 @@ export default function OSOperationalPage() {
   const [isSubmittingOsVehicle, setIsSubmittingOsVehicle] = useState(false);
   const [osVehicleManageIds, setOsVehicleManageIds] = useState<string[]>([]);
 
+  // Modo Freelance: quando true o modal de criação usa tema verde e salva is_freelance=true
+  const [isFreelanceMode, setIsFreelanceMode] = useState(false);
+
   // Novos estados para o modal de confirmação de notificações
   const [showNotificationConfirm, setShowNotificationConfirm] = useState(false);
   const [showCompletionConfirm, setShowCompletionConfirm] = useState(false);
@@ -1947,6 +1950,7 @@ export default function OSOperationalPage() {
     setFormData(initialForm);
     setOpenWaypointComments({});
     setOriginalFormSnapshot(null);
+    setIsFreelanceMode(false);
   };
 
   const handleOpenCreateOSModal = () => {
@@ -2875,13 +2879,20 @@ export default function OSOperationalPage() {
   // State variables for new modals
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [showAcceptRevert, setShowAcceptRevert] = useState(false);
-  const [resetReason, setResetReason] = useState<
-    "km_correction" | "rescheduling" | "other"
-  >("km_correction");
+  const [resetReason, setResetReason] = useState<"rescheduling" | "other">(
+    "rescheduling",
+  );
   const [resetReasonOther, setResetReasonOther] = useState("");
-  const [kmResetTarget, setKmResetTarget] = useState<
-    "initial" | "final" | "both" | null
-  >(null);
+  // KM edit modal state
+  const [showKmEdit, setShowKmEdit] = useState(false);
+  const [kmEditCycleIndex, setKmEditCycleIndex] = useState<number | null>(null);
+  const [kmEditField, setKmEditField] = useState<"initial" | "final">("initial");
+  const [kmEditCurrentValue, setKmEditCurrentValue] = useState<number | null>(null);
+  const [kmEditNewValue, setKmEditNewValue] = useState("");
+  const [kmEditReason, setKmEditReason] = useState("");
+  const [kmEditBypass, setKmEditBypass] = useState(false);
+  const [kmEditOdometerWarning, setKmEditOdometerWarning] = useState<number | null>(null);
+  const [isKmEditing, setIsKmEditing] = useState(false);
   const [selectedCycleIndex, setSelectedCycleIndex] = useState<number | null>(
     null,
   );
@@ -2976,9 +2987,8 @@ export default function OSOperationalPage() {
   const handleManualRevertAccept = async (
     osId: string,
     cycleIndex: number,
-    reason: "km_correction" | "rescheduling" | "other" = "other",
+    reason: "rescheduling" | "other" = "other",
     reasonText?: string,
-    kmTarget?: "initial" | "final" | "both" | null,
   ) => {
     try {
       const response = await fetch("/api/os-manual-cycle", {
@@ -2990,7 +3000,6 @@ export default function OSOperationalPage() {
           action: "revert_to_pending",
           reset_reason: reason,
           ...(reasonText ? { reset_reason_text: reasonText } : {}),
-          ...(kmTarget ? { km_reset_target: kmTarget } : {}),
         }),
       });
 
@@ -3005,6 +3014,61 @@ export default function OSOperationalPage() {
     } catch (error) {
       console.error("Erro ao reverter aceite:", error);
       toast.error("Erro ao retornar status. Tente novamente.");
+    }
+  };
+
+  const handleKmEdit = async () => {
+    if (!viewingOS || kmEditCycleIndex === null) return;
+    const parsed = parseFloat(kmEditNewValue.replace(",", "."));
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast.error("Valor de KM inválido.");
+      return;
+    }
+    if (kmEditReason.trim().length < 3) {
+      toast.error("Informe uma justificativa para a edição.");
+      return;
+    }
+    setIsKmEditing(true);
+    try {
+      const response = await fetch("/api/os-manual-cycle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          os_id: viewingOS.id,
+          cycle_index: kmEditCycleIndex,
+          action: "edit_km",
+          km_field: kmEditField,
+          km_new_value: parsed,
+          km_reason: kmEditReason.trim(),
+          km_bypass_odometer: kmEditBypass,
+        }),
+      });
+      const result = await response.json() as {
+        success: boolean;
+        error?: string;
+        current_odometer?: number;
+      };
+      if (!result.success) {
+        if (result.error === "KM_BELOW_ODOMETER" && result.current_odometer !== undefined) {
+          setKmEditOdometerWarning(result.current_odometer);
+        } else {
+          toast.error(result.error || "Erro ao editar KM.");
+        }
+        return;
+      }
+      toast.success("KM atualizado com sucesso.");
+      setShowKmEdit(false);
+      setKmEditCycleIndex(null);
+      setKmEditNewValue("");
+      setKmEditReason("");
+      setKmEditBypass(false);
+      setKmEditOdometerWarning(null);
+      void syncOSSnapshot(viewingOS.id);
+    } catch (error) {
+      console.error("Erro ao editar KM:", error);
+      toast.error("Erro ao editar KM. Tente novamente.");
+    } finally {
+      setIsKmEditing(false);
     }
   };
 
@@ -3112,6 +3176,7 @@ export default function OSOperationalPage() {
       .map((d) => ({
         id: d.id,
         nome: d.name,
+        photoUrl: d.avatar_url,
       }));
 
     const mergedOptions = [...quickAddedDriverOptions, ...baseOptions];
@@ -4422,6 +4487,7 @@ export default function OSOperationalPage() {
       data: syncedData,
       hora: null,
       rota: { waypoints: formData.waypoints },
+      isFreelance: !editingOSId && isFreelanceMode,
     };
 
     // Se estiver editando e nao houver mudancas reais, apenas fecha o modal
@@ -4567,7 +4633,11 @@ export default function OSOperationalPage() {
     );
     return vehicles
       .filter((v) => vehicleIds.has(v.id))
-      .map((v) => ({ id: v.id, nome: `${v.marca} ${v.modelo} - ${v.placa}` }));
+      .map((v) => ({
+        id: v.id,
+        nome: `${v.marca} ${v.modelo}`,
+        plate: v.placa,
+      }));
   }, [formData.driverId, driverVehiclesAssoc, vehicles]);
 
   const availableCentrosCusto = useMemo(() => {
@@ -5385,9 +5455,16 @@ export default function OSOperationalPage() {
 
                     return (
                       <div className="space-y-1">
-                        <p className="font-black text-base text-slate-800 tracking-tight">
-                          {item.protocolo}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="font-black text-base text-slate-800 tracking-tight">
+                            {item.protocolo}
+                          </p>
+                          {item.isFreelance && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-emerald-600">
+                              Freelance
+                            </span>
+                          )}
+                        </div>
                         <p
                           className="text-sm font-semibold"
                           style={{ color: "rgb(97, 130, 209)" }}
@@ -5992,7 +6069,13 @@ export default function OSOperationalPage() {
         <StandardModal
           onClose={resetMainModalState}
           disableBackdropClose
-          title={editingOSId ? "Editar Atendimento" : "Novo Atendimento"}
+          title={
+            editingOSId
+              ? "Editar Atendimento"
+              : isFreelanceMode
+                ? "Freelance"
+                : "Novo Atendimento"
+          }
           subtitle={
             editingOSId
               ? "Atualização operacional Geolog"
@@ -6007,8 +6090,16 @@ export default function OSOperationalPage() {
           }
           maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-80 space-y-12"
-          headerClassName="bg-[rgb(42,82,144)]"
-          headerGlowClassName="bg-[rgb(42,82,144)]/10"
+          headerClassName={
+            isFreelanceMode && !editingOSId
+              ? "bg-emerald-600"
+              : "bg-[rgb(42,82,144)]"
+          }
+          headerGlowClassName={
+            isFreelanceMode && !editingOSId
+              ? "bg-emerald-600/10"
+              : "bg-[rgb(42,82,144)]/10"
+          }
           subtitleClassName="text-white/70"
           footer={
             <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
@@ -6022,9 +6113,17 @@ export default function OSOperationalPage() {
               <button
                 type="submit"
                 form="nova-os-form"
-                className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                className={
+                  isFreelanceMode && !editingOSId
+                    ? "px-12 py-4 bg-emerald-600 text-white font-black rounded-xl shadow-xl shadow-emerald-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                    : "px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                }
               >
-                {editingOSId ? "Salvar e Continuar" : "Confirmar OS"}
+                {editingOSId
+                  ? "Salvar e Continuar"
+                  : isFreelanceMode
+                    ? "Confirmar Freelance"
+                    : "Confirmar OS"}
               </button>
             </div>
           }
@@ -7849,9 +7948,31 @@ export default function OSOperationalPage() {
                                       </p>
                                     )}
                                     {typeof step.km === "number" && (
-                                      <p className="text-[13px] font-black text-slate-600">
-                                        KM: {step.km.toLocaleString("pt-BR")}
-                                      </p>
+                                      <div className="flex items-center gap-1">
+                                        <p className="text-[13px] font-black text-slate-600">
+                                          KM: {step.km.toLocaleString("pt-BR")}
+                                        </p>
+                                        {!isArchived && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setKmEditCycleIndex(cycle.itineraryIndex);
+                                              setKmEditField(step.id === "started" ? "initial" : "final");
+                                              setKmEditCurrentValue(step.km ?? null);
+                                              setKmEditNewValue(String(step.km));
+                                              setKmEditReason("");
+                                              setKmEditBypass(false);
+                                              setKmEditOdometerWarning(null);
+                                              setShowKmEdit(true);
+                                            }}
+                                            className="p-0.5 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
+                                            title="Editar KM"
+                                          >
+                                            <Pencil size={12} />
+                                          </button>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
                                   {step.active && (
@@ -10015,9 +10136,8 @@ export default function OSOperationalPage() {
           onClose={() => {
             setShowAcceptRevert(false);
             setSelectedCycleIndex(null);
-            setResetReason("km_correction");
+            setResetReason("rescheduling");
             setResetReasonOther("");
-            setKmResetTarget(null);
           }}
           title="Resetar Ciclo"
           subtitle="Retornar o ciclo para pendente"
@@ -10029,68 +10149,6 @@ export default function OSOperationalPage() {
             <p className="text-sm text-slate-600 font-medium">
               Por que você está resetando?
             </p>
-
-            {/* Option: Correção de KM */}
-            <button
-              type="button"
-              onClick={() => setResetReason("km_correction")}
-              className={`w-full flex items-start gap-4 p-4 rounded-2xl border-2 text-left transition-all cursor-pointer ${
-                resetReason === "km_correction"
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-slate-200 bg-white hover:border-slate-300"
-              }`}
-            >
-              <div
-                className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                  resetReason === "km_correction"
-                    ? "border-blue-500"
-                    : "border-slate-300"
-                }`}
-              >
-                {resetReason === "km_correction" && (
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                )}
-              </div>
-              <div>
-                <p className="font-black text-sm text-slate-800">
-                  Correção de KM
-                </p>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  Reset + reenvia template ao motorista para digitar novamente
-                </p>
-              </div>
-            </button>
-
-            {/* Sub-seleção: qual KM resetar */}
-            {resetReason === "km_correction" && (
-              <div className="px-1">
-                <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">
-                  O que precisa ser corrigido?
-                </p>
-                <div className="flex gap-2">
-                  {(
-                    [
-                      { value: "initial", label: "KM Inicial" },
-                      { value: "final", label: "KM Final" },
-                      { value: "both", label: "Ambos" },
-                    ] as const
-                  ).map(({ value, label }) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setKmResetTarget(value)}
-                      className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider border-2 transition-all cursor-pointer ${
-                        kmResetTarget === value
-                          ? "border-blue-500 bg-blue-500 text-white"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Option: Remarcação / Atraso */}
             <button
@@ -10118,7 +10176,7 @@ export default function OSOperationalPage() {
                   Remarcação / Atraso
                 </p>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  Reset + avisa motorista que deve aguardar nova instrução
+                  Motorista deve aguardar nova instrução do operador
                 </p>
               </div>
             </button>
@@ -10176,9 +10234,8 @@ export default function OSOperationalPage() {
                 onClick={() => {
                   setShowAcceptRevert(false);
                   setSelectedCycleIndex(null);
-                  setResetReason("km_correction");
+                  setResetReason("rescheduling");
                   setResetReasonOther("");
-                  setKmResetTarget(null);
                 }}
                 className="flex-1 px-6 py-4 bg-slate-100 text-slate-700 font-black rounded-xl hover:bg-slate-200 transition-all text-sm uppercase tracking-widest cursor-pointer"
               >
@@ -10186,9 +10243,6 @@ export default function OSOperationalPage() {
               </button>
               <button
                 type="button"
-                disabled={
-                  resetReason === "km_correction" && kmResetTarget === null
-                }
                 onClick={async () => {
                   if (!viewingOS || selectedCycleIndex === null) return;
                   await handleManualRevertAccept(
@@ -10198,17 +10252,144 @@ export default function OSOperationalPage() {
                     resetReason === "other"
                       ? resetReasonOther.trim()
                       : undefined,
-                    resetReason === "km_correction" ? kmResetTarget : null,
                   );
                   setShowAcceptRevert(false);
                   setSelectedCycleIndex(null);
-                  setResetReason("km_correction");
+                  setResetReason("rescheduling");
                   setResetReasonOther("");
-                  setKmResetTarget(null);
                 }}
-                className="flex-1 px-6 py-4 bg-rose-600 text-white font-black rounded-xl shadow-lg hover:bg-rose-700 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-600"
+                className="flex-1 px-6 py-4 bg-rose-600 text-white font-black rounded-xl shadow-lg hover:bg-rose-700 transition-all text-sm uppercase tracking-widest cursor-pointer"
               >
                 Confirmar Reset
+              </button>
+            </div>
+          </div>
+        </StandardModal>
+      )}
+
+      {/* KM Edit Modal */}
+      {showKmEdit && viewingOS && kmEditCycleIndex !== null && (
+        <StandardModal
+          onClose={() => {
+            if (isKmEditing) return;
+            setShowKmEdit(false);
+            setKmEditCycleIndex(null);
+            setKmEditNewValue("");
+            setKmEditReason("");
+            setKmEditBypass(false);
+            setKmEditOdometerWarning(null);
+          }}
+          title={`Editar ${kmEditField === "initial" ? "KM Inicial" : "KM Final"}`}
+          subtitle="Correção manual pelo operador"
+          icon={<Pencil size={24} />}
+          maxWidthClassName="max-w-md"
+          disableBackdropClose
+        >
+          <div className="space-y-5">
+            {/* Valor atual */}
+            {kmEditCurrentValue !== null && (
+              <div className="bg-slate-50 rounded-2xl px-5 py-4 flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-widest text-slate-500">
+                  Valor atual
+                </span>
+                <span className="text-base font-black text-slate-700">
+                  {kmEditCurrentValue.toLocaleString("pt-BR")} km
+                </span>
+              </div>
+            )}
+
+            {/* Aviso de odômetro */}
+            {kmEditOdometerWarning !== null && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                  <div>
+                    <p className="text-sm font-black text-amber-900">
+                      KM abaixo do odômetro do veículo
+                    </p>
+                    <p className="text-sm text-amber-700 mt-0.5">
+                      Último KM registrado:{" "}
+                      <span className="font-black">
+                        {kmEditOdometerWarning.toLocaleString("pt-BR")} km
+                      </span>
+                    </p>
+                  </div>
+                </div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={kmEditBypass}
+                    onChange={(e) => setKmEditBypass(e.target.checked)}
+                    className="w-4 h-4 rounded border-amber-400 accent-amber-500 cursor-pointer"
+                  />
+                  <span className="text-sm font-bold text-amber-800">
+                    Confirmo que o valor está correto e desejo ignorar a validação
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* Novo valor */}
+            <div>
+              <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+                Novo valor (km)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={kmEditNewValue}
+                onChange={(e) => {
+                  setKmEditNewValue(e.target.value);
+                  setKmEditOdometerWarning(null);
+                  setKmEditBypass(false);
+                }}
+                placeholder="Ex: 12800"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-black text-slate-800 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-blue-400 focus:bg-white transition-all"
+              />
+            </div>
+
+            {/* Justificativa */}
+            <div>
+              <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+                Justificativa <span className="text-rose-400">*</span>
+              </label>
+              <textarea
+                value={kmEditReason}
+                onChange={(e) => setKmEditReason(e.target.value)}
+                placeholder="Ex: motorista digitou o KM errado, corrigido via telefone"
+                rows={3}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-400 focus:bg-white resize-none transition-all"
+              />
+            </div>
+
+            <div className="flex gap-4 pt-2">
+              <button
+                type="button"
+                disabled={isKmEditing}
+                onClick={() => {
+                  setShowKmEdit(false);
+                  setKmEditCycleIndex(null);
+                  setKmEditNewValue("");
+                  setKmEditReason("");
+                  setKmEditBypass(false);
+                  setKmEditOdometerWarning(null);
+                }}
+                className="flex-1 px-6 py-4 bg-slate-100 text-slate-700 font-black rounded-xl hover:bg-slate-200 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={
+                  isKmEditing ||
+                  !kmEditNewValue.trim() ||
+                  kmEditReason.trim().length < 3 ||
+                  (kmEditOdometerWarning !== null && !kmEditBypass)
+                }
+                onClick={() => void handleKmEdit()}
+                className="flex-1 px-6 py-4 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-700 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+              >
+                {isKmEditing ? "Salvando..." : "Salvar KM"}
               </button>
             </div>
           </div>
@@ -10379,9 +10560,8 @@ export default function OSOperationalPage() {
               type="button"
               onClick={() => {
                 setIsAttendanceChoiceModalOpen(false);
-                toast.info(
-                  "O tipo de atendimento Freelance ainda está em desenvolvimento.",
-                );
+                setIsFreelanceMode(true);
+                handleOpenCreateOSModal();
               }}
               className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 hover:shadow-xl hover:shadow-emerald-900/5 transition-all active:scale-[0.98]"
             >

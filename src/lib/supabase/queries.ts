@@ -493,6 +493,7 @@ type OSRow = {
   financeiro_faturado_em: string | null;
   financeiro_recebido_em: string | null;
   os_financeiro_anexos?: FinanceAttachmentRow[] | null;
+  is_freelance: boolean | null;
 };
 type FinanceAttachmentRow = {
   id: string;
@@ -669,6 +670,7 @@ const mapOSRecord = (
     createdAt: o.created_at ?? undefined,
     createdBy: o.created_by ?? undefined,
     createdByName: undefined,
+    isFreelance: o.is_freelance ?? false,
     arquivado: o.arquivado ?? undefined,
     financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
     financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
@@ -1208,6 +1210,7 @@ const OS_SELECT_COLUMNS = [
   "route_finished_km",
   "created_at",
   "created_by",
+  "is_freelance",
 ].join(",");
 
 export async function fetchOSList(): Promise<OrderService[]> {
@@ -1681,6 +1684,9 @@ export async function insertOS(
     obs_financeiras:
       (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
     custo: osData.custo ?? 0,
+    is_freelance: Boolean(
+      (osData as OSInput & { isFreelance?: boolean }).isFreelance,
+    ),
   };
 
   const waypointsPayload = waypoints.map((wp) => ({
@@ -2831,7 +2837,7 @@ export async function fetchOSFinanceStats(
     let query = getSupabase()
       .from("ordens_servico")
       .select(
-        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id, repasse_pago",
+        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id, repasse_pago, is_freelance",
         { count: "exact" },
       )
       .eq("arquivado", false);
@@ -2892,6 +2898,7 @@ export async function fetchOSFinanceStats(
       status_operacional: string | null;
       driver_id: string | null;
       repasse_pago: boolean | null;
+      is_freelance: boolean | null;
     }>;
 
     const driverIds = [
@@ -2923,6 +2930,7 @@ export async function fetchOSFinanceStats(
         const statusOperacional = row.status_operacional || "";
         const driverId = row.driver_id;
         const repassePago = row.repasse_pago || false;
+        const isFreelance = Boolean(row.is_freelance);
 
         acc.totalOS += 1;
         acc.totalBruto += bruto;
@@ -2941,7 +2949,8 @@ export async function fetchOSFinanceStats(
         if (statusFinanceiro === "Pendente") acc.totalPendente += bruto;
 
         if (driverId) {
-          const parceiroId = driverMap.get(driverId);
+          // OS Freelance sempre conta como Autônomo, independente do vínculo do motorista
+          const parceiroId = isFreelance ? null : driverMap.get(driverId);
           if (parceiroId) {
             acc.totalCustoParceiros += custo;
             if (repassePago) acc.totalPagoParceiros += custo;

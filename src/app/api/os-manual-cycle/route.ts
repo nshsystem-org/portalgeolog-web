@@ -112,13 +112,19 @@ export async function POST(request: Request) {
         | "revert_to_pending"
         | "revert_to_accept"
         | "restart_route"
-        | "finish_all";
-      reset_reason?: "km_correction" | "rescheduling" | "other";
+        | "finish_all"
+        | "edit_km";
+      reset_reason?: "rescheduling" | "other";
       reset_reason_text?: string;
-      km_reset_target?: "initial" | "final" | "both";
+      // edit_km fields
+      km_field?: "initial" | "final";
+      km_new_value?: number;
+      km_reason?: string;
+      km_bypass_odometer?: boolean;
     };
 
-    const { os_id, cycle_index, action, reset_reason, reset_reason_text, km_reset_target } = body;
+    const { os_id, cycle_index, action, reset_reason, reset_reason_text } = body;
+    const { km_field, km_new_value, km_reason, km_bypass_odometer } = body;
 
     if (!os_id) {
       return NextResponse.json(
@@ -385,76 +391,16 @@ export async function POST(request: Request) {
 
     switch (action) {
       case "revert_to_pending": {
-        const isKmCorrection = reset_reason === "km_correction" && km_reset_target;
-
-        if (isKmCorrection) {
-          // Reset parcial: mantém progresso do ciclo, só limpa KM conforme escolha
-          if (km_reset_target === "initial") {
-            // Limpa KM inicial (e final junto): volta pro estado pré-rota
-            // startedAt e finishedAt são limpos para que o frontend não os use
-            // como fallback para determinar o estado visual
-            updatedCycles = updateCycleInList(cycles, targetIndex, {
-              state: "awaiting_start",
-              startedAt: undefined,
-              finishedAt: undefined,
-              kmInitial: undefined,
-              kmFinal: undefined,
-            });
-            newState = "awaiting_start";
-            ordensServicoUpdate = {
-              status_operacional: "Em Rota",
-              route_started_at: null,
-              route_started_km: null,
-              route_finished_at: null,
-              route_finished_km: null,
-              updated_at: new Date().toISOString(),
-            };
-          } else if (km_reset_target === "final") {
-            // Limpa só KM final: rota continua em andamento (startedAt mantido)
-            // finishedAt é limpo para o frontend não mostrar como "completed"
-            updatedCycles = updateCycleInList(cycles, targetIndex, {
-              state: "awaiting_finish",
-              finishedAt: undefined,
-              kmFinal: undefined,
-            });
-            newState = "awaiting_finish";
-            ordensServicoUpdate = {
-              status_operacional: "Em Rota",
-              route_finished_at: null,
-              route_finished_km: null,
-              updated_at: new Date().toISOString(),
-            };
-          } else if (km_reset_target === "both") {
-            // Limpa tudo: volta pro estado pré-rota
-            updatedCycles = updateCycleInList(cycles, targetIndex, {
-              state: "awaiting_start",
-              startedAt: undefined,
-              finishedAt: undefined,
-              kmInitial: undefined,
-              kmFinal: undefined,
-            });
-            newState = "awaiting_start";
-            ordensServicoUpdate = {
-              status_operacional: "Em Rota",
-              route_started_at: null,
-              route_started_km: null,
-              route_finished_at: null,
-              route_finished_km: null,
-              updated_at: new Date().toISOString(),
-            };
-          }
-        } else {
-          // Reset total: rescheduling, other ou sem motivo especificado
-          updatedCycles = updateCycleInList(cycles, targetIndex, {
-            state: "pending",
-            acceptedAt: undefined,
-            startedAt: undefined,
-            finishedAt: undefined,
-            kmInitial: undefined,
-            kmFinal: undefined,
-          });
-          newState = "pending";
-        }
+        // Reset total: volta para pendente, motorista precisa aceitar novamente
+        updatedCycles = updateCycleInList(cycles, targetIndex, {
+          state: "pending",
+          acceptedAt: undefined,
+          startedAt: undefined,
+          finishedAt: undefined,
+          kmInitial: undefined,
+          kmFinal: undefined,
+        });
+        newState = "pending";
         break;
       }
 
@@ -493,6 +439,148 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString(),
         };
         break;
+
+      case "edit_km": {
+        // Edição manual de KM sem precisar resetar o ciclo ou reenviar template
+        if (!km_field || km_new_value === undefined || km_new_value === null) {
+          return NextResponse.json(
+            { success: false, error: "Parâmetros inválidos para edição de KM." },
+            { status: 400 },
+          );
+        }
+        if (!Number.isFinite(km_new_value) || km_new_value < 0) {
+          return NextResponse.json(
+            { success: false, error: "Valor de KM inválido." },
+            { status: 400 },
+          );
+        }
+        if (!km_reason || km_reason.trim().length < 3) {
+          return NextResponse.json(
+            { success: false, error: "Justificativa obrigatória para edição de KM." },
+            { status: 400 },
+          );
+        }
+
+        // Buscar veiculo_id da OS para checar odômetro
+        const { data: osForKm } = await getAdmin()
+          .from("ordens_servico")
+          .select("veiculo_id")
+          .eq("id", os_id)
+          .single() as unknown as { data: { veiculo_id: string | null } | null };
+
+        if (!km_bypass_odometer && osForKm?.veiculo_id) {
+          const { data: odo } = await getAdmin()
+            .from("vehicle_km_odometer")
+            .select("last_km")
+            .eq("veiculo_id", osForKm.veiculo_id)
+            .maybeSingle() as unknown as { data: { last_km: number } | null };
+
+          if (odo && km_new_value <= odo.last_km) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: "KM_BELOW_ODOMETER",
+                current_odometer: odo.last_km,
+              },
+              { status: 422 },
+            );
+          }
+        }
+
+        const kmField = km_field === "initial" ? "kmInitial" : "kmFinal";
+        const oldKm = km_field === "initial" ? cycle.kmInitial : cycle.kmFinal;
+
+        updatedCycles = updateCycleInList(cycles, targetIndex, {
+          [kmField]: km_new_value,
+        });
+        newState = cycle.state; // estado não muda
+
+        // Sincronizar ordens_servico
+        if (km_field === "initial") {
+          ordensServicoUpdate = {
+            route_started_km: km_new_value,
+            updated_at: new Date().toISOString(),
+          };
+        } else {
+          ordensServicoUpdate = {
+            route_finished_km: km_new_value,
+            updated_at: new Date().toISOString(),
+          };
+        }
+
+        await replaceOperationalCyclesForOS(getAdmin(), os_id, updatedCycles);
+
+        // Tocar ordens_servico para Realtime
+        const ordensServicoKmBulk = getAdmin().from(
+          "ordens_servico",
+        ) as unknown as OrdensServicoUpdateBuilder;
+        await ordensServicoKmBulk
+          .update(ordensServicoUpdate)
+          .eq("id", os_id);
+
+        // Atualizar odômetro e histórico se não for bypass
+        if (osForKm?.veiculo_id) {
+          await getAdmin()
+            .from("vehicle_km_odometer")
+            .upsert(
+              {
+                veiculo_id: osForKm.veiculo_id,
+                last_km: km_new_value,
+                last_km_type: km_field,
+                last_os_id: os_id,
+                last_recorded_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "veiculo_id" },
+            );
+
+          await getAdmin()
+            .from("vehicle_km_history")
+            .insert({
+              veiculo_id: osForKm.veiculo_id,
+              os_id,
+              km_value: km_new_value,
+              km_type: km_field,
+              driver_name: actorName,
+              recorded_via: "manual",
+            });
+        }
+
+        // Log auditoria
+        const kmLabel = km_field === "initial" ? "KM Inicial" : "KM Final";
+        const kmLogDesc = `${kmLabel} editado manualmente: ${(oldKm ?? 0).toLocaleString("pt-BR")} → ${km_new_value.toLocaleString("pt-BR")}`;
+        await getAdmin()
+          .from("os_logs")
+          .insert({
+            os_id,
+            type: "status_change",
+            actor_name: actorName,
+            actor_id: actorId,
+            actor_avatar_url: actorAvatarUrl,
+            description: kmLogDesc,
+            metadata: {
+              action: "edit_km",
+              cycle_index: targetIndex,
+              cycle_title: cycle.title,
+              km_field,
+              old_value: oldKm ?? null,
+              new_value: km_new_value,
+              reason: km_reason,
+              bypass_odometer: km_bypass_odometer ?? false,
+            },
+          } as never);
+
+        console.log(
+          `[Perf][os-manual-cycle] edit_km ${(performance.now() - startedAt).toFixed(0)}ms`,
+        );
+
+        return NextResponse.json({
+          success: true,
+          message: `${kmLabel} atualizado com sucesso.`,
+          km_field,
+          new_value: km_new_value,
+        });
+      }
 
       default:
         return NextResponse.json(
@@ -618,15 +706,11 @@ export async function POST(request: Request) {
 
     let logDescription: string;
     if (action === "revert_to_pending" && reset_reason) {
-      const reasonLabels = {
-        km_correction: "Ciclo revertido — Correção de KM",
+      const reasonLabels: Record<string, string> = {
         rescheduling: "Ciclo revertido — Remarcação/Atraso",
         other: "Ciclo revertido",
       };
-      const targetLabel = km_reset_target
-        ? ` (${km_reset_target === "initial" ? "KM inicial" : km_reset_target === "final" ? "KM final" : "ambos os KMs"})`
-        : "";
-      logDescription = `${reasonLabels[reset_reason]}${targetLabel}`;
+      logDescription = reasonLabels[reset_reason] ?? "Ciclo revertido para pendente";
       if (reset_reason === "other" && reset_reason_text) {
         logDescription += `: ${reset_reason_text}`;
       }
@@ -654,7 +738,6 @@ export async function POST(request: Request) {
           cycle_title: cycle.title,
           new_state: newState,
           ...(reset_reason ? { reset_reason } : {}),
-          ...(km_reset_target ? { km_reset_target } : {}),
           ...(reset_reason_text ? { reset_reason_text } : {}),
         },
       } as never);

@@ -126,9 +126,10 @@ export function FinanceiroTable({
               const driverName = item.driverId
                 ? driverMap.get(item.driverId)
                 : undefined;
-              const driverPartnerId = item.driverId
-                ? driverPartnerMap.get(item.driverId)
-                : undefined;
+              const driverPartnerId =
+                !item.isFreelance && item.driverId
+                  ? driverPartnerMap.get(item.driverId)
+                  : undefined;
               const partnerName = driverPartnerId
                 ? partnerMap.get(driverPartnerId)
                 : undefined;
@@ -138,11 +139,20 @@ export function FinanceiroTable({
                   <p className="truncate text-base font-bold text-slate-800">
                     {driverName || item.motorista || "Sem motorista"}
                   </p>
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-                    <Truck size={12} className="shrink-0" />
-                    <span className="truncate">
-                      {partnerName || "Autônomo / Interno"}
-                    </span>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold">
+                    {item.isFreelance ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                        <Truck size={10} className="shrink-0" />
+                        Freelance
+                      </span>
+                    ) : (
+                      <>
+                        <Truck size={12} className="shrink-0 text-slate-400" />
+                        <span className="truncate text-slate-400">
+                          {partnerName || "Autônomo / Interno"}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               );
