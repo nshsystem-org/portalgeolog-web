@@ -48,6 +48,7 @@ export type DocagemInput = {
   valorDiario: number;
   custoDiario?: number | null;
   observacao?: string | null;
+  observacaoFinanceira?: string | null;
 };
 
 export type DocagemInstance = {
@@ -70,6 +71,7 @@ export type DocagemInstance = {
   centroCustoId: string | null;
   solicitanteId: string | null;
   observacao: string | null;
+  observacaoFinanceira: string | null;
 };
 
 export type DocagemInstanceUpdate = {
@@ -80,6 +82,7 @@ export type DocagemInstanceUpdate = {
   custo?: number | null;
   horarioInicio?: string;
   horarioFim?: string;
+  observacaoFinanceira?: string | null;
 };
 
 export type DocagemSummary = {
@@ -99,6 +102,7 @@ export type DocagemSummary = {
   valorDiario: number;
   custoDiario: number | null;
   observacao: string | null;
+  observacaoFinanceira: string | null;
   status: DocagemStatus;
   createdAt: string;
 };
@@ -127,6 +131,9 @@ function mapDocagemInstance(row: Record<string, unknown>): DocagemInstance {
     centroCustoId: row.centro_custo_id ? String(row.centro_custo_id) : null,
     solicitanteId: row.solicitante_id ? String(row.solicitante_id) : null,
     observacao: row.observacao ? String(row.observacao) : null,
+    observacaoFinanceira: row.observacao_financeira
+      ? String(row.observacao_financeira)
+      : null,
   };
 }
 
@@ -150,6 +157,9 @@ function mapDocagemSummary(row: Record<string, unknown>): DocagemSummary {
     valorDiario: Number(row.valor_diario),
     custoDiario: row.custo_diario ? Number(row.custo_diario) : null,
     observacao: row.observacao ? String(row.observacao) : null,
+    observacaoFinanceira: row.observacao_financeira
+      ? String(row.observacao_financeira)
+      : null,
     status: String(row.status) as DocagemStatus,
     createdAt: String(row.created_at),
   };
@@ -176,6 +186,7 @@ export async function createDocagem(input: DocagemInput): Promise<string> {
       p_valor_diario: input.valorDiario,
       p_custo_diario: input.custoDiario ?? null,
       p_observacao: input.observacao ?? null,
+      p_observacao_financeira: input.observacaoFinanceira ?? null,
     });
 
     if (error) throw error;
@@ -218,7 +229,8 @@ export async function fetchDocagemInstancesByRange({
           cliente_id,
           centro_custo_id,
           solicitante_id,
-          observacao
+          observacao,
+          observacao_financeira
         )
       `,
       )
@@ -241,6 +253,7 @@ export async function fetchDocagemInstancesByRange({
         centro_custo_id: docagem.centro_custo_id,
         solicitante_id: docagem.solicitante_id,
         observacao: docagem.observacao,
+        observacao_financeira: docagem.observacao_financeira,
       });
     });
   });
@@ -333,6 +346,8 @@ export async function updateDocagemInstance(
       payload.horario_inicio = updates.horarioInicio;
     if (updates.horarioFim !== undefined)
       payload.horario_fim = updates.horarioFim;
+    if (updates.observacaoFinanceira !== undefined)
+      payload.observacao_financeira = updates.observacaoFinanceira;
 
     const { error } = await getSupabase()
       .from("docagem_instancias")
@@ -392,6 +407,8 @@ export async function updateDocagem(
       payload.custo_diario = updates.custoDiario;
     if (updates.observacao !== undefined)
       payload.observacao = updates.observacao;
+    if (updates.observacaoFinanceira !== undefined)
+      payload.observacao_financeira = updates.observacaoFinanceira;
 
     const { error } = await getSupabase()
       .from("docagens")

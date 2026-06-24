@@ -72,6 +72,7 @@ import {
   Layers,
   Package,
   Briefcase,
+  DollarSign,
 } from "lucide-react";
 import {
   useData,
@@ -95,11 +96,14 @@ import {
   createDocagem,
   fetchDocagemInstancesByRange,
   fetchDocagens,
+  fetchDocagemById,
   finalizarDocagemDia,
   excluirDocagemDia,
   reativarDocagemDia,
   resetarDocagemDia,
   cancelarDocagem,
+  updateDocagem,
+  updateDocagemInstance,
   type DocagemInstance,
   type DocagemInput,
   type DocagemSummary,
@@ -617,11 +621,30 @@ export default function OSOperationalPage() {
     valorDiario: 0,
     custoDiario: null,
     observacao: null,
+    observacaoFinanceira: null,
   });
   const [docagemMenuTarget, setDocagemMenuTarget] = useState<{
     id: string;
     position: { x: number; y: number };
   } | null>(null);
+  const [viewingDocagemInstance, setViewingDocagemInstance] =
+    useState<DocagemInstance | null>(null);
+  const [editingDocagemInstance, setEditingDocagemInstance] =
+    useState<DocagemInstance | null>(null);
+  const [editingDocagemId, setEditingDocagemId] = useState<string | null>(null);
+  const [editingDocagemData, setEditingDocagemData] =
+    useState<DocagemInput | null>(null);
+  const [docagemInstanceEditForm, setDocagemInstanceEditForm] = useState<{
+    endereco: string;
+    motoristaId: string | null;
+    veiculoId: string | null;
+    valor: number;
+    custo: number | null;
+    horarioInicio: string;
+    horarioFim: string;
+    observacaoFinanceira: string | null;
+  } | null>(null);
+  const [copiedProtocol, setCopiedProtocol] = useState<string | null>(null);
   const [isSubmittingDocagem, setIsSubmittingDocagem] = useState(false);
   const [users, setUsers] = useState<{ id: string; nome: string }[]>([]);
 
@@ -2926,6 +2949,41 @@ export default function OSOperationalPage() {
     };
   }, [docagemMenuTarget]);
 
+  const handleCopyProtocol = async (protocol: string) => {
+    try {
+      await navigator.clipboard.writeText(protocol);
+      setCopiedProtocol(protocol);
+      setTimeout(
+        () =>
+          setCopiedProtocol((current) =>
+            current === protocol ? null : current,
+          ),
+        2000,
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao copiar protocolo.");
+    }
+  };
+
+  // Inicializar formulário de edição de instância de docagem
+  useEffect(() => {
+    if (!editingDocagemInstance) {
+      setDocagemInstanceEditForm(null);
+      return;
+    }
+    setDocagemInstanceEditForm({
+      endereco: editingDocagemInstance.endereco,
+      motoristaId: editingDocagemInstance.motoristaId,
+      veiculoId: editingDocagemInstance.veiculoId,
+      valor: editingDocagemInstance.valor,
+      custo: editingDocagemInstance.custo,
+      horarioInicio: editingDocagemInstance.horarioInicio,
+      horarioFim: editingDocagemInstance.horarioFim,
+      observacaoFinanceira: editingDocagemInstance.observacaoFinanceira,
+    });
+  }, [editingDocagemInstance]);
+
   const [openNotifyMenuKey, setOpenNotifyMenuKey] = useState<string | null>(
     null,
   );
@@ -3252,6 +3310,36 @@ export default function OSOperationalPage() {
       return true;
     });
   }, [drivers, quickAddedDriverOptions]);
+
+  // Veículos vinculados a um motorista específico (para selects de docagem)
+  const getVehiclesForDriver = useCallback(
+    (driverId: string | null) => {
+      if (!driverId) return [];
+      const vehicleIds = new Set(
+        driverVehiclesAssoc
+          .filter((dv) => dv.driver_id === driverId)
+          .map((dv) => dv.vehicle_id),
+      );
+      return vehicles
+        .filter((v) => vehicleIds.has(v.id))
+        .map((v) => ({
+          id: v.id,
+          nome: `${v.marca} ${v.modelo}`,
+          plate: v.placa,
+        }));
+    },
+    [driverVehiclesAssoc, vehicles],
+  );
+
+  // Veículos disponíveis para cada modal de docagem (filtrados pelo motorista)
+  const docagemFormVehicleOptions = useMemo(
+    () => getVehiclesForDriver(docagemFormData.motoristaId ?? null),
+    [getVehiclesForDriver, docagemFormData.motoristaId],
+  );
+  const docagemInstanceEditVehicleOptions = useMemo(
+    () => getVehiclesForDriver(docagemInstanceEditForm?.motoristaId ?? null),
+    [getVehiclesForDriver, docagemInstanceEditForm?.motoristaId],
+  );
 
   const formatPhone = (value: string) => {
     if (isEstrangeiro) {
@@ -6085,7 +6173,7 @@ export default function OSOperationalPage() {
                     (d) => d.id === docagemMenuTarget.id,
                   );
                   if (!instance) return null;
-                  const menuHeight = 220;
+                  const menuHeight = 360;
                   const spaceBelow =
                     window.innerHeight - docagemMenuTarget.position.y;
                   const shouldOpenUp = spaceBelow < menuHeight + 16;
@@ -6100,9 +6188,78 @@ export default function OSOperationalPage() {
                         left: docagemMenuTarget.position.x,
                       }}
                     >
-                      <div className="px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-500 border-b border-slate-100 mb-1">
-                        Docagem - {instance.data}
-                      </div>
+                      <button
+                        onClick={() => {
+                          setViewingDocagemInstance(instance);
+                          setDocagemMenuTarget(null);
+                        }}
+                        className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 hover:text-blue-600 rounded-xl hover:bg-blue-50 flex items-center gap-3 cursor-pointer"
+                      >
+                        <Eye
+                          size={16}
+                          className="text-slate-400 group-hover:text-blue-600"
+                        />
+                        Visualizar
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingDocagemInstance(instance);
+                          setDocagemMenuTarget(null);
+                        }}
+                        className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 hover:text-blue-600 rounded-xl hover:bg-blue-50 flex items-center gap-3 cursor-pointer"
+                      >
+                        <Pencil
+                          size={16}
+                          className="text-slate-400 group-hover:text-blue-600"
+                        />
+                        Editar dia
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setDocagemMenuTarget(null);
+                          try {
+                            const docagem = await fetchDocagemById(
+                              instance.docagemId,
+                            );
+                            if (!docagem) {
+                              toast.error("Docagem não encontrada.");
+                              return;
+                            }
+                            setEditingDocagemId(docagem.id);
+                            setEditingDocagemData({
+                              clienteId: docagem.clienteId,
+                              centroCustoId: docagem.centroCustoId,
+                              solicitanteId: docagem.solicitanteId,
+                              motoristaId: docagem.motoristaId,
+                              veiculoId: docagem.veiculoId,
+                              endereco: docagem.endereco,
+                              dataInicio: docagem.dataInicio,
+                              dataFim: docagem.dataFim,
+                              horarioInicio: docagem.horarioInicio,
+                              horarioFim: docagem.horarioFim,
+                              diasSemana: docagem.diasSemana,
+                              valorDiario: docagem.valorDiario,
+                              custoDiario: docagem.custoDiario,
+                              observacao: docagem.observacao,
+                            });
+                          } catch (err) {
+                            console.error(err);
+                            toast.error(
+                              err instanceof Error
+                                ? err.message
+                                : "Erro ao carregar docagem.",
+                            );
+                          }
+                        }}
+                        className="group w-full px-4 py-2 text-left text-sm font-bold text-slate-700 hover:text-violet-600 rounded-xl hover:bg-violet-50 flex items-center gap-3 cursor-pointer"
+                      >
+                        <Package
+                          size={16}
+                          className="text-slate-400 group-hover:text-violet-600"
+                        />
+                        Editar docagem
+                      </button>
+                      <div className="my-1 border-t border-slate-100" />
                       {instance.status === "pendente" && (
                         <button
                           onClick={async () => {
@@ -10799,18 +10956,19 @@ export default function OSOperationalPage() {
               valorDiario: 0,
               custoDiario: null,
               observacao: null,
+              observacaoFinanceira: null,
             });
           }}
           title="Nova Docagem"
-          subtitle="Criar OS recorrente (docagem)"
+          subtitle="Agendamento Recorrente Geolog"
           icon={<Package className="w-6 h-6 md:w-7 md:h-7" />}
-          maxWidthClassName="max-w-4xl"
-          bodyClassName="p-6 md:p-10 space-y-8"
+          maxWidthClassName="max-w-7xl"
+          bodyClassName="p-6 md:p-10 space-y-12"
           headerClassName="bg-[rgb(89,47,147)]"
           headerGlowClassName="bg-[rgb(89,47,147)]/10"
           subtitleClassName="text-white/70"
           footer={
-            <div className="p-6 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-4">
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -10830,9 +10988,10 @@ export default function OSOperationalPage() {
                     valorDiario: 0,
                     custoDiario: null,
                     observacao: null,
+                    observacaoFinanceira: null,
                   });
                 }}
-                className="px-6 py-3 text-slate-500 font-black rounded-xl border border-slate-200 hover:bg-white transition-all uppercase tracking-widest text-xs"
+                className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
               >
                 Cancelar
               </button>
@@ -10887,6 +11046,7 @@ export default function OSOperationalPage() {
                       valorDiario: 0,
                       custoDiario: null,
                       observacao: null,
+                      observacaoFinanceira: null,
                     });
                     if (calendarRangeRef.current) {
                       void handleCalendarRangeChange(
@@ -10909,282 +11069,1395 @@ export default function OSOperationalPage() {
                   }
                 }}
                 disabled={isSubmittingDocagem}
-                className="px-8 py-3 bg-[rgb(89,47,147)] text-white font-black rounded-xl shadow-lg shadow-[rgb(89,47,147)]/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs disabled:opacity-50"
+                className="px-12 py-4 bg-[rgb(89,47,147)] text-white font-black rounded-xl shadow-xl shadow-[rgb(89,47,147)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
               >
-                {isSubmittingDocagem ? "Criando..." : "Criar Docagem"}
+                {isSubmittingDocagem ? "Criando..." : "Confirmar Docagem"}
               </button>
             </div>
           }
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <GeologSearchableSelect
-              label="Cliente"
-              options={[
-                { id: "", nome: "Selecione..." },
-                ...clientes.map((c) => ({ id: c.id, nome: c.nome })),
-              ]}
-              value={docagemFormData.clienteId}
-              onChange={(id) =>
-                setDocagemFormData((prev) => ({
-                  ...prev,
-                  clienteId: id,
-                  centroCustoId: null,
-                  solicitanteId: null,
-                }))
-              }
-              triggerClassName="px-4 py-3 text-base"
-              disableSearch={false}
-            />
-            <GeologSearchableSelect
-              label="Centro de Custo"
-              options={[
-                { id: "", nome: "Todos" },
-                ...(docagemFormData.clienteId
-                  ? getCentrosCustoByCliente(docagemFormData.clienteId).map(
-                      (cc) => ({ id: cc.id, nome: cc.nome }),
-                    )
-                  : []),
-              ]}
-              value={docagemFormData.centroCustoId ?? ""}
-              onChange={(id) =>
-                setDocagemFormData((prev) => ({
-                  ...prev,
-                  centroCustoId: id || null,
-                }))
-              }
-              disabled={!docagemFormData.clienteId}
-              triggerClassName="px-4 py-3 text-base"
-              disableSearch={false}
-            />
-            <GeologSearchableSelect
-              label="Solicitante"
-              options={[
-                { id: "", nome: "Todos" },
-                ...solicitantes
-                  .filter(
-                    (s) =>
-                      !docagemFormData.clienteId ||
-                      s.clienteId === docagemFormData.clienteId,
-                  )
-                  .map((s) => ({ id: s.id, nome: s.nome })),
-              ]}
-              value={docagemFormData.solicitanteId ?? ""}
-              onChange={(id) =>
-                setDocagemFormData((prev) => ({
-                  ...prev,
-                  solicitanteId: id || null,
-                }))
-              }
-              disabled={!docagemFormData.clienteId}
-              triggerClassName="px-4 py-3 text-base"
-              disableSearch={false}
-            />
-            <GeologSearchableSelect
-              label="Motorista"
-              options={[
-                { id: "", nome: "Sem motorista" },
-                ...drivers.map((d) => ({ id: d.id, nome: d.name })),
-              ]}
-              value={docagemFormData.motoristaId ?? ""}
-              onChange={(id) =>
-                setDocagemFormData((prev) => ({
-                  ...prev,
-                  motoristaId: id || null,
-                }))
-              }
-              triggerClassName="px-4 py-3 text-base"
-              disableSearch={false}
-            />
-            <GeologSearchableSelect
-              label="Veículo"
-              options={[
-                { id: "", nome: "Sem veículo" },
-                ...vehicles.map((v) => ({
-                  id: v.id,
-                  nome: `${v.placa} - ${v.modelo}`,
-                })),
-              ]}
-              value={docagemFormData.veiculoId ?? ""}
-              onChange={(id) =>
-                setDocagemFormData((prev) => ({
-                  ...prev,
-                  veiculoId: id || null,
-                }))
-              }
-              triggerClassName="px-4 py-3 text-base"
-              disableSearch={false}
-            />
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Endereço / Doca
-              </label>
-              <input
-                type="text"
-                value={docagemFormData.endereco}
-                onChange={(e) =>
-                  setDocagemFormData((prev) => ({
-                    ...prev,
-                    endereco: e.target.value,
-                  }))
-                }
-                placeholder="Ex: Rua X, 100 - Doca 5"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
-              />
-            </div>
-            <GeologDateInput
-              label="Data Início"
-              value={docagemFormData.dataInicio}
-              onChange={(value) =>
-                setDocagemFormData((prev) => ({
-                  ...prev,
-                  dataInicio: value || "",
-                }))
-              }
-              className="w-full"
-            />
-            <GeologDateInput
-              label="Data Fim"
-              value={docagemFormData.dataFim}
-              onChange={(value) =>
-                setDocagemFormData((prev) => ({
-                  ...prev,
-                  dataFim: value || "",
-                }))
-              }
-              className="w-full"
-            />
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Horário Início
-              </label>
-              <input
-                type="time"
-                value={docagemFormData.horarioInicio}
-                onChange={(e) =>
-                  setDocagemFormData((prev) => ({
-                    ...prev,
-                    horarioInicio: e.target.value,
-                  }))
-                }
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Horário Fim
-              </label>
-              <input
-                type="time"
-                value={docagemFormData.horarioFim}
-                onChange={(e) =>
-                  setDocagemFormData((prev) => ({
-                    ...prev,
-                    horarioFim: e.target.value,
-                  }))
-                }
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
-              />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Dias da Semana
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { label: "Dom", value: 7 },
-                  { label: "Seg", value: 1 },
-                  { label: "Ter", value: 2 },
-                  { label: "Qua", value: 3 },
-                  { label: "Qui", value: 4 },
-                  { label: "Sex", value: 5 },
-                  { label: "Sáb", value: 6 },
-                ].map((dia) => {
-                  const active = docagemFormData.diasSemana.includes(dia.value);
-                  return (
-                    <button
-                      key={dia.value}
-                      type="button"
-                      onClick={() =>
-                        setDocagemFormData((prev) => {
-                          const has = prev.diasSemana.includes(dia.value);
-                          const next = has
-                            ? prev.diasSemana.filter((v) => v !== dia.value)
-                            : [...prev.diasSemana, dia.value];
-                          return { ...prev, diasSemana: next.sort() };
-                        })
-                      }
-                      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                        active
-                          ? "bg-violet-600 text-white"
-                          : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                      }`}
-                    >
-                      {dia.label}
-                    </button>
-                  );
-                })}
+          <div className="space-y-12" style={{ paddingTop: "0.5rem" }}>
+            {/* 1. DETALHES DA EXECUÇÃO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <Users size={20} className="text-slate-500" /> Detalhes da
+                  Execução
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                <GeologSearchableSelect
+                  label="Cliente"
+                  options={[
+                    { id: "", nome: "Selecione..." },
+                    ...clientes.map((c) => ({ id: c.id, nome: c.nome })),
+                  ]}
+                  value={docagemFormData.clienteId}
+                  onChange={(id) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      clienteId: id,
+                      centroCustoId: null,
+                      solicitanteId: null,
+                    }))
+                  }
+                  disableSearch={false}
+                />
+                <GeologSearchableSelect
+                  label="Centro de Custo"
+                  options={[
+                    { id: "", nome: "Todos" },
+                    ...(docagemFormData.clienteId
+                      ? getCentrosCustoByCliente(docagemFormData.clienteId).map(
+                          (cc) => ({ id: cc.id, nome: cc.nome }),
+                        )
+                      : []),
+                  ]}
+                  value={docagemFormData.centroCustoId ?? ""}
+                  onChange={(id) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      centroCustoId: id || null,
+                    }))
+                  }
+                  disabled={!docagemFormData.clienteId}
+                  disableSearch={false}
+                />
+                <GeologSearchableSelect
+                  label="Solicitante"
+                  options={[
+                    { id: "", nome: "Todos" },
+                    ...solicitantes
+                      .filter(
+                        (s) =>
+                          !docagemFormData.clienteId ||
+                          s.clienteId === docagemFormData.clienteId,
+                      )
+                      .map((s) => ({ id: s.id, nome: s.nome })),
+                  ]}
+                  value={docagemFormData.solicitanteId ?? ""}
+                  onChange={(id) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      solicitanteId: id || null,
+                    }))
+                  }
+                  disabled={!docagemFormData.clienteId}
+                  disableSearch={false}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <GeologSearchableSelect
+                  label="Motorista"
+                  options={driverOptions}
+                  value={docagemFormData.motoristaId ?? ""}
+                  onChange={(id) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      motoristaId: id || null,
+                      veiculoId: null,
+                    }))
+                  }
+                  disableSearch={false}
+                />
+                <GeologSearchableSelect
+                  label="Veículo"
+                  options={docagemFormVehicleOptions}
+                  value={docagemFormData.veiculoId ?? ""}
+                  onChange={(id) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      veiculoId: id || null,
+                    }))
+                  }
+                  disabled={!docagemFormData.motoristaId}
+                  disableSearch={false}
+                />
               </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Valor Diário (R$)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={docagemFormData.valorDiario || ""}
-                onChange={(e) =>
-                  setDocagemFormData((prev) => ({
-                    ...prev,
-                    valorDiario:
-                      e.target.value === "" ? 0 : parseFloat(e.target.value),
-                  }))
-                }
-                placeholder="0,00"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
-              />
+
+            {/* 2. LOCAL E PERÍODO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <MapPin size={20} className="text-slate-500" /> Local e
+                  Período
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2.5 md:col-span-2">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Endereço / Doca
+                  </label>
+                  <input
+                    type="text"
+                    value={docagemFormData.endereco}
+                    onChange={(e) =>
+                      setDocagemFormData((prev) => ({
+                        ...prev,
+                        endereco: e.target.value,
+                      }))
+                    }
+                    placeholder="Ex: Doca 12 - CD Cajamar"
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase placeholder:text-slate-300 shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Data Início
+                  </label>
+                  <input
+                    type="date"
+                    value={docagemFormData.dataInicio}
+                    onChange={(e) =>
+                      setDocagemFormData((prev) => ({
+                        ...prev,
+                        dataInicio: e.target.value,
+                      }))
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Data Fim
+                  </label>
+                  <input
+                    type="date"
+                    value={docagemFormData.dataFim}
+                    onChange={(e) =>
+                      setDocagemFormData((prev) => ({
+                        ...prev,
+                        dataFim: e.target.value,
+                      }))
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Horário Início
+                  </label>
+                  <input
+                    type="time"
+                    value={docagemFormData.horarioInicio}
+                    onChange={(e) =>
+                      setDocagemFormData((prev) => ({
+                        ...prev,
+                        horarioInicio: e.target.value,
+                      }))
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Horário Fim
+                  </label>
+                  <input
+                    type="time"
+                    value={docagemFormData.horarioFim}
+                    onChange={(e) =>
+                      setDocagemFormData((prev) => ({
+                        ...prev,
+                        horarioFim: e.target.value,
+                      }))
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5 md:col-span-2">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Dias da Semana
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    {[
+                      { label: "Dom", value: 7 },
+                      { label: "Seg", value: 1 },
+                      { label: "Ter", value: 2 },
+                      { label: "Qua", value: 3 },
+                      { label: "Qui", value: 4 },
+                      { label: "Sex", value: 5 },
+                      { label: "Sáb", value: 6 },
+                    ].map((dia) => {
+                      const active = docagemFormData.diasSemana.includes(
+                        dia.value,
+                      );
+                      return (
+                        <button
+                          key={dia.value}
+                          type="button"
+                          onClick={() =>
+                            setDocagemFormData((prev) => {
+                              const has = prev.diasSemana.includes(dia.value);
+                              const next = has
+                                ? prev.diasSemana.filter((v) => v !== dia.value)
+                                : [...prev.diasSemana, dia.value];
+                              return { ...prev, diasSemana: next.sort() };
+                            })
+                          }
+                          className={`px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all ${
+                            active
+                              ? "bg-violet-600 text-white shadow-lg shadow-violet-900/20 scale-[1.05]"
+                              : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                          }`}
+                        >
+                          {dia.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Custo Diário (R$)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={docagemFormData.custoDiario ?? ""}
-                onChange={(e) =>
-                  setDocagemFormData((prev) => ({
-                    ...prev,
-                    custoDiario:
-                      e.target.value === "" ? null : parseFloat(e.target.value),
-                  }))
-                }
-                placeholder="0,00"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
-              />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                Observação
-              </label>
-              <textarea
-                value={docagemFormData.observacao ?? ""}
-                onChange={(e) =>
-                  setDocagemFormData((prev) => ({
-                    ...prev,
-                    observacao: e.target.value || null,
-                  }))
-                }
-                rows={3}
-                placeholder="Observações internas sobre a docagem..."
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all resize-none"
-              />
+
+            {/* 3. FINANCEIRO */}
+            <DocagemFinanceiroSection
+              valor={docagemFormData.valorDiario}
+              custo={docagemFormData.custoDiario ?? null}
+              observacaoFinanceira={
+                docagemFormData.observacaoFinanceira ?? null
+              }
+              onValorChange={(value) =>
+                setDocagemFormData((prev) => ({ ...prev, valorDiario: value }))
+              }
+              onCustoChange={(value) =>
+                setDocagemFormData((prev) => ({ ...prev, custoDiario: value }))
+              }
+              onObservacaoFinanceiraChange={(value) =>
+                setDocagemFormData((prev) => ({
+                  ...prev,
+                  observacaoFinanceira: value,
+                }))
+              }
+              impostoPercentual={impostoPercentual}
+              formatCurrency={formatCurrency}
+            />
+
+            {/* 4. OBSERVAÇÕES GERAIS */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <MessageSquareMore size={20} className="text-slate-500" />{" "}
+                  Observações Gerais
+                </h3>
+              </div>
+              <div className="space-y-2.5">
+                <textarea
+                  value={docagemFormData.observacao ?? ""}
+                  onChange={(e) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      observacao: e.target.value || null,
+                    }))
+                  }
+                  rows={4}
+                  placeholder="Observações internas sobre a docagem..."
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-medium text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm resize-none"
+                />
+              </div>
             </div>
           </div>
         </StandardModal>
       )}
+
+      {/* Modal Visualizar Docagem */}
+      {viewingDocagemInstance && (
+        <StandardModal
+          onClose={() => setViewingDocagemInstance(null)}
+          title={
+            <button
+              type="button"
+              onClick={() =>
+                viewingDocagemInstance.protocolo &&
+                void handleCopyProtocol(viewingDocagemInstance.protocolo)
+              }
+              className={`text-left cursor-pointer font-black tracking-normal normal-case text-white ${
+                viewingDocagemInstance.protocolo
+                  ? "hover:underline"
+                  : "cursor-default"
+              }`}
+            >
+              {viewingDocagemInstance.protocolo || "Sem protocolo"}
+            </button>
+          }
+          subtitle={
+            <div className="flex items-center gap-2 text-sm">
+              <span>
+                {viewingDocagemInstance.data.split("-").reverse().join("/")}
+              </span>
+              {copiedProtocol === viewingDocagemInstance.protocolo &&
+                viewingDocagemInstance.protocolo && (
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                    Copiado
+                  </span>
+                )}
+            </div>
+          }
+          icon={<Eye size={24} />}
+          maxWidthClassName="max-w-7xl"
+          bodyClassName="p-6 md:p-10 space-y-12"
+          headerClassName="bg-[rgb(89,47,147)]"
+          headerGlowClassName="bg-[rgb(89,47,147)]/10"
+          subtitleClassName="text-white/70"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewingDocagemInstance(null)}
+                className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-12" style={{ paddingTop: "0.5rem" }}>
+            {/* 1. DETALHES DA EXECUÇÃO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <Users size={20} className="text-slate-500" /> Detalhes da
+                  Execução
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Cliente
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {clientes.find(
+                      (c) => c.id === viewingDocagemInstance.clienteId,
+                    )?.nome || "N/A"}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Centro de Custo
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {clientes
+                      .find((c) => c.id === viewingDocagemInstance.clienteId)
+                      ?.centrosCusto.find(
+                        (cc) => cc.id === viewingDocagemInstance.centroCustoId,
+                      )?.nome || "Padrão"}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Solicitante
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {solicitantes.find(
+                      (s) => s.id === viewingDocagemInstance.solicitanteId,
+                    )?.nome || "N/A"}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Motorista
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {drivers.find(
+                      (d) => d.id === viewingDocagemInstance.motoristaId,
+                    )?.name || "Não definido"}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Veículo
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {vehicles.find(
+                      (v) => v.id === viewingDocagemInstance.veiculoId,
+                    )
+                      ? `${vehicles.find((v) => v.id === viewingDocagemInstance.veiculoId)?.placa} - ${vehicles.find((v) => v.id === viewingDocagemInstance.veiculoId)?.modelo}`
+                      : "Não definido"}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Status
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {viewingDocagemInstance.status === "pendente" && "Pendente"}
+                    {viewingDocagemInstance.status === "andamento" &&
+                      "Andamento"}
+                    {viewingDocagemInstance.status === "finalizada" &&
+                      "Finalizada"}
+                    {viewingDocagemInstance.status === "excluida" && "Excluída"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. LOCAL E HORÁRIO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <MapPin size={20} className="text-slate-500" /> Local e
+                  Horário
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2.5 md:col-span-2">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Endereço / Doca
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {viewingDocagemInstance.endereco || "N/A"}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Horário Início
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {viewingDocagemInstance.horarioInicio}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Horário Fim
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {viewingDocagemInstance.horarioFim}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. FINANCEIRO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <DollarSign size={20} className="text-slate-500" /> Financeiro
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Valor (R$)
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {formatCurrency(viewingDocagemInstance.valor)}
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Custo (R$)
+                  </p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {formatCurrency(viewingDocagemInstance.custo ?? 0)}
+                  </p>
+                </div>
+                {viewingDocagemInstance.observacaoFinanceira && (
+                  <div className="space-y-2.5 md:col-span-2">
+                    <p className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                      Observação Financeira
+                    </p>
+                    <p className="text-base font-medium text-slate-700">
+                      {viewingDocagemInstance.observacaoFinanceira}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 4. OBSERVAÇÕES GERAIS */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <MessageSquareMore size={20} className="text-slate-500" />{" "}
+                  Observações Gerais
+                </h3>
+              </div>
+              <div className="space-y-2.5">
+                <p className="text-base font-medium text-slate-700">
+                  {viewingDocagemInstance.observacao || "-"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </StandardModal>
+      )}
+
+      {/* Modal Editar Dia de Docagem */}
+      {editingDocagemInstance && (
+        <StandardModal
+          onClose={() => {
+            setEditingDocagemInstance(null);
+            setDocagemInstanceEditForm(null);
+          }}
+          title="Editar Dia de Docagem"
+          subtitle={
+            <div className="flex items-center gap-2 text-sm">
+              <button
+                type="button"
+                onClick={() =>
+                  editingDocagemInstance.protocolo &&
+                  void handleCopyProtocol(editingDocagemInstance.protocolo)
+                }
+                className={`font-black tracking-normal normal-case text-white ${
+                  editingDocagemInstance.protocolo
+                    ? "hover:underline cursor-pointer"
+                    : "cursor-default"
+                }`}
+              >
+                {editingDocagemInstance.protocolo || "Sem protocolo"}
+              </button>
+              <span>·</span>
+              <span>
+                {editingDocagemInstance.data.split("-").reverse().join("/")}
+              </span>
+              {copiedProtocol === editingDocagemInstance.protocolo &&
+                editingDocagemInstance.protocolo && (
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                    Copiado
+                  </span>
+                )}
+            </div>
+          }
+          icon={<Pencil size={24} />}
+          maxWidthClassName="max-w-7xl"
+          bodyClassName="p-6 md:p-10 space-y-12"
+          headerClassName="bg-[rgb(89,47,147)]"
+          headerGlowClassName="bg-[rgb(89,47,147)]/10"
+          subtitleClassName="text-white/70"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingDocagemInstance(null);
+                  setDocagemInstanceEditForm(null);
+                }}
+                className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!docagemInstanceEditForm) return;
+                  if (docagemInstanceEditForm.valor <= 0) {
+                    toast.error("Informe o valor do dia.");
+                    return;
+                  }
+                  setIsSubmittingDocagem(true);
+                  try {
+                    await updateDocagemInstance(
+                      editingDocagemInstance.id,
+                      docagemInstanceEditForm,
+                    );
+                    toast.success("Dia de docagem atualizado.");
+                    setEditingDocagemInstance(null);
+                    setDocagemInstanceEditForm(null);
+                    if (calendarRangeRef.current) {
+                      void handleCalendarRangeChange(
+                        calendarRangeRef.current.from,
+                        calendarRangeRef.current.to,
+                        true,
+                      );
+                    }
+                    void fetchDocagens().then(setDocagemList);
+                  } catch (err) {
+                    console.error(err);
+                    toast.error(
+                      err instanceof Error
+                        ? err.message
+                        : "Erro ao atualizar dia de docagem.",
+                    );
+                  } finally {
+                    setIsSubmittingDocagem(false);
+                  }
+                }}
+                disabled={isSubmittingDocagem}
+                className="px-12 py-4 bg-[rgb(89,47,147)] text-white font-black rounded-xl shadow-xl shadow-[rgb(89,47,147)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
+              >
+                {isSubmittingDocagem ? "Salvando..." : "Salvar Alterações"}
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-12" style={{ paddingTop: "0.5rem" }}>
+            {/* 1. DETALHES DA EXECUÇÃO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <Users size={20} className="text-slate-500" /> Detalhes da
+                  Execução
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <GeologSearchableSelect
+                  label="Motorista"
+                  options={driverOptions}
+                  value={docagemInstanceEditForm?.motoristaId ?? ""}
+                  onChange={(id) =>
+                    setDocagemInstanceEditForm((prev) =>
+                      prev
+                        ? { ...prev, motoristaId: id || null, veiculoId: null }
+                        : null,
+                    )
+                  }
+                  disableSearch={false}
+                />
+                <GeologSearchableSelect
+                  label="Veículo"
+                  options={docagemInstanceEditVehicleOptions}
+                  value={docagemInstanceEditForm?.veiculoId ?? ""}
+                  onChange={(id) =>
+                    setDocagemInstanceEditForm((prev) =>
+                      prev ? { ...prev, veiculoId: id || null } : null,
+                    )
+                  }
+                  disabled={!docagemInstanceEditForm?.motoristaId}
+                  disableSearch={false}
+                />
+              </div>
+            </div>
+
+            {/* 2. LOCAL E HORÁRIO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <MapPin size={20} className="text-slate-500" /> Local e
+                  Horário
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2.5 md:col-span-2">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Endereço / Doca
+                  </label>
+                  <input
+                    type="text"
+                    value={docagemInstanceEditForm?.endereco ?? ""}
+                    onChange={(e) =>
+                      setDocagemInstanceEditForm((prev) =>
+                        prev ? { ...prev, endereco: e.target.value } : null,
+                      )
+                    }
+                    placeholder="Ex: Doca 12 - CD Cajamar"
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase placeholder:text-slate-300 shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Horário Início
+                  </label>
+                  <input
+                    type="time"
+                    value={docagemInstanceEditForm?.horarioInicio ?? ""}
+                    onChange={(e) =>
+                      setDocagemInstanceEditForm((prev) =>
+                        prev
+                          ? { ...prev, horarioInicio: e.target.value }
+                          : null,
+                      )
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Horário Fim
+                  </label>
+                  <input
+                    type="time"
+                    value={docagemInstanceEditForm?.horarioFim ?? ""}
+                    onChange={(e) =>
+                      setDocagemInstanceEditForm((prev) =>
+                        prev ? { ...prev, horarioFim: e.target.value } : null,
+                      )
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 3. FINANCEIRO */}
+            <DocagemFinanceiroSection
+              valor={docagemInstanceEditForm?.valor ?? 0}
+              custo={docagemInstanceEditForm?.custo ?? null}
+              observacaoFinanceira={
+                docagemInstanceEditForm?.observacaoFinanceira ?? null
+              }
+              onValorChange={(value) =>
+                setDocagemInstanceEditForm((prev) =>
+                  prev ? { ...prev, valor: value } : null,
+                )
+              }
+              onCustoChange={(value) =>
+                setDocagemInstanceEditForm((prev) =>
+                  prev ? { ...prev, custo: value } : null,
+                )
+              }
+              onObservacaoFinanceiraChange={(value) =>
+                setDocagemInstanceEditForm((prev) =>
+                  prev ? { ...prev, observacaoFinanceira: value } : null,
+                )
+              }
+              impostoPercentual={impostoPercentual}
+              formatCurrency={formatCurrency}
+            />
+          </div>
+        </StandardModal>
+      )}
+
+      {/* Modal Editar Docagem Mãe */}
+      {editingDocagemData && editingDocagemId && (
+        <StandardModal
+          onClose={() => {
+            setEditingDocagemId(null);
+            setEditingDocagemData(null);
+          }}
+          title="Editar Docagem"
+          subtitle={editingDocagemData.endereco}
+          icon={<Package size={24} />}
+          maxWidthClassName="max-w-7xl"
+          bodyClassName="p-6 md:p-10 space-y-12"
+          headerClassName="bg-[rgb(89,47,147)]"
+          headerGlowClassName="bg-[rgb(89,47,147)]/10"
+          subtitleClassName="text-white/70"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!editingDocagemId) return;
+                  const confirmed = await confirm({
+                    title: "Cancelar Docagem",
+                    message:
+                      "Deseja cancelar esta docagem? As instâncias futuras não serão mais geradas.",
+                    type: "danger",
+                  });
+                  if (!confirmed) return;
+                  setIsSubmittingDocagem(true);
+                  try {
+                    await cancelarDocagem(editingDocagemId);
+                    toast.success("Docagem cancelada.");
+                    setEditingDocagemId(null);
+                    setEditingDocagemData(null);
+                    if (calendarRangeRef.current) {
+                      void handleCalendarRangeChange(
+                        calendarRangeRef.current.from,
+                        calendarRangeRef.current.to,
+                        true,
+                      );
+                    }
+                    void fetchDocagens().then(setDocagemList);
+                  } catch (err) {
+                    console.error(err);
+                    toast.error(
+                      err instanceof Error
+                        ? err.message
+                        : "Erro ao cancelar docagem.",
+                    );
+                  } finally {
+                    setIsSubmittingDocagem(false);
+                  }
+                }}
+                disabled={isSubmittingDocagem}
+                className="px-6 py-4 text-rose-600 font-bold hover:text-rose-700 transition-colors text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
+              >
+                Cancelar Docagem
+              </button>
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingDocagemId(null);
+                    setEditingDocagemData(null);
+                  }}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!editingDocagemData || !editingDocagemId) return;
+                    if (!editingDocagemData.clienteId) {
+                      toast.error("Selecione o cliente.");
+                      return;
+                    }
+                    if (!editingDocagemData.endereco.trim()) {
+                      toast.error("Informe o endereço / doca.");
+                      return;
+                    }
+                    if (
+                      !editingDocagemData.horarioInicio ||
+                      !editingDocagemData.horarioFim
+                    ) {
+                      toast.error("Informe o horário de início e fim.");
+                      return;
+                    }
+                    setIsSubmittingDocagem(true);
+                    try {
+                      await updateDocagem(editingDocagemId, editingDocagemData);
+                      toast.success("Docagem atualizada.");
+                      setEditingDocagemId(null);
+                      setEditingDocagemData(null);
+                      if (calendarRangeRef.current) {
+                        void handleCalendarRangeChange(
+                          calendarRangeRef.current.from,
+                          calendarRangeRef.current.to,
+                          true,
+                        );
+                      }
+                      void fetchDocagens().then(setDocagemList);
+                    } catch (err) {
+                      console.error(err);
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : "Erro ao atualizar docagem.",
+                      );
+                    } finally {
+                      setIsSubmittingDocagem(false);
+                    }
+                  }}
+                  disabled={isSubmittingDocagem}
+                  className="px-12 py-4 bg-[rgb(89,47,147)] text-white font-black rounded-xl shadow-xl shadow-[rgb(89,47,147)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingDocagem ? "Salvando..." : "Salvar Alterações"}
+                </button>
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-12" style={{ paddingTop: "0.5rem" }}>
+            {/* 1. DETALHES DA EXECUÇÃO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <Users size={20} className="text-slate-500" /> Detalhes da
+                  Execução
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                <GeologSearchableSelect
+                  label="Cliente"
+                  options={[
+                    { id: "", nome: "Selecione..." },
+                    ...clientes.map((c) => ({ id: c.id, nome: c.nome })),
+                  ]}
+                  value={editingDocagemData.clienteId}
+                  onChange={(id) =>
+                    setEditingDocagemData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            clienteId: id,
+                            centroCustoId: null,
+                            solicitanteId: null,
+                          }
+                        : null,
+                    )
+                  }
+                  disableSearch={false}
+                />
+                <GeologSearchableSelect
+                  label="Centro de Custo"
+                  options={[
+                    { id: "", nome: "Todos" },
+                    ...(editingDocagemData.clienteId
+                      ? getCentrosCustoByCliente(
+                          editingDocagemData.clienteId,
+                        ).map((cc) => ({ id: cc.id, nome: cc.nome }))
+                      : []),
+                  ]}
+                  value={editingDocagemData.centroCustoId ?? ""}
+                  onChange={(id) =>
+                    setEditingDocagemData((prev) =>
+                      prev ? { ...prev, centroCustoId: id || null } : null,
+                    )
+                  }
+                  disabled={!editingDocagemData.clienteId}
+                  disableSearch={false}
+                />
+                <GeologSearchableSelect
+                  label="Solicitante"
+                  options={[
+                    { id: "", nome: "Todos" },
+                    ...solicitantes
+                      .filter(
+                        (s) =>
+                          !editingDocagemData.clienteId ||
+                          s.clienteId === editingDocagemData.clienteId,
+                      )
+                      .map((s) => ({ id: s.id, nome: s.nome })),
+                  ]}
+                  value={editingDocagemData.solicitanteId ?? ""}
+                  onChange={(id) =>
+                    setEditingDocagemData((prev) =>
+                      prev ? { ...prev, solicitanteId: id || null } : null,
+                    )
+                  }
+                  disabled={!editingDocagemData.clienteId}
+                  disableSearch={false}
+                />
+              </div>
+            </div>
+
+            {/* 2. LOCAL E PERÍODO */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <MapPin size={20} className="text-slate-500" /> Local e
+                  Período
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2.5 md:col-span-2">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Endereço / Doca
+                  </label>
+                  <input
+                    type="text"
+                    value={editingDocagemData.endereco}
+                    onChange={(e) =>
+                      setEditingDocagemData((prev) =>
+                        prev ? { ...prev, endereco: e.target.value } : null,
+                      )
+                    }
+                    placeholder="Ex: Doca 12 - CD Cajamar"
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase placeholder:text-slate-300 shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Data Início
+                  </label>
+                  <input
+                    type="date"
+                    value={editingDocagemData.dataInicio}
+                    disabled
+                    className="w-full px-5 py-4 bg-slate-100 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-500 outline-none cursor-not-allowed"
+                  />
+                  <p className="text-xs font-bold text-slate-400">
+                    Não é possível alterar a data de início.
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Data Fim
+                  </label>
+                  <input
+                    type="date"
+                    value={editingDocagemData.dataFim}
+                    disabled
+                    className="w-full px-5 py-4 bg-slate-100 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-500 outline-none cursor-not-allowed"
+                  />
+                  <p className="text-xs font-bold text-slate-400">
+                    Não é possível alterar a data de fim.
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Horário Início
+                  </label>
+                  <input
+                    type="time"
+                    value={editingDocagemData.horarioInicio}
+                    onChange={(e) =>
+                      setEditingDocagemData((prev) =>
+                        prev
+                          ? { ...prev, horarioInicio: e.target.value }
+                          : null,
+                      )
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Horário Fim
+                  </label>
+                  <input
+                    type="time"
+                    value={editingDocagemData.horarioFim}
+                    onChange={(e) =>
+                      setEditingDocagemData((prev) =>
+                        prev ? { ...prev, horarioFim: e.target.value } : null,
+                      )
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2.5 md:col-span-2">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                    Dias da Semana
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    {[
+                      { label: "Dom", value: 7 },
+                      { label: "Seg", value: 1 },
+                      { label: "Ter", value: 2 },
+                      { label: "Qua", value: 3 },
+                      { label: "Qui", value: 4 },
+                      { label: "Sex", value: 5 },
+                      { label: "Sáb", value: 6 },
+                    ].map((dia) => {
+                      const active = editingDocagemData.diasSemana.includes(
+                        dia.value,
+                      );
+                      return (
+                        <button
+                          key={dia.value}
+                          type="button"
+                          disabled
+                          className={`px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all ${
+                            active
+                              ? "bg-violet-600 text-white opacity-70"
+                              : "bg-slate-100 text-slate-500 opacity-60"
+                          } cursor-not-allowed`}
+                        >
+                          {dia.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs font-bold text-slate-400">
+                    Não é possível alterar os dias da semana.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. OBSERVAÇÕES GERAIS */}
+            <div className="space-y-8">
+              <div
+                className="flex items-center border-b-2 border-slate-100 pb-4"
+                style={{ paddingBottom: "1.25rem" }}
+              >
+                <h3
+                  className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                  style={{ lineHeight: "1.3" }}
+                >
+                  <MessageSquareMore size={20} className="text-slate-500" />{" "}
+                  Observações Gerais
+                </h3>
+              </div>
+              <div className="space-y-2.5">
+                <textarea
+                  value={editingDocagemData.observacao ?? ""}
+                  onChange={(e) =>
+                    setEditingDocagemData((prev) =>
+                      prev
+                        ? { ...prev, observacao: e.target.value || null }
+                        : null,
+                    )
+                  }
+                  rows={4}
+                  placeholder="Observações internas sobre a docagem..."
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-medium text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm resize-none"
+                />
+              </div>
+            </div>
+          </div>
+        </StandardModal>
+      )}
+    </div>
+  );
+}
+
+function DocagemFinanceiroSection({
+  valor,
+  custo,
+  observacaoFinanceira,
+  onValorChange,
+  onCustoChange,
+  onObservacaoFinanceiraChange,
+  impostoPercentual,
+  formatCurrency,
+}: {
+  valor: number;
+  custo: number | null;
+  observacaoFinanceira: string | null;
+  onValorChange: (value: number) => void;
+  onCustoChange: (value: number | null) => void;
+  onObservacaoFinanceiraChange: (value: string | null) => void;
+  impostoPercentual: number;
+  formatCurrency: (value: number) => string;
+}) {
+  const [showObs, setShowObs] = useState(false);
+
+  const valorNum = valor;
+  const custoNum = custo ?? 0;
+  const taxa = valorNum * (impostoPercentual / 100);
+  const lucro = valorNum - taxa - custoNum;
+  const isLucro = lucro >= 0;
+
+  return (
+    <div className="space-y-6 md:col-span-2">
+      <div className="flex items-center gap-3 pb-2 border-b border-slate-200">
+        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+          <DollarSign size={20} />
+        </div>
+        <h3 className="text-lg font-black text-slate-800 tracking-tight">
+          Financeiro
+        </h3>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-6">
+        <div className="flex flex-col gap-2 w-full sm:w-[220px]">
+          <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
+            Valor Bruto
+          </label>
+          <div className="relative">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={valorNum || ""}
+              onChange={(e) =>
+                onValorChange(
+                  e.target.value === "" ? 0 : parseFloat(e.target.value),
+                )
+              }
+              className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-lg text-blue-700 outline-none tabular-nums focus:bg-white focus:border-blue-600 transition-all shadow-sm"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 w-full sm:w-[220px]">
+          <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
+            Repasse ao Motorista
+          </label>
+          <div className="relative">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={custoNum || ""}
+              onChange={(e) =>
+                onCustoChange(
+                  e.target.value === "" ? null : parseFloat(e.target.value),
+                )
+              }
+              className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-lg text-red-500 outline-none tabular-nums focus:bg-white focus:border-red-300 transition-all shadow-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => setShowObs((prev) => !prev)}
+          className="flex items-center justify-between w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl hover:bg-slate-100 transition-all cursor-pointer group"
+        >
+          <div className="flex items-center gap-3">
+            <MessageSquareMore
+              size={18}
+              className="text-slate-400 group-hover:text-blue-500 transition-colors"
+            />
+            <span className="text-sm font-bold text-slate-800 uppercase tracking-tight">
+              Observações Financeiras
+            </span>
+            {observacaoFinanceira && (
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-wider">
+                Preenchido
+              </span>
+            )}
+          </div>
+          <ChevronDown
+            size={20}
+            className={`text-slate-400 transition-transform duration-300 ${showObs ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        {showObs && (
+          <div className="animate-in slide-in-from-top-2 duration-300">
+            <textarea
+              value={observacaoFinanceira ?? ""}
+              onChange={(e) =>
+                onObservacaoFinanceiraChange(e.target.value || null)
+              }
+              rows={3}
+              placeholder="Adicione observações de cunho financeiro..."
+              className="w-full bg-slate-50 border-2 border-slate-200 px-6 py-4 rounded-xl font-medium text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm resize-none"
+            />
+          </div>
+        )}
+      </div>
+
+      <div
+        className={`p-8 md:p-10 rounded-[2.5rem] ${isLucro ? "bg-emerald-600 shadow-emerald-900/10" : "bg-red-600 shadow-red-900/10"} text-white shadow-2xl transition-all duration-500`}
+      >
+        <div className="flex justify-between items-start gap-4">
+          <div className="space-y-1 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-base font-black uppercase tracking-[0.2em]">
+                Valor Total a Cobrar
+              </span>
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-5xl font-black tracking-tighter tabular-nums leading-none">
+                {formatCurrency(valorNum)}
+              </p>
+              <div className="flex items-start gap-3 -mt-2">
+                <div className="animate-pulse mt-5">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width={32}
+                    height={32}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="lucide lucide-arrow-right opacity-80"
+                  >
+                    <path d="M5 12h14" />
+                    <path d="m12 5 7 7-7 7" />
+                  </svg>
+                </div>
+                <div className="text-right space-y-2 -mt-1">
+                  <span className="text-xs font-black uppercase block tracking-widest opacity-80">
+                    Valor Líquido Estimado
+                  </span>
+                  <div className="px-5 py-2 bg-white/20 rounded-xl text-2xl font-black tabular-nums backdrop-blur-md leading-none">
+                    {formatCurrency(lucro)}
+                  </div>
+                  <div className="text-xs font-black uppercase tracking-widest opacity-100">
+                    {valorNum > 0 ? ((lucro / valorNum) * 100).toFixed(1) : 0}%{" "}
+                    <span className="text-[10px] font-medium opacity-70">
+                      de lucro
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-5">
+                <div className="bg-white/10 rounded-xl px-4 py-4 space-y-3">
+                  <p className="text-sm font-black uppercase tracking-widest opacity-100 mb-3 flex items-center gap-2">
+                    <User size={16} />
+                    Fatura do Cliente
+                  </p>
+
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="font-medium opacity-90">
+                      Valor base do serviço
+                    </span>
+                    <span className="font-black tabular-nums">
+                      {formatCurrency(valorNum)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="font-medium opacity-80">
+                      Taxa administrativa ({impostoPercentual}%)
+                    </span>
+                    <span className="font-black tabular-nums text-red-200">
+                      -{formatCurrency(taxa)}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-white/10 rounded-xl px-4 py-4 space-y-3">
+                  <p className="text-sm font-black uppercase tracking-widest opacity-100 mb-3 flex items-center gap-2">
+                    <Truck size={16} />
+                    Repasse ao Motorista
+                  </p>
+
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="font-medium opacity-90">
+                      Valor base do repasse
+                    </span>
+                    <span className="font-black tabular-nums">
+                      {formatCurrency(custoNum)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useId } from "react";
 import { X } from "lucide-react";
 
 interface StandardModalProps {
   children: React.ReactNode;
   onClose: () => void;
-  title: string;
-  subtitle?: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
   icon?: React.ReactNode;
   footer?: React.ReactNode;
   maxWidthClassName?: string;
@@ -34,6 +34,9 @@ export default function StandardModal({
   subtitleClassName = "text-blue-300/80",
   disableBackdropClose = false,
 }: StandardModalProps) {
+  const titleId = useId();
+  const subtitleId = `${titleId}-subtitle`;
+
   useEffect(() => {
     // Salvar posição de scroll atual
     const scrollY = window.scrollY;
@@ -64,12 +67,8 @@ export default function StandardModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby={`modal-title-${title.replace(/\s+/g, "-").toLowerCase()}`}
-        aria-describedby={
-          subtitle
-            ? `modal-subtitle-${title.replace(/\s+/g, "-").toLowerCase()}`
-            : undefined
-        }
+        aria-labelledby={`modal-title-${titleId}`}
+        aria-describedby={subtitle ? subtitleId : undefined}
         className={`relative bg-white w-full ${maxWidthClassName} max-h-[92vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200 modal-content ${containerClassName}`}
         style={{ textRendering: "geometricPrecision" }}
       >
@@ -86,20 +85,20 @@ export default function StandardModal({
             </div>
             <div>
               <h2
-                id={`modal-title-${title.replace(/\s+/g, "-").toLowerCase()}`}
+                id={`modal-title-${titleId}`}
                 className="text-2xl md:text-3xl font-black text-white tracking-tight"
                 style={{ lineHeight: "1.2", marginBottom: "0.25rem" }}
               >
                 {title}
               </h2>
               {subtitle && (
-                <p
-                  id={`modal-subtitle-${title.replace(/\s+/g, "-").toLowerCase()}`}
+                <div
+                  id={subtitleId}
                   className={`text-[11px] font-bold uppercase tracking-[0.2em] ${subtitleClassName}`}
                   style={{ lineHeight: "1.3" }}
                 >
                   {subtitle}
-                </p>
+                </div>
               )}
             </div>
           </div>

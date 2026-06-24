@@ -295,6 +295,7 @@ export type AppDatabase = {
           p_valor_diario: number;
           p_custo_diario: number | null;
           p_observacao: string | null;
+          p_observacao_financeira: string | null;
         };
         Returns: string;
       };
