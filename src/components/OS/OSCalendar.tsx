@@ -18,6 +18,7 @@ import { createNotification } from "@/lib/supabase/queries";
 import {
   deriveCyclesOperationalStatus,
   getCycleDisplayStatus,
+  isFinalizadoSemValor,
   type CycleOperationalStatus,
 } from "@/lib/os-messages";
 import {
@@ -146,13 +147,14 @@ const weekStatusMeta: Record<
   },
 };
 
-type WeekStatusCounts = Record<WeekStatus, number>;
+type WeekStatusCounts = Record<WeekStatus, number> & { hasAlert?: boolean };
 
 const emptyWeekStatusCounts = (): WeekStatusCounts => ({
   Pendente: 0,
   Aguardando: 0,
   "Em Rota": 0,
   Finalizado: 0,
+  hasAlert: false,
 });
 
 // Cores por status — backgrounds mais saturados para legibilidade no calendário
@@ -459,12 +461,14 @@ const EventContent = ({
 
   const startTime = explicitTime || calendarFallbackTime || "--:--";
 
+  const isFinalizado = status === "Finalizado";
+
   return (
     <div
       className="fc-event-custom group transition-all duration-200 hover:shadow-md"
       style={{
-        backgroundColor: colors.bg,
-        borderLeft: `4px solid ${colors.dot}`,
+        backgroundColor: isFinalizado ? "#d3ffef" : colors.bg,
+        borderLeft: `4px solid ${isFinalizado ? "#98cdbe" : colors.dot}`,
         padding: isDayView ? "32px 8px 12px 28px" : "28px 4px 5px 24px",
         borderRadius: "12px 8px 8px 12px",
         fontSize: isDayView ? "13px" : "11px",
@@ -491,8 +495,22 @@ const EventContent = ({
           width: isDayView ? "28px" : "20px",
           height: isDayView ? "28px" : "20px",
           borderRadius: "50%",
-          backgroundColor: iconCircleColor,
-          color: "#ffffff",
+          backgroundColor:
+            isFinalizado
+              ? "#adead8"
+              : status === "Pendente"
+                ? "#f9fcff"
+                : status === "Aguardando"
+                  ? "#f7f9ff"
+                  : iconCircleColor,
+          color:
+            isFinalizado
+              ? "#497563"
+              : status === "Pendente"
+                ? "#475569"
+                : status === "Aguardando"
+                  ? "#1e40af"
+                  : "#ffffff",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -515,8 +533,17 @@ const EventContent = ({
             position: "absolute",
             top: "8px",
             right: "8px",
-            backgroundColor: colors.badgeBg || colors.dot,
-            color: colors.badgeText || "#ffffff",
+            backgroundColor: isFinalizado
+              ? "#b5eed3"
+              : status === "Aguardando"
+                ? "#f7f9ff"
+                : colors.badgeBg || colors.dot,
+            color:
+              isFinalizado
+                ? "#1b3c32"
+                : status === "Aguardando"
+                  ? "#1e40af"
+                  : colors.badgeText || "#ffffff",
             padding: "3px 8px",
             borderRadius: "6px",
             fontSize: isDayView ? "9px" : "7px",
@@ -693,6 +720,10 @@ const EventContent = ({
           style={{
             marginTop: "auto",
             paddingTop: isDayView ? "8px" : "2px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
           }}
         >
           <span
@@ -717,6 +748,23 @@ const EventContent = ({
             <Clock size={isDayView ? 16 : 14} strokeWidth={3} />
             {startTime || "--:--"}
           </span>
+
+          {status === "Finalizado" && os && isFinalizadoSemValor(os) && (
+            <div
+              title="Falta preencher valores"
+              style={{
+                width: isDayView ? "14px" : "12px",
+                height: isDayView ? "14px" : "12px",
+                borderRadius: "50%",
+                backgroundColor: "#ef4444",
+                border: "2px solid #ffffff",
+                boxShadow: "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
+                flexShrink: 0,
+                marginRight: isDayView ? "6px" : "4px",
+                animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -1240,16 +1288,26 @@ export default function OSCalendar({
 
     events.forEach((event) => {
       const status = event.extendedProps.status;
-      if (!weekStatusOrder.includes(status as WeekStatus)) {
-        return;
-      }
-
       const dateKey = event.start.split("T")[0];
+
       if (!countsByDate[dateKey]) {
         countsByDate[dateKey] = emptyWeekStatusCounts();
       }
 
-      countsByDate[dateKey][status as WeekStatus] += 1;
+      // Contabilizar status se for um status válido
+      if (weekStatusOrder.includes(status as WeekStatus)) {
+        countsByDate[dateKey][status as WeekStatus] += 1;
+      }
+
+      // Verificar alerta (Finalizado sem valor)
+      if (
+        event.extendedProps.kind === "os" &&
+        event.extendedProps.os &&
+        status === "Finalizado" &&
+        isFinalizadoSemValor(event.extendedProps.os)
+      ) {
+        countsByDate[dateKey].hasAlert = true;
+      }
     });
 
     return countsByDate;
@@ -1420,6 +1478,24 @@ export default function OSCalendar({
 
       return (
         <div className="fc-os-month-cell" key={`month-cell-${dateKey}`}>
+          {counts.hasAlert && (
+            <div
+              title="Existem atendimentos finalizados sem valor neste dia"
+              style={{
+                position: "absolute",
+                top: "8px",
+                left: "8px",
+                width: "12px",
+                height: "12px",
+                borderRadius: "50%",
+                backgroundColor: "#ef4444",
+                border: "2px solid #ffffff",
+                boxShadow: "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
+                zIndex: 3,
+                animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+              }}
+            />
+          )}
           <span className="fc-os-month-cell__day-number">
             {arg.dayNumberText}
           </span>
@@ -1480,6 +1556,24 @@ export default function OSCalendar({
           className={`fc-os-header fc-os-header--${headerVariant}`}
           key={`header-${dateKey}-${headerVariant}`}
         >
+          {counts.hasAlert && (
+            <div
+              title="Existem atendimentos finalizados sem valor neste dia"
+              style={{
+                position: "absolute",
+                top: headerVariant === "day" ? "7px" : "3px",
+                left: headerVariant === "day" ? "12px" : "8px",
+                width: "12px",
+                height: "12px",
+                borderRadius: "50%",
+                backgroundColor: "#ef4444",
+                border: "2px solid #ffffff",
+                boxShadow: "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
+                zIndex: 3,
+                animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+              }}
+            />
+          )}
           {headerVariant === "week" && (
             <button
               className={`fc-week-eye-btn${isFocused ? " active" : ""}`}
@@ -1514,13 +1608,13 @@ export default function OSCalendar({
                   aria-label={`${meta.label}: ${count}`}
                   style={{
                     color: meta.color,
-                    borderColor: '#e2e8f0',
-                    backgroundColor: '#ffffff',
+                    borderColor: "#e2e8f0",
+                    backgroundColor: "#ffffff",
                     opacity: isToday ? 1 : count === 0 ? 0.55 : 1,
                   }}
                 >
                   <Icon size={iconSize} strokeWidth={iconStrokeWidth} />
-                  <span style={{ color: '#334155' }}>{count}</span>
+                  <span style={{ color: "#334155" }}>{count}</span>
                 </div>
               );
             })}

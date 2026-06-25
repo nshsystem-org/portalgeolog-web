@@ -318,6 +318,37 @@ export function deriveCyclesOperationalStatus(
   return "Pendente";
 }
 
+export interface FinalizadoSemValorInput {
+  status: { operacional: CycleOperationalStatus };
+  operationalCycles?: OperationalCycle[] | null;
+  valorBruto: number | string | null;
+  custo: number | string | null;
+}
+
+/** Verifica se uma OS está operacionalmente finalizada mas ainda falta
+ *  preencher valor bruto e/ou custo do motorista. */
+export function isFinalizadoSemValor(os: FinalizadoSemValorInput): boolean {
+  const isFinalizado =
+    os.status.operacional === "Finalizado" ||
+    (os.operationalCycles && os.operationalCycles.length > 0
+      ? deriveCyclesOperationalStatus(os.operationalCycles) === "Finalizado"
+      : false);
+
+  const vBruto =
+    typeof os.valorBruto === "string" ? Number(os.valorBruto) : os.valorBruto;
+  const vCusto = typeof os.custo === "string" ? Number(os.custo) : os.custo;
+
+  const faltaValor =
+    vBruto === null ||
+    vBruto === undefined ||
+    vBruto === 0 ||
+    vCusto === null ||
+    vCusto === undefined ||
+    vCusto === 0;
+
+  return isFinalizado && faltaValor;
+}
+
 export function formatItineraryGroups(groups: ItineraryGroup[]): string {
   if (groups.length === 0) return "";
 

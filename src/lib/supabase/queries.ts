@@ -1423,6 +1423,7 @@ export type OSPageFilters = {
   dataInicio?: string;
   dataFim?: string;
   statusOperacional?: string;
+  faltandoValores?: boolean;
   createdBy?: string;
   arquivado?: boolean;
 };
@@ -1490,6 +1491,11 @@ export async function fetchOSPage({
     }
     if (filters.statusOperacional) {
       query = query.eq("status_operacional", filters.statusOperacional);
+    }
+    if (filters.faltandoValores) {
+      query = query
+        .eq("status_operacional", "Finalizado")
+        .or("valor_bruto.is.null,valor_bruto.eq.0,custo.is.null,custo.eq.0");
     }
     if (filters.createdBy) {
       query = query.eq("created_by", filters.createdBy);

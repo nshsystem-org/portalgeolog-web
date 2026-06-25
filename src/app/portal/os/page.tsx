@@ -73,6 +73,7 @@ import {
   Package,
   Briefcase,
   DollarSign,
+  AlertCircle,
 } from "lucide-react";
 import {
   useData,
@@ -130,6 +131,7 @@ import {
   getCycleDisplayStatus,
   deriveCyclesOperationalStatus,
   getOperationalCycleTitle,
+  isFinalizadoSemValor,
   type CycleOperationalStatus,
   type OperationalCycleState,
 } from "@/lib/os-messages";
@@ -674,7 +676,8 @@ export default function OSOperationalPage() {
       | "Aguardando"
       | "Em Rota"
       | "Finalizado"
-      | "Cancelado";
+      | "Cancelado"
+      | "Faltando Valores";
     createdBy: string;
   };
 
@@ -1121,8 +1124,13 @@ export default function OSOperationalPage() {
     if (advancedFilters.dataInicio)
       nextFilters.dataInicio = advancedFilters.dataInicio;
     if (advancedFilters.dataFim) nextFilters.dataFim = advancedFilters.dataFim;
-    if (advancedFilters.statusOperacional)
-      nextFilters.statusOperacional = advancedFilters.statusOperacional;
+    if (advancedFilters.statusOperacional) {
+      if (advancedFilters.statusOperacional === "Faltando Valores") {
+        nextFilters.faltandoValores = true;
+      } else {
+        nextFilters.statusOperacional = advancedFilters.statusOperacional;
+      }
+    }
     if (advancedFilters.createdBy)
       nextFilters.createdBy = advancedFilters.createdBy;
 
@@ -5528,6 +5536,7 @@ export default function OSOperationalPage() {
                 { id: "Aguardando", nome: "Aguardando" },
                 { id: "Em Rota", nome: "Em Rota" },
                 { id: "Finalizado", nome: "Finalizado" },
+                { id: "Faltando Valores", nome: "Faltando Valores" },
                 { id: "Cancelado", nome: "Cancelado" },
               ]}
               value={advancedFilters.statusOperacional}
@@ -5899,12 +5908,21 @@ export default function OSOperationalPage() {
                       getOperationalStatusForOS(item),
                       item.arquivado,
                     );
+                    const finalizadoSemValor = isFinalizadoSemValor(item);
                     return (
                       <span
                         className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border ${config.bg} ${config.border} ${config.text}`}
                       >
                         {config.icon}
                         {config.label}
+                        {finalizadoSemValor && (
+                          <span
+                            title="Falta preencher valores"
+                            className="inline-flex items-center justify-center ml-1"
+                          >
+                            <AlertCircle size={14} className="text-red-500" />
+                          </span>
+                        )}
                       </span>
                     );
                   },
@@ -7614,6 +7632,26 @@ export default function OSOperationalPage() {
           bodyClassName="p-6 md:p-10 space-y-8"
         >
           <div className="space-y-8">
+            {isFinalizadoSemValor(viewingOS) && (
+              <div
+                className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 shadow-sm"
+                title="Falta preencher valores"
+              >
+                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                  <AlertCircle size={20} className="text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-red-700">
+                    Falta preencher valores
+                  </p>
+                  <p className="text-xs font-semibold text-red-600/80">
+                    O atendimento está finalizado, mas o valor bruto e/ou o
+                    custo do motorista ainda não foram lançados.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Barra de Resumo: Dados + Status/Horário separados */}
             <div className="flex flex-col md:flex-row gap-3">
               {/* Coluna principal — dados da OS */}
