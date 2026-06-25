@@ -96,6 +96,7 @@ interface OSCalendarProps {
   loading?: boolean;
   hasLoaded?: boolean;
   showArchivedOnly?: boolean;
+  hideStatusLegend?: boolean;
   onRangeChange?: (from: string, to: string) => void;
 }
 
@@ -419,22 +420,25 @@ const EventContent = ({
   const kind: CalendarEventKind = eventKind ?? (isDocagem ? "docagem" : "os");
   const typeIconCfg = typeIcons[kind] || typeIcons.os;
   const TypeIcon = typeIconCfg.icon;
+  const displayStatus = showArchivedOnly ? "Arquivado" : status;
   const colors = showArchivedOnly
     ? statusColors["Arquivado"]
     : isDocagem && status === "Andamento"
       ? statusColors["Docagem Andamento"]
       : statusColors[status] || statusColors["Pendente"];
 
-  // Círculo do ícone: docagem pendente/andamento sempre roxo
-  const iconCircleColor =
-    isDocagem && (status === "Pendente" || status === "Andamento")
+  // Círculo do ícone: docagem pendente/andamento sempre roxo (exceto arquivados)
+  const iconCircleColor = showArchivedOnly
+    ? colors.iconCircle || colors.dot
+    : isDocagem && (status === "Pendente" || status === "Andamento")
       ? "#7c3aed"
       : colors.iconCircle || colors.dot;
 
   // Cor de fundo do badge de horário: docagem pendente usa cinza escuro (igual OS)
   // Docagem andamento usa roxo escuro
-  const docagemClockBg =
-    isDocagem && status === "Pendente"
+  const docagemClockBg = showArchivedOnly
+    ? colors.dot
+    : isDocagem && status === "Pendente"
       ? "#475569"
       : isDocagem && status === "Andamento"
         ? "#5a2ca3"
@@ -461,7 +465,7 @@ const EventContent = ({
 
   const startTime = explicitTime || calendarFallbackTime || "--:--";
 
-  const isFinalizado = status === "Finalizado";
+  const isFinalizado = !showArchivedOnly && status === "Finalizado";
 
   return (
     <div
@@ -495,16 +499,18 @@ const EventContent = ({
           width: isDayView ? "28px" : "20px",
           height: isDayView ? "28px" : "20px",
           borderRadius: "50%",
-          backgroundColor:
-            isFinalizado
+          backgroundColor: showArchivedOnly
+            ? colors.iconCircle || colors.dot
+            : isFinalizado
               ? "#adead8"
               : status === "Pendente"
                 ? "#f9fcff"
                 : status === "Aguardando"
                   ? "#f7f9ff"
                   : iconCircleColor,
-          color:
-            isFinalizado
+          color: showArchivedOnly
+            ? "#ffffff"
+            : isFinalizado
               ? "#497563"
               : status === "Pendente"
                 ? "#475569"
@@ -527,19 +533,22 @@ const EventContent = ({
       </div>
 
       {/* Badges no canto superior direito */}
-      {statusColors[status] && (
+      {statusColors[displayStatus] && (
         <span
           style={{
             position: "absolute",
             top: "8px",
             right: "8px",
-            backgroundColor: isFinalizado
-              ? "#b5eed3"
-              : status === "Aguardando"
-                ? "#f7f9ff"
-                : colors.badgeBg || colors.dot,
-            color:
-              isFinalizado
+            backgroundColor: showArchivedOnly
+              ? colors.badgeBg || colors.dot
+              : isFinalizado
+                ? "#b5eed3"
+                : status === "Aguardando"
+                  ? "#f7f9ff"
+                  : colors.badgeBg || colors.dot,
+            color: showArchivedOnly
+              ? colors.badgeText || "#ffffff"
+              : isFinalizado
                 ? "#1b3c32"
                 : status === "Aguardando"
                   ? "#1e40af"
@@ -556,7 +565,7 @@ const EventContent = ({
             gap: "3px",
           }}
         >
-          {status}
+          {displayStatus}
         </span>
       )}
 
@@ -731,8 +740,9 @@ const EventContent = ({
               display: "inline-flex",
               alignItems: "center",
               gap: "6px",
-              backgroundColor:
-                status === "Pendente"
+              backgroundColor: showArchivedOnly
+                ? colors.clockColor || colors.dot
+                : status === "Pendente"
                   ? "#475569"
                   : status === "Em Rota"
                     ? "#0284c7"
@@ -749,7 +759,7 @@ const EventContent = ({
             {startTime || "--:--"}
           </span>
 
-          {status === "Finalizado" && os && isFinalizadoSemValor(os) && (
+          {!showArchivedOnly && status === "Finalizado" && os && isFinalizadoSemValor(os) && (
             <div
               title="Falta preencher valores"
               style={{
@@ -781,6 +791,7 @@ export default function OSCalendar({
   loading,
   hasLoaded,
   showArchivedOnly,
+  hideStatusLegend,
   onRangeChange,
 }: OSCalendarProps) {
   const [currentView, setCurrentView] = useState<
@@ -1299,8 +1310,9 @@ export default function OSCalendar({
         countsByDate[dateKey][status as WeekStatus] += 1;
       }
 
-      // Verificar alerta (Finalizado sem valor)
+      // Verificar alerta (Finalizado sem valor) — não exibir em modo arquivados
       if (
+        !showArchivedOnly &&
         event.extendedProps.kind === "os" &&
         event.extendedProps.os &&
         status === "Finalizado" &&
@@ -1311,7 +1323,7 @@ export default function OSCalendar({
     });
 
     return countsByDate;
-  }, [events]);
+  }, [events, showArchivedOnly]);
 
   const handleEventClick = useCallback(
     (info: {
@@ -2640,26 +2652,28 @@ export default function OSCalendar({
       </div>
 
       {/* Legenda de Status */}
-      <div className="px-4 md:px-6 py-4 border-t border-slate-200 bg-slate-50/30">
-        <div className="flex flex-wrap items-center gap-4">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            Status:
-          </span>
-          {Object.entries(statusColors)
-            .filter(([status]) => status !== "Cancelado")
-            .map(([status, colors]) => (
-              <div key={status} className="flex items-center gap-1.5">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: colors.dot }}
-                />
-                <span className="text-xs font-semibold text-slate-600">
-                  {status}
-                </span>
-              </div>
-            ))}
+      {!hideStatusLegend && (
+        <div className="px-4 md:px-6 py-4 border-t border-slate-200 bg-slate-50/30">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Status:
+            </span>
+            {Object.entries(statusColors)
+              .filter(([status]) => status !== "Cancelado")
+              .map(([status, colors]) => (
+                <div key={status} className="flex items-center gap-1.5">
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: colors.dot }}
+                  />
+                  <span className="text-xs font-semibold text-slate-600">
+                    {status}
+                  </span>
+                </div>
+              ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

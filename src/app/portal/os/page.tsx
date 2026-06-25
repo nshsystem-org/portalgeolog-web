@@ -548,6 +548,11 @@ const validarPlacaOS = (placa: string): boolean => {
   );
 };
 
+// Cache em módulo para abertura instantânea do modal de visualização.
+// Sobrevive entre remounts (ex.: navegação cross-page) e evita re-fetch
+// quando a mesma OS já foi visualizada recentemente.
+const osViewCache = new Map<string, OrderService>();
+
 export default function OSOperationalPage() {
   const {
     osList,
@@ -590,7 +595,6 @@ export default function OSOperationalPage() {
   } | null>(null);
   const [editingOSId, setEditingOSId] = useState<string | null>(null);
   const [viewingOSId, setViewingOSId] = useState<string | null>(null);
-  const [viewingOSLoading, setViewingOSLoading] = useState(false);
   const [viewingOSLive, setViewingOSLive] = useState<OrderService | null>(null);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "calendar">("calendar");
@@ -608,6 +612,7 @@ export default function OSOperationalPage() {
   const [isDocagemModalOpen, setIsDocagemModalOpen] = useState(false);
   const [isAttendanceChoiceModalOpen, setIsAttendanceChoiceModalOpen] =
     useState(false);
+  const [isRascunhoModalOpen, setIsRascunhoModalOpen] = useState(false);
   const [docagemFormData, setDocagemFormData] = useState<DocagemInput>({
     clienteId: "",
     centroCustoId: null,
@@ -940,18 +945,41 @@ export default function OSOperationalPage() {
     return docagemInstances.filter((item) => {
       const clienteNome =
         clientes.find((c) => c.id === item.clienteId)?.nome || "";
+      if (showArchivedOnly && item.status !== "excluida") return false;
       return (
         searchValue === "" ||
         clienteNome.toLowerCase().includes(searchValue) ||
         item.endereco.toLowerCase().includes(searchValue)
       );
     });
-  }, [docagemInstances, clientes, osTable.searchTerm, docagemListFilter]);
+  }, [
+    docagemInstances,
+    clientes,
+    osTable.searchTerm,
+    docagemListFilter,
+    showArchivedOnly,
+  ]);
+
+  const docagemCounts = useMemo(() => {
+    const counts = {
+      pendente: 0,
+      andamento: 0,
+      finalizada: 0,
+      excluida: 0,
+    };
+    docagemInstances.forEach((item) => {
+      if (item.status in counts) {
+        counts[item.status as keyof typeof counts] += 1;
+      }
+    });
+    return counts;
+  }, [docagemInstances]);
 
   const syncViewingOS = useCallback(async () => {
     if (!viewingOSId) return;
     try {
       const latest = await fetchOSById(viewingOSId);
+      if (latest) osViewCache.set(viewingOSId, latest);
       setViewingOSLive(latest);
     } catch (error) {
       console.error("Erro ao sincronizar OS aberta:", error);
@@ -966,6 +994,8 @@ export default function OSOperationalPage() {
       try {
         const latest = await fetchOSById(osId);
         if (!latest) return;
+
+        osViewCache.set(osId, latest);
 
         updateOSItems((prev) =>
           prev.map((item) => (item.id === osId ? latest : item)),
@@ -1085,25 +1115,41 @@ export default function OSOperationalPage() {
     if (!viewingOSId) return;
     if (viewingOSLive) return;
 
+    // 1. Tentar lista em memória (mesma página, OS já carregada)
     const latestFromList = osList.find((os) => os.id === viewingOSId);
     if (latestFromList) {
+      osViewCache.set(viewingOSId, latestFromList);
       setViewingOSLive(latestFromList);
-    } else {
-      // Se não encontrou na lista, buscar do banco
-      setViewingOSLoading(true);
+      return;
+    }
+
+    // 2. Tentar cache de módulo (abertura instantânea na 2ª vez / cross-page)
+    const cached = osViewCache.get(viewingOSId);
+    if (cached) {
+      setViewingOSLive(cached);
+      // Revalidar em background para garantir dados frescos
       fetchOSById(viewingOSId)
         .then((os) => {
           if (os) {
+            osViewCache.set(viewingOSId, os);
             setViewingOSLive(os);
           }
         })
-        .catch((err) => {
-          console.error("Erro ao buscar OS por ID:", err);
-        })
-        .finally(() => {
-          setViewingOSLoading(false);
-        });
+        .catch((err) => console.error("Erro ao revalidar OS do cache:", err));
+      return;
     }
+
+    // 3. Buscar do banco (primeira abertura, não está na lista nem no cache)
+    fetchOSById(viewingOSId)
+      .then((os) => {
+        if (os) {
+          osViewCache.set(viewingOSId, os);
+          setViewingOSLive(os);
+        }
+      })
+      .catch((err) => {
+        console.error("Erro ao buscar OS por ID:", err);
+      });
   }, [osList, viewingOSId, viewingOSLive]);
 
   // Sincronizar filtros avançados com tabela server-side
@@ -1155,45 +1201,24 @@ export default function OSOperationalPage() {
         osProtocolo?: string;
       }>;
       if (customEvent.detail?.osId) {
-        const found = osList.find((os) => os.id === customEvent.detail.osId);
-        if (found) {
-          logInfo(
-            "OS/View",
-            `Abriu visualização via notificação: protocolo ${found.protocolo}`,
-            {
-              protocolo: found.protocolo,
-              osId: found.id,
-              source: "notification",
-            },
-          );
-          setViewingOSId(customEvent.detail.osId);
-        } else {
-          try {
-            const os = await fetchOSById(customEvent.detail.osId);
-            if (os) {
-              logInfo(
-                "OS/View",
-                `Abriu visualização via notificação (fetch): protocolo ${os.protocolo}`,
-                {
-                  protocolo: os.protocolo,
-                  osId: os.id,
-                  source: "notification_fetch",
-                },
-              );
-              setViewingOSId(os.id);
-            }
-          } catch (err) {
-            console.error("Erro ao buscar OS por ID:", err);
-          }
-        }
+        // Abre o modal imediatamente (skeleton); o useEffect de hidratação
+        // busca os dados do cache ou do banco em paralelo.
+        logInfo("OS/View", `Abriu visualização via notificação (ID)`, {
+          osId: customEvent.detail.osId,
+          source: "notification",
+        });
+        setViewingOSId(customEvent.detail.osId);
       } else if (customEvent.detail?.osProtocolo) {
+        // Para protocolo, precisamos resolver o ID primeiro (busca síncrona
+        // na lista/cache, ou fetch rápido) — mas abrimos o modal assim que
+        // tivermos o ID.
         const found = osList.find(
           (os) => os.protocolo === customEvent.detail.osProtocolo,
         );
         if (found) {
           logInfo(
             "OS/View",
-            `Abriu visualização via notificação (protocolo): ${customEvent.detail.osProtocolo}`,
+            `Abriu visualização via notificação (protocolo): ${found.protocolo}`,
             {
               protocolo: found.protocolo,
               osId: found.id,
@@ -1202,9 +1227,12 @@ export default function OSOperationalPage() {
           );
           setViewingOSId(found.id);
         } else {
+          // Não está na lista — buscar ID por protocolo, depois abrir.
+          // O modal abre assim que o ID estiver disponível.
           try {
             const os = await fetchOSByProtocolo(customEvent.detail.osProtocolo);
             if (os) {
+              osViewCache.set(os.id, os);
               logInfo(
                 "OS/View",
                 `Abriu visualização via notificação (fetch protocolo): ${os.protocolo}`,
@@ -1214,6 +1242,7 @@ export default function OSOperationalPage() {
                   source: "notification_fetch_protocolo",
                 },
               );
+              setViewingOSLive(os);
               setViewingOSId(os.id);
             }
           } catch (err) {
@@ -1230,41 +1259,14 @@ export default function OSOperationalPage() {
     const openOsParam = urlParams.get("open_os");
     const openOsProtocoloParam = urlParams.get("open_os_protocolo");
     if (openOsParam) {
-      const found = osList.find((os) => os.id === openOsParam);
-      if (found) {
-        logInfo(
-          "OS/View",
-          `Abriu visualização via URL: protocolo ${found.protocolo}`,
-          {
-            protocolo: found.protocolo,
-            osId: found.id,
-            source: "url_param",
-          },
-        );
-        setViewingOSId(openOsParam);
-        window.history.replaceState({}, "", "/portal/os");
-      } else {
-        (async () => {
-          try {
-            const os = await fetchOSById(openOsParam);
-            if (os) {
-              logInfo(
-                "OS/View",
-                `Abriu visualização via URL (fetch): protocolo ${os.protocolo}`,
-                {
-                  protocolo: os.protocolo,
-                  osId: os.id,
-                  source: "url_param_fetch",
-                },
-              );
-              setViewingOSId(os.id);
-              window.history.replaceState({}, "", "/portal/os");
-            }
-          } catch (err) {
-            console.error("Erro ao buscar OS por ID via URL:", err);
-          }
-        })();
-      }
+      // Abrir modal imediatamente; o useEffect de hidratação busca do
+      // cache ou do banco em paralelo (skeleton enquanto carrega).
+      logInfo("OS/View", `Abriu visualização via URL (ID)`, {
+        osId: openOsParam,
+        source: "url_param",
+      });
+      setViewingOSId(openOsParam);
+      window.history.replaceState({}, "", "/portal/os");
     } else if (openOsProtocoloParam) {
       const found = osList.find((os) => os.protocolo === openOsProtocoloParam);
       if (found) {
@@ -1284,6 +1286,7 @@ export default function OSOperationalPage() {
           try {
             const os = await fetchOSByProtocolo(openOsProtocoloParam);
             if (os) {
+              osViewCache.set(os.id, os);
               logInfo(
                 "OS/View",
                 `Abriu visualização via URL (fetch protocolo): ${os.protocolo}`,
@@ -1293,6 +1296,7 @@ export default function OSOperationalPage() {
                   source: "url_param_fetch_protocolo",
                 },
               );
+              setViewingOSLive(os);
               setViewingOSId(os.id);
               window.history.replaceState({}, "", "/portal/os");
             }
@@ -1529,6 +1533,14 @@ export default function OSOperationalPage() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchivedOnly]);
+
+  // Sincronizar filtro de arquivados com o agrupador de tipo:
+  // arquivados não combina com OS/Docagem/Rascunho, então resetamos para "all".
+  useEffect(() => {
+    if (showArchivedOnly && docagemListFilter !== "all") {
+      setDocagemListFilter("all");
+    }
+  }, [showArchivedOnly, docagemListFilter]);
 
   // Monitorar loading do filtro de arquivados
   useEffect(() => {
@@ -2113,10 +2125,16 @@ export default function OSOperationalPage() {
   const handleViewOS = (osId: string) => {
     const os = osList.find((o) => o.id === osId);
     if (os) {
+      osViewCache.set(osId, os);
       logInfo("OS/View", `Abriu visualização da OS protocolo ${os.protocolo}`, {
         protocolo: os.protocolo,
         osId: os.id,
       });
+    }
+    // Pré-popular do cache para abertura instantânea (evita flash de skeleton)
+    const cached = osViewCache.get(osId);
+    if (cached && !viewingOSLive) {
+      setViewingOSLive(cached);
     }
     setViewingOSId(osId);
     setOpenActionMenuId(null);
@@ -5124,28 +5142,55 @@ export default function OSOperationalPage() {
   return (
     <div className="space-y-6">
       {/* Operational Stats */}
-      {!showArchivedOnly && (
+      {!showArchivedOnly && docagemListFilter !== "rascunho" && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <OpStatCard
-            label="Pendentes"
-            value={osCounts["Pendente"]}
-            icon={<Clock className="text-slate-500" size={20} />}
-          />
-          <OpStatCard
-            label="Aguardando"
-            value={osCounts["Aguardando"]}
-            icon={<Clock className="text-indigo-500" size={20} />}
-          />
-          <OpStatCard
-            label="Em Rota"
-            value={osCounts["Em Rota"]}
-            icon={<Navigation className="text-blue-500" size={20} />}
-          />
-          <OpStatCard
-            label="Finalizados"
-            value={osCounts["Finalizado"]}
-            icon={<CheckCircle2 className="text-emerald-500" size={20} />}
-          />
+          {docagemListFilter === "docagem" ? (
+            <>
+              <OpStatCard
+                label="Pendentes"
+                value={docagemCounts.pendente}
+                icon={<Clock className="text-slate-500" size={20} />}
+              />
+              <OpStatCard
+                label="Andamento"
+                value={docagemCounts.andamento}
+                icon={<Navigation className="text-violet-500" size={20} />}
+              />
+              <OpStatCard
+                label="Finalizadas"
+                value={docagemCounts.finalizada}
+                icon={<CheckCircle2 className="text-emerald-500" size={20} />}
+              />
+              <OpStatCard
+                label="Arquivadas"
+                value={docagemCounts.excluida}
+                icon={<Archive className="text-rose-500" size={20} />}
+              />
+            </>
+          ) : (
+            <>
+              <OpStatCard
+                label="Pendentes"
+                value={osCounts["Pendente"]}
+                icon={<Clock className="text-slate-500" size={20} />}
+              />
+              <OpStatCard
+                label="Aguardando"
+                value={osCounts["Aguardando"]}
+                icon={<Clock className="text-indigo-500" size={20} />}
+              />
+              <OpStatCard
+                label="Em Rota"
+                value={osCounts["Em Rota"]}
+                icon={<Navigation className="text-blue-500" size={20} />}
+              />
+              <OpStatCard
+                label="Finalizados"
+                value={osCounts["Finalizado"]}
+                icon={<CheckCircle2 className="text-emerald-500" size={20} />}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -5310,6 +5355,7 @@ export default function OSOperationalPage() {
               onClick={() => {
                 setIsArchivedFilterLoading(true);
                 setShowArchivedOnly((prev) => !prev);
+                setDocagemListFilter("all");
               }}
               className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
                 showArchivedOnly
@@ -5920,7 +5966,21 @@ export default function OSOperationalPage() {
                             title="Falta preencher valores"
                             className="inline-flex items-center justify-center ml-1"
                           >
-                            <AlertCircle size={14} className="text-red-500" />
+                            <span
+                              style={{
+                                display: "inline-block",
+                                width: "10px",
+                                height: "10px",
+                                borderRadius: "50%",
+                                backgroundColor: "#ef4444",
+                                border: "2px solid #ffffff",
+                                boxShadow:
+                                  "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
+                                flexShrink: 0,
+                                animation:
+                                  "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+                              }}
+                            />
                           </span>
                         )}
                       </span>
@@ -6062,6 +6122,7 @@ export default function OSOperationalPage() {
                 loading={calendarLoading}
                 hasLoaded={calendarHasLoaded}
                 showArchivedOnly={showArchivedOnly}
+                hideStatusLegend={docagemListFilter === "rascunho"}
                 onRangeChange={handleCalendarRangeChange}
                 onEventClick={(
                   osId: string,
@@ -6356,7 +6417,7 @@ export default function OSOperationalPage() {
                           onClick={async () => {
                             try {
                               await excluirDocagemDia(instance.id);
-                              toast.success("Dia de docagem excluído.");
+                              toast.success("Dia de docagem arquivado.");
                               setDocagemMenuTarget(null);
                               if (calendarRangeRef.current) {
                                 void handleCalendarRangeChange(
@@ -6370,7 +6431,7 @@ export default function OSOperationalPage() {
                               toast.error(
                                 err instanceof Error
                                   ? err.message
-                                  : "Erro ao excluir dia de docagem.",
+                                  : "Erro ao arquivar dia de docagem.",
                               );
                             }
                           }}
@@ -6381,7 +6442,7 @@ export default function OSOperationalPage() {
                             size={16}
                             style={{ color: "rgb(219, 132, 153)" }}
                           />
-                          Excluir dia
+                          Arquivar dia
                         </button>
                       )}
                       {instance.status === "excluida" && (
@@ -7613,25 +7674,51 @@ export default function OSOperationalPage() {
         </StandardModal>
       )}
 
-      {viewingOSId && !viewingOSLive && viewingOSLoading && (
-        <div className="fixed inset-0 bg-blue-950/90 backdrop-blur-sm flex items-center justify-center z-50">
-          <Loader2 size={48} className="animate-spin text-white" />
-        </div>
-      )}
-
-      {viewingOS && (
+      {viewingOSId && (
         <StandardModal
           onClose={() => {
             setViewingOSId(null);
-            setViewingOSLoading(false);
           }}
-          title={`Visão Operacional ${viewingOS.os || "Sem OS"}`}
-          subtitle={`Protocolo ${viewingOS.protocolo}`}
+          title={
+            viewingOS
+              ? `Visão Operacional ${viewingOS.os || "Sem OS"}`
+              : "Carregando atendimento..."
+          }
+          subtitle={
+            viewingOS ? `Protocolo ${viewingOS.protocolo}` : "Aguarde um momento"
+          }
           icon={<Eye size={24} />}
           maxWidthClassName="max-w-6xl min-[1360px]:max-w-[88vw]"
           bodyClassName="p-6 md:p-10 space-y-8"
         >
-          <div className="space-y-8">
+          {/* Skeleton enquanto os dados não chegam (cache miss + fetch em andamento) */}
+          {!viewingOS && (
+            <div className="space-y-6 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-slate-200 rounded-xl" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-slate-200 rounded w-1/3" />
+                  <div className="h-3 bg-slate-100 rounded w-1/4" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <div className="h-3 bg-slate-100 rounded w-2/3" />
+                    <div className="h-5 bg-slate-200 rounded w-full" />
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-20 bg-slate-100 rounded-2xl" />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {viewingOS && (
+            <div className="space-y-8">
             {isFinalizadoSemValor(viewingOS) && (
               <div
                 className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 shadow-sm"
@@ -9096,6 +9183,7 @@ export default function OSOperationalPage() {
               )}
             </div>
           </div>
+          )}
         </StandardModal>
       )}
 
@@ -10901,11 +10989,11 @@ export default function OSOperationalPage() {
           title="Novo Atendimento"
           subtitle="Escolha o tipo de atendimento para criar"
           icon={<Plus className="w-6 h-6 md:w-7 md:h-7" />}
-          maxWidthClassName="max-w-4xl"
+          maxWidthClassName="max-w-6xl"
           bodyClassName="p-8 md:p-12"
           footer={null}
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
             <button
               type="button"
               onClick={() => {
@@ -10969,6 +11057,67 @@ export default function OSOperationalPage() {
                   combinado
                 </p>
               </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsAttendanceChoiceModalOpen(false);
+                setIsRascunhoModalOpen(true);
+              }}
+              className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-amber-400 hover:bg-amber-50 hover:shadow-xl hover:shadow-amber-900/5 transition-all active:scale-[0.98]"
+            >
+              <div className="w-24 h-24 rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                <FileText size={48} strokeWidth={2} />
+              </div>
+              <div className="text-center">
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                  Rascunho
+                </h3>
+                <p className="mt-3 text-sm font-semibold text-slate-500">
+                  Salvar atendimento incompleto para editar depois
+                </p>
+              </div>
+            </button>
+          </div>
+        </StandardModal>
+      )}
+
+      {/* Modal Rascunho - Em desenvolvimento */}
+      {isRascunhoModalOpen && (
+        <StandardModal
+          onClose={() => setIsRascunhoModalOpen(false)}
+          title="Rascunho"
+          subtitle="Funcionalidade em desenvolvimento"
+          icon={<FileText className="w-6 h-6 md:w-7 md:h-7" />}
+          maxWidthClassName="max-w-md"
+          bodyClassName="p-8 md:p-10 text-center"
+          headerClassName="bg-amber-500"
+          headerGlowClassName="bg-amber-500/10"
+          subtitleClassName="text-white/70"
+          footer={null}
+        >
+          <div className="flex flex-col items-center gap-6">
+            <div className="w-20 h-20 rounded-3xl bg-amber-50 text-amber-500 flex items-center justify-center">
+              <FileText size={40} strokeWidth={2} />
+            </div>
+            <div className="space-y-2">
+              <p className="text-base font-bold text-slate-700">
+                Em breve será possível salvar e gerenciar rascunhos de
+                atendimento.
+              </p>
+              <p className="text-sm text-slate-500">
+                A funcionalidade permitirá iniciar uma OS e retomar o
+                preenchimento posteriormente, sem gerar protocolo ou notificações
+                até a publicação.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsRascunhoModalOpen(false)}
+              className="px-8 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-widest cursor-pointer"
+            >
+              Entendi
             </button>
           </div>
         </StandardModal>
@@ -11552,7 +11701,7 @@ export default function OSOperationalPage() {
                       "Andamento"}
                     {viewingDocagemInstance.status === "finalizada" &&
                       "Finalizada"}
-                    {viewingDocagemInstance.status === "excluida" && "Excluída"}
+                    {viewingDocagemInstance.status === "excluida" && "Arquivada"}
                   </p>
                 </div>
               </div>

@@ -104,7 +104,7 @@ export default function StandardModal({
           </div>
           <button
             onClick={onClose}
-            className="p-3 text-white/40 hover:text-white hover:bg-white/10 rounded-xl transition-all relative z-10"
+            className="p-3 text-white/40 hover:text-white hover:bg-white/10 rounded-xl transition-all relative z-10 cursor-pointer"
             aria-label="Fechar modal"
           >
             <X size={24} />

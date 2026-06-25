@@ -40,6 +40,10 @@ import {
   XCircle,
   Archive,
   RotateCcw,
+  Eye,
+  Send,
+  Flag,
+  Navigation,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
@@ -781,9 +785,6 @@ export default function DashboardLayout({
                           notification.metadata?.changed_fields_list;
                         const hasChips =
                           Array.isArray(chips) && chips.length > 0;
-                        const chipLabels = hasChips
-                          ? chips.map((chip) => String(chip)).filter(Boolean)
-                          : [];
 
                         const isDriverNotify = notification.title.startsWith(
                           "Mensagem enviada ao motorista",
@@ -833,9 +834,7 @@ export default function DashboardLayout({
                           notification.title === "Novo atendimento"
                             ? "cadastrou um novo atendimento"
                             : notification.title === "Atendimento atualizado"
-                              ? chipLabels.length > 0
-                                ? `atualizou: ${chipLabels.slice(0, 2).join(", ")}${chipLabels.length > 2 ? ` +${chipLabels.length - 2}` : ""}`
-                                : "atualizou um atendimento"
+                              ? "atualizou um atendimento"
                               : notification.title === "Atendimento finalizado"
                                 ? "finalizou um atendimento"
                                 : notification.title === "Atendimento arquivado"
@@ -1098,6 +1097,33 @@ export default function DashboardLayout({
                                   return {
                                     icon: UserSquare2,
                                     bg: "bg-blue-500",
+                                    text: "text-white",
+                                  };
+                                if (
+                                  t ===
+                                  "Motorista visualizou os detalhes do atendimento"
+                                )
+                                  return {
+                                    icon: Eye,
+                                    bg: "bg-orange-500",
+                                    text: "text-white",
+                                  };
+                                if (t.startsWith("Mensagem enviada ao motorista"))
+                                  return {
+                                    icon: Send,
+                                    bg: "bg-sky-400",
+                                    text: "text-white",
+                                  };
+                                if (t === "Rota finalizada")
+                                  return {
+                                    icon: Flag,
+                                    bg: "bg-green-500",
+                                    text: "text-white",
+                                  };
+                                if (t === "Rota iniciada")
+                                  return {
+                                    icon: Navigation,
+                                    bg: "bg-blue-600",
                                     text: "text-white",
                                   };
                                 switch (notification.type) {
