@@ -1555,12 +1555,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const unarchiveOS = async (id: string): Promise<void> => {
     const currentOS = osList.find((os) => os.id === id) || null;
+    const isDraft = currentOS?.tipo === "rascunho";
     setOsList((prev) =>
       prev.map((os) =>
         os.id === id
           ? {
               ...os,
-              status: { ...os.status, operacional: "Pendente" },
+              status: {
+                ...os.status,
+                operacional: isDraft ? "Rascunho" : "Pendente",
+                financeiro: isDraft ? "Rascunho" : os.status.financeiro,
+              },
               arquivado: false,
             }
           : os,

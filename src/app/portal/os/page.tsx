@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/context/AuthContext";
 import { replaceOperationalCyclesForOS } from "@/lib/operational-cycles-db";
 import StandardModal from "@/components/StandardModal";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
@@ -93,6 +94,7 @@ import {
   fetchPassageirosPage,
   fetchPassageirosByIds,
   promoteDraftToOS,
+  fetchUsersByIds,
   type OSLog,
   type OSPageFilters,
 } from "@/lib/supabase/queries";
@@ -583,6 +585,7 @@ export default function OSOperationalPage() {
     heavyLoading,
   } = useData();
   const supabase = createClient();
+  const { user: currentUser } = useAuth();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showObsFinanceiras, setShowObsFinanceiras] = useState(false);
@@ -614,6 +617,10 @@ export default function OSOperationalPage() {
     "all" | "os" | "docagem" | "rascunho" | "freelance"
   >("all");
   const [promotingDraftId, setPromotingDraftId] = useState<string | null>(null);
+  const [onlyMyDrafts, setOnlyMyDrafts] = useState(false);
+  const [creatorAvatarMap, setCreatorAvatarMap] = useState<
+    Map<string, { name: string; avatar?: string }>
+  >(new Map());
   const [isDocagemModalOpen, setIsDocagemModalOpen] = useState(false);
   const [docagemFormData, setDocagemFormData] = useState<DocagemInput>({
     clienteId: "",
@@ -724,7 +731,11 @@ export default function OSOperationalPage() {
         ...tableFilters,
         arquivado: showArchivedOnly ? true : undefined,
         tipo: tipoFilter,
-        excludeTipos: !tipoFilter ? ["rascunho"] : undefined,
+        excludeTipos: !tipoFilter && !showArchivedOnly ? ["rascunho"] : undefined,
+        createdBy:
+          onlyMyDrafts && docagemListFilter === "rascunho"
+            ? currentUser?.id
+            : undefined,
       };
       const result = await fetchOSPage({
         ...params,
@@ -751,7 +762,7 @@ export default function OSOperationalPage() {
 
       return result;
     },
-    [tableFilters, showArchivedOnly, docagemListFilter],
+    [tableFilters, showArchivedOnly, docagemListFilter, onlyMyDrafts, currentUser],
   );
 
   const osTable = useServerPaginatedTable(
@@ -851,6 +862,9 @@ export default function OSOperationalPage() {
       if (docagemListFilter === "freelance" && item.tipo !== "freelance")
         return false;
       if (docagemListFilter === "rascunho" && item.tipo !== "rascunho")
+        return false;
+      // Filtro "Meus rascunhos" — apenas rascunhos do usuário logado
+      if (onlyMyDrafts && item.tipo === "rascunho" && item.createdBy !== currentUser?.id)
         return false;
       const clienteNome =
         clientes.find((c) => c.id === item.clienteId)?.nome || "";
@@ -953,6 +967,8 @@ export default function OSOperationalPage() {
     getOperationalStatusForOS,
     showArchivedOnly,
     docagemListFilter,
+    onlyMyDrafts,
+    currentUser,
   ]);
 
   const filteredCalendarDocagemInstances = useMemo(() => {
@@ -1207,6 +1223,14 @@ export default function OSOperationalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advancedFilters]);
 
+  // Recarregar tabela quando "Meus rascunhos" mudar (filtro server-side)
+  useEffect(() => {
+    if (docagemListFilter !== "rascunho") return;
+    osTable.setPage(1);
+    void osTable.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlyMyDrafts]);
+
   useEffect(() => {
     logInfo("OSPage", "Página de Ordens de Serviço carregada", {
       viewMode,
@@ -1428,6 +1452,30 @@ export default function OSOperationalPage() {
     void loadDocagemList();
   }, [loadDocagemList]);
 
+  // Buscar avatares dos criadores de rascunhos visíveis no calendário/tabela
+  useEffect(() => {
+    const allItems = [...calendarOSList, ...osTable.items];
+    const draftCreatorIds = allItems
+      .filter((os) => os.tipo === "rascunho" && os.createdBy)
+      .map((os) => os.createdBy as string)
+      .filter((id, idx, arr) => arr.indexOf(id) === idx);
+
+    if (draftCreatorIds.length === 0) return;
+
+    const knownIds = new Set(creatorAvatarMap.keys());
+    const missingIds = draftCreatorIds.filter((id) => !knownIds.has(id));
+    if (missingIds.length === 0) return;
+
+    void fetchUsersByIds(missingIds).then((map) => {
+      setCreatorAvatarMap((prev) => {
+        const next = new Map(prev);
+        map.forEach((val, key) => next.set(key, val));
+        return next;
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarOSList, osTable.items]);
+
   // Sincronizar calendarOSList com mudanças do osList via Realtime
   useEffect(() => {
     setCalendarOSList((prev) =>
@@ -1465,6 +1513,66 @@ export default function OSOperationalPage() {
       );
     };
 
+    const requiresFullReload = (
+      newRecord: Record<string, unknown> | null | undefined,
+    ): boolean => {
+      if (!newRecord) return true;
+      // Sem reload completo para updates simples de status/ciclos.
+      // Reload completo apenas quando o item pode ter mudado de lista/filtro:
+      // - arquivado: item sai da lista ativa ou entra nos arquivados
+      // - tipo: rascunho promovido para OS muda de filtro
+      const arquivado = newRecord.arquivado;
+      const tipo = newRecord.tipo;
+      return arquivado === true || tipo !== "rascunho" && tipo !== "os" && tipo !== "freelance";
+    };
+
+    // Verifica se o item ainda pertence ao filtro atualmente ativo.
+    // Se não pertence mais (ex: rascunho promovido para OS enquanto filtro
+    // é "rascunho"), remove da lista visual em vez de recarregar tudo.
+    const itemBelongsToCurrentFilter = (
+      newRecord: Record<string, unknown> | null | undefined,
+    ): boolean => {
+      if (!newRecord) return false;
+      const tipo = newRecord.tipo as string | undefined;
+      const arquivado = newRecord.arquivado as boolean | undefined;
+
+      if (showArchivedOnly) {
+        return arquivado === true;
+      }
+
+      if (arquivado === true) return false;
+
+      if (docagemListFilter === "rascunho") return tipo === "rascunho";
+      if (docagemListFilter === "os") return tipo === "os";
+      if (docagemListFilter === "freelance") return tipo === "freelance";
+      if (docagemListFilter === "docagem") return false;
+      // "all": qualquer tipo exceto rascunho (comportamento padrão)
+      return tipo !== "rascunho";
+    };
+
+    const fullReload = () => {
+      void osTable.refresh();
+      if (calendarRangeRef.current) {
+        void handleCalendarRangeChange(
+          calendarRangeRef.current.from,
+          calendarRangeRef.current.to,
+          true,
+        );
+      }
+    };
+
+    const debouncedFullReload = () => {
+      const existing = debounceTimers.get("__full_reload__");
+      if (existing) clearTimeout(existing);
+      debounceTimers.set(
+        "__full_reload__",
+        setTimeout(() => {
+          debounceTimers.delete("__full_reload__");
+          fullReload();
+        }, 300),
+      );
+    };
+
     const channel = supabase
       .channel("os-global-status-realtime")
       .on(
@@ -1478,6 +1586,29 @@ export default function OSOperationalPage() {
           };
           const osId = (change.new?.id as string) || (change.old?.id as string);
           if (!osId) return;
+
+          if (change.eventType === "DELETE") {
+            debouncedFullReload();
+            return;
+          }
+
+          // Se o item foi arquivado ou mudou de tipo (ex: rascunho → OS),
+          // pode ter saído do filtro ativo. Remove da lista visual e recarrega.
+          if (requiresFullReload(change.new)) {
+            // Remover imediatamente da lista visual se não pertence mais ao filtro
+            if (!itemBelongsToCurrentFilter(change.new)) {
+              osTable.updateItems((prev) =>
+                prev.filter((item) => item.id !== osId),
+              );
+              setCalendarOSList((prev) =>
+                prev.filter((item) => item.id !== osId),
+              );
+            }
+            debouncedFullReload();
+            return;
+          }
+
+          // Item continua no mesmo filtro — refresh cirúrgico
           debouncedRefreshOS(osId);
         },
       )
@@ -1502,7 +1633,7 @@ export default function OSOperationalPage() {
       debounceTimers.forEach((timer) => clearTimeout(timer));
       debounceTimers.clear();
     };
-  }, [supabase, osTable]);
+  }, [supabase, osTable, handleCalendarRangeChange, showArchivedOnly, docagemListFilter]);
 
   // Realtime: docagem_instancias e docagens
   // Quando outro usuário finalizar/resetar/excluir/criar uma docagem,
@@ -2150,7 +2281,13 @@ export default function OSOperationalPage() {
   };
 
   const handleViewOS = (osId: string) => {
-    const os = osList.find((o) => o.id === osId);
+    // osList (DataContext) exclui rascunhos no fetchOSList inicial, mas
+    // rascunhos existem no calendário e na tabela paginada. Buscar em
+    // todas as fontes para identificar corretamente o tipo do item.
+    const os =
+      osList.find((o) => o.id === osId) ||
+      filteredCalendarOSList.find((o) => o.id === osId) ||
+      calendarOSList.find((o) => o.id === osId);
     if (os?.tipo === "rascunho") {
       toast.info("Visualização de rascunho em desenvolvimento. Use Editar.");
       setOpenActionMenuId(null);
@@ -2314,9 +2451,13 @@ export default function OSOperationalPage() {
       return;
     }
 
+    const isDraft = targetOS.tipo === "rascunho";
+    const label = isDraft ? "Rascunho" : "OS";
+    const article = isDraft ? "o" : "a";
+
     const confirmed = await confirm({
-      title: "Reabrir OS",
-      message: `Tem certeza que deseja reabrir a OS "${targetOS.protocolo || targetOS.os || "sem protocolo"}"?`,
+      title: `Reabrir ${label}`,
+      message: `Tem certeza que deseja reabrir ${article} ${label} "${targetOS.protocolo || targetOS.os || "sem protocolo"}"?`,
       confirmText: "Sim, reabrir",
       cancelText: "Cancelar",
       type: "success",
@@ -2330,7 +2471,7 @@ export default function OSOperationalPage() {
     try {
       logInfo(
         "OS/Unarchive",
-        `Desarquivou OS protocolo ${targetOS.protocolo || targetOS.os}`,
+        `Desarquivou ${label} protocolo ${targetOS.protocolo || targetOS.os}`,
         {
           protocolo: targetOS.protocolo,
           osId: targetOS.id,
@@ -2338,10 +2479,10 @@ export default function OSOperationalPage() {
       );
       await unarchiveOS(osId);
       await osTable.refresh();
-      toast.success("OS reaberta com sucesso!");
+      toast.success(`${label} reabert${isDraft ? "o" : "a"} com sucesso!`);
     } catch (error) {
       console.error("Error reopening OS:", error);
-      toast.error("Não foi possível reabrir a OS.");
+      toast.error(`Não foi possível reabrir ${article} ${label}.`);
     }
     setOpenActionMenuId(null);
   };
@@ -2359,9 +2500,14 @@ export default function OSOperationalPage() {
       return;
     }
 
+    const isDraft = targetOS.tipo === "rascunho";
+    const label = isDraft ? "Rascunho" : "OS";
+    const article = isDraft ? "o" : "a";
+    const pronoun = isDraft ? "Ele" : "Ela";
+
     const confirmed = await confirm({
-      title: "Arquivar OS",
-      message: `Tem certeza que deseja arquivar a OS "${targetOS.protocolo || targetOS.os || "sem protocolo"}"? Ela não aparecerá mais na lista, mas poderá ser recuperada posteriormente.`,
+      title: `Arquivar ${label}`,
+      message: `Tem certeza que deseja arquivar ${article} ${label} "${targetOS.protocolo || targetOS.os || "sem protocolo"}"? ${pronoun} não aparecerá mais na lista, mas poderá ser recuperad${isDraft ? "o" : "a"} posteriormente.`,
       confirmText: "Sim, arquivar",
       cancelText: "Cancelar",
       type: "danger",
@@ -2372,7 +2518,7 @@ export default function OSOperationalPage() {
     try {
       logInfo(
         "OS/Archive",
-        `Arquivou OS protocolo ${targetOS.protocolo || targetOS.os}`,
+        `Arquivou ${label} protocolo ${targetOS.protocolo || targetOS.os}`,
         {
           protocolo: targetOS.protocolo,
           osId: targetOS.id,
@@ -2381,10 +2527,10 @@ export default function OSOperationalPage() {
       await deleteOS(osId);
       await osTable.refresh();
       setOpenActionMenuId(null);
-      toast.success("OS arquivada com sucesso!");
+      toast.success(`${label} arquivad${isDraft ? "o" : "a"} com sucesso!`);
     } catch (error) {
       console.error("Erro ao arquivar OS:", error);
-      toast.error("Erro ao arquivar OS.");
+      toast.error(`Erro ao arquivar ${label}.`);
     }
   };
 
@@ -6056,9 +6202,19 @@ export default function OSOperationalPage() {
                     const firstWp = waypoints[0];
                     const displayDate = firstWp?.data || item.data;
                     const displayHora = firstWp?.hora || item.hora;
+                    const creator = item.createdBy
+                      ? creatorAvatarMap.get(item.createdBy)
+                      : undefined;
                     return (
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {creator?.avatar && (
+                            <img
+                              src={getThumbnailUrl(creator.avatar, 64) || ""}
+                              alt={creator.name || "Criador"}
+                              className="w-7 h-7 rounded-full object-cover border-2 border-amber-200 shadow-sm flex-shrink-0"
+                            />
+                          )}
                           <p className="font-black text-base text-slate-800 tracking-tight">
                             {item.protocolo}
                           </p>
@@ -6524,7 +6680,7 @@ export default function OSOperationalPage() {
                                     </button>
                                   )}
                                 {!item.arquivado &&
-                                  item.tipo !== "rascunho" && (
+                                  item.status.operacional !== "Finalizado" && (
                                     <button
                                       onClick={() => handleDeleteOS(item.id)}
                                     className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
@@ -6557,6 +6713,7 @@ export default function OSOperationalPage() {
                 docagemInstances={filteredCalendarDocagemInstances}
                 clientes={clientes}
                 drivers={drivers}
+                creatorAvatarMap={creatorAvatarMap}
                 loading={calendarLoading}
                 hasLoaded={calendarHasLoaded}
                 showArchivedOnly={showArchivedOnly}
@@ -6565,6 +6722,7 @@ export default function OSOperationalPage() {
                 docagemListFilter={docagemListFilter}
                 onFilterChange={(filter) => {
                   setShowArchivedOnly(false);
+                  setOnlyMyDrafts(false);
                   setDocagemListFilter(filter);
                 }}
                 onArchivedToggle={() => {
@@ -6572,6 +6730,8 @@ export default function OSOperationalPage() {
                   setShowArchivedOnly((prev) => !prev);
                   setDocagemListFilter("all");
                 }}
+                onlyMyDrafts={onlyMyDrafts}
+                onToggleMyDrafts={() => setOnlyMyDrafts((prev) => !prev)}
                 onEventClick={(
                   osId: string,
                   position?: { x: number; y: number },
@@ -6599,7 +6759,7 @@ export default function OSOperationalPage() {
                   const os = filteredCalendarOSList.find((o) => o.id === osId);
                   const isArchived = os?.arquivado ?? false;
                   const isDraft = os?.tipo === "rascunho";
-                  const menuHeight = isDraft ? 120 : 240;
+                  const menuHeight = isArchived ? 120 : 240;
                   const spaceBelow =
                     window.innerHeight - calendarMenuPosition.y;
                   const shouldOpenUp = spaceBelow < menuHeight + 16;
@@ -6660,6 +6820,23 @@ export default function OSOperationalPage() {
                             : "Promover para OS"}
                         </button>
                       )}
+                      {!isArchived &&
+                        os?.status.operacional !== "Finalizado" && (
+                          <button
+                            onClick={() => {
+                              handleDeleteOS(osId);
+                              setCalendarMenuPosition(null);
+                            }}
+                            className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
+                            style={{ color: "rgb(219, 132, 153)" }}
+                          >
+                            <XOctagon
+                              size={16}
+                              style={{ color: "rgb(219, 132, 153)" }}
+                            />
+                            Arquivar
+                          </button>
+                        )}
                       {isArchived && (
                         <button
                           onClick={() => {
@@ -6691,22 +6868,6 @@ export default function OSOperationalPage() {
                             Finalizar
                           </button>
                         )}
-                      {!isArchived && !isDraft && (
-                        <button
-                          onClick={() => {
-                            handleDeleteOS(osId);
-                            setCalendarMenuPosition(null);
-                          }}
-                          className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
-                          style={{ color: "rgb(219, 132, 153)" }}
-                        >
-                          <XOctagon
-                            size={16}
-                            style={{ color: "rgb(219, 132, 153)" }}
-                          />
-                          Arquivar
-                        </button>
-                      )}
                     </div>
                   );
                 })()}

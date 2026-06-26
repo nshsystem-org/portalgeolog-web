@@ -47,6 +47,7 @@ import {
   Archive,
 } from "lucide-react";
 import { logInfo } from "@/lib/frontend-logger";
+import { getThumbnailUrl } from "@/utils/avatar";
 
 interface Cliente {
   id: string;
@@ -70,6 +71,7 @@ interface EventContentProps {
   docagem?: DocagemInstance;
   clientes: Cliente[];
   drivers: Driver[];
+  creatorAvatarMap?: Map<string, { name: string; avatar?: string }>;
   status: CycleOperationalStatus | "Docagem" | "Divider";
   isDocagemFlag?: boolean;
   eventKind?: CalendarEventKind;
@@ -90,6 +92,7 @@ interface OSCalendarProps {
   docagemInstances?: DocagemInstance[];
   clientes: Cliente[];
   drivers: Driver[];
+  creatorAvatarMap?: Map<string, { name: string; avatar?: string }>;
   onEventClick: (osId: string, position?: { x: number; y: number }) => void;
   onDocagemEventClick?: (
     instanceId: string,
@@ -105,6 +108,8 @@ interface OSCalendarProps {
     filter: "all" | "os" | "docagem" | "rascunho" | "freelance",
   ) => void;
   onArchivedToggle?: () => void;
+  onlyMyDrafts?: boolean;
+  onToggleMyDrafts?: () => void;
 }
 
 type WeekStatus = "Pendente" | "Aguardando" | "Em Rota" | "Finalizado";
@@ -359,6 +364,7 @@ const EventContent = ({
   docagem,
   clientes,
   drivers,
+  creatorAvatarMap,
   status,
   isDocagemFlag,
   eventKind,
@@ -552,6 +558,27 @@ const EventContent = ({
           style={{ flexShrink: 0 }}
         />
       </div>
+
+      {/* Avatar do criador (apenas rascunhos) — ao lado do círculo de identificação */}
+      {os?.tipo === "rascunho" && os.createdBy && creatorAvatarMap?.get(os.createdBy)?.avatar && (
+        <img
+          src={getThumbnailUrl(creatorAvatarMap.get(os.createdBy)!.avatar!, 40) || ""}
+          alt={creatorAvatarMap.get(os.createdBy)?.name || "Criador"}
+          style={{
+            position: "absolute",
+            top: "6px",
+            left: isDayView ? "40px" : "30px",
+            width: isDayView ? "20px" : "16px",
+            height: isDayView ? "20px" : "16px",
+            borderRadius: "50%",
+            objectFit: "cover",
+            border: "1.5px solid #fff",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+            zIndex: 2,
+            flexShrink: 0,
+          }}
+        />
+      )}
 
       {/* Badges no canto superior direito */}
       {statusColors[displayStatus] && (
@@ -815,6 +842,7 @@ export default function OSCalendar({
   docagemInstances = [],
   clientes,
   drivers = [],
+  creatorAvatarMap,
   onEventClick,
   onDocagemEventClick,
   loading,
@@ -825,12 +853,27 @@ export default function OSCalendar({
   docagemListFilter = "all",
   onFilterChange,
   onArchivedToggle,
+  onlyMyDrafts = false,
+  onToggleMyDrafts,
 }: OSCalendarProps) {
   const [currentView, setCurrentView] = useState<
     "dayGridMonth" | "dayGridWeek" | "dayGridDay"
   >("dayGridWeek");
   const calendarRef = React.useRef<FullCalendar>(null);
   const lastRangeRef = React.useRef<{ from: string; to: string } | null>(null);
+  const preloadedDraftAvatarsRef = useRef<Set<string>>(new Set());
+
+  // Pré-carregar avatares dos criadores de rascunhos para evitar flash
+  useEffect(() => {
+    osList.forEach((os) => {
+      if (os.tipo !== "rascunho" || !os.createdBy) return;
+      const avatar = creatorAvatarMap?.get(os.createdBy)?.avatar;
+      if (!avatar || preloadedDraftAvatarsRef.current.has(avatar)) return;
+      const img = document.createElement("img");
+      img.src = getThumbnailUrl(avatar, 40) || avatar;
+      preloadedDraftAvatarsRef.current.add(avatar);
+    });
+  }, [osList, creatorAvatarMap]);
 
   // Estado do botão eye: qual dateKey está em foco
   const [focusedDateKey, setFocusedDateKey] = useState<string | null>(null);
@@ -1497,6 +1540,7 @@ export default function OSCalendar({
           docagem={eventInfo.event.extendedProps.docagem}
           clientes={clientes}
           drivers={drivers}
+          creatorAvatarMap={creatorAvatarMap}
           status={eventInfo.event.extendedProps.status}
           isDocagemFlag={isDocagem}
           eventKind={eventInfo.event.extendedProps.kind}
@@ -1513,7 +1557,7 @@ export default function OSCalendar({
         />
       );
     },
-    [clientes, drivers, showArchivedOnly, currentView],
+    [clientes, drivers, creatorAvatarMap, showArchivedOnly, currentView],
   );
 
   const renderMonthDayCellContent = useCallback(
@@ -1803,6 +1847,34 @@ export default function OSCalendar({
               </button>
             ))}
           </div>
+
+          {/* Toggle "Meus rascunhos" — só aparece quando filtro rascunho ativo */}
+          {docagemListFilter === "rascunho" && onToggleMyDrafts && (
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1.5 shadow-sm">
+              <button
+                onClick={() => onlyMyDrafts && onToggleMyDrafts()}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                  !onlyMyDrafts
+                    ? "bg-[rgb(255,212,146)] text-[#a06418] shadow-md"
+                    : "text-slate-500 hover:bg-amber-50 hover:text-[#a06418]"
+                }`}
+              >
+                <FileText size={14} />
+                Todos
+              </button>
+              <button
+                onClick={() => !onlyMyDrafts && onToggleMyDrafts()}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                  onlyMyDrafts
+                    ? "bg-[rgb(255,234,208)] text-[#a06418] shadow-sm"
+                    : "text-slate-500 hover:bg-amber-50 hover:text-[#a06418]"
+                }`}
+              >
+                <FileText size={14} />
+                Meus rascunhos
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Navegação - Canto Direito */}
