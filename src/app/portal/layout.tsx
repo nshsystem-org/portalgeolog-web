@@ -48,6 +48,7 @@ import {
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
+import DraftWarnings from "@/components/DraftWarnings";
 import { ChatWidget } from "@/components/chat/ChatWidget";
 import { getThumbnailUrl } from "@/utils/avatar";
 import { getOperationalCycleTitle } from "@/lib/os-messages";
@@ -532,6 +533,9 @@ export default function DashboardLayout({
           <div className="flex items-center gap-6">
             {/* Avisos do Sistema */}
             <AnnouncementBanner />
+
+            {/* Avisos de Rascunho */}
+            <DraftWarnings />
 
             {/* Funcionários Online */}
             <div className="relative">

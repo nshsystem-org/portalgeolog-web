@@ -566,14 +566,18 @@ const EventContent = ({
                 ? "#b5eed3"
                 : status === "Aguardando"
                   ? "#f7f9ff"
-                  : colors.badgeBg || colors.dot,
+                  : status === "Rascunho"
+                    ? "rgb(255, 237, 208)"
+                    : colors.badgeBg || colors.dot,
             color: showArchivedOnly
               ? colors.badgeText || "#ffffff"
               : isFinalizado
                 ? "#1b3c32"
                 : status === "Aguardando"
                   ? "#1e40af"
-                  : colors.badgeText || "#ffffff",
+                  : status === "Rascunho"
+                    ? "rgb(151, 100, 34)"
+                    : colors.badgeText || "#ffffff",
             padding: "3px 8px",
             borderRadius: "6px",
             fontSize: isDayView ? "9px" : "7px",

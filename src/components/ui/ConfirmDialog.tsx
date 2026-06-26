@@ -81,7 +81,9 @@ export default function ConfirmDialog({
         {/* Content */}
         <div className="text-center space-y-3">
           <h3 className="text-xl font-bold text-slate-900">{title}</h3>
-          <p className="text-slate-600 leading-relaxed">{message}</p>
+          <p className="text-slate-600 leading-relaxed whitespace-pre-line">
+            {message}
+          </p>
         </div>
 
         {/* Actions */}

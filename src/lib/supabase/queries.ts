@@ -145,6 +145,7 @@ const buildOSUpdateLogContext = (
   };
 
   if (previousOS) {
+    const prevCentroCusto = previousOS.centroCustoId || null;
     const nextCentroCusto =
       (osData as OSInput & { centroCusto?: string }).centroCusto ??
       osData.centroCustoId ??
@@ -166,7 +167,7 @@ const buildOSUpdateLogContext = (
         previousOS.solicitanteId || null,
         osData.solicitanteId || null,
       ],
-      ["Centro de Custo", previousOS.centroCustoId || null, nextCentroCusto],
+      ["Centro de Custo", prevCentroCusto, nextCentroCusto],
       ["Motorista", previousOS.motorista || "", upperText(osData.motorista)],
       [
         "Motorista Alocado",
@@ -1942,7 +1943,10 @@ export async function updateOSInDB(
     imposto,
     custo: osData.custo ?? 0,
     lucro,
-    tipo: (osData as OSInput & { tipo?: OrderService["tipo"] }).tipo ?? "os",
+    tipo:
+      (osData as OSInput & { tipo?: OrderService["tipo"] }).tipo ??
+      previousOS?.tipo ??
+      "os",
   };
 
   const waypointsPayload = waypoints.map((wp) => ({

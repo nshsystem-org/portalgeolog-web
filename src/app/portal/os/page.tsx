@@ -15,6 +15,7 @@ import StandardModal from "@/components/StandardModal";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
 import { logInfo } from "@/lib/frontend-logger";
 import { getThumbnailUrl } from "@/utils/avatar";
+
 import {
   Plus,
   Minus,
@@ -1654,8 +1655,8 @@ export default function OSOperationalPage() {
     OrderService["tipo"] | "docagem"
   >("os");
 
-  // True quando o modal está aberto em modo criação de rascunho (não edição)
-  const isDraftMode = !editingOSId && osCreationType === "rascunho";
+  // True quando o modal está aberto em modo rascunho (criação ou edição)
+  const isDraftMode = osCreationType === "rascunho";
 
   // Novos estados para o modal de confirmação de notificações
   const [showNotificationConfirm, setShowNotificationConfirm] = useState(false);
@@ -2150,6 +2151,12 @@ export default function OSOperationalPage() {
 
   const handleViewOS = (osId: string) => {
     const os = osList.find((o) => o.id === osId);
+    if (os?.tipo === "rascunho") {
+      toast.info("Visualização de rascunho em desenvolvimento. Use Editar.");
+      setOpenActionMenuId(null);
+      setCalendarMenuPosition(null);
+      return;
+    }
     if (os) {
       osViewCache.set(osId, os);
       logInfo("OS/View", `Abriu visualização da OS protocolo ${os.protocolo}`, {
@@ -2167,41 +2174,72 @@ export default function OSOperationalPage() {
   };
 
   const handlePromoteDraft = async (osId: string) => {
-    // Validar campos obrigatórios antes de promover
-    const draft = osTable.items.find((o) => o.id === osId);
-    if (draft) {
-      const missing: string[] = [];
-      if (!draft.clienteId) missing.push("Empresa");
-      if (!draft.driverId) missing.push("Motorista");
-      if (!draft.veiculoId) missing.push("Veículo");
-      if (!draft.solicitante) missing.push("Solicitante");
-      if (missing.length > 0) {
-        toast.error(
-          `Preencha os campos obrigatórios antes de promover: ${missing.join(", ")}.`,
-        );
-        // Abrir o rascunho no modal de edição para o usuário completar
-        void handleEditOS(osId);
-        return;
-      }
+    setOpenActionMenuId(null);
+    setCalendarMenuPosition(null);
+
+    // Buscar dados atualizados do banco (não confiar no cache da osList)
+    let draft: OrderService | null = null;
+    try {
+      draft = await fetchOSById(osId);
+    } catch {
+      toast.error("Não foi possível carregar o rascunho. Tente novamente.");
+      return;
     }
+
+    if (!draft || draft.tipo !== "rascunho") {
+      toast.error("Este atendimento não é um rascunho válido.");
+      return;
+    }
+
+    // Validar mesmos campos obrigatórios de uma OS real
+    const missing: string[] = [];
+    if (!draft.data) missing.push("Data");
+    if (!draft.clienteId) missing.push("Empresa");
+    if (!draft.solicitanteId) missing.push("Solicitante Responsável");
+    if (!draft.driverId) missing.push("Motorista Alocado");
+    if (!draft.veiculoId) missing.push("Veículo de Uso");
+
+    // Validar primeiro waypoint do primeiro itinerário com data e hora
+    const waypoints = draft.rota?.waypoints || [];
+    const firstWaypoint = waypoints[0];
+    if (!firstWaypoint?.data) missing.push("Data do Itinerário 1");
+    if (!firstWaypoint?.hora) missing.push("Hora do Itinerário 1");
+
+    if (missing.length > 0) {
+      const confirmed = await confirm({
+        title: "Rascunho incompleto",
+        message: `Antes de promover este rascunho para OS, complete os seguintes campos obrigatórios:\n\n${missing.map((item) => `• ${item}`).join("\n")}\n\nDeseja abrir o rascunho para edição?`,
+        confirmText: "Completar agora",
+        cancelText: "Cancelar",
+        type: "warning",
+      });
+      if (confirmed) {
+        void handleEditOS(osId);
+      }
+      return;
+    }
+
     setPromotingDraftId(osId);
     try {
       await promoteDraftToOS(osId);
-      toast.success("Rascunho promovido para OS com sucesso!");
+      toast.success("OS cadastrada com sucesso!");
       void osTable.refresh();
+      if (calendarRangeRef.current) {
+        void handleCalendarRangeChange(
+          calendarRangeRef.current.from,
+          calendarRangeRef.current.to,
+          true,
+        );
+      }
     } catch (err) {
       console.error("Erro ao promover rascunho:", err);
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "Não foi possível promover o rascunho.",
-      );
+      toast.error("Não foi possível promover o rascunho. Tente novamente.");
     } finally {
       setPromotingDraftId(null);
     }
   };
 
-  const handleEditOS = async (osId: string) => {
+  const handleEditOS = useCallback(async (osId: string) => {
     setIsOpeningEditModal(true);
     try {
       const targetOS = await fetchOSById(osId);
@@ -2227,7 +2265,41 @@ export default function OSOperationalPage() {
       toast.error("Não foi possível carregar a OS para edição.");
       setIsOpeningEditModal(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ações via URL vindas do DraftWarnings (layout/header)
+  // Aguarda osList carregar antes de processar editDraftId/editOSId
+  const draftActionProcessedRef = useRef(false);
+  const hasOSListLoaded = osList.length > 0;
+  useEffect(() => {
+    if (draftActionProcessedRef.current) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const editDraftId = urlParams.get("editDraftId");
+    const editOSId = urlParams.get("editOSId");
+    const filter = urlParams.get("filter");
+
+    // Filtro pode ser aplicado imediatamente (não depende de osList)
+    if (filter === "rascunho") {
+      setDocagemListFilter("rascunho");
+    }
+
+    // editDraftId/editOSId precisam de osList carregada
+    if ((editDraftId || editOSId) && !hasOSListLoaded) return;
+
+    if (editDraftId) {
+      void handleEditOS(editDraftId);
+    }
+
+    if (editOSId) {
+      void handleEditOS(editOSId);
+    }
+
+    if (filter || editDraftId || editOSId) {
+      window.history.replaceState({}, "", "/portal/os");
+    }
+    draftActionProcessedRef.current = true;
+  }, [hasOSListLoaded, handleEditOS]);
 
   const handleReopenOS = async (osId: string) => {
     let targetOS: OrderService | null = null;
@@ -4729,6 +4801,13 @@ export default function OSOperationalPage() {
             `[Perf][OS] osTable.refresh(update) ${(performance.now() - refreshStartedAt).toFixed(0)}ms`,
           );
         });
+        if (calendarRangeRef.current) {
+          void handleCalendarRangeChange(
+            calendarRangeRef.current.from,
+            calendarRangeRef.current.to,
+            true,
+          );
+        }
         setShowNotificationConfirm(false);
         void resetMainModalState();
 
@@ -4750,6 +4829,13 @@ export default function OSOperationalPage() {
             `[Perf][OS] osTable.refresh(create) ${(performance.now() - refreshStartedAt).toFixed(0)}ms`,
           );
         });
+        if (calendarRangeRef.current) {
+          void handleCalendarRangeChange(
+            calendarRangeRef.current.from,
+            calendarRangeRef.current.to,
+            true,
+          );
+        }
         setShowNotificationConfirm(false);
         void resetMainModalState();
 
@@ -4803,7 +4889,7 @@ export default function OSOperationalPage() {
   const handleAddOS = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const isDraft = !editingOSId && osCreationType === "rascunho";
+    const isDraft = osCreationType === "rascunho";
 
     const itineraries = getItineraries(formData.waypoints);
     const firstItinerary = itineraries.find((it) => it.index === 0);
@@ -4883,9 +4969,7 @@ export default function OSOperationalPage() {
       data: syncedData,
       hora: null,
       rota: { waypoints: formData.waypoints },
-      tipo: !editingOSId
-        ? (osCreationType as OrderService["tipo"])
-        : undefined,
+      tipo: osCreationType as OrderService["tipo"],
     };
 
     // Se estiver editando e nao houver mudancas reais, apenas fecha o modal
@@ -4916,15 +5000,15 @@ export default function OSOperationalPage() {
 
     setPendingOSData(finalData);
 
-    if (editingOSId) {
-      // Editar Atendimento: abre modal perguntando se deseja marcar como concluido
-      setShowCompletionConfirm(true);
+    // Rascunho (criação ou edição): salva silenciosamente (sem modais)
+    if (isDraft) {
+      void executeSaveOS(finalData, editingOSId);
       return;
     }
 
-    // Rascunho: salva silenciosamente (sem modal de notificação)
-    if (isDraft) {
-      void executeSaveOS(finalData);
+    if (editingOSId) {
+      // Editar Atendimento: abre modal perguntando se deseja marcar como concluido
+      setShowCompletionConfirm(true);
       return;
     }
 
@@ -5518,7 +5602,6 @@ export default function OSOperationalPage() {
                 onClick={() => {
                   setShowArchivedOnly(false);
                   setDocagemListFilter("rascunho");
-                  setViewMode("table");
                 }}
                 className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
                   docagemListFilter === "rascunho" && !showArchivedOnly
@@ -6427,6 +6510,7 @@ export default function OSOperationalPage() {
                                   </button>
                                 )}
                                 {!item.arquivado &&
+                                  item.tipo !== "rascunho" &&
                                   item.status.operacional !== "Finalizado" && (
                                     <button
                                       onClick={() => handleFinishOS(item.id)}
@@ -6439,9 +6523,10 @@ export default function OSOperationalPage() {
                                       Finalizar
                                     </button>
                                   )}
-                                {!item.arquivado && (
-                                  <button
-                                    onClick={() => handleDeleteOS(item.id)}
+                                {!item.arquivado &&
+                                  item.tipo !== "rascunho" && (
+                                    <button
+                                      onClick={() => handleDeleteOS(item.id)}
                                     className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
                                     style={{ color: "rgb(219, 132, 153)" }}
                                   >
@@ -6513,7 +6598,8 @@ export default function OSOperationalPage() {
                   const osId = openActionMenuId;
                   const os = filteredCalendarOSList.find((o) => o.id === osId);
                   const isArchived = os?.arquivado ?? false;
-                  const menuHeight = 240;
+                  const isDraft = os?.tipo === "rascunho";
+                  const menuHeight = isDraft ? 120 : 240;
                   const spaceBelow =
                     window.innerHeight - calendarMenuPosition.y;
                   const shouldOpenUp = spaceBelow < menuHeight + 16;
@@ -6556,6 +6642,24 @@ export default function OSOperationalPage() {
                           Editar
                         </button>
                       )}
+                      {!isArchived && isDraft && (
+                        <button
+                          onClick={() => {
+                            void handlePromoteDraft(osId);
+                            setCalendarMenuPosition(null);
+                          }}
+                          disabled={promotingDraftId === osId}
+                          className="group w-full px-4 py-2 text-left text-sm font-bold text-[#a06418] hover:text-[#a06418] rounded-xl bg-[rgb(255,212,146)] hover:bg-[rgb(255,234,208)] flex items-center gap-3 cursor-pointer disabled:opacity-50"
+                        >
+                          <ArrowUpCircle
+                            size={16}
+                            className="text-[#a06418]"
+                          />
+                          {promotingDraftId === osId
+                            ? "Promovendo..."
+                            : "Promover para OS"}
+                        </button>
+                      )}
                       {isArchived && (
                         <button
                           onClick={() => {
@@ -6571,7 +6675,7 @@ export default function OSOperationalPage() {
                           Reabrir
                         </button>
                       )}
-                      {!isArchived &&
+                      {!isArchived && !isDraft &&
                         os?.status.operacional !== "Finalizado" && (
                           <button
                             onClick={() => {
@@ -6587,7 +6691,7 @@ export default function OSOperationalPage() {
                             Finalizar
                           </button>
                         )}
-                      {!isArchived && (
+                      {!isArchived && !isDraft && (
                         <button
                           onClick={() => {
                             handleDeleteOS(osId);
@@ -6854,19 +6958,23 @@ export default function OSOperationalPage() {
           onClose={resetMainModalState}
           disableBackdropClose
           title={
-            editingOSId
-              ? "Editar Atendimento"
+            osCreationType === "rascunho"
+              ? editingOSId
+                ? "Editar Rascunho"
+                : "Rascunho"
               : osCreationType === "freelance"
-                ? "Freelance"
-                : osCreationType === "rascunho"
-                  ? "Rascunho"
-                  : osCreationType === "docagem"
-                    ? "Nova Docagem"
+                ? editingOSId
+                  ? "Editar Freelance"
+                  : "Freelance"
+                : osCreationType === "docagem"
+                  ? "Nova Docagem"
+                  : editingOSId
+                    ? "Editar Atendimento"
                     : "Novo Atendimento"
           }
           subtitle={
-            editingOSId
-              ? "Atualização operacional Geolog"
+            osCreationType === "rascunho"
+              ? "Rascunho Geolog"
               : osCreationType === "docagem"
                 ? "Agendamento Recorrente Geolog"
                 : "Fluxo Operacional Geolog"
@@ -6883,16 +6991,16 @@ export default function OSOperationalPage() {
           maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-80 space-y-12"
           headerClassName={
-            !editingOSId && osCreationType === "freelance"
+            osCreationType === "freelance"
               ? "bg-emerald-600"
-              : !editingOSId && osCreationType === "rascunho"
+              : osCreationType === "rascunho"
                 ? ""
-                : !editingOSId && osCreationType === "docagem"
+                : osCreationType === "docagem"
                   ? "bg-[rgb(89,47,147)]"
                   : "bg-[rgb(42,82,144)]"
           }
           headerStyle={
-            !editingOSId && osCreationType === "rascunho"
+            osCreationType === "rascunho"
               ? {
                   backgroundColor:
                     "color-mix(in oklab, rgb(255,212,146) 30%, transparent)",
@@ -6900,36 +7008,36 @@ export default function OSOperationalPage() {
               : undefined
           }
           headerGlowClassName={
-            !editingOSId && osCreationType === "freelance"
+            osCreationType === "freelance"
               ? "bg-emerald-600/10"
-              : !editingOSId && osCreationType === "rascunho"
+              : osCreationType === "rascunho"
                 ? "bg-[rgb(255,212,146)]/10"
-                : !editingOSId && osCreationType === "docagem"
+                : osCreationType === "docagem"
                   ? "bg-[rgb(89,47,147)]/10"
                   : "bg-[rgb(42,82,144)]/10"
           }
           subtitleClassName={
-            !editingOSId && osCreationType === "rascunho"
+            osCreationType === "rascunho"
               ? "text-[#dd820e]"
               : "text-white/70"
           }
           titleClassName={
-            !editingOSId && osCreationType === "rascunho"
+            osCreationType === "rascunho"
               ? "text-[#a06418]"
               : "text-white"
           }
           iconContainerClassName={
-            !editingOSId && osCreationType === "rascunho"
+            osCreationType === "rascunho"
               ? "bg-[#a06418]/10 border-[#a06418]/20"
               : "bg-white/10 border-white/20"
           }
           iconClassName={
-            !editingOSId && osCreationType === "rascunho"
+            osCreationType === "rascunho"
               ? "text-[#a06418]"
               : "text-white"
           }
           closeButtonClassName={
-            !editingOSId && osCreationType === "rascunho"
+            osCreationType === "rascunho"
               ? "text-[#a06418]/40 hover:text-[#a06418] hover:bg-[#a06418]/10"
               : "text-white/40 hover:text-white hover:bg-white/10"
           }
@@ -7024,21 +7132,21 @@ export default function OSOperationalPage() {
                     osCreationType === "docagem" && isSubmittingDocagem
                   }
                   className={
-                    !editingOSId && osCreationType === "freelance"
+                    osCreationType === "freelance"
                       ? "px-12 py-4 bg-emerald-600 text-white font-black rounded-xl shadow-xl shadow-emerald-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
-                      : !editingOSId && osCreationType === "rascunho"
+                      : osCreationType === "rascunho"
                         ? "px-12 py-4 bg-[rgb(255,212,146)] text-[#a06418] font-black rounded-xl shadow-xl shadow-[#a06418]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
-                        : !editingOSId && osCreationType === "docagem"
+                        : osCreationType === "docagem"
                           ? "px-12 py-4 bg-[rgb(89,47,147)] text-white font-black rounded-xl shadow-xl shadow-[rgb(89,47,147)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
                           : "px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
                   }
                 >
-                  {editingOSId
-                    ? "Salvar e Continuar"
-                    : osCreationType === "freelance"
-                      ? "Confirmar Freelance"
-                      : osCreationType === "rascunho"
-                        ? "Salvar Rascunho"
+                  {osCreationType === "rascunho"
+                    ? "Salvar Rascunho"
+                    : editingOSId
+                      ? "Salvar e Continuar"
+                      : osCreationType === "freelance"
+                        ? "Confirmar Freelance"
                         : osCreationType === "docagem"
                           ? isSubmittingDocagem
                             ? "Criando..."
