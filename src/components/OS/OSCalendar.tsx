@@ -43,6 +43,8 @@ import {
   Truck,
   Eye,
   EyeOff,
+  Layers,
+  Archive,
 } from "lucide-react";
 import { logInfo } from "@/lib/frontend-logger";
 
@@ -98,6 +100,11 @@ interface OSCalendarProps {
   showArchivedOnly?: boolean;
   hideStatusLegend?: boolean;
   onRangeChange?: (from: string, to: string) => void;
+  docagemListFilter?: "all" | "os" | "docagem" | "rascunho" | "freelance";
+  onFilterChange?: (
+    filter: "all" | "os" | "docagem" | "rascunho" | "freelance",
+  ) => void;
+  onArchivedToggle?: () => void;
 }
 
 type WeekStatus = "Pendente" | "Aguardando" | "Em Rota" | "Finalizado";
@@ -245,7 +252,7 @@ const typeIcons: Record<
 > = {
   os: { icon: Truck, color: "#2563eb" },
   docagem: { icon: Package, color: "#7c3aed" },
-  rascunho: { icon: FileText, color: "#f59e0b" },
+  rascunho: { icon: FileText, color: "#a06418" },
   freelance: { icon: Briefcase, color: "#059669" },
   divider: { icon: Route, color: "#64748b" },
 };
@@ -759,22 +766,26 @@ const EventContent = ({
             {startTime || "--:--"}
           </span>
 
-          {!showArchivedOnly && status === "Finalizado" && os && isFinalizadoSemValor(os) && (
-            <div
-              title="Falta preencher valores"
-              style={{
-                width: isDayView ? "14px" : "12px",
-                height: isDayView ? "14px" : "12px",
-                borderRadius: "50%",
-                backgroundColor: "#ef4444",
-                border: "2px solid #ffffff",
-                boxShadow: "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
-                flexShrink: 0,
-                marginRight: isDayView ? "6px" : "4px",
-                animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-              }}
-            />
-          )}
+          {!showArchivedOnly &&
+            status === "Finalizado" &&
+            os &&
+            isFinalizadoSemValor(os) && (
+              <div
+                title="Falta preencher valores"
+                style={{
+                  width: isDayView ? "14px" : "12px",
+                  height: isDayView ? "14px" : "12px",
+                  borderRadius: "50%",
+                  backgroundColor: "#ef4444",
+                  border: "2px solid #ffffff",
+                  boxShadow:
+                    "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
+                  flexShrink: 0,
+                  marginRight: isDayView ? "6px" : "4px",
+                  animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+                }}
+              />
+            )}
         </div>
       )}
     </div>
@@ -793,6 +804,9 @@ export default function OSCalendar({
   showArchivedOnly,
   hideStatusLegend,
   onRangeChange,
+  docagemListFilter = "all",
+  onFilterChange,
+  onArchivedToggle,
 }: OSCalendarProps) {
   const [currentView, setCurrentView] = useState<
     "dayGridMonth" | "dayGridWeek" | "dayGridDay"
@@ -882,6 +896,8 @@ export default function OSCalendar({
         os.operationalCycles && os.operationalCycles.length > 0
           ? deriveCyclesOperationalStatus(os.operationalCycles)
           : os.status.operacional;
+      const osKind: CalendarEventKind =
+        os.tipo === "freelance" ? "freelance" : "os";
       const waypoints = os.rota?.waypoints || [];
 
       const itineraries =
@@ -934,7 +950,7 @@ export default function OSCalendar({
           borderColor: "transparent",
           textColor: colors.text,
           extendedProps: {
-            kind: "os",
+            kind: osKind,
             os,
             clienteNome,
             status: effectiveStatus,
@@ -996,7 +1012,7 @@ export default function OSCalendar({
             borderColor: "transparent",
             textColor: colors.text,
             extendedProps: {
-              kind: "os",
+              kind: osKind,
               os,
               clienteNome,
               status: eventStatus,
@@ -1655,14 +1671,87 @@ export default function OSCalendar({
         <div className="flex items-center gap-2">
           <button
             onClick={goToPrev}
-            className="p-2 hover:bg-slate-200 rounded-xl transition-colors"
+            className="p-2 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
           >
             <ChevronLeft size={20} className="text-slate-600" />
           </button>
         </div>
 
         {/* Seletor de Visualização - Centralizado */}
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center gap-3">
+          {/* Toggle de Filtros: Todos | OS | Docagem | Rascunho | Freelance */}
+          <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1.5 shadow-sm">
+            {[
+              {
+                key: "all" as const,
+                label: "Todos",
+                icon: Layers,
+                activeClass: "bg-slate-800 text-white shadow-md",
+                inactiveIconClass: "text-slate-500",
+                inactiveHover: "hover:bg-slate-50",
+              },
+              {
+                key: "os" as const,
+                label: "OS",
+                icon: Truck,
+                activeClass: "bg-blue-500 text-white shadow-md",
+                inactiveIconClass: "text-blue-500",
+                inactiveHover: "hover:bg-blue-50",
+              },
+              {
+                key: "docagem" as const,
+                label: "Docagem",
+                icon: Package,
+                activeClass: "bg-violet-600 text-white shadow-md",
+                inactiveIconClass: "text-violet-500",
+                inactiveHover: "hover:bg-violet-50",
+              },
+              {
+                key: "rascunho" as const,
+                label: "Rascunho",
+                icon: FileText,
+                activeClass: "bg-[rgb(255,212,146)] text-[#a06418] shadow-md",
+                inactiveIconClass: "text-[rgb(255,212,146)]",
+                inactiveHover: "hover:bg-[rgb(255,212,146)]/40",
+              },
+              {
+                key: "freelance" as const,
+                label: "Freelance",
+                icon: Briefcase,
+                activeClass: "bg-emerald-600 text-white shadow-md",
+                inactiveIconClass: "text-emerald-500",
+                inactiveHover: "hover:bg-emerald-50",
+              },
+            ].map(
+              ({
+                key,
+                label,
+                icon: Icon,
+                activeClass,
+                inactiveIconClass,
+                inactiveHover,
+              }) => {
+                const active = !showArchivedOnly && docagemListFilter === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => onFilterChange?.(key)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                      active ? activeClass : `text-slate-500 ${inactiveHover}`
+                    }`}
+                  >
+                    <Icon
+                      size={14}
+                      className={active ? "text-white" : inactiveIconClass}
+                    />
+                    {label}
+                  </button>
+                );
+              },
+            )}
+          </div>
+
+          {/* Toggle de Visualização: Mês | Semana | Dia */}
           <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1.5 shadow-sm">
             {[
               { key: "dayGridMonth", label: "Mês", icon: CalendarDays },
@@ -1676,7 +1765,7 @@ export default function OSCalendar({
                     key as "dayGridMonth" | "dayGridWeek" | "dayGridDay",
                   )
                 }
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-wider transition-all ${
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-wider transition-all cursor-pointer ${
                   currentView === key
                     ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
                     : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
@@ -1693,7 +1782,7 @@ export default function OSCalendar({
         <div className="flex items-center gap-2">
           <button
             onClick={goToNext}
-            className="p-2 hover:bg-slate-200 rounded-xl transition-colors"
+            className="p-2 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
           >
             <ChevronRight size={20} className="text-slate-600" />
           </button>

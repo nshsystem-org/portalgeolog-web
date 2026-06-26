@@ -529,6 +529,7 @@ type OSRow = {
   financeiro_recebido_em: string | null;
   os_financeiro_anexos?: FinanceAttachmentRow[] | null;
   is_freelance: boolean | null;
+  tipo: string | null;
 };
 type FinanceAttachmentRow = {
   id: string;
@@ -705,7 +706,7 @@ const mapOSRecord = (
     createdAt: o.created_at ?? undefined,
     createdBy: o.created_by ?? undefined,
     createdByName: undefined,
-    isFreelance: o.is_freelance ?? false,
+    tipo: (o.tipo as OrderService["tipo"]) ?? "os",
     arquivado: o.arquivado ?? undefined,
     financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
     financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
@@ -1286,6 +1287,7 @@ const OS_SELECT_COLUMNS = [
   "created_at",
   "created_by",
   "is_freelance",
+  "tipo",
 ].join(",");
 
 export async function fetchOSList(): Promise<OrderService[]> {
@@ -1426,6 +1428,7 @@ export type OSPageFilters = {
   faltandoValores?: boolean;
   createdBy?: string;
   arquivado?: boolean;
+  tipo?: string;
 };
 
 export async function fetchOSPage({
@@ -1499,6 +1502,9 @@ export async function fetchOSPage({
     }
     if (filters.createdBy) {
       query = query.eq("created_by", filters.createdBy);
+    }
+    if (filters.tipo) {
+      query = query.eq("tipo", filters.tipo);
     }
 
     const { data: osRaw, error, count } = await query;
@@ -1761,9 +1767,7 @@ export async function insertOS(osData: OSInput): Promise<OrderService> {
     obs_financeiras:
       (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
     custo: osData.custo ?? 0,
-    is_freelance: Boolean(
-      (osData as OSInput & { isFreelance?: boolean }).isFreelance,
-    ),
+    tipo: (osData as OSInput & { tipo?: OrderService["tipo"] }).tipo ?? "os",
   };
 
   const waypointsPayload = waypoints.map((wp) => ({
@@ -1928,6 +1932,7 @@ export async function updateOSInDB(
     imposto,
     custo: osData.custo ?? 0,
     lucro,
+    tipo: (osData as OSInput & { tipo?: OrderService["tipo"] }).tipo ?? "os",
   };
 
   const waypointsPayload = waypoints.map((wp) => ({
@@ -2917,7 +2922,7 @@ export async function fetchOSFinanceStats(
     let query = getSupabase()
       .from("ordens_servico")
       .select(
-        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id, repasse_pago, is_freelance",
+        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id, repasse_pago, tipo",
         { count: "exact" },
       )
       .eq("arquivado", false);
@@ -2978,7 +2983,7 @@ export async function fetchOSFinanceStats(
       status_operacional: string | null;
       driver_id: string | null;
       repasse_pago: boolean | null;
-      is_freelance: boolean | null;
+      tipo: string | null;
     }>;
 
     const driverIds = [
@@ -3010,7 +3015,7 @@ export async function fetchOSFinanceStats(
         const statusOperacional = row.status_operacional || "";
         const driverId = row.driver_id;
         const repassePago = row.repasse_pago || false;
-        const isFreelance = Boolean(row.is_freelance);
+        const isFreelance = row.tipo === "freelance";
 
         acc.totalOS += 1;
         acc.totalBruto += bruto;

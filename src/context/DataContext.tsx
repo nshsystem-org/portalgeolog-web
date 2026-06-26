@@ -154,7 +154,7 @@ export interface OrderService {
   createdAt?: string;
   createdBy?: string;
   createdByName?: string;
-  isFreelance?: boolean;
+  tipo?: "os" | "freelance" | "rascunho";
   arquivado?: boolean;
 }
 

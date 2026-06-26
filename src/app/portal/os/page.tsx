@@ -186,6 +186,7 @@ type OSFormData = {
 type PendingOSData = Omit<OSFormData, "hora"> & {
   hora: string | null;
   rota: { waypoints: FormWaypoint[] };
+  tipo?: OrderService["tipo"];
 };
 
 // Helper: group waypoints into itineraries
@@ -607,12 +608,9 @@ export default function OSOperationalPage() {
   const [docagemList, setDocagemList] = useState<DocagemSummary[]>([]);
   const [docagemListLoading, setDocagemListLoading] = useState(false);
   const [docagemListFilter, setDocagemListFilter] = useState<
-    "all" | "os" | "docagem" | "rascunho"
+    "all" | "os" | "docagem" | "rascunho" | "freelance"
   >("all");
   const [isDocagemModalOpen, setIsDocagemModalOpen] = useState(false);
-  const [isAttendanceChoiceModalOpen, setIsAttendanceChoiceModalOpen] =
-    useState(false);
-  const [isRascunhoModalOpen, setIsRascunhoModalOpen] = useState(false);
   const [docagemFormData, setDocagemFormData] = useState<DocagemInput>({
     clienteId: "",
     centroCustoId: null,
@@ -710,9 +708,16 @@ export default function OSOperationalPage() {
 
   const fetchOSPageWithFilters = useCallback(
     async (params: { page: number; pageSize: number; searchTerm: string }) => {
+      const tipoFilter =
+        docagemListFilter === "os"
+          ? "os"
+          : docagemListFilter === "freelance"
+            ? "freelance"
+            : undefined;
       const filters = {
         ...tableFilters,
         arquivado: showArchivedOnly ? true : undefined,
+        tipo: tipoFilter,
       };
       const result = await fetchOSPage({
         ...params,
@@ -739,7 +744,7 @@ export default function OSOperationalPage() {
 
       return result;
     },
-    [tableFilters, showArchivedOnly],
+    [tableFilters, showArchivedOnly, docagemListFilter],
   );
 
   const osTable = useServerPaginatedTable(
@@ -835,6 +840,10 @@ export default function OSOperationalPage() {
     if (docagemListFilter === "docagem" || docagemListFilter === "rascunho")
       return [];
     return calendarOSList.filter((item) => {
+      // Filtro por tipo (OS vs Freelance)
+      if (docagemListFilter === "os" && item.tipo !== "os") return false;
+      if (docagemListFilter === "freelance" && item.tipo !== "freelance")
+        return false;
       const clienteNome =
         clientes.find((c) => c.id === item.clienteId)?.nome || "";
       const motoristaNomeAtual = item.driverId
@@ -939,7 +948,11 @@ export default function OSOperationalPage() {
   ]);
 
   const filteredCalendarDocagemInstances = useMemo(() => {
-    if (docagemListFilter === "os" || docagemListFilter === "rascunho")
+    if (
+      docagemListFilter === "os" ||
+      docagemListFilter === "rascunho" ||
+      docagemListFilter === "freelance"
+    )
       return [];
     const searchValue = osTable.searchTerm.toLowerCase().trim();
     return docagemInstances.filter((item) => {
@@ -1530,6 +1543,7 @@ export default function OSOperationalPage() {
     void handleCalendarRangeChange(
       calendarRangeRef.current.from,
       calendarRangeRef.current.to,
+      true, // force=true para recarregar mesmo com o mesmo range
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchivedOnly]);
@@ -1628,8 +1642,10 @@ export default function OSOperationalPage() {
   const [isSubmittingOsVehicle, setIsSubmittingOsVehicle] = useState(false);
   const [osVehicleManageIds, setOsVehicleManageIds] = useState<string[]>([]);
 
-  // Modo Freelance: quando true o modal de criação usa tema verde e salva is_freelance=true
-  const [isFreelanceMode, setIsFreelanceMode] = useState(false);
+  // Tipo de atendimento no modal único: os | freelance | rascunho | docagem
+  const [osCreationType, setOsCreationType] = useState<
+    OrderService["tipo"] | "docagem"
+  >("os");
 
   // Novos estados para o modal de confirmação de notificações
   const [showNotificationConfirm, setShowNotificationConfirm] = useState(false);
@@ -2047,7 +2063,7 @@ export default function OSOperationalPage() {
     setFormData(initialForm);
     setOpenWaypointComments({});
     setOriginalFormSnapshot(null);
-    setIsFreelanceMode(false);
+    setOsCreationType("os");
   };
 
   const handleOpenCreateOSModal = () => {
@@ -2158,6 +2174,7 @@ export default function OSOperationalPage() {
       hydrateFormFromOS(targetOS);
       setOpenWaypointComments({});
       setEditingOSId(osId);
+      setOsCreationType(targetOS.tipo ?? "os");
       setIsModalOpen(true);
       setOpenActionMenuId(null);
       requestAnimationFrame(() => setIsOpeningEditModal(false));
@@ -4733,6 +4750,14 @@ export default function OSOperationalPage() {
   const handleAddOS = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Rascunho: funcionalidade em desenvolvimento — não persiste
+    if (!editingOSId && osCreationType === "rascunho") {
+      toast.info(
+        "Rascunho está em desenvolvimento. Selecione OS ou Freelance para salvar.",
+      );
+      return;
+    }
+
     // Validação dos campos obrigatórios
     if (
       !formData.data ||
@@ -4786,7 +4811,7 @@ export default function OSOperationalPage() {
       data: syncedData,
       hora: null,
       rota: { waypoints: formData.waypoints },
-      isFreelance: !editingOSId && isFreelanceMode,
+      tipo: !editingOSId ? osCreationType : undefined,
     };
 
     // Se estiver editando e nao houver mudancas reais, apenas fecha o modal
@@ -4825,6 +4850,75 @@ export default function OSOperationalPage() {
 
     // Novo Atendimento: abre modal de notificação
     setShowNotificationConfirm(true);
+  };
+
+  const handleDocagemSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmittingDocagem) return;
+    if (!docagemFormData.clienteId) {
+      toast.error("Selecione o cliente.");
+      return;
+    }
+    if (!docagemFormData.endereco.trim()) {
+      toast.error("Informe o endereço / doca.");
+      return;
+    }
+    if (!docagemFormData.dataInicio || !docagemFormData.dataFim) {
+      toast.error("Informe a data de início e fim.");
+      return;
+    }
+    if (!docagemFormData.horarioInicio || !docagemFormData.horarioFim) {
+      toast.error("Informe o horário de início e fim.");
+      return;
+    }
+    if (docagemFormData.diasSemana.length === 0) {
+      toast.error("Selecione pelo menos um dia da semana.");
+      return;
+    }
+    if (docagemFormData.valorDiario <= 0) {
+      toast.error("Informe o valor diário.");
+      return;
+    }
+    setIsSubmittingDocagem(true);
+    try {
+      const id = await createDocagem(docagemFormData);
+      toast.success("Docagem criada com sucesso.");
+      setIsModalOpen(false);
+      setDocagemFormData({
+        clienteId: "",
+        centroCustoId: null,
+        solicitanteId: null,
+        motoristaId: null,
+        veiculoId: null,
+        endereco: "",
+        dataInicio: "",
+        dataFim: "",
+        horarioInicio: "",
+        horarioFim: "",
+        diasSemana: [1, 2, 3, 4, 5],
+        valorDiario: 0,
+        custoDiario: null,
+        observacao: null,
+        observacaoFinanceira: null,
+      });
+      setOsCreationType("os");
+      if (calendarRangeRef.current) {
+        void handleCalendarRangeChange(
+          calendarRangeRef.current.from,
+          calendarRangeRef.current.to,
+          true,
+        );
+      }
+      void fetchDocagens().then(setDocagemList);
+      logInfo("Docagem/Create", `Docagem criada: ${id}`);
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao criar docagem.",
+      );
+    } finally {
+      setIsSubmittingDocagem(false);
+    }
   };
 
   const executeAddOS = async () => {
@@ -5256,126 +5350,144 @@ export default function OSOperationalPage() {
             </button>
           </div>
 
-          {/* Filtro OS/Docagem/Todos */}
-          <div className="group flex items-center bg-white border border-slate-200 rounded-2xl py-1.5 px-0 group-hover:pl-2.5 group-hover:pr-1.5 ml-0 group-hover:ml-4 shadow-sm shrink-0 overflow-hidden transition-all duration-300 ease-out">
-            <ChevronRight
-              className="text-slate-400 shrink-0 transition-all duration-300 ease-out group-hover:max-w-0 group-hover:opacity-0 group-hover:ml-0 group-hover:mr-0 group-hover:rotate-0 max-w-4 ml-2.5 mr-2.5 rotate-180 overflow-hidden"
-              size={14}
-              strokeWidth={2.5}
-            />
-            <button
-              onClick={() => {
-                setShowArchivedOnly(false);
-                setDocagemListFilter("all");
-              }}
-              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out group-hover:ml-[5px] ${
-                docagemListFilter === "all" && !showArchivedOnly
-                  ? "px-3.5 py-2.5 mr-1.5 max-w-[120px] opacity-100 bg-slate-800 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-slate-50"
-              }`}
-            >
-              <Layers
-                className={`${
+          {/* Filtro OS/Docagem/Todos (apenas modo tabela) */}
+          {viewMode === "table" && (
+            <div className="group flex items-center bg-white border border-slate-200 rounded-2xl py-1.5 px-0 group-hover:pl-2.5 group-hover:pr-1.5 ml-0 group-hover:ml-4 shadow-sm shrink-0 overflow-hidden transition-all duration-300 ease-out">
+              <ChevronRight
+                className="text-slate-400 shrink-0 transition-all duration-300 ease-out group-hover:max-w-0 group-hover:opacity-0 group-hover:ml-0 group-hover:mr-0 group-hover:rotate-0 max-w-4 ml-2.5 mr-2.5 rotate-180 overflow-hidden"
+                size={14}
+                strokeWidth={2.5}
+              />
+              <button
+                onClick={() => {
+                  setShowArchivedOnly(false);
+                  setDocagemListFilter("all");
+                }}
+                className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out group-hover:ml-[5px] ${
                   docagemListFilter === "all" && !showArchivedOnly
-                    ? "text-white"
-                    : "text-slate-500"
+                    ? "px-3.5 py-2.5 mr-1.5 max-w-[120px] opacity-100 bg-slate-800 text-white shadow-md"
+                    : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-slate-50"
                 }`}
-                size={16}
-                strokeWidth={2.5}
-              />
-              Todos
-            </button>
-            <button
-              onClick={() => {
-                setShowArchivedOnly(false);
-                setDocagemListFilter("os");
-              }}
-              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
-                docagemListFilter === "os" && !showArchivedOnly
-                  ? "px-3.5 py-2.5 mr-1.5 max-w-[120px] opacity-100 bg-blue-500 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-blue-50"
-              }`}
-            >
-              <Truck
-                className={`${
+              >
+                <Layers
+                  className={`${
+                    docagemListFilter === "all" && !showArchivedOnly
+                      ? "text-white"
+                      : "text-slate-500"
+                  }`}
+                  size={16}
+                  strokeWidth={2.5}
+                />
+                Todos
+              </button>
+              <button
+                onClick={() => {
+                  setShowArchivedOnly(false);
+                  setDocagemListFilter("os");
+                }}
+                className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
                   docagemListFilter === "os" && !showArchivedOnly
-                    ? "text-white"
-                    : "text-blue-500"
+                    ? "px-3.5 py-2.5 mr-1.5 max-w-[120px] opacity-100 bg-blue-500 text-white shadow-md"
+                    : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[120px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-blue-50"
                 }`}
-                size={16}
-                strokeWidth={2.5}
-              />
-              OS
-            </button>
-            <button
-              onClick={() => {
-                setShowArchivedOnly(false);
-                setDocagemListFilter("docagem");
-              }}
-              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
-                docagemListFilter === "docagem" && !showArchivedOnly
-                  ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-violet-600 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-violet-50"
-              }`}
-            >
-              <Package
-                className={`${
+              >
+                <Truck
+                  className={`${
+                    docagemListFilter === "os" && !showArchivedOnly
+                      ? "text-white"
+                      : "text-blue-500"
+                  }`}
+                  size={16}
+                  strokeWidth={2.5}
+                />
+                OS
+              </button>
+              <button
+                onClick={() => {
+                  setShowArchivedOnly(false);
+                  setDocagemListFilter("docagem");
+                }}
+                className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
                   docagemListFilter === "docagem" && !showArchivedOnly
-                    ? "text-white"
-                    : "text-violet-500"
+                    ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-violet-600 text-white shadow-md"
+                    : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-violet-50"
                 }`}
-                size={16}
-                strokeWidth={2.5}
-              />
-              Docagem
-            </button>
-            <button
-              onClick={() => {
-                setShowArchivedOnly(false);
-                setDocagemListFilter("rascunho");
-              }}
-              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
-                docagemListFilter === "rascunho" && !showArchivedOnly
-                  ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-amber-500 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-amber-50"
-              }`}
-            >
-              <FileText
-                className={`${
+              >
+                <Package
+                  className={`${
+                    docagemListFilter === "docagem" && !showArchivedOnly
+                      ? "text-white"
+                      : "text-violet-500"
+                  }`}
+                  size={16}
+                  strokeWidth={2.5}
+                />
+                Docagem
+              </button>
+              <button
+                onClick={() => {
+                  setShowArchivedOnly(false);
+                  setDocagemListFilter("rascunho");
+                }}
+                className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
                   docagemListFilter === "rascunho" && !showArchivedOnly
-                    ? "text-white"
-                    : "text-amber-500"
+                    ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-[rgb(255,212,146)] text-[#a06418] shadow-md"
+                    : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-0 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-[rgb(255,212,146)]/40"
                 }`}
-                size={16}
-                strokeWidth={2.5}
-              />
-              Rascunho
-            </button>
-            <button
-              onClick={() => {
-                setIsArchivedFilterLoading(true);
-                setShowArchivedOnly((prev) => !prev);
-                setDocagemListFilter("all");
-              }}
-              className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
-                showArchivedOnly
-                  ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 text-white shadow-md"
-                  : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-1.5 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-red-50"
-              }`}
-              style={
-                showArchivedOnly
-                  ? { backgroundColor: "rgba(255, 133, 139, 1)" }
-                  : undefined
-              }
-            >
-              <Archive
-                className={showArchivedOnly ? "text-white" : "text-red-500"}
-                size={16}
-                strokeWidth={2.5}
-              />
-              Arquivados
-            </button>
-          </div>
+              >
+                <FileText
+                  className={`${
+                    docagemListFilter === "rascunho" && !showArchivedOnly
+                      ? "text-[#a06418]"
+                      : "text-[rgb(255,212,146)]"
+                  }`}
+                  size={16}
+                  strokeWidth={2.5}
+                />
+                Rascunho
+              </button>
+              <button
+                onClick={() => {
+                  setShowArchivedOnly(false);
+                  setDocagemListFilter("freelance");
+                }}
+                className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
+                  docagemListFilter === "freelance" && !showArchivedOnly
+                    ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-emerald-600 text-white shadow-md"
+                    : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-1.5 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-emerald-50"
+                }`}
+              >
+                <Briefcase
+                  className={`${
+                    docagemListFilter === "freelance" && !showArchivedOnly
+                      ? "text-white"
+                      : "text-emerald-500"
+                  }`}
+                  size={16}
+                  strokeWidth={2.5}
+                />
+                Freelance
+              </button>
+            </div>
+          )}
+
+          {/* Botão Arquivados */}
+          <button
+            onClick={() => {
+              setIsArchivedFilterLoading(true);
+              setShowArchivedOnly((prev) => !prev);
+              setDocagemListFilter("all");
+            }}
+            aria-label="Arquivados"
+            title="Arquivados"
+            className={`flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all shadow-sm border cursor-pointer shrink-0 ${
+              showArchivedOnly
+                ? "bg-red-50 border-red-200 text-red-600"
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <Archive size={16} />
+          </button>
 
           {/* Botão Filtros Avançados */}
           <button
@@ -5402,7 +5514,10 @@ export default function OSOperationalPage() {
 
           {/* Botão Novo Atendimento */}
           <button
-            onClick={() => setIsAttendanceChoiceModalOpen(true)}
+            onClick={() => {
+              setOsCreationType("os");
+              handleOpenCreateOSModal();
+            }}
             className="flex items-center justify-center gap-2 bg-[var(--color-geolog-blue)] text-white px-7 py-3.5 rounded-2xl font-black shadow-lg shadow-blue-900/10 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest shrink-0 w-full md:w-auto cursor-pointer whitespace-nowrap"
           >
             <Plus size={18} strokeWidth={3} />
@@ -5787,7 +5902,7 @@ export default function OSOperationalPage() {
                           <p className="font-black text-base text-slate-800 tracking-tight">
                             {item.protocolo}
                           </p>
-                          {item.isFreelance && (
+                          {item.tipo === "freelance" && (
                             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-emerald-600">
                               Freelance
                             </span>
@@ -6124,6 +6239,16 @@ export default function OSOperationalPage() {
                 showArchivedOnly={showArchivedOnly}
                 hideStatusLegend={docagemListFilter === "rascunho"}
                 onRangeChange={handleCalendarRangeChange}
+                docagemListFilter={docagemListFilter}
+                onFilterChange={(filter) => {
+                  setShowArchivedOnly(false);
+                  setDocagemListFilter(filter);
+                }}
+                onArchivedToggle={() => {
+                  setIsArchivedFilterLoading(true);
+                  setShowArchivedOnly((prev) => !prev);
+                  setDocagemListFilter("all");
+                }}
                 onEventClick={(
                   osId: string,
                   position?: { x: number; y: number },
@@ -6493,18 +6618,26 @@ export default function OSOperationalPage() {
           title={
             editingOSId
               ? "Editar Atendimento"
-              : isFreelanceMode
+              : osCreationType === "freelance"
                 ? "Freelance"
-                : "Novo Atendimento"
+                : osCreationType === "rascunho"
+                  ? "Rascunho"
+                  : osCreationType === "docagem"
+                    ? "Nova Docagem"
+                    : "Novo Atendimento"
           }
           subtitle={
             editingOSId
               ? "Atualização operacional Geolog"
-              : "Fluxo Operacional Geolog"
+              : osCreationType === "docagem"
+                ? "Agendamento Recorrente Geolog"
+                : "Fluxo Operacional Geolog"
           }
           icon={
             editingOSId ? (
               <Pencil className="w-6 h-6 md:w-7 md:h-7" />
+            ) : osCreationType === "docagem" ? (
+              <Package className="w-6 h-6 md:w-7 md:h-7" />
             ) : (
               <PlusCircle className="w-6 h-6 md:w-7 md:h-7" />
             )
@@ -6512,665 +6645,770 @@ export default function OSOperationalPage() {
           maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-80 space-y-12"
           headerClassName={
-            isFreelanceMode && !editingOSId
+            !editingOSId && osCreationType === "freelance"
               ? "bg-emerald-600"
-              : "bg-[rgb(42,82,144)]"
+              : !editingOSId && osCreationType === "rascunho"
+                ? ""
+                : !editingOSId && osCreationType === "docagem"
+                  ? "bg-[rgb(89,47,147)]"
+                  : "bg-[rgb(42,82,144)]"
+          }
+          headerStyle={
+            !editingOSId && osCreationType === "rascunho"
+              ? {
+                  backgroundColor:
+                    "color-mix(in oklab, rgb(255,212,146) 30%, transparent)",
+                }
+              : undefined
           }
           headerGlowClassName={
-            isFreelanceMode && !editingOSId
+            !editingOSId && osCreationType === "freelance"
               ? "bg-emerald-600/10"
-              : "bg-[rgb(42,82,144)]/10"
+              : !editingOSId && osCreationType === "rascunho"
+                ? "bg-[rgb(255,212,146)]/10"
+                : !editingOSId && osCreationType === "docagem"
+                  ? "bg-[rgb(89,47,147)]/10"
+                  : "bg-[rgb(42,82,144)]/10"
           }
-          subtitleClassName="text-white/70"
+          subtitleClassName={
+            !editingOSId && osCreationType === "rascunho"
+              ? "text-[#dd820e]"
+              : "text-white/70"
+          }
+          titleClassName={
+            !editingOSId && osCreationType === "rascunho"
+              ? "text-[#a06418]"
+              : "text-white"
+          }
+          iconContainerClassName={
+            !editingOSId && osCreationType === "rascunho"
+              ? "bg-[#a06418]/10 border-[#a06418]/20"
+              : "bg-white/10 border-white/20"
+          }
+          iconClassName={
+            !editingOSId && osCreationType === "rascunho"
+              ? "text-[#a06418]"
+              : "text-white"
+          }
           footer={
-            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
-              <button
-                type="button"
-                onClick={resetMainModalState}
-                className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                form="nova-os-form"
-                className={
-                  isFreelanceMode && !editingOSId
-                    ? "px-12 py-4 bg-emerald-600 text-white font-black rounded-xl shadow-xl shadow-emerald-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
-                    : "px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
-                }
-              >
-                {editingOSId
-                  ? "Salvar e Continuar"
-                  : isFreelanceMode
-                    ? "Confirmar Freelance"
-                    : "Confirmar OS"}
-              </button>
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              {/* Toggle de tipo: OS | Freelance | Rascunho (somente na criação) */}
+              {editingOSId ? (
+                <span className="text-xs font-black uppercase tracking-widest text-slate-400">
+                  {osCreationType === "freelance"
+                    ? "Freelance"
+                    : osCreationType === "rascunho"
+                      ? "Rascunho"
+                      : osCreationType === "docagem"
+                        ? "Docagem"
+                        : "OS"}
+                </span>
+              ) : (
+                <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                  {(
+                    [
+                      { value: "os", label: "OS" },
+                      { value: "freelance", label: "Freelance" },
+                      { value: "rascunho", label: "Rascunho" },
+                      { value: "docagem", label: "Docagem" },
+                    ] as const
+                  ).map((opt) => {
+                    const active = osCreationType === opt.value;
+                    const activeClasses =
+                      opt.value === "freelance"
+                        ? "bg-emerald-600 text-white shadow-md"
+                        : opt.value === "rascunho"
+                          ? "bg-[rgb(255,212,146)] text-[#a06418] shadow-md"
+                          : opt.value === "docagem"
+                            ? "bg-violet-600 text-white shadow-md"
+                            : "bg-[rgb(42,82,144)] text-white shadow-md";
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          if (opt.value === "docagem") {
+                            setDocagemFormData({
+                              clienteId: "",
+                              centroCustoId: null,
+                              solicitanteId: null,
+                              motoristaId: null,
+                              veiculoId: null,
+                              endereco: "",
+                              dataInicio: "",
+                              dataFim: "",
+                              horarioInicio: "",
+                              horarioFim: "",
+                              diasSemana: [1, 2, 3, 4, 5],
+                              valorDiario: 0,
+                              custoDiario: null,
+                              observacao: null,
+                              observacaoFinanceira: null,
+                            });
+                            setOsCreationType("docagem");
+                            return;
+                          }
+                          setOsCreationType(opt.value);
+                        }}
+                        className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest cursor-pointer transition-all ${
+                          active
+                            ? activeClasses
+                            : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={resetMainModalState}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form={
+                    osCreationType === "docagem"
+                      ? "nova-docagem-form"
+                      : "nova-os-form"
+                  }
+                  disabled={
+                    (!editingOSId && osCreationType === "rascunho") ||
+                    (osCreationType === "docagem" && isSubmittingDocagem)
+                  }
+                  className={
+                    !editingOSId && osCreationType === "freelance"
+                      ? "px-12 py-4 bg-emerald-600 text-white font-black rounded-xl shadow-xl shadow-emerald-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                      : !editingOSId && osCreationType === "rascunho"
+                        ? "px-12 py-4 bg-[rgb(255,212,146)] text-[#a06418] font-black rounded-xl shadow-xl shadow-[#a06418]/20 cursor-not-allowed opacity-60 transition-all text-sm uppercase tracking-widest"
+                        : !editingOSId && osCreationType === "docagem"
+                          ? "px-12 py-4 bg-[rgb(89,47,147)] text-white font-black rounded-xl shadow-xl shadow-[rgb(89,47,147)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
+                          : "px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                  }
+                >
+                  {editingOSId
+                    ? "Salvar e Continuar"
+                    : osCreationType === "freelance"
+                      ? "Confirmar Freelance"
+                      : osCreationType === "rascunho"
+                        ? "Em desenvolvimento"
+                        : osCreationType === "docagem"
+                          ? isSubmittingDocagem
+                            ? "Criando..."
+                            : "Confirmar Docagem"
+                          : "Confirmar OS"}
+                </button>
+              </div>
             </div>
           }
         >
-          <form
-            id="nova-os-form"
-            onSubmit={handleAddOS}
-            className="min-h-0 relative"
-          >
-            <div
-              className="space-y-12"
-              style={{ paddingTop: "0.5rem", paddingBottom: "2rem" }}
+          {osCreationType !== "docagem" && (
+            <form
+              id="nova-os-form"
+              onSubmit={handleAddOS}
+              className="min-h-0 relative"
             >
-              {/* 1. DETALHES DA EXECUÇÃO */}
-              <div className="space-y-8">
-                <div
-                  className="flex items-center border-b-2 border-slate-100 pb-4"
-                  style={{ paddingBottom: "1.25rem" }}
-                >
-                  <h3
-                    className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
-                    style={{ lineHeight: "1.3" }}
+              <div
+                className="space-y-12"
+                style={{ paddingTop: "0.5rem", paddingBottom: "2rem" }}
+              >
+                {/* 1. DETALHES DA EXECUÇÃO */}
+                <div className="space-y-8">
+                  <div
+                    className="flex items-center border-b-2 border-slate-100 pb-4"
+                    style={{ paddingBottom: "1.25rem" }}
                   >
-                    <Clock size={20} className="text-slate-500" /> Detalhes da
-                    Execução
-                  </h3>
-                </div>
-
-                <div className="flex flex-col md:flex-row gap-8">
-                  <div className="space-y-2.5 w-full md:w-[80%]">
-                    <GeologSearchableSelect
-                      label="Empresa / Cliente Final"
-                      options={clientes}
-                      value={formData.clienteId}
-                      onChange={handleClienteChange}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2.5 w-full md:w-[20%]">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1">
-                      OS{" "}
-                      <span className="text-slate-400 text-xs font-normal normal-case tracking-normal">
-                        Opcional
-                      </span>
-                    </label>
-                    <input
-                      type="text"
-                      name="os"
-                      value={formData.os}
-                      onChange={handleInputChange}
-                      placeholder="Ex: 9988"
-                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase placeholder:text-slate-300 shadow-sm -mt-[6px]"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <GeologSearchableSelect
-                    label="Solicitante Responsável"
-                    options={availableSolicitantes.map((s) => ({
-                      id: s.id,
-                      nome: s.nome,
-                    }))}
-                    value={
-                      formData.solicitanteId ||
-                      availableSolicitantes.find(
-                        (s) => s.nome === formData.solicitante,
-                      )?.id ||
-                      ""
-                    }
-                    onChange={(id) => {
-                      const opt = availableSolicitantes.find(
-                        (s) => s.id === id,
-                      );
-                      setFormData((prev) => ({
-                        ...prev,
-                        solicitanteId: id,
-                        solicitante: opt?.nome || "",
-                      }));
-                    }}
-                    disabled={!formData.clienteId}
-                    required
-                    onQuickAdd={handleQuickAddSolicitante}
-                  />
-                  <GeologSearchableSelect
-                    label="Centro de Custo"
-                    options={availableCentrosCusto.map((c) => ({
-                      id: c.id,
-                      nome: c.nome,
-                    }))}
-                    value={
-                      availableCentrosCusto.find(
-                        (c) => c.id === formData.centroCusto,
-                      )?.id || ""
-                    }
-                    onChange={(id) => {
-                      setFormData((prev) => ({ ...prev, centroCusto: id }));
-                    }}
-                    disabled={!formData.clienteId}
-                    onQuickAdd={handleQuickAddCentroCusto}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <GeologSearchableSelect
-                    label="Motorista Alocado"
-                    options={driverOptions}
-                    value={formData.driverId || ""}
-                    onChange={(id) => {
-                      const opt = driverOptions.find((m) => m.id === id);
-                      setFormData((prev) => ({
-                        ...prev,
-                        driverId: id,
-                        motorista: opt?.nome || "",
-                        veiculoId: "",
-                      }));
-                    }}
-                    required
-                    onQuickAdd={handleQuickAddMotorista}
-                  />
-                  <GeologSearchableSelect
-                    label="Veículo de Uso"
-                    options={selectedDriverVehicleOptions}
-                    value={formData.veiculoId}
-                    onChange={(id) =>
-                      setFormData((prev) => ({ ...prev, veiculoId: id }))
-                    }
-                    required
-                    disabled={!formData.motorista}
-                    onQuickAdd={handleQuickAddVeiculo}
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="flex-1 border-t-2 border-dashed border-slate-300" />
-                <div className="w-2 h-2 rounded-full bg-slate-300" />
-                <div className="flex-1 border-t-2 border-dashed border-slate-300" />
-              </div>
-
-              {/* 2. ITINERÁRIO */}
-              {/* 2. ITINERÁRIO DINÂMICO */}
-              <div className="space-y-8">
-                <div
-                  className="flex items-center justify-between border-b-2 border-slate-100 pb-4"
-                  style={{ paddingBottom: "1.25rem" }}
-                >
-                  <h3
-                    className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-2"
-                    style={{ lineHeight: "1.3" }}
-                  >
-                    <MapPin size={20} className="text-blue-600" />
-                    {getItinerarySectionTitle()}
-                  </h3>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={handleAddItinerary}
-                      className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-200 transition-all shadow-sm cursor-pointer"
+                    <h3
+                      className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                      style={{ lineHeight: "1.3" }}
                     >
-                      <Plus size={16} /> ITINERÁRIO
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleAddReturn}
-                      className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-purple-200 transition-all shadow-sm cursor-pointer"
-                    >
-                      <Plus size={16} /> RETORNO
-                    </button>
+                      <Clock size={20} className="text-slate-500" /> Detalhes da
+                      Execução
+                    </h3>
                   </div>
-                </div>
 
-                <div className="relative pl-8 space-y-6">
-                  {formItineraries.map((it) => (
-                    <div key={it.index} className="space-y-6">
-                      {formItineraries.length > 1 && (
-                        <h4
-                          className={`flex items-center gap-2 mb-6 ${it.index === 0 ? "mt-6" : "mt-20"}`}
-                        >
-                          {it.index < 0 ? (
-                            <ArrowLeft size={18} className="text-purple-500" />
-                          ) : (
-                            <ArrowRight size={18} className="text-amber-500" />
-                          )}
-                          <span
-                            className={`inline-flex items-center justify-center w-8 h-8 rounded-xl text-sm font-black shadow-sm ${it.index < 0 ? "bg-purple-100 text-purple-700 ring-2 ring-purple-200" : "bg-amber-100 text-amber-700 ring-2 ring-amber-200"}`}
-                          >
-                            {it.index < 0 ? Math.abs(it.index) : it.index + 1}
-                          </span>
-                          <span
-                            className={`text-[13px] font-black uppercase tracking-[0.15em] ${it.index < 0 ? "text-purple-700" : "text-amber-700"}`}
-                          >
-                            {getItineraryTitle(it.index)}
-                          </span>
-                        </h4>
-                      )}
-                      {it.waypointIndices.map((index, relIdx) => {
-                        const waypoint = formData.waypoints[index];
-                        const isOrigin = relIdx === 0;
-                        const isDestination =
-                          relIdx === it.waypointIndices.length - 1;
-                        const hasPassengers =
-                          (waypoint.passengers?.length || 0) > 0;
-                        const destinationPassengerLineEnd =
-                          destinationPassengerLineEnds[index];
-                        const stopLabel = isOrigin
-                          ? "ORIGEM"
-                          : isDestination
-                            ? "DESTINO FINAL"
-                            : `${relIdx}ª PARADA`;
-
-                        return (
-                          <div
-                            key={index}
-                            ref={(el) => {
-                              waypointTimelineRefs.current[index] = el;
-                            }}
-                            className="relative group"
-                          >
-                            {!isDestination &&
-                              index < formData.waypoints.length - 1 && (
-                                <div className="absolute -left-[1.125rem] top-8 -bottom-6 w-0.5 bg-slate-300" />
-                              )}
-                            {isDestination && hasPassengers && (
-                              <div
-                                className="absolute -left-[1.125rem] top-8 w-0.5 bg-slate-300"
-                                style={{
-                                  height:
-                                    destinationPassengerLineEnd !== undefined
-                                      ? `${destinationPassengerLineEnd}px`
-                                      : `calc(100% - ${waypoint.passengers.length === 1 ? "94px" : waypoint.passengers.length === 2 ? "70px" : waypoint.passengers.length === 3 ? "82px" : "94px"})`,
-                                }}
-                              />
-                            )}
-                            {/* Timeline Dot (Círculo) */}
-                            <div
-                              className={`absolute -left-[1.625rem] top-2 w-4 h-4 rounded-full border-4 border-white shadow-sm ring-2 z-10 ${isOrigin ? "bg-emerald-500 ring-emerald-100" : isDestination ? "bg-blue-600 ring-blue-100" : "bg-slate-400 ring-slate-100"}`}
-                            />
-
-                            <div className="flex items-start gap-4">
-                              <div className="flex-1 space-y-4">
-                                <div className="space-y-4">
-                                  <div className="flex-1 space-y-3">
-                                    <div className="flex items-center justify-between ml-1 mb-2">
-                                      <label className="text-[10px] font-black uppercase tracking-[0.25em]">
-                                        <div
-                                          className={`inline-flex items-stretch rounded-xl overflow-hidden shadow-sm border text-[10px] md:text-[11px] ${isOrigin ? "bg-emerald-500 border-emerald-400 text-white" : isDestination ? "bg-blue-600 border-blue-500 text-white" : "bg-slate-100 border-slate-200 text-slate-600"}`}
-                                        >
-                                          <span
-                                            className={`px-3 py-1.5 flex items-center justify-center ${isOrigin ? "bg-emerald-600" : isDestination ? "bg-blue-700" : "bg-slate-200 text-slate-700"}`}
-                                          >
-                                            {isOrigin ? (
-                                              <MapPin size={14} />
-                                            ) : isDestination ? (
-                                              <Flag size={14} />
-                                            ) : (
-                                              <Circle size={14} />
-                                            )}
-                                          </span>
-                                          <span className="px-4 py-1.5 font-black tracking-wide text-[11px]">
-                                            {stopLabel}
-                                          </span>
-                                        </div>
-                                      </label>
-                                      {isOrigin && (
-                                        <div className="flex items-center gap-3">
-                                          <div className="flex items-center gap-1.5">
-                                            <Calendar
-                                              size={14}
-                                              className="text-slate-400"
-                                            />
-                                            <input
-                                              type="text"
-                                              value={waypoint.data ?? ""}
-                                              onChange={(e) =>
-                                                handleWaypointDataChange(
-                                                  index,
-                                                  e.target.value,
-                                                )
-                                              }
-                                              onBlur={() =>
-                                                handleWaypointDataBlur(index)
-                                              }
-                                              placeholder="DD/MM/AAAA"
-                                              maxLength={10}
-                                              className="w-[9rem] px-2 py-[5px] bg-white border border-slate-200 rounded-lg text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all tracking-wider font-mono"
-                                            />
-                                          </div>
-                                          <div className="flex items-center gap-1.5">
-                                            <Clock
-                                              size={16}
-                                              className="text-slate-400"
-                                            />
-                                            <input
-                                              type="text"
-                                              value={
-                                                waypoint.hora
-                                                  ? waypoint.hora.slice(0, 5)
-                                                  : ""
-                                              }
-                                              onChange={(e) =>
-                                                handleWaypointHoraChange(
-                                                  index,
-                                                  e.target.value,
-                                                )
-                                              }
-                                              placeholder="HH:MM"
-                                              maxLength={5}
-                                              className="w-[6rem] px-2 py-[5px] bg-white border border-slate-200 rounded-lg text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all tracking-wider font-mono"
-                                            />
-                                          </div>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleAddWaypoint(it.index)
-                                            }
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-xl text-sm font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm cursor-pointer"
-                                          >
-                                            <Plus size={16} /> Parada
-                                          </button>
-                                          {it.index !== 0 && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleRemoveItinerary(it.index)
-                                              }
-                                              className="flex items-center justify-center px-2 py-1.5 bg-red-100 text-red-500 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-red-200 transition-all shadow-sm cursor-pointer"
-                                              title="Remover itinerário/retorno"
-                                            >
-                                              <Minus size={16} />
-                                            </button>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="relative">
-                                      <input
-                                        type="text"
-                                        required
-                                        value={waypoint.label}
-                                        onChange={(e) =>
-                                          handleWaypointChange(
-                                            index,
-                                            e.target.value,
-                                          )
-                                        }
-                                        placeholder={
-                                          isOrigin
-                                            ? "Ex: Hotel H/Niterói"
-                                            : "Próximo destino..."
-                                        }
-                                        className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm pr-36"
-                                      />
-                                      <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            toggleWaypointComment(index)
-                                          }
-                                          className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[index] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
-                                          title="Adicionar observação"
-                                        >
-                                          <MessageSquareMore size={16} />
-                                          {waypoint.comment.trim() && (
-                                            <>
-                                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-ping"></span>
-                                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></span>
-                                            </>
-                                          )}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleAddPassenger(index)
-                                          }
-                                          className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all flex items-center justify-center shadow-sm border border-blue-100 cursor-pointer"
-                                          title="Adicionar Passageiro"
-                                        >
-                                          <Plus size={18} />
-                                        </button>
-                                        {formData.waypoints.length > 2 &&
-                                          !isOrigin &&
-                                          !isDestination && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleRemoveWaypoint(index)
-                                              }
-                                              className="p-2 bg-red-50 text-red-400 rounded-lg hover:bg-red-100 transition-all flex items-center justify-center shadow-sm border border-red-100 cursor-pointer"
-                                              title="Remover Parada"
-                                            >
-                                              <X size={18} />
-                                            </button>
-                                          )}
-                                      </div>
-                                    </div>
-                                    {openWaypointComments[index] && (
-                                      <div className="mt-3 ml-12">
-                                        <textarea
-                                          value={waypoint.comment}
-                                          onChange={(e) =>
-                                            handleWaypointCommentChange(
-                                              index,
-                                              e.target.value,
-                                            )
-                                          }
-                                          rows={2}
-                                          placeholder="Ex: aguardar na portaria, desembarque pela lateral..."
-                                          className="waypoint-observation w-full resize-none rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 outline-none transition-all shadow-sm"
-                                        />
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Linhas de Passageiros */}
-                                {waypoint.passengers &&
-                                  waypoint.passengers.length > 0 && (
-                                    <div className="mt-4 border-t border-dashed border-slate-200">
-                                      {waypoint.passengers.map(
-                                        (passenger, passengerIndex) => (
-                                          <div
-                                            key={passenger.id}
-                                            className={`relative flex items-center gap-4 group/pass ${passengerIndex === 0 ? "mt-6" : "mt-5"} ${passengerIndex === waypoint.passengers.length - 1 ? "mb-10" : "mb-5"}`}
-                                          >
-                                            {/* Linha horizontal da trilha - começa na linha vertical */}
-                                            <div
-                                              data-passenger-line
-                                              className="absolute -left-[1.125rem] top-1/2 -translate-y-1/2 w-12 h-0.5 bg-slate-300 z-10"
-                                            />
-
-                                            {/* Trilhas de passageiro (quadrado) - no final da linha */}
-                                            <div
-                                              className={`absolute left-[1.375rem] top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm border-4 border-white shadow-sm ring-2 z-20 ${isOrigin ? "bg-emerald-500 ring-emerald-100" : isDestination ? "bg-blue-600 ring-blue-100" : "bg-slate-400 ring-slate-100"}`}
-                                            />
-
-                                            <div className="flex-1 flex items-center gap-3 ml-8">
-                                              <div className="w-3/5 ml-6">
-                                                <div className="flex items-center gap-3">
-                                                  <div className="flex-1">
-                                                    <GeologSearchableSelect
-                                                      label=""
-                                                      placeholder="Selecione o passageiro..."
-                                                      onSearch={
-                                                        searchPassageiros
-                                                      }
-                                                      selectedOption={getPassengerOption(
-                                                        passenger.solicitanteId ||
-                                                          "",
-                                                      )}
-                                                      value={
-                                                        passenger.solicitanteId ||
-                                                        ""
-                                                      }
-                                                      onChange={(val) =>
-                                                        handlePassengerChange(
-                                                          index,
-                                                          passenger.id,
-                                                          val,
-                                                        )
-                                                      }
-                                                    />
-                                                  </div>
-                                                  <div className="flex items-center justify-center h-[56px]">
-                                                    <button
-                                                      type="button"
-                                                      onClick={() =>
-                                                        openQuickPassengerModal(
-                                                          index,
-                                                          passenger.id,
-                                                        )
-                                                      }
-                                                      className="p-3 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 transition-all opacity-0 group-hover/pass:opacity-100 flex items-center justify-center shadow-sm border border-blue-200 cursor-pointer"
-                                                      style={{
-                                                        marginBottom: "-5px",
-                                                      }}
-                                                      title="Cadastrar passageiro"
-                                                    >
-                                                      <PlusCircle size={18} />
-                                                    </button>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                              <div className="flex items-center justify-center h-[56px]">
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    handleRemovePassenger(
-                                                      index,
-                                                      passenger.id,
-                                                    )
-                                                  }
-                                                  className="p-3 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover/pass:opacity-100 cursor-pointer"
-                                                  style={{
-                                                    marginBottom: "-5px",
-                                                  }}
-                                                  title="Remover Passageiro"
-                                                >
-                                                  <X size={18} />
-                                                </button>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        ),
-                                      )}
-                                    </div>
-                                  )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                  <div className="flex flex-col md:flex-row gap-8">
+                    <div className="space-y-2.5 w-full md:w-[80%]">
+                      <GeologSearchableSelect
+                        label="Empresa / Cliente Final"
+                        options={clientes}
+                        value={formData.clienteId}
+                        onChange={handleClienteChange}
+                        required
+                      />
                     </div>
-                  ))}
+                    <div className="space-y-2.5 w-full md:w-[20%]">
+                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1">
+                        OS{" "}
+                        <span className="text-slate-400 text-xs font-normal normal-case tracking-normal">
+                          Opcional
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        name="os"
+                        value={formData.os}
+                        onChange={handleInputChange}
+                        placeholder="Ex: 9988"
+                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase placeholder:text-slate-300 shadow-sm -mt-[6px]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <GeologSearchableSelect
+                      label="Solicitante Responsável"
+                      options={availableSolicitantes.map((s) => ({
+                        id: s.id,
+                        nome: s.nome,
+                      }))}
+                      value={
+                        formData.solicitanteId ||
+                        availableSolicitantes.find(
+                          (s) => s.nome === formData.solicitante,
+                        )?.id ||
+                        ""
+                      }
+                      onChange={(id) => {
+                        const opt = availableSolicitantes.find(
+                          (s) => s.id === id,
+                        );
+                        setFormData((prev) => ({
+                          ...prev,
+                          solicitanteId: id,
+                          solicitante: opt?.nome || "",
+                        }));
+                      }}
+                      disabled={!formData.clienteId}
+                      required
+                      onQuickAdd={handleQuickAddSolicitante}
+                    />
+                    <GeologSearchableSelect
+                      label="Centro de Custo"
+                      options={availableCentrosCusto.map((c) => ({
+                        id: c.id,
+                        nome: c.nome,
+                      }))}
+                      value={
+                        availableCentrosCusto.find(
+                          (c) => c.id === formData.centroCusto,
+                        )?.id || ""
+                      }
+                      onChange={(id) => {
+                        setFormData((prev) => ({ ...prev, centroCusto: id }));
+                      }}
+                      disabled={!formData.clienteId}
+                      onQuickAdd={handleQuickAddCentroCusto}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <GeologSearchableSelect
+                      label="Motorista Alocado"
+                      options={driverOptions}
+                      value={formData.driverId || ""}
+                      onChange={(id) => {
+                        const opt = driverOptions.find((m) => m.id === id);
+                        setFormData((prev) => ({
+                          ...prev,
+                          driverId: id,
+                          motorista: opt?.nome || "",
+                          veiculoId: "",
+                        }));
+                      }}
+                      required
+                      onQuickAdd={handleQuickAddMotorista}
+                    />
+                    <GeologSearchableSelect
+                      label="Veículo de Uso"
+                      options={selectedDriverVehicleOptions}
+                      value={formData.veiculoId}
+                      onChange={(id) =>
+                        setFormData((prev) => ({ ...prev, veiculoId: id }))
+                      }
+                      required
+                      disabled={!formData.motorista}
+                      onQuickAdd={handleQuickAddVeiculo}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
                 </div>
 
-                <div className="flex items-center gap-4 mt-12">
+                <div className="flex items-center gap-4">
                   <div className="flex-1 border-t-2 border-dashed border-slate-300" />
                   <div className="w-2 h-2 rounded-full bg-slate-300" />
                   <div className="flex-1 border-t-2 border-dashed border-slate-300" />
                 </div>
 
-                {/* 3. RESUMO FINANCEIRO */}
-                <div className="space-y-8 mt-8">
-                  <div className="flex items-center border-b-2 border-slate-100 pb-4">
-                    <h3 className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3">
-                      <FileText size={20} className="text-emerald-600" /> Resumo
-                      Financeiro
+                {/* 2. ITINERÁRIO */}
+                {/* 2. ITINERÁRIO DINÂMICO */}
+                <div className="space-y-8">
+                  <div
+                    className="flex items-center justify-between border-b-2 border-slate-100 pb-4"
+                    style={{ paddingBottom: "1.25rem" }}
+                  >
+                    <h3
+                      className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-2"
+                      style={{ lineHeight: "1.3" }}
+                    >
+                      <MapPin size={20} className="text-blue-600" />
+                      {getItinerarySectionTitle()}
                     </h3>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAddItinerary}
+                        className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-200 transition-all shadow-sm cursor-pointer"
+                      >
+                        <Plus size={16} /> ITINERÁRIO
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAddReturn}
+                        className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-purple-200 transition-all shadow-sm cursor-pointer"
+                      >
+                        <Plus size={16} /> RETORNO
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap items-end gap-10">
-                    <div className="flex flex-col gap-2 w-full sm:w-[220px]">
-                      <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                        Valor Bruto
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          name="valorBruto"
-                          step="0.01"
-                          value={formData.valorBruto ?? ""}
-                          onChange={handleInputChange}
-                          className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-lg text-blue-700 outline-none tabular-nums focus:bg-white focus:border-blue-600 transition-all shadow-sm"
-                        />
+                  <div className="relative pl-8 space-y-6">
+                    {formItineraries.map((it) => (
+                      <div key={it.index} className="space-y-6">
+                        {formItineraries.length > 1 && (
+                          <h4
+                            className={`flex items-center gap-2 mb-6 ${it.index === 0 ? "mt-6" : "mt-20"}`}
+                          >
+                            {it.index < 0 ? (
+                              <ArrowLeft
+                                size={18}
+                                className="text-purple-500"
+                              />
+                            ) : (
+                              <ArrowRight
+                                size={18}
+                                className="text-amber-500"
+                              />
+                            )}
+                            <span
+                              className={`inline-flex items-center justify-center w-8 h-8 rounded-xl text-sm font-black shadow-sm ${it.index < 0 ? "bg-purple-100 text-purple-700 ring-2 ring-purple-200" : "bg-amber-100 text-amber-700 ring-2 ring-amber-200"}`}
+                            >
+                              {it.index < 0 ? Math.abs(it.index) : it.index + 1}
+                            </span>
+                            <span
+                              className={`text-[13px] font-black uppercase tracking-[0.15em] ${it.index < 0 ? "text-purple-700" : "text-amber-700"}`}
+                            >
+                              {getItineraryTitle(it.index)}
+                            </span>
+                          </h4>
+                        )}
+                        {it.waypointIndices.map((index, relIdx) => {
+                          const waypoint = formData.waypoints[index];
+                          const isOrigin = relIdx === 0;
+                          const isDestination =
+                            relIdx === it.waypointIndices.length - 1;
+                          const hasPassengers =
+                            (waypoint.passengers?.length || 0) > 0;
+                          const destinationPassengerLineEnd =
+                            destinationPassengerLineEnds[index];
+                          const stopLabel = isOrigin
+                            ? "ORIGEM"
+                            : isDestination
+                              ? "DESTINO FINAL"
+                              : `${relIdx}ª PARADA`;
+
+                          return (
+                            <div
+                              key={index}
+                              ref={(el) => {
+                                waypointTimelineRefs.current[index] = el;
+                              }}
+                              className="relative group"
+                            >
+                              {!isDestination &&
+                                index < formData.waypoints.length - 1 && (
+                                  <div className="absolute -left-[1.125rem] top-8 -bottom-6 w-0.5 bg-slate-300" />
+                                )}
+                              {isDestination && hasPassengers && (
+                                <div
+                                  className="absolute -left-[1.125rem] top-8 w-0.5 bg-slate-300"
+                                  style={{
+                                    height:
+                                      destinationPassengerLineEnd !== undefined
+                                        ? `${destinationPassengerLineEnd}px`
+                                        : `calc(100% - ${waypoint.passengers.length === 1 ? "94px" : waypoint.passengers.length === 2 ? "70px" : waypoint.passengers.length === 3 ? "82px" : "94px"})`,
+                                  }}
+                                />
+                              )}
+                              {/* Timeline Dot (Círculo) */}
+                              <div
+                                className={`absolute -left-[1.625rem] top-2 w-4 h-4 rounded-full border-4 border-white shadow-sm ring-2 z-10 ${isOrigin ? "bg-emerald-500 ring-emerald-100" : isDestination ? "bg-blue-600 ring-blue-100" : "bg-slate-400 ring-slate-100"}`}
+                              />
+
+                              <div className="flex items-start gap-4">
+                                <div className="flex-1 space-y-4">
+                                  <div className="space-y-4">
+                                    <div className="flex-1 space-y-3">
+                                      <div className="flex items-center justify-between ml-1 mb-2">
+                                        <label className="text-[10px] font-black uppercase tracking-[0.25em]">
+                                          <div
+                                            className={`inline-flex items-stretch rounded-xl overflow-hidden shadow-sm border text-[10px] md:text-[11px] ${isOrigin ? "bg-emerald-500 border-emerald-400 text-white" : isDestination ? "bg-blue-600 border-blue-500 text-white" : "bg-slate-100 border-slate-200 text-slate-600"}`}
+                                          >
+                                            <span
+                                              className={`px-3 py-1.5 flex items-center justify-center ${isOrigin ? "bg-emerald-600" : isDestination ? "bg-blue-700" : "bg-slate-200 text-slate-700"}`}
+                                            >
+                                              {isOrigin ? (
+                                                <MapPin size={14} />
+                                              ) : isDestination ? (
+                                                <Flag size={14} />
+                                              ) : (
+                                                <Circle size={14} />
+                                              )}
+                                            </span>
+                                            <span className="px-4 py-1.5 font-black tracking-wide text-[11px]">
+                                              {stopLabel}
+                                            </span>
+                                          </div>
+                                        </label>
+                                        {isOrigin && (
+                                          <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-1.5">
+                                              <Calendar
+                                                size={14}
+                                                className="text-slate-400"
+                                              />
+                                              <input
+                                                type="text"
+                                                value={waypoint.data ?? ""}
+                                                onChange={(e) =>
+                                                  handleWaypointDataChange(
+                                                    index,
+                                                    e.target.value,
+                                                  )
+                                                }
+                                                onBlur={() =>
+                                                  handleWaypointDataBlur(index)
+                                                }
+                                                placeholder="DD/MM/AAAA"
+                                                maxLength={10}
+                                                className="w-[9rem] px-2 py-[5px] bg-white border border-slate-200 rounded-lg text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all tracking-wider font-mono"
+                                              />
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                              <Clock
+                                                size={16}
+                                                className="text-slate-400"
+                                              />
+                                              <input
+                                                type="text"
+                                                value={
+                                                  waypoint.hora
+                                                    ? waypoint.hora.slice(0, 5)
+                                                    : ""
+                                                }
+                                                onChange={(e) =>
+                                                  handleWaypointHoraChange(
+                                                    index,
+                                                    e.target.value,
+                                                  )
+                                                }
+                                                placeholder="HH:MM"
+                                                maxLength={5}
+                                                className="w-[6rem] px-2 py-[5px] bg-white border border-slate-200 rounded-lg text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all tracking-wider font-mono"
+                                              />
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleAddWaypoint(it.index)
+                                              }
+                                              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-xl text-sm font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm cursor-pointer"
+                                            >
+                                              <Plus size={16} /> Parada
+                                            </button>
+                                            {it.index !== 0 && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleRemoveItinerary(
+                                                    it.index,
+                                                  )
+                                                }
+                                                className="flex items-center justify-center px-2 py-1.5 bg-red-100 text-red-500 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-red-200 transition-all shadow-sm cursor-pointer"
+                                                title="Remover itinerário/retorno"
+                                              >
+                                                <Minus size={16} />
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="relative">
+                                        <input
+                                          type="text"
+                                          required
+                                          value={waypoint.label}
+                                          onChange={(e) =>
+                                            handleWaypointChange(
+                                              index,
+                                              e.target.value,
+                                            )
+                                          }
+                                          placeholder={
+                                            isOrigin
+                                              ? "Ex: Hotel H/Niterói"
+                                              : "Próximo destino..."
+                                          }
+                                          className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm pr-36"
+                                        />
+                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              toggleWaypointComment(index)
+                                            }
+                                            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[index] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
+                                            title="Adicionar observação"
+                                          >
+                                            <MessageSquareMore size={16} />
+                                            {waypoint.comment.trim() && (
+                                              <>
+                                                <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-ping"></span>
+                                                <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></span>
+                                              </>
+                                            )}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleAddPassenger(index)
+                                            }
+                                            className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all flex items-center justify-center shadow-sm border border-blue-100 cursor-pointer"
+                                            title="Adicionar Passageiro"
+                                          >
+                                            <Plus size={18} />
+                                          </button>
+                                          {formData.waypoints.length > 2 &&
+                                            !isOrigin &&
+                                            !isDestination && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleRemoveWaypoint(index)
+                                                }
+                                                className="p-2 bg-red-50 text-red-400 rounded-lg hover:bg-red-100 transition-all flex items-center justify-center shadow-sm border border-red-100 cursor-pointer"
+                                                title="Remover Parada"
+                                              >
+                                                <X size={18} />
+                                              </button>
+                                            )}
+                                        </div>
+                                      </div>
+                                      {openWaypointComments[index] && (
+                                        <div className="mt-3 ml-12">
+                                          <textarea
+                                            value={waypoint.comment}
+                                            onChange={(e) =>
+                                              handleWaypointCommentChange(
+                                                index,
+                                                e.target.value,
+                                              )
+                                            }
+                                            rows={2}
+                                            placeholder="Ex: aguardar na portaria, desembarque pela lateral..."
+                                            className="waypoint-observation w-full resize-none rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 outline-none transition-all shadow-sm"
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Linhas de Passageiros */}
+                                  {waypoint.passengers &&
+                                    waypoint.passengers.length > 0 && (
+                                      <div className="mt-4 border-t border-dashed border-slate-200">
+                                        {waypoint.passengers.map(
+                                          (passenger, passengerIndex) => (
+                                            <div
+                                              key={passenger.id}
+                                              className={`relative flex items-center gap-4 group/pass ${passengerIndex === 0 ? "mt-6" : "mt-5"} ${passengerIndex === waypoint.passengers.length - 1 ? "mb-10" : "mb-5"}`}
+                                            >
+                                              {/* Linha horizontal da trilha - começa na linha vertical */}
+                                              <div
+                                                data-passenger-line
+                                                className="absolute -left-[1.125rem] top-1/2 -translate-y-1/2 w-12 h-0.5 bg-slate-300 z-10"
+                                              />
+
+                                              {/* Trilhas de passageiro (quadrado) - no final da linha */}
+                                              <div
+                                                className={`absolute left-[1.375rem] top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm border-4 border-white shadow-sm ring-2 z-20 ${isOrigin ? "bg-emerald-500 ring-emerald-100" : isDestination ? "bg-blue-600 ring-blue-100" : "bg-slate-400 ring-slate-100"}`}
+                                              />
+
+                                              <div className="flex-1 flex items-center gap-3 ml-8">
+                                                <div className="w-3/5 ml-6">
+                                                  <div className="flex items-center gap-3">
+                                                    <div className="flex-1">
+                                                      <GeologSearchableSelect
+                                                        label=""
+                                                        placeholder="Selecione o passageiro..."
+                                                        onSearch={
+                                                          searchPassageiros
+                                                        }
+                                                        selectedOption={getPassengerOption(
+                                                          passenger.solicitanteId ||
+                                                            "",
+                                                        )}
+                                                        value={
+                                                          passenger.solicitanteId ||
+                                                          ""
+                                                        }
+                                                        onChange={(val) =>
+                                                          handlePassengerChange(
+                                                            index,
+                                                            passenger.id,
+                                                            val,
+                                                          )
+                                                        }
+                                                      />
+                                                    </div>
+                                                    <div className="flex items-center justify-center h-[56px]">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                          openQuickPassengerModal(
+                                                            index,
+                                                            passenger.id,
+                                                          )
+                                                        }
+                                                        className="p-3 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 transition-all opacity-0 group-hover/pass:opacity-100 flex items-center justify-center shadow-sm border border-blue-200 cursor-pointer"
+                                                        style={{
+                                                          marginBottom: "-5px",
+                                                        }}
+                                                        title="Cadastrar passageiro"
+                                                      >
+                                                        <PlusCircle size={18} />
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                                <div className="flex items-center justify-center h-[56px]">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      handleRemovePassenger(
+                                                        index,
+                                                        passenger.id,
+                                                      )
+                                                    }
+                                                    className="p-3 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover/pass:opacity-100 cursor-pointer"
+                                                    style={{
+                                                      marginBottom: "-5px",
+                                                    }}
+                                                    title="Remover Passageiro"
+                                                  >
+                                                    <X size={18} />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ),
+                                        )}
+                                      </div>
+                                    )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-4 mt-12">
+                    <div className="flex-1 border-t-2 border-dashed border-slate-300" />
+                    <div className="w-2 h-2 rounded-full bg-slate-300" />
+                    <div className="flex-1 border-t-2 border-dashed border-slate-300" />
+                  </div>
+
+                  {/* 3. RESUMO FINANCEIRO */}
+                  <div className="space-y-8 mt-8">
+                    <div className="flex items-center border-b-2 border-slate-100 pb-4">
+                      <h3 className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3">
+                        <FileText size={20} className="text-emerald-600" />{" "}
+                        Resumo Financeiro
+                      </h3>
                     </div>
 
-                    <div className="flex flex-col gap-2 w-full sm:w-[220px]">
-                      <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                        Repasse ao Motorista
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          name="custo"
-                          step="0.01"
-                          value={formData.custo ?? ""}
-                          onChange={handleInputChange}
-                          className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-lg text-red-500 outline-none tabular-nums focus:bg-white focus:border-red-300 transition-all shadow-sm"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2 w-full sm:w-[120px]">
-                      <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                        Hora Extra
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          name="horaExtra"
-                          placeholder="00:00"
-                          value={formData.horaExtra}
-                          onChange={handleInputChange}
-                          className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm"
-                        />
-                      </div>
-                    </div>
-
-                    <div
-                      className={`flex items-end gap-6 pt-4 px-6 pb-8 rounded-[1.5rem] border transition-all duration-300 mb-[-2rem] ${formData.noShow ? "bg-red-50 border-red-200 shadow-sm" : "border-transparent"}`}
-                    >
-                      <div className="flex flex-col gap-2 w-full sm:w-[120px]">
+                    <div className="flex flex-wrap items-end gap-10">
+                      <div className="flex flex-col gap-2 w-full sm:w-[220px]">
                         <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                          NO-SHOW
+                          Valor Bruto
                         </label>
                         <div className="relative">
-                          <select
-                            name="noShow"
-                            value={formData.noShow ? "sim" : "nao"}
+                          <input
+                            type="number"
+                            name="valorBruto"
+                            step="0.01"
+                            value={formData.valorBruto ?? ""}
                             onChange={handleInputChange}
-                            className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm cursor-pointer appearance-none pr-10"
-                          >
-                            <option value="nao">Não</option>
-                            <option value="sim">Sim</option>
-                          </select>
-                          <ChevronDown
-                            size={18}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                            className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-lg text-blue-700 outline-none tabular-nums focus:bg-white focus:border-blue-600 transition-all shadow-sm"
                           />
                         </div>
                       </div>
 
-                      {formData.noShow && (
-                        <div className="flex flex-col gap-2 w-full sm:w-[130px] animate-in fade-in slide-in-from-left-2 duration-500">
+                      <div className="flex flex-col gap-2 w-full sm:w-[220px]">
+                        <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
+                          Repasse ao Motorista
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            name="custo"
+                            step="0.01"
+                            value={formData.custo ?? ""}
+                            onChange={handleInputChange}
+                            className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-lg text-red-500 outline-none tabular-nums focus:bg-white focus:border-red-300 transition-all shadow-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2 w-full sm:w-[120px]">
+                        <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
+                          Hora Extra
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            name="horaExtra"
+                            placeholder="00:00"
+                            value={formData.horaExtra}
+                            onChange={handleInputChange}
+                            className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div
+                        className={`flex items-end gap-6 pt-4 px-6 pb-8 rounded-[1.5rem] border transition-all duration-300 mb-[-2rem] ${formData.noShow ? "bg-red-50 border-red-200 shadow-sm" : "border-transparent"}`}
+                      >
+                        <div className="flex flex-col gap-2 w-full sm:w-[120px]">
                           <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                            Cobrança de
+                            NO-SHOW
                           </label>
                           <div className="relative">
                             <select
-                              name="noShowPercentual"
-                              value={
-                                formData.noShowPercentual !== null
-                                  ? String(formData.noShowPercentual)
-                                  : ""
-                              }
+                              name="noShow"
+                              value={formData.noShow ? "sim" : "nao"}
                               onChange={handleInputChange}
                               className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm cursor-pointer appearance-none pr-10"
                             >
-                              <option value="" disabled>
-                                Selecione
-                              </option>
-                              <option value="50">50%</option>
-                              <option value="100">100%</option>
+                              <option value="nao">Não</option>
+                              <option value="sim">Sim</option>
                             </select>
                             <ChevronDown
                               size={18}
@@ -7178,250 +7416,282 @@ export default function OSOperationalPage() {
                             />
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
 
-                  <div
-                    className={`flex flex-col gap-2 transition-all duration-300 ${formData.noShow ? "mt-14" : ""}`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setShowObsFinanceiras((prev) => !prev)}
-                      className="flex items-center justify-between w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl hover:bg-slate-100 transition-all cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <MessageSquareMore
-                          size={18}
-                          className="text-slate-400 group-hover:text-blue-500 transition-colors"
-                        />
-                        <span className="text-sm font-bold text-slate-800 uppercase tracking-tight">
-                          Observações Financeiras
-                        </span>
-                        {formData.obsFinanceiras && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-wider">
-                            Preenchido
-                          </span>
+                        {formData.noShow && (
+                          <div className="flex flex-col gap-2 w-full sm:w-[130px] animate-in fade-in slide-in-from-left-2 duration-500">
+                            <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
+                              Cobrança de
+                            </label>
+                            <div className="relative">
+                              <select
+                                name="noShowPercentual"
+                                value={
+                                  formData.noShowPercentual !== null
+                                    ? String(formData.noShowPercentual)
+                                    : ""
+                                }
+                                onChange={handleInputChange}
+                                className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm cursor-pointer appearance-none pr-10"
+                              >
+                                <option value="" disabled>
+                                  Selecione
+                                </option>
+                                <option value="50">50%</option>
+                                <option value="100">100%</option>
+                              </select>
+                              <ChevronDown
+                                size={18}
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                              />
+                            </div>
+                          </div>
                         )}
                       </div>
-                      <ChevronDown
-                        size={20}
-                        className={`text-slate-400 transition-transform duration-300 ${showObsFinanceiras ? "rotate-180" : ""}`}
-                      />
-                    </button>
+                    </div>
 
-                    {showObsFinanceiras && (
-                      <div className="animate-in slide-in-from-top-2 duration-300">
-                        <textarea
-                          name="obsFinanceiras"
-                          value={formData.obsFinanceiras ?? ""}
-                          onChange={handleInputChange}
-                          rows={3}
-                          placeholder="Adicione observações de cunho financeiro..."
-                          className="w-full bg-slate-50 border-2 border-slate-200 px-6 py-4 rounded-xl font-medium text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm resize-none"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <div
-                    className={`p-8 md:p-10 rounded-[2.5rem] ${currentLucro >= 0 ? "bg-emerald-600 shadow-emerald-900/10" : "bg-red-600 shadow-red-900/10"} text-white shadow-2xl transition-all duration-500`}
-                  >
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base font-black uppercase tracking-[0.2em]">
-                            Valor Total a Cobrar
+                    <div
+                      className={`flex flex-col gap-2 transition-all duration-300 ${formData.noShow ? "mt-14" : ""}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setShowObsFinanceiras((prev) => !prev)}
+                        className="flex items-center justify-between w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl hover:bg-slate-100 transition-all cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <MessageSquareMore
+                            size={18}
+                            className="text-slate-400 group-hover:text-blue-500 transition-colors"
+                          />
+                          <span className="text-sm font-bold text-slate-800 uppercase tracking-tight">
+                            Observações Financeiras
                           </span>
+                          {formData.obsFinanceiras && (
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-wider">
+                              Preenchido
+                            </span>
+                          )}
                         </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <p className="text-5xl font-black tracking-tighter tabular-nums leading-none">
-                            {formData.noShow
-                              ? formatCurrency(currentBaseCobranca)
-                              : formatCurrency(totalEfetivoCliente)}
-                          </p>
-                          <div className="flex items-start gap-3 -mt-2">
-                            <div className="animate-pulse mt-5">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width={32}
-                                height={32}
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth={2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="lucide lucide-arrow-right opacity-80"
-                              >
-                                <path d="M5 12h14" />
-                                <path d="m12 5 7 7-7 7" />
-                              </svg>
-                            </div>
-                            <div className="text-right space-y-2 -mt-1">
-                              <span className="text-xs font-black uppercase block tracking-widest opacity-80">
-                                Valor Líquido Estimado
-                              </span>
-                              <div className="px-5 py-2 bg-white/20 rounded-xl text-2xl font-black tabular-nums backdrop-blur-md leading-none">
-                                {formatCurrency(currentLucro)}
+                        <ChevronDown
+                          size={20}
+                          className={`text-slate-400 transition-transform duration-300 ${showObsFinanceiras ? "rotate-180" : ""}`}
+                        />
+                      </button>
+
+                      {showObsFinanceiras && (
+                        <div className="animate-in slide-in-from-top-2 duration-300">
+                          <textarea
+                            name="obsFinanceiras"
+                            value={formData.obsFinanceiras ?? ""}
+                            onChange={handleInputChange}
+                            rows={3}
+                            placeholder="Adicione observações de cunho financeiro..."
+                            className="w-full bg-slate-50 border-2 border-slate-200 px-6 py-4 rounded-xl font-medium text-base text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm resize-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div
+                      className={`p-8 md:p-10 rounded-[2.5rem] ${currentLucro >= 0 ? "bg-emerald-600 shadow-emerald-900/10" : "bg-red-600 shadow-red-900/10"} text-white shadow-2xl transition-all duration-500`}
+                    >
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base font-black uppercase tracking-[0.2em]">
+                              Valor Total a Cobrar
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between mt-2">
+                            <p className="text-5xl font-black tracking-tighter tabular-nums leading-none">
+                              {formData.noShow
+                                ? formatCurrency(currentBaseCobranca)
+                                : formatCurrency(totalEfetivoCliente)}
+                            </p>
+                            <div className="flex items-start gap-3 -mt-2">
+                              <div className="animate-pulse mt-5">
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width={32}
+                                  height={32}
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth={2}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  className="lucide lucide-arrow-right opacity-80"
+                                >
+                                  <path d="M5 12h14" />
+                                  <path d="m12 5 7 7-7 7" />
+                                </svg>
                               </div>
-                              <div className="text-xs font-black uppercase tracking-widest opacity-100">
-                                {currentBaseCobranca > 0
-                                  ? (
-                                      (currentLucro / currentBaseCobranca) *
-                                      100
-                                    ).toFixed(1)
-                                  : 0}
-                                %{" "}
-                                <span className="text-[10px] font-medium opacity-70">
-                                  de lucro
+                              <div className="text-right space-y-2 -mt-1">
+                                <span className="text-xs font-black uppercase block tracking-widest opacity-80">
+                                  Valor Líquido Estimado
                                 </span>
+                                <div className="px-5 py-2 bg-white/20 rounded-xl text-2xl font-black tabular-nums backdrop-blur-md leading-none">
+                                  {formatCurrency(currentLucro)}
+                                </div>
+                                <div className="text-xs font-black uppercase tracking-widest opacity-100">
+                                  {currentBaseCobranca > 0
+                                    ? (
+                                        (currentLucro / currentBaseCobranca) *
+                                        100
+                                      ).toFixed(1)
+                                    : 0}
+                                  %{" "}
+                                  <span className="text-[10px] font-medium opacity-70">
+                                    de lucro
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Detalhe: Valores */}
-                        <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-3">
-                          <div className="grid grid-cols-2 gap-5">
-                            <div className="bg-white/10 rounded-xl px-4 py-4 space-y-3">
-                              <p className="text-sm font-black uppercase tracking-widest opacity-100 mb-3 flex items-center gap-2">
-                                <User size={16} />
-                                Fatura do Cliente
-                              </p>
+                          {/* Detalhe: Valores */}
+                          <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-3">
+                            <div className="grid grid-cols-2 gap-5">
+                              <div className="bg-white/10 rounded-xl px-4 py-4 space-y-3">
+                                <p className="text-sm font-black uppercase tracking-widest opacity-100 mb-3 flex items-center gap-2">
+                                  <User size={16} />
+                                  Fatura do Cliente
+                                </p>
 
-                              {/* Base */}
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="font-medium opacity-90">
-                                  Valor base do serviço
-                                </span>
-                                <span className="font-black tabular-nums">
-                                  {formData.noShow
-                                    ? formatCurrency(totalEfetivoCliente)
-                                    : formatCurrency(formData.valorBruto ?? 0)}
-                                </span>
-                              </div>
+                                {/* Base */}
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="font-medium opacity-90">
+                                    Valor base do serviço
+                                  </span>
+                                  <span className="font-black tabular-nums">
+                                    {formData.noShow
+                                      ? formatCurrency(totalEfetivoCliente)
+                                      : formatCurrency(
+                                          formData.valorBruto ?? 0,
+                                        )}
+                                  </span>
+                                </div>
 
-                              {/* No-show desconto */}
-                              {formData.noShow && (
+                                {/* No-show desconto */}
+                                {formData.noShow && (
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="font-medium opacity-80">
+                                      Desconto NO-SHOW (
+                                      {formData.noShowPercentual ?? 0}%)
+                                    </span>
+                                    <span className="font-black tabular-nums text-red-200">
+                                      -
+                                      {formatCurrency(
+                                        (formData.noShow
+                                          ? totalEfetivoCliente
+                                          : (formData.valorBruto ?? 0)) *
+                                          ((formData.noShowPercentual ?? 0) /
+                                            100),
+                                      )}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Hora extra */}
+                                {horaExtraBilledMinutes > 0 && (
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="flex items-center gap-1.5 font-medium opacity-90">
+                                      <Clock
+                                        size={14}
+                                        className="text-yellow-200"
+                                      />
+                                      Acréscimo hora extra (
+                                      {horaExtraBilledLabel})
+                                    </span>
+                                    <span className="font-black tabular-nums text-yellow-200">
+                                      +{formatCurrency(horaExtraClienteValor)}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Taxa */}
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="font-medium opacity-80">
-                                    Desconto NO-SHOW (
-                                    {formData.noShowPercentual ?? 0}%)
+                                    Taxa administrativa ({impostoPercentual}%)
                                   </span>
                                   <span className="font-black tabular-nums text-red-200">
                                     -
                                     {formatCurrency(
                                       (formData.noShow
-                                        ? totalEfetivoCliente
-                                        : (formData.valorBruto ?? 0)) *
-                                        ((formData.noShowPercentual ?? 0) /
-                                          100),
+                                        ? currentBaseCobranca
+                                        : totalEfetivoCliente) *
+                                        (impostoPercentual / 100),
                                     )}
                                   </span>
                                 </div>
-                              )}
-
-                              {/* Hora extra */}
-                              {horaExtraBilledMinutes > 0 && (
-                                <div className="flex justify-between items-center text-sm">
-                                  <span className="flex items-center gap-1.5 font-medium opacity-90">
-                                    <Clock
-                                      size={14}
-                                      className="text-yellow-200"
-                                    />
-                                    Acréscimo hora extra ({horaExtraBilledLabel}
-                                    )
-                                  </span>
-                                  <span className="font-black tabular-nums text-yellow-200">
-                                    +{formatCurrency(horaExtraClienteValor)}
-                                  </span>
-                                </div>
-                              )}
-
-                              {/* Taxa */}
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="font-medium opacity-80">
-                                  Taxa administrativa ({impostoPercentual}%)
-                                </span>
-                                <span className="font-black tabular-nums text-red-200">
-                                  -
-                                  {formatCurrency(
-                                    (formData.noShow
-                                      ? currentBaseCobranca
-                                      : totalEfetivoCliente) *
-                                      (impostoPercentual / 100),
-                                  )}
-                                </span>
                               </div>
-                            </div>
-                            <div className="bg-white/10 rounded-xl px-4 py-4 space-y-3">
-                              <p className="text-sm font-black uppercase tracking-widest opacity-100 mb-3 flex items-center gap-2">
-                                <Truck size={16} />
-                                Repasse ao Motorista
-                              </p>
+                              <div className="bg-white/10 rounded-xl px-4 py-4 space-y-3">
+                                <p className="text-sm font-black uppercase tracking-widest opacity-100 mb-3 flex items-center gap-2">
+                                  <Truck size={16} />
+                                  Repasse ao Motorista
+                                </p>
 
-                              {/* Base */}
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="font-medium opacity-90">
-                                  Valor base do repasse
-                                </span>
-                                <span className="font-black tabular-nums">
-                                  {formData.noShow
-                                    ? formatCurrency(totalEfetivoMotorista)
-                                    : formatCurrency(formData.custo ?? 0)}
-                                </span>
-                              </div>
-
-                              {/* No-show desconto */}
-                              {formData.noShow && (
+                                {/* Base */}
                                 <div className="flex justify-between items-center text-sm">
-                                  <span className="font-medium opacity-80">
-                                    Desconto NO-SHOW (
-                                    {formData.noShowPercentual ?? 0}%)
+                                  <span className="font-medium opacity-90">
+                                    Valor base do repasse
                                   </span>
-                                  <span className="font-black tabular-nums text-red-200">
-                                    -
-                                    {formatCurrency(
-                                      (formData.noShow
-                                        ? totalEfetivoMotorista
-                                        : (formData.custo ?? 0)) *
-                                        ((formData.noShowPercentual ?? 0) /
-                                          100),
-                                    )}
+                                  <span className="font-black tabular-nums">
+                                    {formData.noShow
+                                      ? formatCurrency(totalEfetivoMotorista)
+                                      : formatCurrency(formData.custo ?? 0)}
                                   </span>
                                 </div>
-                              )}
 
-                              {/* Hora extra */}
-                              {horaExtraBilledMinutes > 0 && (
-                                <div className="flex justify-between items-center text-sm">
-                                  <span className="flex items-center gap-1.5 font-medium opacity-90">
-                                    <Clock
-                                      size={14}
-                                      className="text-yellow-200"
-                                    />
-                                    Acréscimo hora extra ({horaExtraBilledLabel}
-                                    )
+                                {/* No-show desconto */}
+                                {formData.noShow && (
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="font-medium opacity-80">
+                                      Desconto NO-SHOW (
+                                      {formData.noShowPercentual ?? 0}%)
+                                    </span>
+                                    <span className="font-black tabular-nums text-red-200">
+                                      -
+                                      {formatCurrency(
+                                        (formData.noShow
+                                          ? totalEfetivoMotorista
+                                          : (formData.custo ?? 0)) *
+                                          ((formData.noShowPercentual ?? 0) /
+                                            100),
+                                      )}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Hora extra */}
+                                {horaExtraBilledMinutes > 0 && (
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="flex items-center gap-1.5 font-medium opacity-90">
+                                      <Clock
+                                        size={14}
+                                        className="text-yellow-200"
+                                      />
+                                      Acréscimo hora extra (
+                                      {horaExtraBilledLabel})
+                                    </span>
+                                    <span className="font-black tabular-nums text-yellow-200">
+                                      +{formatCurrency(horaExtraMotoristaValor)}
+                                    </span>
+                                  </div>
+                                )}
+
+                                <div className="h-px bg-white/30 my-1" />
+
+                                {/* Total */}
+                                <div className="flex justify-between items-baseline">
+                                  <span className="text-xs font-black uppercase tracking-[0.2em] opacity-80">
+                                    Total a repassar
                                   </span>
-                                  <span className="font-black tabular-nums text-yellow-200">
-                                    +{formatCurrency(horaExtraMotoristaValor)}
+                                  <span className="text-2xl font-black tabular-nums">
+                                    {formData.noShow
+                                      ? formatCurrency(repasseEfetivo)
+                                      : formatCurrency(totalEfetivoMotorista)}
                                   </span>
                                 </div>
-                              )}
-
-                              <div className="h-px bg-white/30 my-1" />
-
-                              {/* Total */}
-                              <div className="flex justify-between items-baseline">
-                                <span className="text-xs font-black uppercase tracking-[0.2em] opacity-80">
-                                  Total a repassar
-                                </span>
-                                <span className="text-2xl font-black tabular-nums">
-                                  {formData.noShow
-                                    ? formatCurrency(repasseEfetivo)
-                                    : formatCurrency(totalEfetivoMotorista)}
-                                </span>
                               </div>
                             </div>
                           </div>
@@ -7431,8 +7701,332 @@ export default function OSOperationalPage() {
                   </div>
                 </div>
               </div>
-            </div>
-          </form>
+            </form>
+          )}
+          {osCreationType === "docagem" && (
+            <form
+              id="nova-docagem-form"
+              onSubmit={handleDocagemSubmit}
+              className="min-h-0 relative"
+            >
+              <div
+                className="space-y-12"
+                style={{ paddingTop: "0.5rem", paddingBottom: "2rem" }}
+              >
+                {/* 1. DETALHES DA EXECUÇÃO */}
+                <div className="space-y-8">
+                  <div
+                    className="flex items-center border-b-2 border-slate-100 pb-4"
+                    style={{ paddingBottom: "1.25rem" }}
+                  >
+                    <h3
+                      className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                      style={{ lineHeight: "1.3" }}
+                    >
+                      <Users size={20} className="text-slate-500" /> Detalhes da
+                      Execução
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                    <GeologSearchableSelect
+                      label="Cliente"
+                      options={[
+                        { id: "", nome: "Selecione..." },
+                        ...clientes.map((c) => ({ id: c.id, nome: c.nome })),
+                      ]}
+                      value={docagemFormData.clienteId}
+                      onChange={(id) =>
+                        setDocagemFormData((prev) => ({
+                          ...prev,
+                          clienteId: id,
+                          centroCustoId: null,
+                          solicitanteId: null,
+                        }))
+                      }
+                      disableSearch={false}
+                    />
+                    <GeologSearchableSelect
+                      label="Centro de Custo"
+                      options={[
+                        { id: "", nome: "Todos" },
+                        ...(docagemFormData.clienteId
+                          ? getCentrosCustoByCliente(
+                              docagemFormData.clienteId,
+                            ).map((cc) => ({ id: cc.id, nome: cc.nome }))
+                          : []),
+                      ]}
+                      value={docagemFormData.centroCustoId ?? ""}
+                      onChange={(id) =>
+                        setDocagemFormData((prev) => ({
+                          ...prev,
+                          centroCustoId: id || null,
+                        }))
+                      }
+                      disabled={!docagemFormData.clienteId}
+                      disableSearch={false}
+                    />
+                    <GeologSearchableSelect
+                      label="Solicitante"
+                      options={[
+                        { id: "", nome: "Todos" },
+                        ...solicitantes
+                          .filter(
+                            (s) =>
+                              !docagemFormData.clienteId ||
+                              s.clienteId === docagemFormData.clienteId,
+                          )
+                          .map((s) => ({ id: s.id, nome: s.nome })),
+                      ]}
+                      value={docagemFormData.solicitanteId ?? ""}
+                      onChange={(id) =>
+                        setDocagemFormData((prev) => ({
+                          ...prev,
+                          solicitanteId: id || null,
+                        }))
+                      }
+                      disabled={!docagemFormData.clienteId}
+                      disableSearch={false}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <GeologSearchableSelect
+                      label="Motorista"
+                      options={driverOptions}
+                      value={docagemFormData.motoristaId ?? ""}
+                      onChange={(id) =>
+                        setDocagemFormData((prev) => ({
+                          ...prev,
+                          motoristaId: id || null,
+                          veiculoId: null,
+                        }))
+                      }
+                      disableSearch={false}
+                    />
+                    <GeologSearchableSelect
+                      label="Veículo"
+                      options={docagemFormVehicleOptions}
+                      value={docagemFormData.veiculoId ?? ""}
+                      onChange={(id) =>
+                        setDocagemFormData((prev) => ({
+                          ...prev,
+                          veiculoId: id || null,
+                        }))
+                      }
+                      disabled={!docagemFormData.motoristaId}
+                      disableSearch={false}
+                    />
+                  </div>
+                </div>
+
+                {/* 2. LOCAL E PERÍODO */}
+                <div className="space-y-8">
+                  <div
+                    className="flex items-center border-b-2 border-slate-100 pb-4"
+                    style={{ paddingBottom: "1.25rem" }}
+                  >
+                    <h3
+                      className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                      style={{ lineHeight: "1.3" }}
+                    >
+                      <MapPin size={20} className="text-slate-500" /> Local e
+                      Período
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-2.5 md:col-span-2">
+                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                        Endereço / Doca
+                      </label>
+                      <input
+                        type="text"
+                        value={docagemFormData.endereco}
+                        onChange={(e) =>
+                          setDocagemFormData((prev) => ({
+                            ...prev,
+                            endereco: e.target.value,
+                          }))
+                        }
+                        placeholder="Ex: Doca 12 - CD Cajamar"
+                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase placeholder:text-slate-300 shadow-sm"
+                      />
+                    </div>
+                    <div className="space-y-2.5">
+                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                        Data Início
+                      </label>
+                      <input
+                        type="date"
+                        value={docagemFormData.dataInicio}
+                        onChange={(e) =>
+                          setDocagemFormData((prev) => ({
+                            ...prev,
+                            dataInicio: e.target.value,
+                          }))
+                        }
+                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                      />
+                    </div>
+                    <div className="space-y-2.5">
+                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                        Data Fim
+                      </label>
+                      <input
+                        type="date"
+                        value={docagemFormData.dataFim}
+                        onChange={(e) =>
+                          setDocagemFormData((prev) => ({
+                            ...prev,
+                            dataFim: e.target.value,
+                          }))
+                        }
+                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                      />
+                    </div>
+                    <div className="space-y-2.5">
+                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                        Horário Início
+                      </label>
+                      <input
+                        type="time"
+                        value={docagemFormData.horarioInicio}
+                        onChange={(e) =>
+                          setDocagemFormData((prev) => ({
+                            ...prev,
+                            horarioInicio: e.target.value,
+                          }))
+                        }
+                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                      />
+                    </div>
+                    <div className="space-y-2.5">
+                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                        Horário Fim
+                      </label>
+                      <input
+                        type="time"
+                        value={docagemFormData.horarioFim}
+                        onChange={(e) =>
+                          setDocagemFormData((prev) => ({
+                            ...prev,
+                            horarioFim: e.target.value,
+                          }))
+                        }
+                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase shadow-sm"
+                      />
+                    </div>
+                    <div className="space-y-2.5 md:col-span-2">
+                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                        Dias da Semana
+                      </label>
+                      <div className="flex flex-wrap gap-3">
+                        {[
+                          { label: "Dom", value: 7 },
+                          { label: "Seg", value: 1 },
+                          { label: "Ter", value: 2 },
+                          { label: "Qua", value: 3 },
+                          { label: "Qui", value: 4 },
+                          { label: "Sex", value: 5 },
+                          { label: "Sáb", value: 6 },
+                        ].map((dia) => {
+                          const active = docagemFormData.diasSemana.includes(
+                            dia.value,
+                          );
+                          return (
+                            <button
+                              key={dia.value}
+                              type="button"
+                              onClick={() =>
+                                setDocagemFormData((prev) => {
+                                  const has = prev.diasSemana.includes(
+                                    dia.value,
+                                  );
+                                  const next = has
+                                    ? prev.diasSemana.filter(
+                                        (v) => v !== dia.value,
+                                      )
+                                    : [...prev.diasSemana, dia.value];
+                                  return { ...prev, diasSemana: next.sort() };
+                                })
+                              }
+                              className={`px-6 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all ${
+                                active
+                                  ? "bg-violet-600 text-white shadow-lg shadow-violet-900/20 scale-[1.05]"
+                                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                              }`}
+                            >
+                              {dia.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. FINANCEIRO */}
+                <DocagemFinanceiroSection
+                  valor={docagemFormData.valorDiario}
+                  custo={docagemFormData.custoDiario ?? null}
+                  observacaoFinanceira={
+                    docagemFormData.observacaoFinanceira ?? null
+                  }
+                  onValorChange={(value) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      valorDiario: value,
+                    }))
+                  }
+                  onCustoChange={(value) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      custoDiario: value,
+                    }))
+                  }
+                  onObservacaoFinanceiraChange={(value) =>
+                    setDocagemFormData((prev) => ({
+                      ...prev,
+                      observacaoFinanceira: value,
+                    }))
+                  }
+                  impostoPercentual={impostoPercentual}
+                  formatCurrency={formatCurrency}
+                />
+
+                {/* 4. OBSERVAÇÕES GERAIS */}
+                <div className="space-y-8">
+                  <div
+                    className="flex items-center border-b-2 border-slate-100 pb-4"
+                    style={{ paddingBottom: "1.25rem" }}
+                  >
+                    <h3
+                      className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
+                      style={{ lineHeight: "1.3" }}
+                    >
+                      <MessageSquareMore size={20} className="text-slate-500" />{" "}
+                      Observações Gerais
+                    </h3>
+                  </div>
+                  <div className="space-y-2.5">
+                    <textarea
+                      value={docagemFormData.observacao ?? ""}
+                      onChange={(e) =>
+                        setDocagemFormData((prev) => ({
+                          ...prev,
+                          observacao: e.target.value || null,
+                        }))
+                      }
+                      rows={4}
+                      placeholder="Observações internas sobre a docagem..."
+                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-medium text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            </form>
+          )}
         </StandardModal>
       )}
 
@@ -7685,7 +8279,9 @@ export default function OSOperationalPage() {
               : "Carregando atendimento..."
           }
           subtitle={
-            viewingOS ? `Protocolo ${viewingOS.protocolo}` : "Aguarde um momento"
+            viewingOS
+              ? `Protocolo ${viewingOS.protocolo}`
+              : "Aguarde um momento"
           }
           icon={<Eye size={24} />}
           maxWidthClassName="max-w-6xl min-[1360px]:max-w-[88vw]"
@@ -7719,495 +8315,685 @@ export default function OSOperationalPage() {
 
           {viewingOS && (
             <div className="space-y-8">
-            {isFinalizadoSemValor(viewingOS) && (
-              <div
-                className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 shadow-sm"
-                title="Falta preencher valores"
-              >
-                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
-                  <AlertCircle size={20} className="text-red-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-black text-red-700">
-                    Falta preencher valores
-                  </p>
-                  <p className="text-xs font-semibold text-red-600/80">
-                    O atendimento está finalizado, mas o valor bruto e/ou o
-                    custo do motorista ainda não foram lançados.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Barra de Resumo: Dados + Status/Horário separados */}
-            <div className="flex flex-col md:flex-row gap-3">
-              {/* Coluna principal — dados da OS */}
-              <div className="flex-1 flex flex-wrap items-center gap-y-3 gap-x-1 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3">
-                <div className="flex items-center gap-2 px-3">
-                  <Building2 size={14} className="text-slate-400 shrink-0" />
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
-                      Cliente
-                    </p>
-                    <p className="text-base font-bold text-slate-800 line-clamp-1">
-                      {clientes.find((c) => c.id === viewingOS.clienteId)
-                        ?.nome || "N/A"}
-                    </p>
-                  </div>
-                </div>
-                <div className="h-8 w-px bg-slate-200 mx-1 hidden lg:block" />
-
-                <div className="flex items-center gap-2 px-3">
-                  <User size={14} className="text-slate-400 shrink-0" />
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
-                      Solicitante
-                    </p>
-                    <p className="text-base font-bold text-slate-800 line-clamp-1">
-                      {viewingOS.solicitante || "N/A"}
-                    </p>
-                  </div>
-                </div>
-                <div className="h-8 w-px bg-slate-200 mx-1 hidden lg:block" />
-
-                <div className="flex items-center gap-2 px-3">
-                  <Car size={14} className="text-slate-400 shrink-0" />
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
-                      Motorista
-                    </p>
-                    <p className="text-base font-bold text-slate-800 line-clamp-1">
-                      {viewingOS.motorista || "Não definido"}
-                    </p>
-                  </div>
-                </div>
-                <div className="h-8 w-px bg-slate-200 mx-1 hidden lg:block" />
-
-                <div className="flex items-center gap-2 px-3">
-                  <Building size={14} className="text-slate-400 shrink-0" />
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
-                      C. Custo
-                    </p>
-                    <p className="text-base font-bold text-slate-800 line-clamp-1">
-                      {clientes
-                        .find((c) => c.id === viewingOS.clienteId)
-                        ?.centrosCusto.find(
-                          (cc) => cc.id === viewingOS.centroCustoId,
-                        )?.nome || "Padrão"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Coluna lateral — Status + Horário em cards */}
-              <div className="flex items-stretch gap-3">
-                {/* Card de Status */}
+              {isFinalizadoSemValor(viewingOS) && (
                 <div
-                  className={`flex items-center gap-3 px-5 py-3 rounded-2xl border shadow-sm ${
-                    viewingOS?.arquivado
-                      ? "bg-rose-50 border-rose-200"
-                      : effectiveOperationalStatus === "Pendente"
-                        ? "bg-yellow-50 border-yellow-200"
-                        : effectiveOperationalStatus === "Aguardando"
-                          ? "bg-indigo-50 border-indigo-200"
-                          : effectiveOperationalStatus === "Em Rota"
-                            ? "bg-sky-50 border-sky-200"
-                            : effectiveOperationalStatus === "Finalizado"
-                              ? "bg-emerald-50 border-emerald-200"
-                              : effectiveOperationalStatus === "Cancelado"
-                                ? "bg-rose-50 border-rose-200"
-                                : "bg-slate-50 border-slate-200"
-                  }`}
+                  className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 shadow-sm"
+                  title="Falta preencher valores"
                 >
+                  <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                    <AlertCircle size={20} className="text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-red-700">
+                      Falta preencher valores
+                    </p>
+                    <p className="text-xs font-semibold text-red-600/80">
+                      O atendimento está finalizado, mas o valor bruto e/ou o
+                      custo do motorista ainda não foram lançados.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Barra de Resumo: Dados + Status/Horário separados */}
+              <div className="flex flex-col md:flex-row gap-3">
+                {/* Coluna principal — dados da OS */}
+                <div className="flex-1 flex flex-wrap items-center gap-y-3 gap-x-1 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3">
+                  <div className="flex items-center gap-2 px-3">
+                    <Building2 size={14} className="text-slate-400 shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+                        Cliente
+                      </p>
+                      <p className="text-base font-bold text-slate-800 line-clamp-1">
+                        {clientes.find((c) => c.id === viewingOS.clienteId)
+                          ?.nome || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-8 w-px bg-slate-200 mx-1 hidden lg:block" />
+
+                  <div className="flex items-center gap-2 px-3">
+                    <User size={14} className="text-slate-400 shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+                        Solicitante
+                      </p>
+                      <p className="text-base font-bold text-slate-800 line-clamp-1">
+                        {viewingOS.solicitante || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-8 w-px bg-slate-200 mx-1 hidden lg:block" />
+
+                  <div className="flex items-center gap-2 px-3">
+                    <Car size={14} className="text-slate-400 shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+                        Motorista
+                      </p>
+                      <p className="text-base font-bold text-slate-800 line-clamp-1">
+                        {viewingOS.motorista || "Não definido"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-8 w-px bg-slate-200 mx-1 hidden lg:block" />
+
+                  <div className="flex items-center gap-2 px-3">
+                    <Building size={14} className="text-slate-400 shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+                        C. Custo
+                      </p>
+                      <p className="text-base font-bold text-slate-800 line-clamp-1">
+                        {clientes
+                          .find((c) => c.id === viewingOS.clienteId)
+                          ?.centrosCusto.find(
+                            (cc) => cc.id === viewingOS.centroCustoId,
+                          )?.nome || "Padrão"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Coluna lateral — Status + Horário em cards */}
+                <div className="flex items-stretch gap-3">
+                  {/* Card de Status */}
                   <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    className={`flex items-center gap-3 px-5 py-3 rounded-2xl border shadow-sm ${
                       viewingOS?.arquivado
-                        ? "bg-rose-100"
+                        ? "bg-rose-50 border-rose-200"
                         : effectiveOperationalStatus === "Pendente"
-                          ? "bg-yellow-100"
+                          ? "bg-yellow-50 border-yellow-200"
                           : effectiveOperationalStatus === "Aguardando"
-                            ? "bg-indigo-100"
+                            ? "bg-indigo-50 border-indigo-200"
                             : effectiveOperationalStatus === "Em Rota"
-                              ? "bg-sky-100"
+                              ? "bg-sky-50 border-sky-200"
                               : effectiveOperationalStatus === "Finalizado"
-                                ? "bg-emerald-100"
+                                ? "bg-emerald-50 border-emerald-200"
                                 : effectiveOperationalStatus === "Cancelado"
-                                  ? "bg-rose-100"
-                                  : "bg-slate-100"
+                                  ? "bg-rose-50 border-rose-200"
+                                  : "bg-slate-50 border-slate-200"
                     }`}
                   >
-                    <CheckCircle2
-                      size={18}
-                      className={
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                         viewingOS?.arquivado
-                          ? "text-rose-600"
+                          ? "bg-rose-100"
                           : effectiveOperationalStatus === "Pendente"
-                            ? "text-yellow-600"
+                            ? "bg-yellow-100"
                             : effectiveOperationalStatus === "Aguardando"
-                              ? "text-indigo-600"
+                              ? "bg-indigo-100"
                               : effectiveOperationalStatus === "Em Rota"
-                                ? "text-sky-600"
+                                ? "bg-sky-100"
                                 : effectiveOperationalStatus === "Finalizado"
-                                  ? "text-emerald-600"
+                                  ? "bg-emerald-100"
                                   : effectiveOperationalStatus === "Cancelado"
-                                    ? "text-rose-600"
-                                    : "text-slate-600"
-                      }
-                    />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                      Status
-                    </p>
-                    <p
-                      className={`text-base font-black ${
-                        viewingOS?.arquivado
-                          ? "text-rose-700"
-                          : effectiveOperationalStatus === "Pendente"
-                            ? "text-yellow-700"
-                            : effectiveOperationalStatus === "Aguardando"
-                              ? "text-indigo-700"
-                              : effectiveOperationalStatus === "Em Rota"
-                                ? "text-sky-700"
-                                : effectiveOperationalStatus === "Finalizado"
-                                  ? "text-emerald-700"
-                                  : effectiveOperationalStatus === "Cancelado"
-                                    ? "text-rose-700"
-                                    : "text-slate-700"
+                                    ? "bg-rose-100"
+                                    : "bg-slate-100"
                       }`}
                     >
-                      {
-                        getStatusConfig(
-                          effectiveOperationalStatus,
-                          viewingOS?.arquivado,
-                        ).label
-                      }
-                    </p>
+                      <CheckCircle2
+                        size={18}
+                        className={
+                          viewingOS?.arquivado
+                            ? "text-rose-600"
+                            : effectiveOperationalStatus === "Pendente"
+                              ? "text-yellow-600"
+                              : effectiveOperationalStatus === "Aguardando"
+                                ? "text-indigo-600"
+                                : effectiveOperationalStatus === "Em Rota"
+                                  ? "text-sky-600"
+                                  : effectiveOperationalStatus === "Finalizado"
+                                    ? "text-emerald-600"
+                                    : effectiveOperationalStatus === "Cancelado"
+                                      ? "text-rose-600"
+                                      : "text-slate-600"
+                        }
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                        Status
+                      </p>
+                      <p
+                        className={`text-base font-black ${
+                          viewingOS?.arquivado
+                            ? "text-rose-700"
+                            : effectiveOperationalStatus === "Pendente"
+                              ? "text-yellow-700"
+                              : effectiveOperationalStatus === "Aguardando"
+                                ? "text-indigo-700"
+                                : effectiveOperationalStatus === "Em Rota"
+                                  ? "text-sky-700"
+                                  : effectiveOperationalStatus === "Finalizado"
+                                    ? "text-emerald-700"
+                                    : effectiveOperationalStatus === "Cancelado"
+                                      ? "text-rose-700"
+                                      : "text-slate-700"
+                        }`}
+                      >
+                        {
+                          getStatusConfig(
+                            effectiveOperationalStatus,
+                            viewingOS?.arquivado,
+                          ).label
+                        }
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Card de Horário */}
-                <div className="flex items-center gap-3 px-5 py-3 rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
-                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <Clock size={18} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                      Horário
-                    </p>
-                    <p className="text-base font-black text-slate-800">
-                      {(() => {
-                        const itineraries = getItineraries(
-                          (viewingOS.rota?.waypoints || []) as FormWaypoint[],
-                        );
-                        const firstItinerary = itineraries.find(
-                          (it) => it.index === 0,
-                        );
-                        const firstWaypoint = firstItinerary?.waypoints[0];
-                        const data = firstWaypoint?.data;
-                        const hora = firstWaypoint?.hora;
-                        if (data && hora) {
-                          return `${data.split("-").reverse().join("/")} - ${hora.slice(0, 5)}`;
-                        }
-                        if (hora) {
-                          return hora.slice(0, 5);
-                        }
-                        return "--:--";
-                      })()}
-                    </p>
+                  {/* Card de Horário */}
+                  <div className="flex items-center gap-3 px-5 py-3 rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
+                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                      <Clock size={18} className="text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                        Horário
+                      </p>
+                      <p className="text-base font-black text-slate-800">
+                        {(() => {
+                          const itineraries = getItineraries(
+                            (viewingOS.rota?.waypoints || []) as FormWaypoint[],
+                          );
+                          const firstItinerary = itineraries.find(
+                            (it) => it.index === 0,
+                          );
+                          const firstWaypoint = firstItinerary?.waypoints[0];
+                          const data = firstWaypoint?.data;
+                          const hora = firstWaypoint?.hora;
+                          if (data && hora) {
+                            return `${data.split("-").reverse().join("/")} - ${hora.slice(0, 5)}`;
+                          }
+                          if (hora) {
+                            return hora.slice(0, 5);
+                          }
+                          return "--:--";
+                        })()}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 gap-8">
-              {/* Status da Operação - 100% Width */}
-              <div className="rounded-[2rem] border border-slate-200 bg-white p-8 space-y-8 shadow-sm">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-6">
-                  <div>
-                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-[0.1em]">
-                      Status da Operação
-                    </h3>
-                    <p className="text-sm font-semibold text-slate-400 mt-1">
-                      Acompanhamento em tempo real da jornada do motorista.
-                    </p>
-                  </div>
-                  {viewingOS?.arquivado ? (
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-[0.2em]">
-                      <Archive size={14} className="text-red-500" />
-                      Arquivado
+              <div className="grid grid-cols-1 gap-8">
+                {/* Status da Operação - 100% Width */}
+                <div className="rounded-[2rem] border border-slate-200 bg-white p-8 space-y-8 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-6">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 uppercase tracking-[0.1em]">
+                        Status da Operação
+                      </h3>
+                      <p className="text-sm font-semibold text-slate-400 mt-1">
+                        Acompanhamento em tempo real da jornada do motorista.
+                      </p>
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">
-                      <div className="w-2 h-2 rounded-full bg-blue-600"></div>
-                      Em execução
+                    {viewingOS?.arquivado ? (
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-[0.2em]">
+                        <Archive size={14} className="text-red-500" />
+                        Arquivado
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">
+                        <div className="w-2 h-2 rounded-full bg-blue-600"></div>
+                        Em execução
+                      </div>
+                    )}
+                  </div>
+
+                  {viewingOS?.arquivado && (
+                    <div className="flex items-center gap-3 rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-600">
+                      <Archive size={20} className="text-rose-500 shrink-0" />
+                      <p className="text-sm font-bold">
+                        Esta ordem de serviço está arquivada. As ações dos
+                        ciclos operacionais estão bloqueadas.
+                      </p>
                     </div>
                   )}
-                </div>
 
-                {viewingOS?.arquivado && (
-                  <div className="flex items-center gap-3 rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-600">
-                    <Archive size={20} className="text-rose-500 shrink-0" />
-                    <p className="text-sm font-bold">
-                      Esta ordem de serviço está arquivada. As ações dos ciclos
-                      operacionais estão bloqueadas.
-                    </p>
-                  </div>
-                )}
+                  <div className="space-y-6">
+                    {cyclesToRender.map((cycle) => {
+                      const isArchived = Boolean(viewingOS?.arquivado);
+                      const displayedCycleState: OperationalCycleState =
+                        (() => {
+                          if (cycle.state === "completed" || cycle.finishedAt)
+                            return "completed";
+                          if (
+                            cycle.state === "awaiting_finish" ||
+                            cycle.state === "awaiting_km_finish" ||
+                            cycle.startedAt
+                          )
+                            return "awaiting_finish";
+                          if (
+                            cycle.state === "awaiting_start" ||
+                            cycle.state === "awaiting_km_start" ||
+                            cycle.acceptedAt
+                          )
+                            return "awaiting_start";
+                          if (
+                            cycle.state === "awaiting_accept" ||
+                            cycle.messageSentAt
+                          )
+                            return "awaiting_accept";
+                          return "pending";
+                        })();
 
-                <div className="space-y-6">
-                  {cyclesToRender.map((cycle) => {
-                    const isArchived = Boolean(viewingOS?.arquivado);
-                    const displayedCycleState: OperationalCycleState = (() => {
-                      if (cycle.state === "completed" || cycle.finishedAt)
-                        return "completed";
-                      if (
-                        cycle.state === "awaiting_finish" ||
-                        cycle.state === "awaiting_km_finish" ||
-                        cycle.startedAt
-                      )
-                        return "awaiting_finish";
-                      if (
-                        cycle.state === "awaiting_start" ||
-                        cycle.state === "awaiting_km_start" ||
-                        cycle.acceptedAt
-                      )
-                        return "awaiting_start";
-                      if (
-                        cycle.state === "awaiting_accept" ||
-                        cycle.messageSentAt
-                      )
-                        return "awaiting_accept";
-                      return "pending";
-                    })();
+                      const progressWidth = (() => {
+                        switch (displayedCycleState) {
+                          case "completed":
+                            return "100%";
+                          case "awaiting_finish":
+                            return "66.66%";
+                          case "awaiting_start":
+                            return "33.33%";
+                          case "awaiting_accept":
+                            return "0%";
+                          default:
+                            return "0%";
+                        }
+                      })();
 
-                    const progressWidth = (() => {
-                      switch (displayedCycleState) {
-                        case "completed":
-                          return "100%";
-                        case "awaiting_finish":
-                          return "66.66%";
-                        case "awaiting_start":
-                          return "33.33%";
-                        case "awaiting_accept":
-                          return "0%";
-                        default:
-                          return "0%";
-                      }
-                    })();
+                      const cycleSteps = [
+                        {
+                          id: "received",
+                          icon: <MessageCircle size={20} />,
+                          label: "Mensagem",
+                          sublabel: cycle.messageSentAt
+                            ? "Enviada"
+                            : "Aguardando",
+                          active: Boolean(
+                            cycle.messageSentAt ||
+                            cycle.acceptedAt ||
+                            cycle.startedAt ||
+                            cycle.finishedAt ||
+                            cycle.state !== "pending",
+                          ),
+                          timestamp: cycle.messageSentAt,
+                          km: undefined as number | undefined,
+                        },
+                        {
+                          id: "accepted",
+                          icon: <Eye size={20} />,
+                          label: "Visualizado",
+                          sublabel: cycle.acceptedAt
+                            ? "Confirmado"
+                            : "Aguardando",
+                          active: Boolean(
+                            cycle.acceptedAt ||
+                            cycle.startedAt ||
+                            cycle.finishedAt ||
+                            cycle.state === "awaiting_start" ||
+                            cycle.state === "awaiting_finish" ||
+                            cycle.state === "awaiting_km_finish" ||
+                            cycle.state === "completed",
+                          ),
+                          timestamp: cycle.acceptedAt,
+                          km: undefined as number | undefined,
+                        },
+                        {
+                          id: "started",
+                          icon: <Navigation size={20} />,
+                          label: "Em Rota",
+                          sublabel: cycle.startedAt ? "Iniciado" : "Pendente",
+                          active: Boolean(
+                            cycle.startedAt ||
+                            cycle.finishedAt ||
+                            cycle.state === "awaiting_finish" ||
+                            cycle.state === "awaiting_km_finish" ||
+                            cycle.state === "completed",
+                          ),
+                          timestamp: cycle.startedAt,
+                          km: cycle.kmInitial,
+                        },
+                        {
+                          id: "finished",
+                          icon: <FileText size={20} />,
+                          label: "Concluído",
+                          sublabel: cycle.finishedAt
+                            ? "Finalizado"
+                            : "Em aberto",
+                          active: Boolean(
+                            cycle.finishedAt || cycle.state === "completed",
+                          ),
+                          timestamp: cycle.finishedAt,
+                          km: cycle.kmFinal,
+                        },
+                      ];
 
-                    const cycleSteps = [
-                      {
-                        id: "received",
-                        icon: <MessageCircle size={20} />,
-                        label: "Mensagem",
-                        sublabel: cycle.messageSentAt
-                          ? "Enviada"
-                          : "Aguardando",
-                        active: Boolean(
-                          cycle.messageSentAt ||
-                          cycle.acceptedAt ||
-                          cycle.startedAt ||
-                          cycle.finishedAt ||
-                          cycle.state !== "pending",
-                        ),
-                        timestamp: cycle.messageSentAt,
-                        km: undefined as number | undefined,
-                      },
-                      {
-                        id: "accepted",
-                        icon: <Eye size={20} />,
-                        label: "Visualizado",
-                        sublabel: cycle.acceptedAt
-                          ? "Confirmado"
-                          : "Aguardando",
-                        active: Boolean(
-                          cycle.acceptedAt ||
-                          cycle.startedAt ||
-                          cycle.finishedAt ||
-                          cycle.state === "awaiting_start" ||
-                          cycle.state === "awaiting_finish" ||
-                          cycle.state === "awaiting_km_finish" ||
-                          cycle.state === "completed",
-                        ),
-                        timestamp: cycle.acceptedAt,
-                        km: undefined as number | undefined,
-                      },
-                      {
-                        id: "started",
-                        icon: <Navigation size={20} />,
-                        label: "Em Rota",
-                        sublabel: cycle.startedAt ? "Iniciado" : "Pendente",
-                        active: Boolean(
-                          cycle.startedAt ||
-                          cycle.finishedAt ||
-                          cycle.state === "awaiting_finish" ||
-                          cycle.state === "awaiting_km_finish" ||
-                          cycle.state === "completed",
-                        ),
-                        timestamp: cycle.startedAt,
-                        km: cycle.kmInitial,
-                      },
-                      {
-                        id: "finished",
-                        icon: <FileText size={20} />,
-                        label: "Concluído",
-                        sublabel: cycle.finishedAt ? "Finalizado" : "Em aberto",
-                        active: Boolean(
-                          cycle.finishedAt || cycle.state === "completed",
-                        ),
-                        timestamp: cycle.finishedAt,
-                        km: cycle.kmFinal,
-                      },
-                    ];
+                      const cycleStatus =
+                        getCycleDisplayStatus(displayedCycleState);
 
-                    const cycleStatus =
-                      getCycleDisplayStatus(displayedCycleState);
-
-                    return (
-                      <div
-                        key={`${cycle.sequenceOrder}-${cycle.itineraryIndex}`}
-                        className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-6 space-y-6 shadow-sm relative overflow-hidden"
-                      >
-                        {isArchived && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="absolute w-[200%] h-12 bg-rose-500/10 -rotate-45 flex items-center justify-center">
-                              <span className="text-rose-600 text-sm font-black uppercase tracking-[0.2em]">
-                                BLOQUEADO
-                              </span>
+                      return (
+                        <div
+                          key={`${cycle.sequenceOrder}-${cycle.itineraryIndex}`}
+                          className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-6 space-y-6 shadow-sm relative overflow-hidden"
+                        >
+                          {isArchived && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="absolute w-[200%] h-12 bg-rose-500/10 -rotate-45 flex items-center justify-center">
+                                <span className="text-rose-600 text-sm font-black uppercase tracking-[0.2em]">
+                                  BLOQUEADO
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                        <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4">
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
-                              Ciclo Operacional {cycle.sequenceOrder + 1}
-                            </p>
-                            <h4 className="text-lg font-black text-slate-900 uppercase tracking-[0.1em]">
-                              {getOperationalCycleBannerTitle(cycle)}
-                            </h4>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap justify-end">
-                            {!isArchived &&
-                              displayedCycleState !== "pending" && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedCycleIndex(cycle.itineraryIndex);
-                                    setShowAcceptRevert(true);
-                                  }}
-                                  className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
-                                >
-                                  <RotateCcw size={12} />
-                                  Resetar
-                                </button>
-                              )}
-                            <div
-                              className={`px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border ${cycle.kind === "return" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
-                            >
-                              {cycle.kind === "return"
-                                ? "Retorno"
-                                : "Itinerário"}
+                          )}
+                          <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
+                                Ciclo Operacional {cycle.sequenceOrder + 1}
+                              </p>
+                              <h4 className="text-lg font-black text-slate-900 uppercase tracking-[0.1em]">
+                                {getOperationalCycleBannerTitle(cycle)}
+                              </h4>
                             </div>
-                            <div
-                              className={`px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border ${
-                                cycleStatus === "Pendente"
-                                  ? "bg-yellow-50 text-yellow-700 border-yellow-200"
-                                  : cycleStatus === "Aguardando"
-                                    ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                    : cycleStatus === "Em Rota"
-                                      ? "bg-sky-50 text-sky-700 border-sky-200"
-                                      : cycleStatus === "Finalizado"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : "bg-rose-50 text-rose-700 border-rose-200"
-                              }`}
-                            >
-                              {cycleStatus}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="relative flex justify-between items-start px-4">
-                          <div className="absolute top-[28px] left-[44px] right-[44px] h-[5px] bg-slate-200/50 rounded-full z-0">
-                            <div
-                              className="h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(81,222,255,0.4)] animate-gradient bg-[length:200%_100%]"
-                              style={{
-                                width: progressWidth,
-                                background:
-                                  "linear-gradient(to right, rgb(81, 222, 255), rgb(26, 238, 172), #2563eb, #10b981)",
-                              }}
-                            ></div>
-                          </div>
-
-                          {cycleSteps.map((step) => (
-                            <div
-                              key={step.id}
-                              className="relative z-10 flex flex-col items-center"
-                            >
-                              {step.id === "received" ? (
-                                <div className="relative">
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                              {!isArchived &&
+                                displayedCycleState !== "pending" && (
                                   <button
                                     type="button"
-                                    data-driver-notify-button
-                                    className={`flex flex-col items-center group ${isArchived ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
-                                    onClick={(e) => {
-                                      if (isArchived) return;
-                                      // Ciclo já em rota ou finalizado: mensagem
-                                      // inicial não deve ser reenviada
-                                      if (
-                                        displayedCycleState ===
-                                          "awaiting_finish" ||
-                                        displayedCycleState === "completed"
-                                      )
-                                        return;
-                                      const rect = (
-                                        e.currentTarget as HTMLElement
-                                      ).getBoundingClientRect();
-                                      setDriverNotifyMenuPos({
-                                        x: rect.right,
-                                        y: rect.top,
-                                      });
-                                      setDriverNotifyTargetCycleIndex(
+                                    onClick={() => {
+                                      setSelectedCycleIndex(
                                         cycle.itineraryIndex,
                                       );
-                                      setOpenDriverNotifyMenu(true);
+                                      setShowAcceptRevert(true);
                                     }}
-                                    disabled={
-                                      isArchived ||
-                                      notifyLoadingKey === "driver-whatsapp"
-                                    }
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
                                   >
-                                    <div
-                                      className={`
+                                    <RotateCcw size={12} />
+                                    Resetar
+                                  </button>
+                                )}
+                              <div
+                                className={`px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border ${cycle.kind === "return" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
+                              >
+                                {cycle.kind === "return"
+                                  ? "Retorno"
+                                  : "Itinerário"}
+                              </div>
+                              <div
+                                className={`px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border ${
+                                  cycleStatus === "Pendente"
+                                    ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                                    : cycleStatus === "Aguardando"
+                                      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                      : cycleStatus === "Em Rota"
+                                        ? "bg-sky-50 text-sky-700 border-sky-200"
+                                        : cycleStatus === "Finalizado"
+                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                          : "bg-rose-50 text-rose-700 border-rose-200"
+                                }`}
+                              >
+                                {cycleStatus}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="relative flex justify-between items-start px-4">
+                            <div className="absolute top-[28px] left-[44px] right-[44px] h-[5px] bg-slate-200/50 rounded-full z-0">
+                              <div
+                                className="h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(81,222,255,0.4)] animate-gradient bg-[length:200%_100%]"
+                                style={{
+                                  width: progressWidth,
+                                  background:
+                                    "linear-gradient(to right, rgb(81, 222, 255), rgb(26, 238, 172), #2563eb, #10b981)",
+                                }}
+                              ></div>
+                            </div>
+
+                            {cycleSteps.map((step) => (
+                              <div
+                                key={step.id}
+                                className="relative z-10 flex flex-col items-center"
+                              >
+                                {step.id === "received" ? (
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      data-driver-notify-button
+                                      className={`flex flex-col items-center group ${isArchived ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                                      onClick={(e) => {
+                                        if (isArchived) return;
+                                        // Ciclo já em rota ou finalizado: mensagem
+                                        // inicial não deve ser reenviada
+                                        if (
+                                          displayedCycleState ===
+                                            "awaiting_finish" ||
+                                          displayedCycleState === "completed"
+                                        )
+                                          return;
+                                        const rect = (
+                                          e.currentTarget as HTMLElement
+                                        ).getBoundingClientRect();
+                                        setDriverNotifyMenuPos({
+                                          x: rect.right,
+                                          y: rect.top,
+                                        });
+                                        setDriverNotifyTargetCycleIndex(
+                                          cycle.itineraryIndex,
+                                        );
+                                        setOpenDriverNotifyMenu(true);
+                                      }}
+                                      disabled={
+                                        isArchived ||
+                                        notifyLoadingKey === "driver-whatsapp"
+                                      }
+                                    >
+                                      <div
+                                        className={`
                                 w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 shadow-lg
                                 ${!step.active ? "bg-white border-2 border-slate-200 text-slate-400" : "text-white"}
                                 ${!isArchived && !step.active ? "group-hover:border-slate-300" : ""}
                                 ${!isArchived ? "group-hover:scale-110 group-active:scale-95" : ""}
                                 ${notifyLoadingKey === "driver-whatsapp" && step.id === "received" && driverNotifyTargetCycleIndex === cycle.itineraryIndex ? "animate-pulse" : ""}
                               `}
+                                        style={
+                                          step.active
+                                            ? {
+                                                backgroundColor:
+                                                  "rgb(81, 222, 255)",
+                                                boxShadow:
+                                                  "0 10px 15px -3px rgba(81, 222, 255, 0.4)",
+                                              }
+                                            : {}
+                                        }
+                                      >
+                                        {notifyLoadingKey ===
+                                          "driver-whatsapp" &&
+                                        step.id === "received" &&
+                                        driverNotifyTargetCycleIndex ===
+                                          cycle.itineraryIndex ? (
+                                          <Loader2
+                                            size={24}
+                                            className="animate-spin"
+                                          />
+                                        ) : (
+                                          step.icon
+                                        )}
+                                      </div>
+                                      <div className="mt-4 text-center space-y-1">
+                                        <p
+                                          className={`text-[11px] font-black uppercase tracking-[0.15em] transition-colors ${step.active ? "text-slate-900" : "text-slate-400"}`}
+                                        >
+                                          {step.label}
+                                        </p>
+                                        <p
+                                          className={`text-[10px] font-bold transition-colors ${step.active ? "text-slate-500" : "text-slate-300"}`}
+                                        >
+                                          {step.sublabel}
+                                        </p>
+                                        {step.timestamp && (
+                                          <p className="text-[13px] font-medium text-slate-400">
+                                            {new Date(
+                                              step.timestamp,
+                                            ).toLocaleString("pt-BR", {
+                                              day: "2-digit",
+                                              month: "2-digit",
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })}
+                                          </p>
+                                        )}
+                                      </div>
+                                      {step.active && (
+                                        <div
+                                          className="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center"
+                                          style={{
+                                            backgroundColor:
+                                              "rgb(81, 222, 255)",
+                                          }}
+                                        >
+                                          <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping"></div>
+                                        </div>
+                                      )}
+                                    </button>
+                                    {openDriverNotifyMenu &&
+                                      driverNotifyMenuPos &&
+                                      driverNotifyTargetCycleIndex ===
+                                        cycle.itineraryIndex &&
+                                      createPortal(
+                                        <div
+                                          data-driver-notify-menu
+                                          style={{
+                                            position: "fixed",
+                                            left: driverNotifyMenuPos.x + 8,
+                                            top: driverNotifyMenuPos.y,
+                                          }}
+                                          className="z-[9999] min-w-[240px] bg-white rounded-2xl border border-slate-200 shadow-xl p-2 space-y-1"
+                                        >
+                                          <p className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                                            <MessageCircle size={12} />
+                                            Enviar WhatsApp
+                                          </p>
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              const cycles =
+                                                viewingOS?.operationalCycles ??
+                                                [];
+                                              const targetCycle = cycles.find(
+                                                (c) =>
+                                                  c.itineraryIndex ===
+                                                  cycle.itineraryIndex,
+                                              );
+
+                                              if (targetCycle?.messageSentAt) {
+                                                let senderName = "usuário";
+                                                if (
+                                                  targetCycle.messageSentById
+                                                ) {
+                                                  const {
+                                                    data: senderData,
+                                                    error: senderError,
+                                                  } = await supabase
+                                                    .from("user_roles")
+                                                    .select("nome")
+                                                    .eq(
+                                                      "id",
+                                                      targetCycle.messageSentById,
+                                                    )
+                                                    .maybeSingle();
+                                                  if (senderError) {
+                                                    console.error(
+                                                      "[Resend] Erro ao buscar nome do remetente:",
+                                                      senderError,
+                                                    );
+                                                  }
+                                                  if (senderData?.nome) {
+                                                    senderName =
+                                                      senderData.nome;
+                                                  } else {
+                                                    console.warn(
+                                                      "[Resend] Nome não encontrado para senderId:",
+                                                      targetCycle.messageSentById,
+                                                      "senderData:",
+                                                      senderData,
+                                                    );
+                                                  }
+                                                } else {
+                                                  console.warn(
+                                                    "[Resend] messageSentById está vazio para o ciclo",
+                                                    cycle.itineraryIndex,
+                                                  );
+                                                }
+
+                                                setResendConfirmInfo({
+                                                  date: targetCycle.messageSentAt,
+                                                  userName: senderName,
+                                                });
+                                              } else {
+                                                setResendConfirmInfo(null);
+                                              }
+
+                                              setResendConfirmCycleIndex(
+                                                cycle.itineraryIndex,
+                                              );
+                                              setShowResendConfirm(true);
+                                              setOpenDriverNotifyMenu(false);
+                                              setDriverNotifyMenuPos(null);
+                                              setDriverNotifyTargetCycleIndex(
+                                                null,
+                                              );
+                                            }}
+                                            disabled={!!notifyLoadingKey}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+                                          >
+                                            <Link size={14} />
+                                            {notifyLoadingKey ===
+                                            "driver-whatsapp"
+                                              ? "Enviando..."
+                                              : "Enviar link de aceite"}
+                                          </button>
+                                        </div>,
+                                        document.body,
+                                      )}
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    // isCycleFinished é derivado do cycle.state vindo do banco (via syncOSSnapshot).
+                                    // O atributo disabled nativo do HTML impede qualquer clique sem depender de JS do cliente.
+                                    // O backend também rejeita (409) se o estado for completed/cancelled — dupla proteção.
+                                    disabled={
+                                      isArchived ||
+                                      (step.id === "finished" &&
+                                        (cycle.state === "completed" ||
+                                          cycle.state === "cancelled" ||
+                                          !!cycle.finishedAt))
+                                    }
+                                    className="flex flex-col items-center group cursor-pointer"
+                                    onClick={() => {
+                                      if (step.id === "finished") {
+                                        setSelectedCycleIndex(
+                                          cycle.itineraryIndex,
+                                        );
+                                        setShowFinishConfirm(true);
+                                      }
+                                      // accepted e started: sem ação (Resetar cobre esses casos)
+                                    }}
+                                  >
+                                    <div
+                                      className={`
+                              w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 shadow-lg
+                              ${!step.active ? "bg-white border-2 border-slate-200 text-slate-400" : "text-white"}
+                              ${!isArchived && !step.active && !(step.id === "finished" && (cycle.state === "completed" || cycle.state === "cancelled" || !!cycle.finishedAt)) ? "group-hover:border-slate-300" : ""}
+                              ${!isArchived && !(step.id === "finished" && (cycle.state === "completed" || cycle.state === "cancelled" || !!cycle.finishedAt)) ? "group-hover:scale-110 group-active:scale-95" : ""}
+                            `}
                                       style={
                                         step.active
                                           ? {
                                               backgroundColor:
-                                                "rgb(81, 222, 255)",
-                                              boxShadow:
-                                                "0 10px 15px -3px rgba(81, 222, 255, 0.4)",
+                                                step.id === "accepted"
+                                                  ? "rgb(26, 238, 172)"
+                                                  : step.id === "started"
+                                                    ? "#2563eb"
+                                                    : "#10b981",
+                                              boxShadow: `0 10px 15px -3px ${step.id === "accepted" ? "rgba(26, 238, 172, 0.4)" : step.id === "started" ? "rgba(37, 99, 235, 0.4)" : "rgba(16, 185, 129, 0.4)"}`,
                                             }
                                           : {}
                                       }
                                     >
-                                      {notifyLoadingKey === "driver-whatsapp" &&
-                                      step.id === "received" &&
-                                      driverNotifyTargetCycleIndex ===
-                                        cycle.itineraryIndex ? (
-                                        <Loader2
-                                          size={24}
-                                          className="animate-spin"
-                                        />
-                                      ) : (
-                                        step.icon
-                                      )}
+                                      {step.icon}
                                     </div>
                                     <div className="mt-4 text-center space-y-1">
                                       <p
@@ -8232,957 +9018,783 @@ export default function OSOperationalPage() {
                                           })}
                                         </p>
                                       )}
+                                      {typeof step.km === "number" && (
+                                        <div className="flex items-center gap-1">
+                                          <p className="text-[13px] font-black text-slate-600">
+                                            KM:{" "}
+                                            {step.km.toLocaleString("pt-BR")}
+                                          </p>
+                                          {!isArchived && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setKmEditCycleIndex(
+                                                  cycle.itineraryIndex,
+                                                );
+                                                setKmEditField(
+                                                  step.id === "started"
+                                                    ? "initial"
+                                                    : "final",
+                                                );
+                                                setKmEditCurrentValue(
+                                                  step.km ?? null,
+                                                );
+                                                setKmEditNewValue(
+                                                  String(step.km),
+                                                );
+                                                setKmEditReason("");
+                                                setKmEditBypass(false);
+                                                setKmEditOdometerWarning(null);
+                                                setShowKmEdit(true);
+                                              }}
+                                              className="p-0.5 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
+                                              title="Editar KM"
+                                            >
+                                              <Pencil size={12} />
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                     {step.active && (
                                       <div
                                         className="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center"
                                         style={{
-                                          backgroundColor: "rgb(81, 222, 255)",
+                                          backgroundColor:
+                                            step.id === "accepted"
+                                              ? "rgb(26, 238, 172)"
+                                              : step.id === "started"
+                                                ? "#2563eb"
+                                                : "#10b981",
                                         }}
                                       >
                                         <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping"></div>
                                       </div>
                                     )}
                                   </button>
-                                  {openDriverNotifyMenu &&
-                                    driverNotifyMenuPos &&
-                                    driverNotifyTargetCycleIndex ===
-                                      cycle.itineraryIndex &&
-                                    createPortal(
-                                      <div
-                                        data-driver-notify-menu
-                                        style={{
-                                          position: "fixed",
-                                          left: driverNotifyMenuPos.x + 8,
-                                          top: driverNotifyMenuPos.y,
-                                        }}
-                                        className="z-[9999] min-w-[240px] bg-white rounded-2xl border border-slate-200 shadow-xl p-2 space-y-1"
-                                      >
-                                        <p className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                                          <MessageCircle size={12} />
-                                          Enviar WhatsApp
-                                        </p>
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            const cycles =
-                                              viewingOS?.operationalCycles ??
-                                              [];
-                                            const targetCycle = cycles.find(
-                                              (c) =>
-                                                c.itineraryIndex ===
-                                                cycle.itineraryIndex,
-                                            );
+                                )}
+                              </div>
+                            ))}
+                          </div>
 
-                                            if (targetCycle?.messageSentAt) {
-                                              let senderName = "usuário";
-                                              if (targetCycle.messageSentById) {
-                                                const {
-                                                  data: senderData,
-                                                  error: senderError,
-                                                } = await supabase
-                                                  .from("user_roles")
-                                                  .select("nome")
-                                                  .eq(
-                                                    "id",
-                                                    targetCycle.messageSentById,
-                                                  )
-                                                  .maybeSingle();
-                                                if (senderError) {
-                                                  console.error(
-                                                    "[Resend] Erro ao buscar nome do remetente:",
-                                                    senderError,
-                                                  );
-                                                }
-                                                if (senderData?.nome) {
-                                                  senderName = senderData.nome;
-                                                } else {
-                                                  console.warn(
-                                                    "[Resend] Nome não encontrado para senderId:",
-                                                    targetCycle.messageSentById,
-                                                    "senderData:",
-                                                    senderData,
-                                                  );
-                                                }
-                                              } else {
-                                                console.warn(
-                                                  "[Resend] messageSentById está vazio para o ciclo",
-                                                  cycle.itineraryIndex,
-                                                );
-                                              }
-
-                                              setResendConfirmInfo({
-                                                date: targetCycle.messageSentAt,
-                                                userName: senderName,
-                                              });
-                                            } else {
-                                              setResendConfirmInfo(null);
-                                            }
-
-                                            setResendConfirmCycleIndex(
-                                              cycle.itineraryIndex,
-                                            );
-                                            setShowResendConfirm(true);
-                                            setOpenDriverNotifyMenu(false);
-                                            setDriverNotifyMenuPos(null);
-                                            setDriverNotifyTargetCycleIndex(
-                                              null,
-                                            );
-                                          }}
-                                          disabled={!!notifyLoadingKey}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
-                                        >
-                                          <Link size={14} />
-                                          {notifyLoadingKey ===
-                                          "driver-whatsapp"
-                                            ? "Enviando..."
-                                            : "Enviar link de aceite"}
-                                        </button>
-                                      </div>,
-                                      document.body,
-                                    )}
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  // isCycleFinished é derivado do cycle.state vindo do banco (via syncOSSnapshot).
-                                  // O atributo disabled nativo do HTML impede qualquer clique sem depender de JS do cliente.
-                                  // O backend também rejeita (409) se o estado for completed/cancelled — dupla proteção.
-                                  disabled={
-                                    isArchived ||
-                                    (step.id === "finished" &&
-                                      (cycle.state === "completed" ||
-                                        cycle.state === "cancelled" ||
-                                        !!cycle.finishedAt))
-                                  }
-                                  className="flex flex-col items-center group cursor-pointer"
-                                  onClick={() => {
-                                    if (step.id === "finished") {
-                                      setSelectedCycleIndex(
-                                        cycle.itineraryIndex,
+                          {/* ── Logs do Ciclo (colapsável) ── */}
+                          {(() => {
+                            const cycleLogs = osLogs.filter((log) => {
+                              if (log.os_id !== viewingOS?.id) return false;
+                              const meta = log.metadata as Record<
+                                string,
+                                unknown
+                              > | null;
+                              const logCycleIndex =
+                                typeof meta?.cycle_index === "number"
+                                  ? meta.cycle_index
+                                  : null;
+                              return logCycleIndex === cycle.itineraryIndex;
+                            });
+                            if (cycleLogs.length === 0) return null;
+                            return (
+                              <div className="mt-4 border-t border-slate-200 pt-4">
+                                <details className="group">
+                                  <summary className="flex items-center gap-2 cursor-pointer list-none">
+                                    <History
+                                      size={14}
+                                      className="text-slate-400 group-open:text-blue-500 transition-colors"
+                                    />
+                                    <span className="text-xs font-bold text-slate-500 group-open:text-slate-800 transition-colors">
+                                      Histórico do ciclo ({cycleLogs.length})
+                                    </span>
+                                    <ChevronDown
+                                      size={14}
+                                      className="text-slate-400 ml-auto transition-transform group-open:rotate-180"
+                                    />
+                                  </summary>
+                                  <div className="mt-3 space-y-2 pl-5 border-l-2 border-slate-100 max-h-48 overflow-y-auto pr-2">
+                                    {cycleLogs.map((log) => {
+                                      const logTone = getOSLogTone(
+                                        log.type as OSLogType,
                                       );
-                                      setShowFinishConfirm(true);
-                                    }
-                                    // accepted e started: sem ação (Resetar cobre esses casos)
-                                  }}
-                                >
-                                  <div
-                                    className={`
-                              w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 shadow-lg
-                              ${!step.active ? "bg-white border-2 border-slate-200 text-slate-400" : "text-white"}
-                              ${!isArchived && !step.active && !(step.id === "finished" && (cycle.state === "completed" || cycle.state === "cancelled" || !!cycle.finishedAt)) ? "group-hover:border-slate-300" : ""}
-                              ${!isArchived && !(step.id === "finished" && (cycle.state === "completed" || cycle.state === "cancelled" || !!cycle.finishedAt)) ? "group-hover:scale-110 group-active:scale-95" : ""}
-                            `}
-                                    style={
-                                      step.active
-                                        ? {
-                                            backgroundColor:
-                                              step.id === "accepted"
-                                                ? "rgb(26, 238, 172)"
-                                                : step.id === "started"
-                                                  ? "#2563eb"
-                                                  : "#10b981",
-                                            boxShadow: `0 10px 15px -3px ${step.id === "accepted" ? "rgba(26, 238, 172, 0.4)" : step.id === "started" ? "rgba(37, 99, 235, 0.4)" : "rgba(16, 185, 129, 0.4)"}`,
-                                          }
-                                        : {}
-                                    }
-                                  >
-                                    {step.icon}
-                                  </div>
-                                  <div className="mt-4 text-center space-y-1">
-                                    <p
-                                      className={`text-[11px] font-black uppercase tracking-[0.15em] transition-colors ${step.active ? "text-slate-900" : "text-slate-400"}`}
-                                    >
-                                      {step.label}
-                                    </p>
-                                    <p
-                                      className={`text-[10px] font-bold transition-colors ${step.active ? "text-slate-500" : "text-slate-300"}`}
-                                    >
-                                      {step.sublabel}
-                                    </p>
-                                    {step.timestamp && (
-                                      <p className="text-[13px] font-medium text-slate-400">
-                                        {new Date(
-                                          step.timestamp,
-                                        ).toLocaleString("pt-BR", {
+                                      const logDate = new Date(log.created_at);
+                                      const logTime = logDate.toLocaleString(
+                                        "pt-BR",
+                                        {
                                           day: "2-digit",
                                           month: "2-digit",
                                           hour: "2-digit",
                                           minute: "2-digit",
-                                        })}
-                                      </p>
-                                    )}
-                                    {typeof step.km === "number" && (
-                                      <div className="flex items-center gap-1">
-                                        <p className="text-[13px] font-black text-slate-600">
-                                          KM: {step.km.toLocaleString("pt-BR")}
-                                        </p>
-                                        {!isArchived && (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setKmEditCycleIndex(
-                                                cycle.itineraryIndex,
-                                              );
-                                              setKmEditField(
-                                                step.id === "started"
-                                                  ? "initial"
-                                                  : "final",
-                                              );
-                                              setKmEditCurrentValue(
-                                                step.km ?? null,
-                                              );
-                                              setKmEditNewValue(
-                                                String(step.km),
-                                              );
-                                              setKmEditReason("");
-                                              setKmEditBypass(false);
-                                              setKmEditOdometerWarning(null);
-                                              setShowKmEdit(true);
-                                            }}
-                                            className="p-0.5 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
-                                            title="Editar KM"
-                                          >
-                                            <Pencil size={12} />
-                                          </button>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                  {step.active && (
-                                    <div
-                                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center"
-                                      style={{
-                                        backgroundColor:
-                                          step.id === "accepted"
-                                            ? "rgb(26, 238, 172)"
-                                            : step.id === "started"
-                                              ? "#2563eb"
-                                              : "#10b981",
-                                      }}
-                                    >
-                                      <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping"></div>
-                                    </div>
-                                  )}
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* ── Logs do Ciclo (colapsável) ── */}
-                        {(() => {
-                          const cycleLogs = osLogs.filter((log) => {
-                            if (log.os_id !== viewingOS?.id) return false;
-                            const meta = log.metadata as Record<
-                              string,
-                              unknown
-                            > | null;
-                            const logCycleIndex =
-                              typeof meta?.cycle_index === "number"
-                                ? meta.cycle_index
-                                : null;
-                            return logCycleIndex === cycle.itineraryIndex;
-                          });
-                          if (cycleLogs.length === 0) return null;
-                          return (
-                            <div className="mt-4 border-t border-slate-200 pt-4">
-                              <details className="group">
-                                <summary className="flex items-center gap-2 cursor-pointer list-none">
-                                  <History
-                                    size={14}
-                                    className="text-slate-400 group-open:text-blue-500 transition-colors"
-                                  />
-                                  <span className="text-xs font-bold text-slate-500 group-open:text-slate-800 transition-colors">
-                                    Histórico do ciclo ({cycleLogs.length})
-                                  </span>
-                                  <ChevronDown
-                                    size={14}
-                                    className="text-slate-400 ml-auto transition-transform group-open:rotate-180"
-                                  />
-                                </summary>
-                                <div className="mt-3 space-y-2 pl-5 border-l-2 border-slate-100 max-h-48 overflow-y-auto pr-2">
-                                  {cycleLogs.map((log) => {
-                                    const logTone = getOSLogTone(
-                                      log.type as OSLogType,
-                                    );
-                                    const logDate = new Date(log.created_at);
-                                    const logTime = logDate.toLocaleString(
-                                      "pt-BR",
-                                      {
-                                        day: "2-digit",
-                                        month: "2-digit",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      },
-                                    );
-                                    return (
-                                      <div
-                                        key={log.id}
-                                        className="flex items-start gap-2 text-sm py-1.5 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors px-1.5 -mx-1.5"
-                                      >
-                                        <span
-                                          className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${logTone.dotClass}`}
-                                        />
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex items-baseline justify-between gap-2">
-                                            <p className="font-bold text-slate-700 leading-snug text-sm">
-                                              {log.description}
-                                            </p>
-                                            <span className="text-sm text-slate-400 flex-shrink-0 mr-3">
-                                              {logTime}
-                                            </span>
-                                          </div>
-                                          {log.actor_name && (
-                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                              {log.actor_avatar_url ? (
-                                                <img
-                                                  src={
-                                                    getThumbnailUrl(
-                                                      log.actor_avatar_url,
-                                                      40,
-                                                    ) || ""
-                                                  }
-                                                  alt={log.actor_name}
-                                                  className="w-5 h-5 rounded-full object-cover border border-slate-200"
-                                                />
-                                              ) : (
-                                                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-white text-[10px] font-black flex items-center justify-center">
-                                                  {log.actor_name
-                                                    .charAt(0)
-                                                    .toUpperCase()}
-                                                </div>
-                                              )}
-                                              <p className="text-sm text-slate-500">
-                                                {log.actor_name}
+                                        },
+                                      );
+                                      return (
+                                        <div
+                                          key={log.id}
+                                          className="flex items-start gap-2 text-sm py-1.5 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors px-1.5 -mx-1.5"
+                                        >
+                                          <span
+                                            className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${logTone.dotClass}`}
+                                          />
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-baseline justify-between gap-2">
+                                              <p className="font-bold text-slate-700 leading-snug text-sm">
+                                                {log.description}
                                               </p>
+                                              <span className="text-sm text-slate-400 flex-shrink-0 mr-3">
+                                                {logTime}
+                                              </span>
                                             </div>
-                                          )}
+                                            {log.actor_name && (
+                                              <div className="flex items-center gap-1.5 mt-0.5">
+                                                {log.actor_avatar_url ? (
+                                                  <img
+                                                    src={
+                                                      getThumbnailUrl(
+                                                        log.actor_avatar_url,
+                                                        40,
+                                                      ) || ""
+                                                    }
+                                                    alt={log.actor_name}
+                                                    className="w-5 h-5 rounded-full object-cover border border-slate-200"
+                                                  />
+                                                ) : (
+                                                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 text-white text-[10px] font-black flex items-center justify-center">
+                                                    {log.actor_name
+                                                      .charAt(0)
+                                                      .toUpperCase()}
+                                                  </div>
+                                                )}
+                                                <p className="text-sm text-slate-500">
+                                                  {log.actor_name}
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
                                         </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </details>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    );
-                  })}
+                                      );
+                                    })}
+                                  </div>
+                                </details>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              {/* Grid para Trajeto e Resumo - Agora lado a lado */}
-              <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.7fr] gap-8 items-stretch">
-                {/* Trajeto do Atendimento */}
-                <div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm space-y-6">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-3">
-                      <MapPin className="text-blue-600" size={22} />
-                      <div>
-                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-[0.08em]">
-                          Trajeto do Atendimento
-                        </h3>
-                        <p className="text-sm font-semibold text-slate-400 mt-1">
-                          Pontos de parada e rota definida para esta OS.
-                        </p>
+                {/* Grid para Trajeto e Resumo - Agora lado a lado */}
+                <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.7fr] gap-8 items-stretch">
+                  {/* Trajeto do Atendimento */}
+                  <div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm space-y-6">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                      <div className="flex items-center gap-3">
+                        <MapPin className="text-blue-600" size={22} />
+                        <div>
+                          <h3 className="text-lg font-black text-slate-900 uppercase tracking-[0.08em]">
+                            Trajeto do Atendimento
+                          </h3>
+                          <p className="text-sm font-semibold text-slate-400 mt-1">
+                            Pontos de parada e rota definida para esta OS.
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="relative pl-8 space-y-8">
-                    {(() => {
-                      const viewingItineraries = getItineraries(
-                        (viewingOS.rota?.waypoints || []) as FormWaypoint[],
-                      );
-                      return viewingItineraries.map((it) => (
-                        <div key={it.index} className="space-y-6">
-                          {viewingItineraries.length > 1 && (
-                            <h4 className="flex items-center gap-2 mb-6">
-                              {it.index < 0 ? (
-                                <ArrowLeft
-                                  size={18}
-                                  className="text-purple-500"
-                                />
-                              ) : (
-                                <ArrowRight
-                                  size={18}
-                                  className="text-amber-500"
-                                />
-                              )}
-                              <span
-                                className={`inline-flex items-center justify-center w-8 h-8 rounded-xl text-sm font-black shadow-sm ${it.index < 0 ? "bg-purple-100 text-purple-700 ring-2 ring-purple-200" : "bg-amber-100 text-amber-700 ring-2 ring-amber-200"}`}
-                              >
-                                {it.index < 0
-                                  ? Math.abs(it.index)
-                                  : it.index + 1}
-                              </span>
-                              <span
-                                className={`text-[13px] font-black uppercase tracking-[0.15em] ${it.index < 0 ? "text-purple-700" : "text-amber-700"}`}
-                              >
-                                {getItineraryTitle(it.index)}
-                              </span>
-                            </h4>
-                          )}
-                          <div className="relative flex flex-col gap-8">
-                            {/* Linha vertical conectando os pontos do itinerário */}
-                            <div className="absolute left-[11px] top-2 bottom-2 w-0.5 border-l-2 border-dashed border-slate-200"></div>
-
-                            {it.waypoints.map((waypoint, relIdx) => {
-                              const isOrigin = relIdx === 0;
-                              const isDestination =
-                                relIdx === it.waypoints.length - 1;
-                              const globalIdx = it.waypointIndices[relIdx];
-
-                              return (
-                                <div
-                                  key={globalIdx}
-                                  className="relative flex items-center gap-6 group"
+                    <div className="relative pl-8 space-y-8">
+                      {(() => {
+                        const viewingItineraries = getItineraries(
+                          (viewingOS.rota?.waypoints || []) as FormWaypoint[],
+                        );
+                        return viewingItineraries.map((it) => (
+                          <div key={it.index} className="space-y-6">
+                            {viewingItineraries.length > 1 && (
+                              <h4 className="flex items-center gap-2 mb-6">
+                                {it.index < 0 ? (
+                                  <ArrowLeft
+                                    size={18}
+                                    className="text-purple-500"
+                                  />
+                                ) : (
+                                  <ArrowRight
+                                    size={18}
+                                    className="text-amber-500"
+                                  />
+                                )}
+                                <span
+                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-xl text-sm font-black shadow-sm ${it.index < 0 ? "bg-purple-100 text-purple-700 ring-2 ring-purple-200" : "bg-amber-100 text-amber-700 ring-2 ring-amber-200"}`}
                                 >
+                                  {it.index < 0
+                                    ? Math.abs(it.index)
+                                    : it.index + 1}
+                                </span>
+                                <span
+                                  className={`text-[13px] font-black uppercase tracking-[0.15em] ${it.index < 0 ? "text-purple-700" : "text-amber-700"}`}
+                                >
+                                  {getItineraryTitle(it.index)}
+                                </span>
+                              </h4>
+                            )}
+                            <div className="relative flex flex-col gap-8">
+                              {/* Linha vertical conectando os pontos do itinerário */}
+                              <div className="absolute left-[11px] top-2 bottom-2 w-0.5 border-l-2 border-dashed border-slate-200"></div>
+
+                              {it.waypoints.map((waypoint, relIdx) => {
+                                const isOrigin = relIdx === 0;
+                                const isDestination =
+                                  relIdx === it.waypoints.length - 1;
+                                const globalIdx = it.waypointIndices[relIdx];
+
+                                return (
                                   <div
-                                    className={`
+                                    key={globalIdx}
+                                    className="relative flex items-center gap-6 group"
+                                  >
+                                    <div
+                                      className={`
                                     relative z-10 w-6 h-6 rounded-full border-4 border-white shadow-md transition-all duration-300
                                     ${isOrigin ? "bg-emerald-500 scale-125" : isDestination ? "bg-blue-600 scale-125" : "bg-slate-300"}
                                     group-hover:scale-150
                                   `}
-                                  ></div>
-                                  <div
-                                    className={`
+                                    ></div>
+                                    <div
+                                      className={`
                                     flex-1 p-4 rounded-2xl border transition-all duration-300
                                     ${isOrigin ? "bg-emerald-50 border-emerald-100" : isDestination ? "bg-blue-50 border-blue-100" : "bg-slate-50 border-slate-100"}
                                     group-hover:shadow-md group-hover:bg-white
                                   `}
-                                  >
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                                      {isOrigin
-                                        ? "Origem"
-                                        : isDestination
-                                          ? "Destino Final"
-                                          : `${relIdx}ª Parada`}
-                                    </p>
-                                    <p className="text-base font-black text-slate-800 uppercase tracking-tight">
-                                      {waypoint.label}
-                                    </p>
-                                    {waypoint.comment && (
-                                      <p className="mt-2 text-sm font-semibold text-slate-500 bg-white/50 p-2 rounded-lg border border-slate-100 italic">
-                                        &quot;{waypoint.comment}&quot;
+                                    >
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                                        {isOrigin
+                                          ? "Origem"
+                                          : isDestination
+                                            ? "Destino Final"
+                                            : `${relIdx}ª Parada`}
                                       </p>
+                                      <p className="text-base font-black text-slate-800 uppercase tracking-tight">
+                                        {waypoint.label}
+                                      </p>
+                                      {waypoint.comment && (
+                                        <p className="mt-2 text-sm font-semibold text-slate-500 bg-white/50 p-2 rounded-lg border border-slate-100 italic">
+                                          &quot;{waypoint.comment}&quot;
+                                        </p>
+                                      )}
+                                      {(waypoint.passengers || []).length >
+                                        0 && (
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          {(waypoint.passengers || []).map(
+                                            (p, pi) => {
+                                              const pRec = getPassengerRecord(
+                                                p.solicitanteId || "",
+                                              );
+                                              return (
+                                                <span
+                                                  key={pi}
+                                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-100 text-sm font-bold text-blue-700"
+                                                >
+                                                  <User size={12} />
+                                                  {pRec?.nomeCompleto ||
+                                                    "Passageiro"}
+                                                </span>
+                                              );
+                                            },
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Logs de Atendimento */}
+                  <div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm space-y-6 flex flex-col">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                      <div className="flex items-center gap-3">
+                        <History className="text-blue-600" size={22} />
+                        <div>
+                          <h3 className="text-lg font-black text-slate-900 uppercase tracking-[0.08em]">
+                            Logs de Atendimento
+                          </h3>
+                          <p className="text-sm font-semibold text-slate-400 mt-1">
+                            Histórico completo de ações e mudanças nesta OS.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-black uppercase tracking-[0.18em] text-slate-600">
+                        {osLogs.length > 0 ? osLogs.length : viewingOS ? 1 : 0}{" "}
+                        registro(s)
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto max-h-[500px] pr-2 relative">
+                      {/* Linha da Timeline */}
+                      <div className="absolute left-[27px] top-4 bottom-4 w-px bg-slate-100" />
+
+                      <div className="space-y-6 relative">
+                        {osLogs.length === 0 && viewingOS && (
+                          <div className="flex items-start gap-4 group">
+                            <div className="relative z-10 flex items-center justify-center w-6 h-6 mt-1 ml-4 rounded-full bg-emerald-500 border-4 border-white shadow-sm" />
+                            <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group-hover:shadow-md transition-all">
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                  Criação
+                                </span>
+                                <span className="text-[11px] font-bold text-slate-400">
+                                  {viewingOS.createdAt
+                                    ? new Date(
+                                        viewingOS.createdAt,
+                                      ).toLocaleString("pt-BR", {
+                                        day: "2-digit",
+                                        month: "2-digit",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
+                                    : viewingOS.data}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-slate-700">
+                                <span>
+                                  <span className="text-slate-400 mr-1">
+                                    Autor:
+                                  </span>
+                                  {users.find(
+                                    (u) => u.id === viewingOS.createdBy,
+                                  )?.nome || "Sistema"}
+                                </span>
+                                <span>
+                                  <span className="text-slate-400 mr-1">
+                                    Protocolo:
+                                  </span>
+                                  {viewingOS.protocolo || "Não informado"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {osLogs.map((log) => {
+                          const date = new Date(log.created_at);
+                          const timeStr = date.toLocaleString("pt-BR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
+                          const tone = getOSLogTone(log.type);
+                          const highlightTags = getOSLogHighlightTags(
+                            log.type,
+                            log.metadata,
+                          );
+                          const fullActorName = log.actor_name || "Sistema";
+                          const actorKind = getOSLogActorKind(
+                            log.type as never,
+                            log.actor_id,
+                          );
+                          const actorPhrase = getOSLogActorPhrase(
+                            log.type as never,
+                            log.actor_name || "",
+                            log.actor_id,
+                          );
+                          const actorParts =
+                            fullActorName.split(" ").filter(Boolean) || [];
+                          const actorLabel =
+                            actorParts.length <= 2
+                              ? fullActorName
+                              : `${actorParts[0]} ${actorParts[actorParts.length - 1]}`;
+                          const actorInitials = fullActorName
+                            .split(" ")
+                            .filter(Boolean)
+                            .map((part) => part[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase();
+
+                          return (
+                            <div
+                              key={log.id}
+                              className="flex items-start gap-4 group"
+                            >
+                              {/* Dot na Timeline */}
+                              <div
+                                className={`relative z-10 flex items-center justify-center w-6 h-6 mt-1 ml-4 rounded-full border-4 border-white shadow-sm ${tone.dotClass}`}
+                              />
+
+                              {/* Card de Conteúdo */}
+                              <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group-hover:shadow-md group-hover:border-slate-300 transition-all duration-200">
+                                {/* Header do Card */}
+                                <div className="flex items-center justify-between gap-2 mb-3">
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${tone.badgeClass}`}
+                                  >
+                                    {tone.label}
+                                  </span>
+                                  <div className="text-right">
+                                    <span className="block text-[11px] font-bold text-slate-500 leading-none mb-1">
+                                      {timeStr}
+                                    </span>
+                                    <span className="block text-[10px] font-medium text-slate-400">
+                                      por{" "}
+                                      <span className="font-bold text-slate-500">
+                                        {actorKind === "driver"
+                                          ? `Motorista ${actorLabel}`
+                                          : actorLabel}
+                                      </span>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Conteúdo Principal */}
+                                <div className="flex items-start gap-3">
+                                  <div className="flex-shrink-0">
+                                    {log.actor_avatar_url ? (
+                                      <img
+                                        src={
+                                          getThumbnailUrl(
+                                            log.actor_avatar_url,
+                                            80,
+                                          ) || ""
+                                        }
+                                        alt={fullActorName}
+                                        className="w-10 h-10 rounded-full object-cover border-2 border-slate-50 shadow-sm"
+                                      />
+                                    ) : actorKind === "driver" ? (
+                                      <span
+                                        className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white flex items-center justify-center border-2 border-slate-50 shadow-sm`}
+                                      >
+                                        <Truck size={18} />
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white text-[10px] font-black flex items-center justify-center border-2 border-slate-50 shadow-sm`}
+                                      >
+                                        {actorInitials || "S"}
+                                      </span>
                                     )}
-                                    {(waypoint.passengers || []).length > 0 && (
-                                      <div className="mt-3 flex flex-wrap gap-2">
-                                        {(waypoint.passengers || []).map(
-                                          (p, pi) => {
-                                            const pRec = getPassengerRecord(
-                                              p.solicitanteId || "",
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-bold text-slate-800 leading-tight mb-1">
+                                      {actorPhrase}
+                                    </p>
+                                    <p className="text-sm font-medium text-slate-500 leading-snug mb-3">
+                                      {log.description}
+                                    </p>
+
+                                    {highlightTags.length > 0 && (
+                                      <div className="flex flex-wrap gap-2 pt-1">
+                                        {highlightTags.map((tag) => {
+                                          const style =
+                                            TAG_CATEGORY_STYLES[tag.category];
+                                          const iconMap: Record<
+                                            OSLogHighlightTag["category"],
+                                            React.ReactNode
+                                          > = {
+                                            action: <RefreshCw size={10} />,
+                                            cycle: <Route size={10} />,
+                                            state: <Activity size={10} />,
+                                            field: <Edit3 size={10} />,
+                                            km: <Gauge size={10} />,
+                                            section: <Layers size={10} />,
+                                          };
+
+                                          const arrowIdx =
+                                            tag.label.indexOf(" → ");
+                                          const colonIdx =
+                                            tag.label.indexOf(": ");
+                                          const hasChange =
+                                            tag.category === "field" &&
+                                            arrowIdx > 0 &&
+                                            colonIdx > 0;
+
+                                          if (hasChange) {
+                                            const field = tag.label.slice(
+                                              0,
+                                              colonIdx,
+                                            );
+                                            const before = tag.label.slice(
+                                              colonIdx + 2,
+                                              arrowIdx,
+                                            );
+                                            const after = tag.label.slice(
+                                              arrowIdx + 3,
                                             );
                                             return (
-                                              <span
-                                                key={pi}
-                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-100 text-sm font-bold text-blue-700"
+                                              <div
+                                                key={`${log.id}-${tag.label}`}
+                                                className="flex flex-col gap-1"
                                               >
-                                                <User size={12} />
-                                                {pRec?.nomeCompleto ||
-                                                  "Passageiro"}
-                                              </span>
+                                                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                                                  {iconMap.field}
+                                                  {field}
+                                                </span>
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 border border-rose-100 line-through opacity-80">
+                                                    {before}
+                                                  </span>
+                                                  <ArrowRight
+                                                    size={10}
+                                                    className="text-slate-300"
+                                                  />
+                                                  <span className="inline-flex items-center rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-100 shadow-sm">
+                                                    {after}
+                                                  </span>
+                                                </div>
+                                              </div>
                                             );
-                                          },
-                                        )}
+                                          }
+
+                                          return (
+                                            <span
+                                              key={`${log.id}-${tag.label}`}
+                                              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-tight transition-colors ${style.badge}`}
+                                            >
+                                              {iconMap[tag.category]}
+                                              {tag.label}
+                                            </span>
+                                          );
+                                        })}
                                       </div>
                                     )}
                                   </div>
                                 </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                </div>
-
-                {/* Logs de Atendimento */}
-                <div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm space-y-6 flex flex-col">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-3">
-                      <History className="text-blue-600" size={22} />
-                      <div>
-                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-[0.08em]">
-                          Logs de Atendimento
-                        </h3>
-                        <p className="text-sm font-semibold text-slate-400 mt-1">
-                          Histórico completo de ações e mudanças nesta OS.
-                        </p>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-black uppercase tracking-[0.18em] text-slate-600">
-                      {osLogs.length > 0 ? osLogs.length : viewingOS ? 1 : 0}{" "}
-                      registro(s)
-                    </div>
                   </div>
+                </div>
+              </div>
 
-                  <div className="flex-1 overflow-y-auto max-h-[500px] pr-2 relative">
-                    {/* Linha da Timeline */}
-                    <div className="absolute left-[27px] top-4 bottom-4 w-px bg-slate-100" />
+              <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 uppercase tracking-[0.08em]">
+                      Passageiros monitorados
+                    </h3>
+                    <p className="text-sm font-semibold text-slate-400">
+                      Sempre que houver passageiro vinculado na rota, ele
+                      aparece aqui com visão de contato e engajamento do fluxo.
+                    </p>
+                  </div>
+                  <div className="px-4 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-black uppercase tracking-[0.18em] text-slate-600">
+                    {operationalPassengerList.length} passageiro(s)
+                  </div>
+                </div>
 
-                    <div className="space-y-6 relative">
-                      {osLogs.length === 0 && viewingOS && (
-                        <div className="flex items-start gap-4 group">
-                          <div className="relative z-10 flex items-center justify-center w-6 h-6 mt-1 ml-4 rounded-full bg-emerald-500 border-4 border-white shadow-sm" />
-                          <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group-hover:shadow-md transition-all">
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
-                                Criação
-                              </span>
-                              <span className="text-[11px] font-bold text-slate-400">
-                                {viewingOS.createdAt
-                                  ? new Date(
-                                      viewingOS.createdAt,
-                                    ).toLocaleString("pt-BR", {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })
-                                  : viewingOS.data}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-slate-700">
-                              <span>
-                                <span className="text-slate-400 mr-1">
-                                  Autor:
-                                </span>
-                                {users.find((u) => u.id === viewingOS.createdBy)
-                                  ?.nome || "Sistema"}
-                              </span>
-                              <span>
-                                <span className="text-slate-400 mr-1">
-                                  Protocolo:
-                                </span>
-                                {viewingOS.protocolo || "Não informado"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {osLogs.map((log) => {
-                        const date = new Date(log.created_at);
-                        const timeStr = date.toLocaleString("pt-BR", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        });
-                        const tone = getOSLogTone(log.type);
-                        const highlightTags = getOSLogHighlightTags(
-                          log.type,
-                          log.metadata,
-                        );
-                        const fullActorName = log.actor_name || "Sistema";
-                        const actorKind = getOSLogActorKind(
-                          log.type as never,
-                          log.actor_id,
-                        );
-                        const actorPhrase = getOSLogActorPhrase(
-                          log.type as never,
-                          log.actor_name || "",
-                          log.actor_id,
-                        );
-                        const actorParts =
-                          fullActorName.split(" ").filter(Boolean) || [];
-                        const actorLabel =
-                          actorParts.length <= 2
-                            ? fullActorName
-                            : `${actorParts[0]} ${actorParts[actorParts.length - 1]}`;
-                        const actorInitials = fullActorName
-                          .split(" ")
-                          .filter(Boolean)
-                          .map((part) => part[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase();
-
-                        return (
-                          <div
-                            key={log.id}
-                            className="flex items-start gap-4 group"
-                          >
-                            {/* Dot na Timeline */}
-                            <div
-                              className={`relative z-10 flex items-center justify-center w-6 h-6 mt-1 ml-4 rounded-full border-4 border-white shadow-sm ${tone.dotClass}`}
-                            />
-
-                            {/* Card de Conteúdo */}
-                            <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group-hover:shadow-md group-hover:border-slate-300 transition-all duration-200">
-                              {/* Header do Card */}
-                              <div className="flex items-center justify-between gap-2 mb-3">
-                                <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${tone.badgeClass}`}
-                                >
-                                  {tone.label}
-                                </span>
-                                <div className="text-right">
-                                  <span className="block text-[11px] font-bold text-slate-500 leading-none mb-1">
-                                    {timeStr}
-                                  </span>
-                                  <span className="block text-[10px] font-medium text-slate-400">
-                                    por{" "}
-                                    <span className="font-bold text-slate-500">
-                                      {actorKind === "driver"
-                                        ? `Motorista ${actorLabel}`
-                                        : actorLabel}
-                                    </span>
-                                  </span>
+                {operationalPassengerList.length > 0 ? (
+                  <div className="overflow-hidden rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40">
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="bg-slate-50/80 border-b border-slate-200">
+                            <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[25%]">
+                              Passageiro
+                            </th>
+                            <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[20%]">
+                              Contato
+                            </th>
+                            <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[40%]">
+                              Endereço
+                            </th>
+                            <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[15%]">
+                              Status
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {operationalPassengerList.map((passenger) => (
+                            <tr
+                              key={passenger.key}
+                              className="hover:bg-slate-50/50 transition-colors cursor-default group"
+                            >
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+                                    <User size={18} className="text-blue-600" />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-800">
+                                      {passenger.nome}
+                                    </p>
+                                    <p className="text-xs font-semibold text-slate-400 mt-0.5">
+                                      {passenger.email}
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
-
-                              {/* Conteúdo Principal */}
-                              <div className="flex items-start gap-3">
-                                <div className="flex-shrink-0">
-                                  {log.actor_avatar_url ? (
-                                    <img
-                                      src={
-                                        getThumbnailUrl(
-                                          log.actor_avatar_url,
-                                          80,
-                                        ) || ""
-                                      }
-                                      alt={fullActorName}
-                                      className="w-10 h-10 rounded-full object-cover border-2 border-slate-50 shadow-sm"
-                                    />
-                                  ) : actorKind === "driver" ? (
-                                    <span
-                                      className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white flex items-center justify-center border-2 border-slate-50 shadow-sm`}
-                                    >
-                                      <Truck size={18} />
-                                    </span>
-                                  ) : (
-                                    <span
-                                      className={`w-10 h-10 rounded-full bg-gradient-to-br ${tone.avatarClass} text-white text-[10px] font-black flex items-center justify-center border-2 border-slate-50 shadow-sm`}
-                                    >
-                                      {actorInitials || "S"}
-                                    </span>
-                                  )}
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <MessageCircle
+                                    size={14}
+                                    className="text-slate-400 shrink-0"
+                                  />
+                                  <p className="text-sm font-semibold text-slate-600">
+                                    {passenger.celular}
+                                  </p>
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-bold text-slate-800 leading-tight mb-1">
-                                    {actorPhrase}
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-start gap-2 max-w-[280px]">
+                                  <MapPin
+                                    size={14}
+                                    className="text-slate-400 shrink-0 mt-0.5"
+                                  />
+                                  <p className="text-sm font-medium text-slate-600 line-clamp-2">
+                                    {passenger.endereco}
                                   </p>
-                                  <p className="text-sm font-medium text-slate-500 leading-snug mb-3">
-                                    {log.description}
-                                  </p>
-
-                                  {highlightTags.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 pt-1">
-                                      {highlightTags.map((tag) => {
-                                        const style =
-                                          TAG_CATEGORY_STYLES[tag.category];
-                                        const iconMap: Record<
-                                          OSLogHighlightTag["category"],
-                                          React.ReactNode
-                                        > = {
-                                          action: <RefreshCw size={10} />,
-                                          cycle: <Route size={10} />,
-                                          state: <Activity size={10} />,
-                                          field: <Edit3 size={10} />,
-                                          km: <Gauge size={10} />,
-                                          section: <Layers size={10} />,
-                                        };
-
-                                        const arrowIdx =
-                                          tag.label.indexOf(" → ");
-                                        const colonIdx =
-                                          tag.label.indexOf(": ");
-                                        const hasChange =
-                                          tag.category === "field" &&
-                                          arrowIdx > 0 &&
-                                          colonIdx > 0;
-
-                                        if (hasChange) {
-                                          const field = tag.label.slice(
-                                            0,
-                                            colonIdx,
-                                          );
-                                          const before = tag.label.slice(
-                                            colonIdx + 2,
-                                            arrowIdx,
-                                          );
-                                          const after = tag.label.slice(
-                                            arrowIdx + 3,
-                                          );
-                                          return (
-                                            <div
-                                              key={`${log.id}-${tag.label}`}
-                                              className="flex flex-col gap-1"
-                                            >
-                                              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
-                                                {iconMap.field}
-                                                {field}
-                                              </span>
-                                              <div className="flex items-center gap-1.5">
-                                                <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 border border-rose-100 line-through opacity-80">
-                                                  {before}
-                                                </span>
-                                                <ArrowRight
-                                                  size={10}
-                                                  className="text-slate-300"
-                                                />
-                                                <span className="inline-flex items-center rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-100 shadow-sm">
-                                                  {after}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          );
-                                        }
-
-                                        return (
-                                          <span
-                                            key={`${log.id}-${tag.label}`}
-                                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-tight transition-colors ${style.badge}`}
-                                          >
-                                            {iconMap[tag.category]}
-                                            {tag.label}
-                                          </span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                {passengerConfirmations[
+                                  passenger.solicitanteId
+                                ] ? (
+                                  <span className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] bg-green-50 border-green-200 text-green-700">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                                    Confirmado
+                                  </span>
+                                ) : effectiveOperationalStatus ===
+                                  "Pendente" ? (
+                                  <div className="relative inline-block">
+                                    <button
+                                      type="button"
+                                      data-notify-button
+                                      onClick={(e) => {
+                                        const rect = (
+                                          e.currentTarget as HTMLElement
+                                        ).getBoundingClientRect();
+                                        setNotifyMenuPosition({
+                                          x: rect.left,
+                                          y: rect.top,
+                                        });
+                                        setOpenNotifyMenuKey(
+                                          openNotifyMenuKey === passenger.key
+                                            ? null
+                                            : passenger.key,
                                         );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm space-y-5">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <h3 className="text-lg font-black text-slate-900 uppercase tracking-[0.08em]">
-                    Passageiros monitorados
-                  </h3>
-                  <p className="text-sm font-semibold text-slate-400">
-                    Sempre que houver passageiro vinculado na rota, ele aparece
-                    aqui com visão de contato e engajamento do fluxo.
-                  </p>
-                </div>
-                <div className="px-4 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-black uppercase tracking-[0.18em] text-slate-600">
-                  {operationalPassengerList.length} passageiro(s)
-                </div>
-              </div>
-
-              {operationalPassengerList.length > 0 ? (
-                <div className="overflow-hidden rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40">
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-slate-50/80 border-b border-slate-200">
-                          <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[25%]">
-                            Passageiro
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[20%]">
-                            Contato
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[40%]">
-                            Endereço
-                          </th>
-                          <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[15%]">
-                            Status
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {operationalPassengerList.map((passenger) => (
-                          <tr
-                            key={passenger.key}
-                            className="hover:bg-slate-50/50 transition-colors cursor-default group"
-                          >
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
-                                  <User size={18} className="text-blue-600" />
-                                </div>
-                                <div>
-                                  <p className="text-sm font-bold text-slate-800">
-                                    {passenger.nome}
-                                  </p>
-                                  <p className="text-xs font-semibold text-slate-400 mt-0.5">
-                                    {passenger.email}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <MessageCircle
-                                  size={14}
-                                  className="text-slate-400 shrink-0"
-                                />
-                                <p className="text-sm font-semibold text-slate-600">
-                                  {passenger.celular}
-                                </p>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-start gap-2 max-w-[280px]">
-                                <MapPin
-                                  size={14}
-                                  className="text-slate-400 shrink-0 mt-0.5"
-                                />
-                                <p className="text-sm font-medium text-slate-600 line-clamp-2">
-                                  {passenger.endereco}
-                                </p>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              {passengerConfirmations[
-                                passenger.solicitanteId
-                              ] ? (
-                                <span className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] bg-green-50 border-green-200 text-green-700">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                                  Confirmado
-                                </span>
-                              ) : effectiveOperationalStatus === "Pendente" ? (
-                                <div className="relative inline-block">
-                                  <button
-                                    type="button"
-                                    data-notify-button
-                                    onClick={(e) => {
-                                      const rect = (
-                                        e.currentTarget as HTMLElement
-                                      ).getBoundingClientRect();
-                                      setNotifyMenuPosition({
-                                        x: rect.left,
-                                        y: rect.top,
-                                      });
-                                      setOpenNotifyMenuKey(
-                                        openNotifyMenuKey === passenger.key
-                                          ? null
-                                          : passenger.key,
-                                      );
-                                    }}
-                                    className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
-                                    title="Abrir opções de notificação"
-                                  >
-                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                                    Aguardando
-                                    <ChevronDown size={12} />
-                                  </button>
-                                  {openNotifyMenuKey === passenger.key &&
-                                    notifyMenuPosition && (
-                                      <div
-                                        data-notify-menu
-                                        style={{
-                                          position: "fixed",
-                                          left: notifyMenuPosition.x,
-                                          bottom:
-                                            typeof window !== "undefined"
-                                              ? window.innerHeight -
-                                                notifyMenuPosition.y +
-                                                8
-                                              : 0,
-                                          transform: "translateX(-25%)",
-                                        }}
-                                        className="z-[9999] min-w-[220px] bg-white rounded-2xl border border-slate-200 shadow-xl p-2 space-y-1"
-                                      >
-                                        <p className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                                          <Bell size={12} />
-                                          Notificar passageiro
-                                        </p>
-                                        {passenger.hasEmail && (
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleNotifyPassenger(
-                                                passenger.key,
-                                                "email",
-                                                passenger,
-                                              )
-                                            }
-                                            disabled={!!notifyLoadingKey}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
-                                          >
-                                            <Mail size={14} />
-                                            {notifyLoadingKey === passenger.key
-                                              ? "Enviando..."
-                                              : "Por e-mail"}
-                                          </button>
-                                        )}
-                                        {passenger.hasPhone && (
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleNotifyPassenger(
-                                                passenger.key,
-                                                "whatsapp",
-                                                passenger,
-                                              )
-                                            }
-                                            disabled={!!notifyLoadingKey}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-green-50 hover:text-green-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
-                                          >
-                                            <Smartphone size={14} />
-                                            {notifyLoadingKey === passenger.key
-                                              ? "Enviando..."
-                                              : "Por celular"}
-                                          </button>
-                                        )}
-                                        {passenger.hasEmail &&
-                                          passenger.hasPhone && (
+                                      }}
+                                      className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                                      title="Abrir opções de notificação"
+                                    >
+                                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                      Aguardando
+                                      <ChevronDown size={12} />
+                                    </button>
+                                    {openNotifyMenuKey === passenger.key &&
+                                      notifyMenuPosition && (
+                                        <div
+                                          data-notify-menu
+                                          style={{
+                                            position: "fixed",
+                                            left: notifyMenuPosition.x,
+                                            bottom:
+                                              typeof window !== "undefined"
+                                                ? window.innerHeight -
+                                                  notifyMenuPosition.y +
+                                                  8
+                                                : 0,
+                                            transform: "translateX(-25%)",
+                                          }}
+                                          className="z-[9999] min-w-[220px] bg-white rounded-2xl border border-slate-200 shadow-xl p-2 space-y-1"
+                                        >
+                                          <p className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                                            <Bell size={12} />
+                                            Notificar passageiro
+                                          </p>
+                                          {passenger.hasEmail && (
                                             <button
                                               type="button"
                                               onClick={() =>
                                                 handleNotifyPassenger(
                                                   passenger.key,
-                                                  "both",
+                                                  "email",
                                                   passenger,
                                                 )
                                               }
                                               disabled={!!notifyLoadingKey}
-                                              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+                                              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
                                             >
-                                              <Send size={14} />
+                                              <Mail size={14} />
                                               {notifyLoadingKey ===
                                               passenger.key
                                                 ? "Enviando..."
-                                                : "Ambos"}
+                                                : "Por e-mail"}
                                             </button>
                                           )}
-                                      </div>
-                                    )}
-                                </div>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] bg-emerald-50 border-emerald-200 text-emerald-700">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  Ativo
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                                          {passenger.hasPhone && (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleNotifyPassenger(
+                                                  passenger.key,
+                                                  "whatsapp",
+                                                  passenger,
+                                                )
+                                              }
+                                              disabled={!!notifyLoadingKey}
+                                              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-green-50 hover:text-green-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+                                            >
+                                              <Smartphone size={14} />
+                                              {notifyLoadingKey ===
+                                              passenger.key
+                                                ? "Enviando..."
+                                                : "Por celular"}
+                                            </button>
+                                          )}
+                                          {passenger.hasEmail &&
+                                            passenger.hasPhone && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleNotifyPassenger(
+                                                    passenger.key,
+                                                    "both",
+                                                    passenger,
+                                                  )
+                                                }
+                                                disabled={!!notifyLoadingKey}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+                                              >
+                                                <Send size={14} />
+                                                {notifyLoadingKey ===
+                                                passenger.key
+                                                  ? "Enviando..."
+                                                  : "Ambos"}
+                                              </button>
+                                            )}
+                                        </div>
+                                      )}
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] bg-emerald-50 border-emerald-200 text-emerald-700">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    Ativo
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-                  <p className="text-base font-black text-slate-700">
-                    Nenhum passageiro vinculado visualmente à rota desta OS.
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-slate-400">
-                    Assim que houver passageiros adicionados nos waypoints, o
-                    painel mostrará contatos e situação do fluxo.
-                  </p>
-                </div>
-              )}
+                ) : (
+                  <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                    <p className="text-base font-black text-slate-700">
+                      Nenhum passageiro vinculado visualmente à rota desta OS.
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-400">
+                      Assim que houver passageiros adicionados nos waypoints, o
+                      painel mostrará contatos e situação do fluxo.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
           )}
         </StandardModal>
       )}
@@ -10982,146 +11594,7 @@ export default function OSOperationalPage() {
         </div>
       )}
 
-      {/* Modal de escolha: Novo Atendimento */}
-      {isAttendanceChoiceModalOpen && (
-        <StandardModal
-          onClose={() => setIsAttendanceChoiceModalOpen(false)}
-          title="Novo Atendimento"
-          subtitle="Escolha o tipo de atendimento para criar"
-          icon={<Plus className="w-6 h-6 md:w-7 md:h-7" />}
-          maxWidthClassName="max-w-6xl"
-          bodyClassName="p-8 md:p-12"
-          footer={null}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
-            <button
-              type="button"
-              onClick={() => {
-                setIsAttendanceChoiceModalOpen(false);
-                handleOpenCreateOSModal();
-              }}
-              className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-blue-400 hover:bg-blue-50 hover:shadow-xl hover:shadow-blue-900/5 transition-all active:scale-[0.98]"
-            >
-              <div className="w-24 h-24 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <Truck size={48} strokeWidth={2} />
-              </div>
-              <div className="text-center">
-                <h3 className="text-xl font-black text-slate-800 tracking-tight">
-                  OS
-                </h3>
-                <p className="mt-3 text-sm font-semibold text-slate-500">
-                  Ordem de Serviço única com motorista, rota e passageiros
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsAttendanceChoiceModalOpen(false);
-                setIsDocagemModalOpen(true);
-              }}
-              className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-violet-400 hover:bg-violet-50 hover:shadow-xl hover:shadow-violet-900/5 transition-all active:scale-[0.98]"
-            >
-              <div className="w-24 h-24 rounded-3xl bg-violet-50 text-violet-600 flex items-center justify-center group-hover:bg-violet-600 group-hover:text-white transition-colors">
-                <Package size={48} strokeWidth={2} />
-              </div>
-              <div className="text-center">
-                <h3 className="text-xl font-black text-slate-800 tracking-tight">
-                  Docagem
-                </h3>
-                <p className="mt-3 text-sm font-semibold text-slate-500">
-                  OS recorrente fixa em doca com dias da semana e valor diário
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsAttendanceChoiceModalOpen(false);
-                setIsFreelanceMode(true);
-                handleOpenCreateOSModal();
-              }}
-              className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 hover:shadow-xl hover:shadow-emerald-900/5 transition-all active:scale-[0.98]"
-            >
-              <div className="w-24 h-24 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                <Briefcase size={48} strokeWidth={2} />
-              </div>
-              <div className="text-center">
-                <h3 className="text-xl font-black text-slate-800 tracking-tight">
-                  Freelance
-                </h3>
-                <p className="mt-3 text-sm font-semibold text-slate-500">
-                  Atendimento avulso por profissional autônomo com valor
-                  combinado
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsAttendanceChoiceModalOpen(false);
-                setIsRascunhoModalOpen(true);
-              }}
-              className="group flex flex-col items-center gap-6 p-8 md:p-10 rounded-[2rem] border border-slate-200 bg-white cursor-pointer hover:border-amber-400 hover:bg-amber-50 hover:shadow-xl hover:shadow-amber-900/5 transition-all active:scale-[0.98]"
-            >
-              <div className="w-24 h-24 rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors">
-                <FileText size={48} strokeWidth={2} />
-              </div>
-              <div className="text-center">
-                <h3 className="text-xl font-black text-slate-800 tracking-tight">
-                  Rascunho
-                </h3>
-                <p className="mt-3 text-sm font-semibold text-slate-500">
-                  Salvar atendimento incompleto para editar depois
-                </p>
-              </div>
-            </button>
-          </div>
-        </StandardModal>
-      )}
-
-      {/* Modal Rascunho - Em desenvolvimento */}
-      {isRascunhoModalOpen && (
-        <StandardModal
-          onClose={() => setIsRascunhoModalOpen(false)}
-          title="Rascunho"
-          subtitle="Funcionalidade em desenvolvimento"
-          icon={<FileText className="w-6 h-6 md:w-7 md:h-7" />}
-          maxWidthClassName="max-w-md"
-          bodyClassName="p-8 md:p-10 text-center"
-          headerClassName="bg-amber-500"
-          headerGlowClassName="bg-amber-500/10"
-          subtitleClassName="text-white/70"
-          footer={null}
-        >
-          <div className="flex flex-col items-center gap-6">
-            <div className="w-20 h-20 rounded-3xl bg-amber-50 text-amber-500 flex items-center justify-center">
-              <FileText size={40} strokeWidth={2} />
-            </div>
-            <div className="space-y-2">
-              <p className="text-base font-bold text-slate-700">
-                Em breve será possível salvar e gerenciar rascunhos de
-                atendimento.
-              </p>
-              <p className="text-sm text-slate-500">
-                A funcionalidade permitirá iniciar uma OS e retomar o
-                preenchimento posteriormente, sem gerar protocolo ou notificações
-                até a publicação.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsRascunhoModalOpen(false)}
-              className="px-8 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-widest cursor-pointer"
-            >
-              Entendi
-            </button>
-          </div>
-        </StandardModal>
-      )}
+      {/* Modal de escolha removido: botão "Novo Atendimento" abre direto o modal de OS */}
 
       {/* Modal Nova Docagem */}
       {isDocagemModalOpen && (
@@ -11701,7 +12174,8 @@ export default function OSOperationalPage() {
                       "Andamento"}
                     {viewingDocagemInstance.status === "finalizada" &&
                       "Finalizada"}
-                    {viewingDocagemInstance.status === "excluida" && "Arquivada"}
+                    {viewingDocagemInstance.status === "excluida" &&
+                      "Arquivada"}
                   </p>
                 </div>
               </div>

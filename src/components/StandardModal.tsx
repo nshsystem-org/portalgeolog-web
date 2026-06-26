@@ -15,7 +15,11 @@ interface StandardModalProps {
   bodyClassName?: string;
   headerClassName?: string;
   headerGlowClassName?: string;
+  headerStyle?: React.CSSProperties;
   subtitleClassName?: string;
+  titleClassName?: string;
+  iconContainerClassName?: string;
+  iconClassName?: string;
   disableBackdropClose?: boolean;
 }
 
@@ -31,7 +35,11 @@ export default function StandardModal({
   bodyClassName = "p-6 md:p-10 pb-16 space-y-12",
   headerClassName = "bg-[var(--color-geolog-blue)]",
   headerGlowClassName = "bg-blue-500/10",
+  headerStyle,
   subtitleClassName = "text-blue-300/80",
+  titleClassName = "text-white",
+  iconContainerClassName = "bg-white/10 border-white/20",
+  iconClassName = "text-white",
   disableBackdropClose = false,
 }: StandardModalProps) {
   const titleId = useId();
@@ -74,19 +82,21 @@ export default function StandardModal({
       >
         <div
           className={`${headerClassName} p-6 md:p-8 flex items-center justify-between shrink-0 relative overflow-hidden`}
-          style={{ paddingBottom: "1.75rem" }}
+          style={{ paddingBottom: "1.75rem", ...headerStyle }}
         >
           <div
             className={`absolute top-0 right-0 w-64 h-64 rounded-full -mr-32 -mt-32 blur-3xl opacity-50 ${headerGlowClassName}`}
           />
           <div className="flex items-center gap-5 relative z-10">
-            <div className="w-12 h-12 md:w-14 md:h-14 bg-white/10 rounded-2xl flex items-center justify-center text-white backdrop-blur-xl border border-white/20">
+            <div
+              className={`w-12 h-12 md:w-14 md:h-14 ${iconContainerClassName} rounded-2xl flex items-center justify-center ${iconClassName} backdrop-blur-xl`}
+            >
               {icon}
             </div>
             <div>
               <h2
                 id={`modal-title-${titleId}`}
-                className="text-2xl md:text-3xl font-black text-white tracking-tight"
+                className={`text-2xl md:text-3xl font-black tracking-tight ${titleClassName}`}
                 style={{ lineHeight: "1.2", marginBottom: "0.25rem" }}
               >
                 {title}

@@ -127,7 +127,7 @@ export function FinanceiroTable({
                 ? driverMap.get(item.driverId)
                 : undefined;
               const driverPartnerId =
-                !item.isFreelance && item.driverId
+                item.tipo !== "freelance" && item.driverId
                   ? driverPartnerMap.get(item.driverId)
                   : undefined;
               const partnerName = driverPartnerId
@@ -140,7 +140,7 @@ export function FinanceiroTable({
                     {driverName || item.motorista || "Sem motorista"}
                   </p>
                   <div className="flex items-center gap-1.5 text-xs font-semibold">
-                    {item.isFreelance ? (
+                    {item.tipo === "freelance" ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-emerald-600">
                         <Truck size={10} className="shrink-0" />
                         Freelance
