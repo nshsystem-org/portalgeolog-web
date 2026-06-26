@@ -361,7 +361,7 @@ async function fetchReportData(
   }
 
   const { data: rowsRaw, error: rowsError } = await query.order("data", {
-    ascending: false,
+    ascending: true,
   });
   if (rowsError) throw rowsError;
 

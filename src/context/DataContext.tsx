@@ -165,8 +165,9 @@ export interface OSStatus {
     | "Em Rota"
     | "Andamento"
     | "Finalizado"
-    | "Cancelado";
-  financeiro: "Pendente" | "Faturado" | "Recebido" | "Pago";
+    | "Cancelado"
+    | "Rascunho";
+  financeiro: "Pendente" | "Faturado" | "Recebido" | "Pago" | "Rascunho";
 }
 
 export interface Passageiro {
@@ -1339,13 +1340,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const lucro = baseCobranca - imposto - repasseEfetivo;
     const tempId = `temp-${Date.now()}`;
 
+    const isDraft = (osData as { tipo?: string }).tipo === "rascunho";
     const optimistic: OrderService = {
       id: tempId,
       protocolo: "...",
       ...osData,
       imposto,
       lucro,
-      status: { operacional: "Pendente", financeiro: "Pendente" },
+      status: isDraft
+        ? { operacional: "Rascunho", financeiro: "Rascunho" }
+        : { operacional: "Pendente", financeiro: "Pendente" },
     };
     // Atualizar osData com valores numéricos para o backend
     const osDataWithNumbers = { ...osData, valorBruto: vBruto, custo: vCusto };

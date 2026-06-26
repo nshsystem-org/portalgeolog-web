@@ -251,7 +251,8 @@ export type CycleOperationalStatus =
   | "Em Rota"
   | "Andamento"
   | "Finalizado"
-  | "Cancelado";
+  | "Cancelado"
+  | "Rascunho";
 
 /** Mapeia o state de um único ciclo para um status operacional exibível. */
 export function getCycleDisplayStatus(

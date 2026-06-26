@@ -20,6 +20,7 @@ interface StandardModalProps {
   titleClassName?: string;
   iconContainerClassName?: string;
   iconClassName?: string;
+  closeButtonClassName?: string;
   disableBackdropClose?: boolean;
 }
 
@@ -40,6 +41,7 @@ export default function StandardModal({
   titleClassName = "text-white",
   iconContainerClassName = "bg-white/10 border-white/20",
   iconClassName = "text-white",
+  closeButtonClassName = "text-white/40 hover:text-white hover:bg-white/10",
   disableBackdropClose = false,
 }: StandardModalProps) {
   const titleId = useId();
@@ -114,7 +116,7 @@ export default function StandardModal({
           </div>
           <button
             onClick={onClose}
-            className="p-3 text-white/40 hover:text-white hover:bg-white/10 rounded-xl transition-all relative z-10 cursor-pointer"
+            className={`p-3 ${closeButtonClassName} rounded-xl transition-all relative z-10 cursor-pointer`}
             aria-label="Fechar modal"
           >
             <X size={24} />

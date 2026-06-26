@@ -74,6 +74,7 @@ import {
   Briefcase,
   DollarSign,
   AlertCircle,
+  ArrowUpCircle,
 } from "lucide-react";
 import {
   useData,
@@ -90,6 +91,7 @@ import {
   checkActiveOSForDriverVehicle,
   fetchPassageirosPage,
   fetchPassageirosByIds,
+  promoteDraftToOS,
   type OSLog,
   type OSPageFilters,
 } from "@/lib/supabase/queries";
@@ -610,6 +612,7 @@ export default function OSOperationalPage() {
   const [docagemListFilter, setDocagemListFilter] = useState<
     "all" | "os" | "docagem" | "rascunho" | "freelance"
   >("all");
+  const [promotingDraftId, setPromotingDraftId] = useState<string | null>(null);
   const [isDocagemModalOpen, setIsDocagemModalOpen] = useState(false);
   const [docagemFormData, setDocagemFormData] = useState<DocagemInput>({
     clienteId: "",
@@ -713,11 +716,14 @@ export default function OSOperationalPage() {
           ? "os"
           : docagemListFilter === "freelance"
             ? "freelance"
-            : undefined;
+            : docagemListFilter === "rascunho"
+              ? "rascunho"
+              : undefined;
       const filters = {
         ...tableFilters,
         arquivado: showArchivedOnly ? true : undefined,
         tipo: tipoFilter,
+        excludeTipos: !tipoFilter ? ["rascunho"] : undefined,
       };
       const result = await fetchOSPage({
         ...params,
@@ -840,6 +846,8 @@ export default function OSOperationalPage() {
     if (docagemListFilter === "docagem" || docagemListFilter === "rascunho")
       return [];
     return calendarOSList.filter((item) => {
+      // Rascunhos nunca aparecem no calendário
+      if (item.tipo === "rascunho") return false;
       // Filtro por tipo (OS vs Freelance)
       if (docagemListFilter === "os" && item.tipo !== "os") return false;
       if (docagemListFilter === "freelance" && item.tipo !== "freelance")
@@ -2154,6 +2162,24 @@ export default function OSOperationalPage() {
     }
     setViewingOSId(osId);
     setOpenActionMenuId(null);
+  };
+
+  const handlePromoteDraft = async (osId: string) => {
+    setPromotingDraftId(osId);
+    try {
+      await promoteDraftToOS(osId);
+      toast.success("Rascunho promovido para OS com sucesso!");
+      void osTable.refresh();
+    } catch (err) {
+      console.error("Erro ao promover rascunho:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível promover o rascunho.",
+      );
+    } finally {
+      setPromotingDraftId(null);
+    }
   };
 
   const handleEditOS = async (osId: string) => {
@@ -4707,6 +4733,14 @@ export default function OSOperationalPage() {
         });
         setShowNotificationConfirm(false);
         void resetMainModalState();
+
+        // Rascunho: sem notificações, sem WhatsApp, sem email admin
+        const isDraftCreate = (osData as { tipo?: string }).tipo === "rascunho";
+        if (isDraftCreate) {
+          toast.success("Rascunho salvo com sucesso.");
+          return;
+        }
+
         if (notificationConfig.auto) {
           void processAutoNotifications(newOSId.id);
         }
@@ -4750,39 +4784,37 @@ export default function OSOperationalPage() {
   const handleAddOS = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Rascunho: funcionalidade em desenvolvimento — não persiste
-    if (!editingOSId && osCreationType === "rascunho") {
-      toast.info(
-        "Rascunho está em desenvolvimento. Selecione OS ou Freelance para salvar.",
-      );
-      return;
-    }
+    const isDraft = !editingOSId && osCreationType === "rascunho";
 
-    // Validação dos campos obrigatórios
-    if (
-      !formData.data ||
-      !formData.clienteId ||
-      !formData.driverId ||
-      !formData.veiculoId
-    ) {
-      toast.error("Preencha todos os campos obrigatórios.");
-      return;
-    }
-
-    // Validação: origem do primeiro itinerário deve ter data e hora
     const itineraries = getItineraries(formData.waypoints);
     const firstItinerary = itineraries.find((it) => it.index === 0);
-    const firstOriginIndex = firstItinerary?.waypointIndices[0];
-    if (firstOriginIndex !== undefined) {
-      const originData = formData.waypoints[firstOriginIndex]?.data;
-      if (!originData || originData.trim().length < 10) {
-        toast.error("Informe a data de início do Itinerário 1.");
+
+    // Rascunho: todos os campos são opcionais — pula validação obrigatória
+    if (!isDraft) {
+      // Validação dos campos obrigatórios
+      if (
+        !formData.data ||
+        !formData.clienteId ||
+        !formData.driverId ||
+        !formData.veiculoId
+      ) {
+        toast.error("Preencha todos os campos obrigatórios.");
         return;
       }
-      const originHora = formData.waypoints[firstOriginIndex]?.hora;
-      if (!originHora || originHora.trim().length < 4) {
-        toast.error("Informe a hora de início do Itinerário 1.");
-        return;
+
+      // Validação: origem do primeiro itinerário deve ter data e hora
+      const firstOriginIndex = firstItinerary?.waypointIndices[0];
+      if (firstOriginIndex !== undefined) {
+        const originData = formData.waypoints[firstOriginIndex]?.data;
+        if (!originData || originData.trim().length < 10) {
+          toast.error("Informe a data de início do Itinerário 1.");
+          return;
+        }
+        const originHora = formData.waypoints[firstOriginIndex]?.hora;
+        if (!originHora || originHora.trim().length < 4) {
+          toast.error("Informe a hora de início do Itinerário 1.");
+          return;
+        }
       }
     }
 
@@ -4811,7 +4843,9 @@ export default function OSOperationalPage() {
       data: syncedData,
       hora: null,
       rota: { waypoints: formData.waypoints },
-      tipo: !editingOSId ? osCreationType : undefined,
+      tipo: !editingOSId
+        ? (osCreationType as OrderService["tipo"])
+        : undefined,
     };
 
     // Se estiver editando e nao houver mudancas reais, apenas fecha o modal
@@ -4845,6 +4879,12 @@ export default function OSOperationalPage() {
     if (editingOSId) {
       // Editar Atendimento: abre modal perguntando se deseja marcar como concluido
       setShowCompletionConfirm(true);
+      return;
+    }
+
+    // Rascunho: salva silenciosamente (sem modal de notificação)
+    if (isDraft) {
+      void executeSaveOS(finalData);
       return;
     }
 
@@ -5219,6 +5259,16 @@ export default function OSOperationalPage() {
           shadow: "shadow-rose-200",
           text: "text-rose-700",
           label: "Cancelado",
+        };
+      case "Rascunho":
+        return {
+          icon: <FileText size={20} />,
+          bg: "bg-amber-50/50",
+          border: "border-amber-200",
+          accent: "bg-[rgb(255,212,146)]",
+          shadow: "shadow-amber-200",
+          text: "text-[#a06418]",
+          label: "Rascunho",
         };
       default:
         return {
@@ -5862,16 +5912,163 @@ export default function OSOperationalPage() {
               showHeader={false}
             />
           ) : viewMode === "table" && docagemListFilter === "rascunho" ? (
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 p-16 flex flex-col items-center justify-center text-center">
-              <FileText size={48} className="text-slate-300 mb-4" />
-              <p className="text-base font-black text-slate-700">
-                Filtro de rascunhos em desenvolvimento.
-              </p>
-              <p className="mt-2 text-sm font-semibold text-slate-400">
-                Em breve será possível visualizar e gerenciar os rascunhos de
-                atendimento.
-              </p>
-            </div>
+            <DataTable
+              data={tableItems}
+              loading={osTable.loading}
+              disableClientSearch
+              pagination={{
+                page: osTable.page,
+                pageSize: osTable.pageSize,
+                totalItems: tableTotalCount,
+                onPageChange: osTable.setPage,
+              }}
+              columns={[
+                {
+                  key: "protocolo",
+                  title: "Protocolo",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+                    const waypoints = item.rota?.waypoints || [];
+                    const firstWp = waypoints[0];
+                    const displayDate = firstWp?.data || item.data;
+                    const displayHora = firstWp?.hora || item.hora;
+                    return (
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="font-black text-base text-slate-800 tracking-tight">
+                            {item.protocolo}
+                          </p>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-[rgb(255,212,146)] px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-[#a06418]">
+                            Rascunho
+                          </span>
+                        </div>
+                        {displayDate && (
+                          <p
+                            className="text-sm font-semibold"
+                            style={{ color: "rgb(97, 130, 209)" }}
+                          >
+                            {displayDate.split("-").reverse().join("/")}
+                            {displayHora && (
+                              <span className="ml-1 text-slate-500">
+                                · {displayHora.slice(0, 5)}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "cliente",
+                  title: "Cliente",
+                  width: "380px",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+                    const clienteNome =
+                      clientes.find((c) => c.id === item.clienteId)?.nome ||
+                      "—";
+                    return (
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                          <Building size={18} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm text-slate-700">
+                            {clienteNome}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "motorista",
+                  title: "Motorista",
+                  width: "250px",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+                    const motoristaNomeAtual = item.driverId
+                      ? drivers.find((d) => d.id === item.driverId)?.name ||
+                        item.motorista
+                      : item.motorista;
+                    const motoristaParts = String(motoristaNomeAtual)
+                      .trim()
+                      .split(/\s+/)
+                      .filter(Boolean);
+                    const motoristaNomeCurto =
+                      motoristaParts.length > 1
+                        ? `${motoristaParts[0]} ${motoristaParts[1]}`
+                        : motoristaParts[0] || "—";
+                    return (
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center">
+                          <Truck className="text-slate-400" size={16} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-800 text-base">
+                            {motoristaNomeCurto}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "acoes",
+                  title: "Ações",
+                  align: "center",
+                  render: (value: unknown, item: OrderService) => {
+                    void value;
+                    return (
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleEditOS(item.id);
+                          }}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Editar rascunho"
+                        >
+                          <Pencil size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handlePromoteDraft(item.id);
+                          }}
+                          disabled={promotingDraftId === item.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-100 text-[#a06418] font-bold text-xs uppercase tracking-widest hover:bg-amber-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Promover para OS real"
+                        >
+                          {promotingDraftId === item.id ? (
+                            <>
+                              <Loader2
+                                size={14}
+                                className="animate-spin"
+                              />
+                              Promovendo...
+                            </>
+                          ) : (
+                            <>
+                              <ArrowUpCircle size={14} />
+                              Promover
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  },
+                },
+              ]}
+              searchTerm={osTable.searchTerm}
+              onSearchChange={osTable.setSearchTerm}
+              searchPlaceholder="Buscar rascunho por protocolo, motorista..."
+              emptyMessage="Nenhum rascunho encontrado."
+              emptyIcon={<FileText size={48} />}
+            />
           ) : viewMode === "table" ? (
             <DataTable
               data={tableItems}
@@ -6690,6 +6887,11 @@ export default function OSOperationalPage() {
               ? "text-[#a06418]"
               : "text-white"
           }
+          closeButtonClassName={
+            !editingOSId && osCreationType === "rascunho"
+              ? "text-[#a06418]/40 hover:text-[#a06418] hover:bg-[#a06418]/10"
+              : "text-white/40 hover:text-white hover:bg-white/10"
+          }
           footer={
             <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
               {/* Toggle de tipo: OS | Freelance | Rascunho (somente na criação) */}
@@ -6778,14 +6980,13 @@ export default function OSOperationalPage() {
                       : "nova-os-form"
                   }
                   disabled={
-                    (!editingOSId && osCreationType === "rascunho") ||
-                    (osCreationType === "docagem" && isSubmittingDocagem)
+                    osCreationType === "docagem" && isSubmittingDocagem
                   }
                   className={
                     !editingOSId && osCreationType === "freelance"
                       ? "px-12 py-4 bg-emerald-600 text-white font-black rounded-xl shadow-xl shadow-emerald-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
                       : !editingOSId && osCreationType === "rascunho"
-                        ? "px-12 py-4 bg-[rgb(255,212,146)] text-[#a06418] font-black rounded-xl shadow-xl shadow-[#a06418]/20 cursor-not-allowed opacity-60 transition-all text-sm uppercase tracking-widest"
+                        ? "px-12 py-4 bg-[rgb(255,212,146)] text-[#a06418] font-black rounded-xl shadow-xl shadow-[#a06418]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
                         : !editingOSId && osCreationType === "docagem"
                           ? "px-12 py-4 bg-[rgb(89,47,147)] text-white font-black rounded-xl shadow-xl shadow-[rgb(89,47,147)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50"
                           : "px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
@@ -6796,7 +6997,7 @@ export default function OSOperationalPage() {
                     : osCreationType === "freelance"
                       ? "Confirmar Freelance"
                       : osCreationType === "rascunho"
-                        ? "Em desenvolvimento"
+                        ? "Salvar Rascunho"
                         : osCreationType === "docagem"
                           ? isSubmittingDocagem
                             ? "Criando..."

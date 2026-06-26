@@ -1297,6 +1297,7 @@ export async function fetchOSList(): Promise<OrderService[]> {
       .from("ordens_servico")
       .select(OS_SELECT_COLUMNS)
       .eq("arquivado", false)
+      .neq("tipo", "rascunho")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -1430,6 +1431,7 @@ export type OSPageFilters = {
   createdBy?: string;
   arquivado?: boolean;
   tipo?: string;
+  excludeTipos?: string[];
 };
 
 export async function fetchOSPage({
@@ -1507,6 +1509,11 @@ export async function fetchOSPage({
     if (filters.tipo) {
       query = query.eq("tipo", filters.tipo);
     }
+    if (filters.excludeTipos && filters.excludeTipos.length > 0) {
+      for (const excludeTipo of filters.excludeTipos) {
+        query = query.neq("tipo", excludeTipo);
+      }
+    }
 
     const { data: osRaw, error, count } = await query;
     if (error) throw error;
@@ -1581,6 +1588,7 @@ export async function fetchOSFinancePage({
       .from("ordens_servico")
       .select(FINANCE_OS_SELECT_COLUMNS, { count: "exact" })
       .eq("arquivado", false)
+      .neq("tipo", "rascunho")
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -1684,6 +1692,7 @@ export async function fetchOSFinanceOverview(
       .from("ordens_servico")
       .select(FINANCE_OS_SELECT_COLUMNS)
       .eq("arquivado", false)
+      .neq("tipo", "rascunho")
       .order("created_at", { ascending: false });
 
     if (month) {
@@ -1960,6 +1969,14 @@ export async function updateOSInDB(
   if (error) throw error;
 
   return { changed: true };
+}
+
+export async function promoteDraftToOS(id: string): Promise<string> {
+  const { data, error } = await getSupabase().rpc("promote_draft_to_os", {
+    p_os_id: id,
+  });
+  if (error || !data) throw error || new Error("Falha ao promover rascunho");
+  return data as string;
 }
 
 export async function updateOSStatusInDB(
@@ -2781,6 +2798,7 @@ export async function fetchOSCalendarRange({
     } else {
       query = query.eq("arquivado", false);
     }
+    query = query.neq("tipo", "rascunho");
 
     const { data: osRaw, error } = await query
       .order("data", { ascending: true })
@@ -2926,7 +2944,8 @@ export async function fetchOSFinanceStats(
         "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id, repasse_pago, tipo",
         { count: "exact" },
       )
-      .eq("arquivado", false);
+      .eq("arquivado", false)
+      .neq("tipo", "rascunho");
 
     if (month) {
       query = query
