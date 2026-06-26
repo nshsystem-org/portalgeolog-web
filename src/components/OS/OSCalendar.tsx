@@ -223,9 +223,9 @@ const statusColors: Record<
     bg: "rgb(255, 248, 235)",
     border: "rgb(255, 212, 146)",
     text: "#a06418",
-    dot: "#a06418",
+    dot: "rgb(220, 193, 158)",
     clockColor: "#a06418",
-    iconCircle: "#a06418",
+    iconCircle: "rgb(255, 234, 208)",
     badgeText: "#a06418",
     badgeBg: "rgb(255, 212, 146)",
   },
@@ -524,7 +524,9 @@ const EventContent = ({
                 ? "#f9fcff"
                 : status === "Aguardando"
                   ? "#f7f9ff"
-                  : iconCircleColor,
+                  : status === "Rascunho"
+                    ? "rgb(255, 234, 208)"
+                    : iconCircleColor,
           color: showArchivedOnly
             ? "#ffffff"
             : isFinalizado
@@ -533,7 +535,9 @@ const EventContent = ({
                 ? "#475569"
                 : status === "Aguardando"
                   ? "#1e40af"
-                  : "#ffffff",
+                  : status === "Rascunho"
+                    ? "rgb(177, 118, 90)"
+                    : "#ffffff",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
