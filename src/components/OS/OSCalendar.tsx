@@ -903,9 +903,11 @@ export default function OSCalendar({
       const clienteNome =
         clientes.find((c) => c.id === os.clienteId)?.nome || "N/A";
       const effectiveStatus =
-        os.operationalCycles && os.operationalCycles.length > 0
-          ? deriveCyclesOperationalStatus(os.operationalCycles)
-          : os.status.operacional;
+        os.tipo === "rascunho"
+          ? "Rascunho"
+          : os.operationalCycles && os.operationalCycles.length > 0
+            ? deriveCyclesOperationalStatus(os.operationalCycles)
+            : os.status.operacional;
       const osKind: CalendarEventKind =
         os.tipo === "freelance"
           ? "freelance"
@@ -1011,9 +1013,12 @@ export default function OSCalendar({
           const cycle = os.operationalCycles?.find(
             (item) => item.itineraryIndex === itineraryIndex,
           );
-          const eventStatus = cycle
-            ? getCycleDisplayStatus(cycle.state)
-            : effectiveStatus;
+          const eventStatus =
+            os.tipo === "rascunho"
+              ? "Rascunho"
+              : cycle
+                ? getCycleDisplayStatus(cycle.state)
+                : effectiveStatus;
           const colors = statusColors[eventStatus] || statusColors["Pendente"];
 
           derivedEvents.push({
