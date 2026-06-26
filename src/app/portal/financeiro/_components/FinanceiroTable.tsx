@@ -1,12 +1,12 @@
 import {
   BadgeInfo,
   Building2,
-  CalendarRange,
   CheckCircle2,
   Eye,
   FileUp,
   Link2,
   MoreVertical,
+  Percent,
   TrendingDown,
   TrendingUp,
   Truck,
@@ -15,7 +15,12 @@ import {
 import type { MutableRefObject, ReactElement } from "react";
 import { DataTable } from "@/components/ui/DataTable";
 import type { OrderService } from "@/context/DataContext";
-import { normalizeFinanceStatus } from "@/lib/financeiro";
+import {
+  normalizeFinanceStatus,
+  parseHoraExtraMinutes,
+  calcHoraExtraCliente,
+  calcHoraExtraMotorista,
+} from "@/lib/financeiro";
 import {
   getFinanceDisplayStatus,
   formatCurrency,
@@ -82,21 +87,27 @@ export function FinanceiroTable({
         pagination={pagination}
         emptyMessage="Nenhuma transação financeira encontrada para este filtro."
         emptyIcon={<Wallet size={48} className="text-slate-200" />}
+        showHeader={false}
         columns={[
           {
             key: "documento",
             title: "Protocolo",
             render: (_value, item) => (
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-base font-black text-slate-800">
-                    #{item.os || item.protocolo || item.id.slice(0, 6)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                  <CalendarRange size={12} />
+              <div className="space-y-1">
+                <p className="font-black text-base text-slate-800 tracking-tight">
+                  {item.protocolo}
+                </p>
+                <p
+                  className="text-sm font-semibold"
+                  style={{ color: "rgb(97, 130, 209)" }}
+                >
                   {formatDate(item.data)}
-                </div>
+                  {item.hora && (
+                    <span className="ml-1 text-slate-500">
+                      · {item.hora.slice(0, 5)}
+                    </span>
+                  )}
+                </p>
               </div>
             ),
           },
@@ -163,22 +174,45 @@ export function FinanceiroTable({
             title: "Valores",
             align: "right",
             render: (_value, item) => {
-              const bruto = Number(item.valorBruto || 0);
-              const custo = Number(item.custo || 0);
+              const brutoBase = Number(item.valorBruto || 0);
+              const custoBase = Number(item.custo || 0);
+              const imposto = Number(item.imposto || 0);
               const lucro = Number(item.lucro || 0);
+              // Aplica hora extra e no-show para refletir o valor efetivamente
+              // cobrado do cliente e repassado ao motorista (mesma lógica de
+              // queries.ts / DataContext ao salvar a OS).
+              const heMin = parseHoraExtraMinutes(item.horaExtra);
+              const heCliente = calcHoraExtraCliente(heMin);
+              const heMotorista = calcHoraExtraMotorista(heMin);
+              const noShowFator = item.noShow
+                ? (item.noShowPercentual ?? 100) / 100
+                : 1;
+              const bruto = item.noShow
+                ? (brutoBase + heCliente) * noShowFator
+                : brutoBase + heCliente;
+              const custo = item.noShow
+                ? (custoBase + heMotorista) * noShowFator
+                : custoBase + heMotorista;
               return (
                 <div className="space-y-1 text-right">
                   <p className="text-base font-black text-slate-800">
                     {formatCurrency(bruto)}
                   </p>
-                  <div className="flex flex-col items-end gap-0.5 text-xs font-semibold">
-                    <span className="flex items-center gap-1 text-emerald-500">
-                      <TrendingUp size={12} />
+                  <div className="flex flex-col items-end gap-0.5 text-[11px] font-medium">
+                    <span className="flex items-center justify-end gap-1 text-emerald-600/70">
+                      <TrendingUp size={11} className="shrink-0" />
+                      <span className="text-slate-400">Lucro</span>
                       {formatCurrency(lucro)}
                     </span>
-                    <span className="flex items-center gap-1 text-red-500">
-                      <TrendingDown size={12} />
+                    <span className="flex items-center justify-end gap-1 text-red-500/70">
+                      <TrendingDown size={11} className="shrink-0" />
+                      <span className="text-slate-400">Repasse</span>
                       {formatCurrency(custo)}
+                    </span>
+                    <span className="flex items-center justify-end gap-1 text-amber-600/70">
+                      <Percent size={11} className="shrink-0" />
+                      <span className="text-slate-400">Imposto</span>
+                      {formatCurrency(imposto)}
                     </span>
                   </div>
                 </div>

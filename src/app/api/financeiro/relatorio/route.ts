@@ -15,6 +15,9 @@ import {
   isFinanceStatusSettled,
   isLiberadoParaFaturamento,
   sanitizeFinanceFileName,
+  parseHoraExtraMinutes,
+  calcHoraExtraCliente,
+  getNextDay,
 } from "@/lib/financeiro";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 
@@ -62,6 +65,9 @@ type FinanceRow = {
   veiculo_id: string | null;
   valor_bruto: number | string | null;
   custo: number | string | null;
+  hora_extra: string | null;
+  no_show: boolean | null;
+  no_show_percentual: number | null;
   imposto: number | string | null;
   lucro: number | string | null;
   status_financeiro: string | null;
@@ -132,12 +138,30 @@ type ReportSummary = {
   totalPagoAutonomos: number;
   totalCustoParceiros: number;
   totalPagoParceiros: number;
+  // Valor efetivo cobrado do cliente (valor_bruto + hora_extra - no_show)
+  totalEfetivo: number;
 };
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+/**
+ * Calcula o valor efetivo cobrado do cliente para uma OS:
+ * (valor_bruto + hora_extra_cliente) × fator_no_show
+ * Espelha a mesma lógica usada em queries.ts ao salvar/editar uma OS.
+ */
+function calcEffectiveClientValue(row: FinanceRow): number {
+  const vBruto = Number(row.valor_bruto || 0);
+  const heCliente = calcHoraExtraCliente(parseHoraExtraMinutes(row.hora_extra));
+  const total = vBruto + heCliente;
+  if (row.no_show) {
+    const fator = (row.no_show_percentual ?? 100) / 100;
+    return total * fator;
+  }
+  return total;
 }
 
 function createAdminClient() {
@@ -208,8 +232,20 @@ const formatCurrency = (value: number): string =>
     currency: "BRL",
   }).format(value);
 
-const formatDate = (value?: string | null): string =>
-  value ? new Date(value).toLocaleDateString("pt-BR") : "-";
+const formatDate = (value?: string | null): string => {
+  if (!value) return "-";
+  // Strings no formato YYYY-MM-DD (sem timezone) devem ser tratadas como
+  // data local para evitar o off-by-one do construtor Date que assume UTC.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-");
+    return `${d}/${m}/${y}`;
+  }
+  // Timestamps completos: sempre no fuso de Brasília, independente do UTC
+  // do servidor (Cloudflare Worker roda em UTC).
+  return new Date(value).toLocaleDateString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+  });
+};
 
 const formatDateTime = (data?: string | null, hora?: string | null): string => {
   const parts: string[] = [];
@@ -268,7 +304,7 @@ async function fetchReportData(
   let query = adminClient
     .from("ordens_servico")
     .select(
-      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, veiculo_id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, repasse_pago, tipo",
+      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, veiculo_id, valor_bruto, custo, hora_extra, no_show, no_show_percentual, imposto, lucro, status_financeiro, status_operacional, repasse_pago, tipo",
     )
     .eq("arquivado", false);
 
@@ -278,7 +314,7 @@ async function fetchReportData(
       .lt("data", getNextMonthFirstDay(month));
   }
   if (dataInicio) query = query.gte("data", dataInicio);
-  if (dataFim) query = query.lte("data", dataFim);
+  if (dataFim) query = query.lt("data", getNextDay(dataFim));
   if (clienteId) query = query.eq("cliente_id", clienteId);
   if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
   if (motorista)
@@ -563,6 +599,7 @@ function emptyReportData(
       totalCustoParceiros: 0,
       totalPagoParceiros: 0,
       totalWaypoints: 0,
+      totalEfetivo: 0,
     },
     periodLabel:
       month ||
@@ -612,6 +649,7 @@ function computeSummary(
       acc.totalPassageiros = passengerIds.size;
       acc.totalWaypoints = totalWaypoints;
       acc.totalBruto += bruto;
+      acc.totalEfetivo += calcEffectiveClientValue(row);
       acc.totalCusto += custo;
       acc.totalImposto += imposto;
       acc.totalLucro += lucro;
@@ -659,6 +697,7 @@ function computeSummary(
       totalCustoParceiros: 0,
       totalPagoParceiros: 0,
       totalWaypoints: 0,
+      totalEfetivo: 0,
     },
   );
 }
@@ -766,7 +805,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             passageiros,
             trajeto,
             motoristaNome,
-            formatCurrency(Number(row.valor_bruto || 0)),
+            formatCurrency(calcEffectiveClientValue(row)),
             row.status_financeiro || "Pendente",
           ].join(";"),
         );
@@ -1526,7 +1565,9 @@ async function generatePdf(
       });
     }
 
-    const today = new Date().toLocaleDateString("pt-BR");
+    const today = new Date().toLocaleDateString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+    });
     const emissaoLabelX = pageWidth - 230;
     const emissaoLabelWidth = boldFont.widthOfTextAtSize("Emissão: ", 11);
     currentPage.drawText("Emissão: ", {
@@ -2078,8 +2119,8 @@ async function generatePdf(
       },
       {
         title: "Valor Total",
-        value: formatCurrency(data.summary.totalBruto),
-        subtitle: "Valor total de todas as OS",
+        value: formatCurrency(data.summary.totalEfetivo),
+        subtitle: "Valor total cobrado",
         iconType: "money",
         tone: "emerald",
         emphasis: true,
@@ -2580,7 +2621,11 @@ async function generatePdf(
           break;
         case "valor":
         case "bruto":
-          text = formatCurrency(Number(row.valor_bruto || 0));
+          text = formatCurrency(
+            template === "medicao_cliente"
+              ? calcEffectiveClientValue(row)
+              : Number(row.valor_bruto || 0),
+          );
           font = boldFont;
           color = c.accentGreen;
           break;

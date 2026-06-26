@@ -30,6 +30,7 @@ import {
   parseHoraExtraMinutes,
   calcHoraExtraCliente,
   calcHoraExtraMotorista,
+  getNextDay,
 } from "@/lib/financeiro";
 
 let _supabase: ReturnType<typeof createClient> | null = null;
@@ -1594,7 +1595,7 @@ export async function fetchOSFinancePage({
     }
 
     if (dataFim) {
-      query = query.lte("data", dataFim);
+      query = query.lt("data", getNextDay(dataFim));
     }
 
     if (clienteId) {
@@ -1691,7 +1692,7 @@ export async function fetchOSFinanceOverview(
         .lt("data", getNextMonthFirstDay(month));
     }
     if (dataInicio) query = query.gte("data", dataInicio);
-    if (dataFim) query = query.lte("data", dataFim);
+    if (dataFim) query = query.lt("data", getNextDay(dataFim));
     if (clienteId) query = query.eq("cliente_id", clienteId);
     if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
     if (motorista)
@@ -2933,7 +2934,7 @@ export async function fetchOSFinanceStats(
         .lt("data", getNextMonthFirstDay(month));
     }
     if (dataInicio) query = query.gte("data", dataInicio);
-    if (dataFim) query = query.lte("data", dataFim);
+    if (dataFim) query = query.lt("data", getNextDay(dataFim));
     if (clienteId) query = query.eq("cliente_id", clienteId);
     if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
     if (motorista)

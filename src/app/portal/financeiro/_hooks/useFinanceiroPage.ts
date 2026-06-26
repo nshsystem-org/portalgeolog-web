@@ -29,6 +29,7 @@ import {
   createFinanceLookupMaps,
   EMPTY_FINANCE_OVERVIEW,
   endOfWeek,
+  getBrazilDate,
   normalizeToInputDate,
   startOfWeek,
   type FinanceActionTarget,
@@ -134,7 +135,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
   const { profile } = useAuth();
   const { parceiros } = useParceiros();
   const { clientes, drivers, loading: dataLoading, lastOSUpdate } = useData();
-  const now = new Date();
+  const now = getBrazilDate();
 
   // Filter states
   const [dataInicio, setDataInicio] = useState(
@@ -289,7 +290,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
 
   // Reset filters
   const resetFilters = useCallback((): void => {
-    const currentDate = new Date();
+    const currentDate = getBrazilDate();
     setDataInicio(normalizeToInputDate(startOfWeek(currentDate)));
     setDataFim(normalizeToInputDate(endOfWeek(currentDate)));
     setClienteId("");
@@ -303,7 +304,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
 
   // Quick range setter
   const setQuickRange = useCallback((mode: QuickRangeMode): void => {
-    const currentDate = new Date();
+    const currentDate = getBrazilDate();
 
     if (mode === "today") {
       const today = normalizeToInputDate(currentDate);

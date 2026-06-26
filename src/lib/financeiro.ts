@@ -1,5 +1,22 @@
 export const FINANCE_ATTACHMENT_BUCKET = "financeiro-comprovantes";
 
+// ─── Helpers de data ─────────────────────────────────────────────────────────────
+
+/**
+ * Recebe uma data em formato ISO "YYYY-MM-DD" e retorna o dia seguinte
+ * no mesmo formato. Usado para filtros de data exclusivos no final do dia
+ * (ex: data < getNextDay(dataFim) inclui todo o dia de dataFim).
+ */
+export const getNextDay = (value: string): string => {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + 1);
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 // ─── Hora Extra ────────────────────────────────────────────────────────────────
 // Taxa cobrada do cliente por hora extra: R$ 50/h
 export const HORA_EXTRA_TAXA_CLIENTE = 50;

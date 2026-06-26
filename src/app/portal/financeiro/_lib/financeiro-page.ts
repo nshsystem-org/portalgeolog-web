@@ -58,7 +58,21 @@ const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 });
 
-const dateFormatter = new Intl.DateTimeFormat("pt-BR");
+const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+});
+
+/**
+ * Retorna um objeto Date representando o instante atual no fuso de Brasília.
+ * Útil para filtros e períodos padrão que devem ser brasileiros independente
+ * do timezone do navegador do usuário.
+ */
+export const getBrazilDate = (): Date => {
+  const br = new Date().toLocaleString("en-US", {
+    timeZone: "America/Sao_Paulo",
+  });
+  return new Date(br);
+};
 
 type ClienteLike = Pick<Cliente, "id" | "nome" | "centrosCusto">;
 type DriverLike = Pick<Driver, "id" | "name" | "parceiro_id">;
@@ -81,7 +95,7 @@ export const formatDate = (value?: string | null): string => {
   return dateFormatter.format(parsed);
 };
 
-export const startOfWeek = (date = new Date()): Date => {
+export const startOfWeek = (date = getBrazilDate()): Date => {
   const clone = new Date(date);
   const day = clone.getDay();
   const diff = day === 0 ? 6 : day - 1;
@@ -90,7 +104,7 @@ export const startOfWeek = (date = new Date()): Date => {
   return clone;
 };
 
-export const endOfWeek = (date = new Date()): Date => {
+export const endOfWeek = (date = getBrazilDate()): Date => {
   const clone = new Date(date);
   const day = clone.getDay();
   const diff = day === 0 ? 0 : 7 - day;
