@@ -219,6 +219,16 @@ const statusColors: Record<
     text: "#881337",
     dot: "#be123c",
   },
+  Rascunho: {
+    bg: "rgb(255, 248, 235)",
+    border: "rgb(255, 212, 146)",
+    text: "#a06418",
+    dot: "#a06418",
+    clockColor: "#a06418",
+    iconCircle: "#a06418",
+    badgeText: "#a06418",
+    badgeBg: "rgb(255, 212, 146)",
+  },
   Arquivado: {
     bg: "#fee2e2",
     border: "#f87171",
@@ -613,7 +623,7 @@ const EventContent = ({
           <MapPin size={isDayView ? 12 : 8} strokeWidth={3} />
           {docagem?.endereco?.toUpperCase() || "DOCAGEM"}
         </div>
-      ) : (
+      ) : os?.motorista ? (
         <div
           style={{
             color: "#475569",
@@ -634,7 +644,7 @@ const EventContent = ({
             return `${partes[0]} ${partes[partes.length - 1]}`.toUpperCase();
           })()}
         </div>
-      )}
+      ) : null}
 
       {/* Linha 3: Solicitante (OS) ou Motorista alocado (Docagem) */}
       {isDocagem ? (
@@ -669,7 +679,7 @@ const EventContent = ({
             return `${partes[0]} ${partes[partes.length - 1]}`.toUpperCase();
           })()}
         </div>
-      ) : (
+      ) : os?.solicitante ? (
         <div
           style={{
             color: "#475569",
@@ -693,7 +703,7 @@ const EventContent = ({
           />
           {(os?.solicitante ?? "").toUpperCase()}
         </div>
-      )}
+      ) : null}
 
       {/* Linha 4: Horários (Docagem) */}
       {isDocagem && (
@@ -897,7 +907,11 @@ export default function OSCalendar({
           ? deriveCyclesOperationalStatus(os.operationalCycles)
           : os.status.operacional;
       const osKind: CalendarEventKind =
-        os.tipo === "freelance" ? "freelance" : "os";
+        os.tipo === "freelance"
+          ? "freelance"
+          : os.tipo === "rascunho"
+            ? "rascunho"
+            : "os";
       const waypoints = os.rota?.waypoints || [];
 
       const itineraries =

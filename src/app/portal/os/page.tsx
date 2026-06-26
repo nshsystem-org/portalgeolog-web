@@ -843,14 +843,13 @@ export default function OSOperationalPage() {
   );
 
   const filteredCalendarOSList = useMemo(() => {
-    if (docagemListFilter === "docagem" || docagemListFilter === "rascunho")
-      return [];
+    if (docagemListFilter === "docagem") return [];
     return calendarOSList.filter((item) => {
-      // Rascunhos nunca aparecem no calendário
-      if (item.tipo === "rascunho") return false;
-      // Filtro por tipo (OS vs Freelance)
+      // Filtro por tipo (OS vs Freelance vs Rascunho)
       if (docagemListFilter === "os" && item.tipo !== "os") return false;
       if (docagemListFilter === "freelance" && item.tipo !== "freelance")
+        return false;
+      if (docagemListFilter === "rascunho" && item.tipo !== "rascunho")
         return false;
       const clienteNome =
         clientes.find((c) => c.id === item.clienteId)?.nome || "";
@@ -1655,6 +1654,9 @@ export default function OSOperationalPage() {
     OrderService["tipo"] | "docagem"
   >("os");
 
+  // True quando o modal está aberto em modo criação de rascunho (não edição)
+  const isDraftMode = !editingOSId && osCreationType === "rascunho";
+
   // Novos estados para o modal de confirmação de notificações
   const [showNotificationConfirm, setShowNotificationConfirm] = useState(false);
   const [showCompletionConfirm, setShowCompletionConfirm] = useState(false);
@@ -2165,6 +2167,23 @@ export default function OSOperationalPage() {
   };
 
   const handlePromoteDraft = async (osId: string) => {
+    // Validar campos obrigatórios antes de promover
+    const draft = osTable.items.find((o) => o.id === osId);
+    if (draft) {
+      const missing: string[] = [];
+      if (!draft.clienteId) missing.push("Empresa");
+      if (!draft.driverId) missing.push("Motorista");
+      if (!draft.veiculoId) missing.push("Veículo");
+      if (!draft.solicitante) missing.push("Solicitante");
+      if (missing.length > 0) {
+        toast.error(
+          `Preencha os campos obrigatórios antes de promover: ${missing.join(", ")}.`,
+        );
+        // Abrir o rascunho no modal de edição para o usuário completar
+        void handleEditOS(osId);
+        return;
+      }
+    }
     setPromotingDraftId(osId);
     try {
       await promoteDraftToOS(osId);
@@ -4789,8 +4808,29 @@ export default function OSOperationalPage() {
     const itineraries = getItineraries(formData.waypoints);
     const firstItinerary = itineraries.find((it) => it.index === 0);
 
-    // Rascunho: todos os campos são opcionais — pula validação obrigatória
-    if (!isDraft) {
+    // Rascunho: apenas Cliente + 1 itinerário com data e hora são obrigatórios
+    if (isDraft) {
+      if (!formData.clienteId) {
+        toast.error("Informe a Empresa / Cliente Final.");
+        return;
+      }
+      const firstOriginIndex = firstItinerary?.waypointIndices[0];
+      if (firstOriginIndex !== undefined) {
+        const originData = formData.waypoints[firstOriginIndex]?.data;
+        if (!originData || originData.trim().length < 10) {
+          toast.error("Informe a data de início do Itinerário 1.");
+          return;
+        }
+        const originHora = formData.waypoints[firstOriginIndex]?.hora;
+        if (!originHora || originHora.trim().length < 4) {
+          toast.error("Informe a hora de início do Itinerário 1.");
+          return;
+        }
+      } else {
+        toast.error("Adicione pelo menos 1 itinerário com data e hora.");
+        return;
+      }
+    } else {
       // Validação dos campos obrigatórios
       if (
         !formData.data ||
@@ -5478,6 +5518,7 @@ export default function OSOperationalPage() {
                 onClick={() => {
                   setShowArchivedOnly(false);
                   setDocagemListFilter("rascunho");
+                  setViewMode("table");
                 }}
                 className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
                   docagemListFilter === "rascunho" && !showArchivedOnly
@@ -7086,7 +7127,7 @@ export default function OSOperationalPage() {
                         }));
                       }}
                       disabled={!formData.clienteId}
-                      required
+                      required={!isDraftMode}
                       onQuickAdd={handleQuickAddSolicitante}
                     />
                     <GeologSearchableSelect
@@ -7122,7 +7163,7 @@ export default function OSOperationalPage() {
                           veiculoId: "",
                         }));
                       }}
-                      required
+                      required={!isDraftMode}
                       onQuickAdd={handleQuickAddMotorista}
                     />
                     <GeologSearchableSelect
@@ -7132,7 +7173,7 @@ export default function OSOperationalPage() {
                       onChange={(id) =>
                         setFormData((prev) => ({ ...prev, veiculoId: id }))
                       }
-                      required
+                      required={!isDraftMode}
                       disabled={!formData.motorista}
                       onQuickAdd={handleQuickAddVeiculo}
                     />

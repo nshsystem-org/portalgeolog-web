@@ -2798,7 +2798,6 @@ export async function fetchOSCalendarRange({
     } else {
       query = query.eq("arquivado", false);
     }
-    query = query.neq("tipo", "rascunho");
 
     const { data: osRaw, error } = await query
       .order("data", { ascending: true })
