@@ -362,11 +362,14 @@ function NotificationToastItem({
 }
 
 export function useNotifications() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const supabase = createClient();
   const knownIdsRef = useRef<Set<string>>(new Set());
+  const abortRef = useRef<AbortController | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
   const showNotificationToast = (notif: AppNotification) => {
     toast.custom((t) => <NotificationToastItem toastId={t} notif={notif} />, {
@@ -375,27 +378,101 @@ export function useNotifications() {
   };
 
   useEffect(() => {
-    if (!user) return;
+    isMountedRef.current = true;
 
-    const fetchNotifications = async () => {
+    return () => {
+      isMountedRef.current = false;
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    // Aguarda a auth terminar de inicializar antes de buscar notificações.
+    // Isso evita race conditions no reload onde o user oscila null → user.
+    if (!user || loading) return;
+
+    // Cancela fetch anterior se o efeito reexecutar (ex: onAuthStateChange)
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+
+    const MAX_RETRIES = 3;
+    const BASE_DELAY_MS = 1500;
+
+    const fetchNotifications = async (attempt: number) => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
-        const res = await fetch("/api/app-notifications");
+        const res = await fetch("/api/app-notifications", {
+          signal: controller.signal,
+        });
+
+        if (!isMountedRef.current) return;
+
         if (res.ok) {
           const data = (await res.json()) as AppNotification[];
+          if (!isMountedRef.current) return;
           knownIdsRef.current = new Set(data.map((n) => n.id));
           setNotifications(data);
-        } else {
-          const errText = await res.text().catch(() => "Erro desconhecido");
+          return;
+        }
+
+        // Status não-OK: loga mas só mostra toast se for erro de servidor (5xx)
+        const errText = await res.text().catch(() => "Erro desconhecido");
+        console.error("Erro ao buscar notificações:", res.status, errText);
+
+        if (res.status >= 500 && attempt < MAX_RETRIES) {
+          scheduleRetry(attempt);
+          return;
+        }
+
+        // 401/403/etc: não mostra toast vermelho (sessão pode estar expirando)
+        if (res.status >= 500) {
           toast.error(`Falha ao carregar notificações: ${res.status}`);
-          console.error("Erro ao buscar notificações:", res.status, errText);
         }
       } catch (error) {
+        if (!isMountedRef.current) return;
+
+        // AbortError: fetch cancelado pelo re-run do efeito — silencioso
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        console.error("Erro de rede ao buscar notificações:", error);
+
+        // Retry com backoff exponencial para erros transitórios
+        if (attempt < MAX_RETRIES) {
+          scheduleRetry(attempt);
+          return;
+        }
+
+        // Só mostra o toast após esgotar retries
         toast.error("Erro de rede ao carregar notificações");
-        console.error("Erro ao buscar notificações:", error);
       }
     };
 
-    fetchNotifications();
+    const scheduleRetry = (attempt: number) => {
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+      retryTimerRef.current = setTimeout(() => {
+        if (isMountedRef.current && user) {
+          fetchNotifications(attempt + 1);
+        }
+      }, delay);
+    };
+
+    fetchNotifications(0);
 
     // Solicitar permissão de notificações do sistema na primeira vez
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -433,8 +510,16 @@ export function useNotifications() {
 
     return () => {
       supabase.removeChannel(channel);
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
     };
-  }, [user, supabase]);
+  }, [user, loading, supabase]);
 
   const markAsRead = async (id: string) => {
     setNotifications((prev) =>

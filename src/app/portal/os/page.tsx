@@ -247,55 +247,6 @@ const getItineraryTitle = (itineraryIndex: number): string => {
   return "Itinerário";
 };
 
-function numeroParaOrdinal(n: number): string {
-  const unidades = [
-    "",
-    "Primeiro",
-    "Segundo",
-    "Terceiro",
-    "Quarto",
-    "Quinto",
-    "Sexto",
-    "Sétimo",
-    "Oitavo",
-    "Nono",
-  ];
-  const especiais: Record<number, string> = {
-    10: "Décimo",
-    11: "Décimo Primeiro",
-    12: "Décimo Segundo",
-    13: "Décimo Terceiro",
-    14: "Décimo Quarto",
-    15: "Décimo Quinto",
-    16: "Décimo Sexto",
-    17: "Décimo Sétimo",
-    18: "Décimo Oitavo",
-    19: "Décimo Nono",
-  };
-  const dezenas: Record<number, string> = {
-    2: "Vigésimo",
-    3: "Trigésimo",
-    4: "Quadragésimo",
-    5: "Quinquagésimo",
-    6: "Sexagésimo",
-    7: "Septuagésimo",
-    8: "Octogésimo",
-    9: "Nonagésimo",
-  };
-  if (n >= 1 && n <= 9) return unidades[n];
-  if (n >= 10 && n <= 19) return especiais[n] || "";
-  if (n >= 20 && n <= 99) {
-    const d = Math.floor(n / 10);
-    const u = n % 10;
-    const dezenaText = dezenas[d] || "";
-    const unidadeText = u > 0 ? unidades[u] : "";
-    if (dezenaText && unidadeText) return `${dezenaText} ${unidadeText}`;
-    return dezenaText || unidadeText || String(n);
-  }
-  if (n === 100) return "Centésimo";
-  return String(n);
-}
-
 type QuickAddDriverForm = {
   name: string;
   cpf: string;
@@ -1792,6 +1743,9 @@ export default function OSOperationalPage() {
   // Novos estados para o modal de confirmação de notificações
   const [showNotificationConfirm, setShowNotificationConfirm] = useState(false);
   const [showCompletionConfirm, setShowCompletionConfirm] = useState(false);
+  const [showDraftSaveConfirm, setShowDraftSaveConfirm] = useState(false);
+  const [promotedOSIdForNotification, setPromotedOSIdForNotification] =
+    useState<string | null>(null);
   const [pendingOSData, setPendingOSData] = useState<PendingOSData | null>(
     null,
   );
@@ -3012,203 +2966,6 @@ export default function OSOperationalPage() {
       );
     } finally {
       setNotifyLoadingKey(null);
-    }
-  };
-
-  const sendAdminGroupMessage = async (osData: OrderService) => {
-    const clienteRecord = clientes.find((c) => c.id === osData.clienteId);
-    const cliente = clienteRecord?.nome || "Empresa não informada";
-    const centroCusto =
-      clienteRecord?.centrosCusto?.find((cc) => cc.id === osData.centroCustoId)
-        ?.nome || "Não informado";
-
-    // Motorista e contato
-    const driverObj = drivers.find(
-      (d) =>
-        d.name.trim().toLowerCase() === osData.motorista.trim().toLowerCase(),
-    );
-    const driverPhone = driverObj?.phone || "Não informado";
-
-    // Veículo
-    let vehicleInfo = { tipo: "", placa: "", marca: "", modelo: "" };
-    if (osData.veiculoId) {
-      const v = vehicles.find((v) => v.id === osData.veiculoId);
-      if (v)
-        vehicleInfo = {
-          tipo: v.tipo || "",
-          placa: v.placa || "",
-          marca: v.marca || "",
-          modelo: v.modelo || "",
-        };
-    } else if (driverObj?.id) {
-      const assoc = driverVehiclesAssoc.find(
-        (a) => a.driver_id === driverObj.id,
-      );
-      if (assoc) {
-        const v = vehicles.find((v) => v.id === assoc.vehicle_id);
-        if (v)
-          vehicleInfo = {
-            tipo: v.tipo || "",
-            placa: v.placa || "",
-            marca: v.marca || "",
-            modelo: v.modelo || "",
-          };
-      }
-    }
-    const tipoCapitalizado = vehicleInfo.tipo
-      ? vehicleInfo.tipo.charAt(0).toUpperCase() + vehicleInfo.tipo.slice(1)
-      : "Não informado";
-
-    // Passageiros (resolve via cache/banco, sem limite de 1000)
-    const passengerRecords = await resolvePassengerRecordsForOS(osData);
-    const allPassengers: { nome: string; celular: string }[] = [];
-    const waypoints = osData.rota?.waypoints || [];
-    waypoints.forEach((wp) => {
-      (wp.passengers || []).forEach((p) => {
-        const passRecord = passengerRecords.find(
-          (x) => x.id === p.solicitanteId,
-        );
-        const cel = passRecord?.celular || "";
-        const nomeAtual = passRecord?.nomeCompleto || "Não identificado";
-        if (!allPassengers.some((x) => x.nome === nomeAtual)) {
-          allPassengers.push({
-            nome: nomeAtual,
-            celular: cel
-              ? cel.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
-              : "Não informado",
-          });
-        }
-      });
-    });
-    const paxText =
-      allPassengers.length > 0
-        ? allPassengers
-            .map(
-              (p) =>
-                `• ${p.nome}${p.celular !== "Não informado" ? ` – ${p.celular}` : ""}`,
-            )
-            .join("\n")
-        : "Não informado";
-
-    // Itinerário com observações (separa ida/retorno)
-    let itineraryText = "";
-    const itineraries = getItineraries(waypoints as FormWaypoint[]);
-    if (itineraries.length > 0) {
-      itineraryText = itineraries
-        .map((it) => {
-          const firstWp = it.waypoints[0];
-          const itData = firstWp?.data || osData.data;
-          const itHora = firstWp?.hora || osData.hora;
-          const dateTimeLine = itData
-            ? ` — ${itData.split("-").reverse().join("/")}${itHora ? ` - ${itHora.slice(0, 5)}` : ""}`
-            : itHora
-              ? ` — ${itHora.slice(0, 5)}`
-              : "";
-          const itTitle =
-            it.index < 0
-              ? `${numeroParaOrdinal(Math.abs(it.index))} Retorno${dateTimeLine}`
-              : `${numeroParaOrdinal(it.index + 1)} Itinerário${dateTimeLine}`;
-          const stops = it.waypoints
-            .map((w, relIdx) => {
-              const label = w.label.trim();
-              const comment = w.comment?.trim();
-              let line = "";
-              if (relIdx === 0) line = `❇️ *Origem:* ${label}`;
-              else if (relIdx === it.waypoints.length - 1)
-                line = `🛄*Destino:* ${label}`;
-              else line = `▫️ *Parada ${relIdx}:* ${label}`;
-              if (comment) line += `\n   _Obs: ${comment}_`;
-              return line;
-            })
-            .join("\n\n");
-          return `📍 *${itTitle}*\n\n${stops}`;
-        })
-        .join("\n\n");
-    }
-
-    const firstItWp = itineraries[0]?.waypoints[0];
-    const firstItData = firstItWp?.data || osData.data;
-    const firstItHora = firstItWp?.hora || osData.hora;
-    const dataHoraHeaderParts: string[] = [];
-    if (firstItData)
-      dataHoraHeaderParts.push(
-        `*Data: ${firstItData.split("-").reverse().join("/")}*`,
-      );
-    if (firstItHora)
-      dataHoraHeaderParts.push(`*Horário: ${firstItHora.slice(0, 5)}*`);
-    const dataHoraHeader =
-      dataHoraHeaderParts.length > 0
-        ? `\n${dataHoraHeaderParts.join("\n")}\n\n`
-        : "";
-
-    // Financeiro
-    const formatCurrency = (value: number) =>
-      new Intl.NumberFormat("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }).format(value);
-
-    const marcaModeloLine =
-      vehicleInfo.marca || vehicleInfo.modelo
-        ? `*Marca/Modelo:* ${[vehicleInfo.marca, vehicleInfo.modelo].filter(Boolean).join(" ")}\n`
-        : "";
-
-    const message =
-      `📋 *NOVO ATENDIMENTO*\n` +
-      `*Protocolo:* ${osData.protocolo ?? "N/A"}\n` +
-      `${dataHoraHeader}` +
-      `*Fornecedor:* Geolog Transporte Executivo\n` +
-      `*Empresa:* ${cliente}\n` +
-      `*Solicitante:* ${osData.solicitante || "Não informado"}\n` +
-      `*C. Custo:* ${centroCusto}\n\n` +
-      `────────────────\n` +
-      `👨‍✈️ *Motorista:* ${osData.motorista}\n` +
-      `*Contato:* ${driverPhone}\n` +
-      `*Veículo:* ${tipoCapitalizado}\n` +
-      `${marcaModeloLine}` +
-      `*Placa:* ${vehicleInfo.placa || "Não informada"}\n\n` +
-      `────────────────\n` +
-      `👥 *Passageiro(s):*\n${paxText}\n\n` +
-      `────────────────\n` +
-      `${itineraryText ? `${itineraryText}\n\n` : "📍 *Itinerário:* Não informado\n\n"}` +
-      `────────────────\n` +
-      `💰 *Financeiro:*\n` +
-      `• Valor Bruto: ${formatCurrency(osData.valorBruto ?? 0)}\n` +
-      `• Custo Motorista: ${formatCurrency(osData.custo ?? 0)}\n` +
-      `• Lucro Líquido: ${formatCurrency(osData.lucro ?? 0)}`;
-
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-      if (userError || !user) return;
-
-      // Envia mensagem administrativa para contato fixo via API WhatsApp
-      const response = await fetch("/api/whatsapp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        // Telefone fixo sem o símbolo + (Meta API espera apenas dígitos)
-        body: JSON.stringify({ phone: "5522997599213", message }),
-      });
-
-      const result = await response.json();
-      if (!response.ok || !result.success) {
-        console.error(
-          "[AdminGroup] Falha ao enviar relatório administrativo:",
-          result,
-        );
-        toast.error(
-          `Relatório administrativo não enviado: ${result.error || "Erro desconhecido"}`,
-        );
-      } else {
-        toast.success("Relatório administrativo enviado ao grupo!");
-      }
-    } catch (err) {
-      console.error("[AdminGroup] Erro crítico:", err);
-      toast.error("Erro ao enviar relatório administrativo ao grupo.");
     }
   };
 
@@ -4926,6 +4683,21 @@ export default function OSOperationalPage() {
     );
   };
 
+  // Helper: enviar notificações automáticas e email admin após criar/promover OS
+  const sendOSNotifications = (osId: string) => {
+    if (notificationConfig.auto) {
+      void processAutoNotifications(osId);
+    }
+    // Email administrativo obrigatório
+    void fetch("/api/admin-notify-os", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ osId }),
+    }).catch((err) =>
+      console.error("Erro ao enviar email administrativo:", err),
+    );
+  };
+
   const executeSaveOS = async (
     osData: PendingOSData,
     targetId?: string | null,
@@ -4992,32 +4764,7 @@ export default function OSOperationalPage() {
           return;
         }
 
-        if (notificationConfig.auto) {
-          void processAutoNotifications(newOSId.id);
-        }
-        // Enviar email administrativo obrigatoriamente (tanto manual quanto automático)
-        void fetch("/api/admin-notify-os", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ osId: newOSId.id }),
-        }).catch((err) =>
-          console.error("Erro ao enviar email administrativo:", err),
-        );
-        // Enviar mensagem administrativa via WhatsApp para contato fixo
-        void (async () => {
-          try {
-            const startedAt = performance.now();
-            const latestOS = await fetchOSById(newOSId.id);
-            if (latestOS) {
-              await sendAdminGroupMessage(latestOS);
-            }
-            console.log(
-              `[Perf][AdminGroup] ${newOSId.id} ${(performance.now() - startedAt).toFixed(0)}ms`,
-            );
-          } catch (err) {
-            console.error("[AdminGroup] Erro ao buscar OS para envio:", err);
-          }
-        })();
+        sendOSNotifications(newOSId.id);
       }
     } catch (error) {
       console.error("Error saving OS:", error);
@@ -5146,7 +4893,13 @@ export default function OSOperationalPage() {
 
     setPendingOSData(finalData);
 
-    // Rascunho (criação ou edição): salva silenciosamente (sem modais)
+    // Rascunho em edição: abre modal com opções "Salvar e Promover" / "Somente Salvar"
+    if (isDraft && editingOSId) {
+      setShowDraftSaveConfirm(true);
+      return;
+    }
+
+    // Rascunho novo (criação): salva silenciosamente (sem modais)
     if (isDraft) {
       void executeSaveOS(finalData, editingOSId);
       return;
@@ -5234,6 +4987,99 @@ export default function OSOperationalPage() {
   const executeAddOS = async () => {
     if (!pendingOSData) return;
     await executeSaveOS(pendingOSData, editingOSId);
+  };
+
+  // Validar campos obrigatórios para promover rascunho a OS (usando dados locais)
+  const getMissingFieldsForPromotion = (data: PendingOSData): string[] => {
+    const missing: string[] = [];
+    if (!data.data) missing.push("Data");
+    if (!data.clienteId) missing.push("Empresa");
+    if (!data.solicitanteId) missing.push("Solicitante Responsável");
+    if (!data.driverId) missing.push("Motorista Alocado");
+    if (!data.veiculoId) missing.push("Veículo de Uso");
+
+    const firstWaypoint = data.rota?.waypoints[0];
+    if (!firstWaypoint?.data) missing.push("Data do Itinerário 1");
+    if (!firstWaypoint?.hora) missing.push("Hora do Itinerário 1");
+
+    return missing;
+  };
+
+  // Abrir modal de notificações para promover rascunho (validação instantânea)
+  const openDraftPromotionConfirm = async () => {
+    if (!pendingOSData || !editingOSId) return;
+
+    const missing = getMissingFieldsForPromotion(pendingOSData);
+    if (missing.length > 0) {
+      const confirmed = await confirm({
+        title: "Rascunho incompleto",
+        message: `O rascunho não pode ser promovido pois faltam campos obrigatórios:\n\n${missing.map((item) => `• ${item}`).join("\n")}\n\nDeseja continuar editando para completar?`,
+        confirmText: "Continuar editando",
+        cancelText: "Fechar",
+        type: "warning",
+      });
+      if (!confirmed) {
+        void resetMainModalState();
+      }
+      return;
+    }
+
+    // Abre modal de notificações para que o usuário escolha automático/manual
+    // antes de efetivamente salvar/promover o rascunho
+    setPromotedOSIdForNotification(editingOSId);
+    setShowDraftSaveConfirm(false);
+    setShowNotificationConfirm(true);
+  };
+
+  // Promover rascunho para OS após confirmação no modal de notificações
+  const executeDraftSaveAndPromote = async () => {
+    if (!pendingOSData || !promotedOSIdForNotification) return;
+
+    const draftId = promotedOSIdForNotification;
+    setPromotingDraftId(draftId);
+
+    try {
+      // 1. Salvar o rascunho silenciosamente (sem fechar modais/resetar form)
+      setOsSubmissionMode("update");
+      setIsSubmittingOS(true);
+      await updateOS(draftId, pendingOSData);
+      setIsSubmittingOS(false);
+      setOsSubmissionMode(null);
+
+      // 2. Buscar dados atualizados do banco e confirmar que ainda é rascunho
+      const draft = await fetchOSById(draftId);
+      if (!draft || draft.tipo !== "rascunho") {
+        toast.error("Este atendimento não é mais um rascunho.");
+        return;
+      }
+
+      // 3. Promover para OS
+      await promoteDraftToOS(draftId);
+      toast.success("OS cadastrada com sucesso!");
+
+      // 4. Refresh único (table + calendar)
+      void osTable.refresh();
+      if (calendarRangeRef.current) {
+        void handleCalendarRangeChange(
+          calendarRangeRef.current.from,
+          calendarRangeRef.current.to,
+          true,
+        );
+      }
+
+      // 5. Fechar modal de edição e manter modal de notificações aberto para enviar notificações
+      setEditingOSId(null);
+      setOsCreationType("os");
+      setIsModalOpen(false);
+      sendOSNotifications(draftId);
+      setShowNotificationConfirm(false);
+      void resetMainModalState();
+    } catch (err) {
+      console.error("Erro ao salvar/promover rascunho:", err);
+      toast.error("Não foi possível promover o rascunho. Tente novamente.");
+    } finally {
+      setPromotingDraftId(null);
+    }
   };
 
   const executeEditOS = async (markAsCompleted: boolean) => {
@@ -11481,7 +11327,10 @@ export default function OSOperationalPage() {
       {/* Modal de Confirmação de Notificação */}
       {showNotificationConfirm && (
         <StandardModal
-          onClose={() => setShowNotificationConfirm(false)}
+          onClose={() => {
+            setShowNotificationConfirm(false);
+            setPromotedOSIdForNotification(null);
+          }}
           title="Notificações da OS"
           subtitle="Escolha como deseja notificar os envolvidos"
           icon={<Bell className="w-6 h-6 md:w-7 md:h-7" />}
@@ -11607,18 +11456,42 @@ export default function OSOperationalPage() {
             <div className="flex items-center gap-4 pt-4">
               <button
                 type="button"
-                onClick={() => setShowNotificationConfirm(false)}
+                onClick={() => {
+                  setShowNotificationConfirm(false);
+                  setPromotedOSIdForNotification(null);
+                }}
                 className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 font-black rounded-xl hover:bg-slate-200 transition-all text-xs uppercase tracking-widest"
               >
                 Voltar
               </button>
               <button
                 type="button"
-                onClick={executeAddOS}
-                className="flex-[2] px-6 py-4 bg-emerald-600 text-white font-black rounded-xl shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-3"
+                onClick={async () => {
+                  // Se veio de promoção de rascunho, salvar + promover + notificar
+                  if (promotedOSIdForNotification) {
+                    await executeDraftSaveAndPromote();
+                    setPromotedOSIdForNotification(null);
+                    return;
+                  }
+                  // Fluxo normal: criar/editar OS
+                  await executeAddOS();
+                }}
+                disabled={!!promotingDraftId}
+                className="flex-[2] px-6 py-4 bg-emerald-600 text-white font-black rounded-xl shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-3 disabled:opacity-50"
               >
-                <CheckCircle2 size={18} />
-                Confirmar e {editingOSId ? "Salvar" : "Criar OS"}
+                {!!promotingDraftId ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Promovendo...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={18} />
+                    {promotedOSIdForNotification
+                      ? "Confirmar e Promover"
+                      : `Confirmar e ${editingOSId ? "Salvar" : "Criar OS"}`}
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -11660,6 +11533,79 @@ export default function OSOperationalPage() {
                 onClick={async () => {
                   setShowCompletionConfirm(false);
                   await executeEditOS(false);
+                }}
+                className="flex-1 px-6 py-4 bg-white border-2 border-slate-200 text-slate-700 font-black rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all text-xs uppercase tracking-widest cursor-pointer flex items-center justify-center gap-3"
+              >
+                <Save size={18} />
+                Somente Salvar
+              </button>
+            </div>
+          </div>
+        </StandardModal>
+      )}
+
+      {/* Modal Salvar Rascunho (Editar) — Salvar e Promover / Somente Salvar */}
+      {showDraftSaveConfirm && (
+        <StandardModal
+          onClose={() => setShowDraftSaveConfirm(false)}
+          title="Salvar Rascunho"
+          subtitle="Deseja promover este rascunho para OS?"
+          icon={<FileText className="w-6 h-6 md:w-7 md:h-7" />}
+          maxWidthClassName="max-w-2xl"
+          headerClassName=""
+          headerStyle={{
+            backgroundColor:
+              "color-mix(in oklab, rgb(255,212,146) 30%, transparent)",
+          }}
+          headerGlowClassName="bg-[rgb(255,212,146)]/10"
+          subtitleClassName="text-[#dd820e]"
+          titleClassName="text-[#a06418]"
+          iconContainerClassName="bg-[#a06418]/10 border-[#a06418]/20"
+          iconClassName="text-[#a06418]"
+          closeButtonClassName="text-[#a06418]/40 hover:text-[#a06418] hover:bg-[#a06418]/10"
+        >
+          <div className="space-y-8">
+            <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100">
+              <p className="text-sm text-slate-600 font-medium leading-relaxed">
+                Você pode{" "}
+                <span className="font-black text-[#a06418]">
+                  salvar e promover
+                </span>{" "}
+                este rascunho para uma OS real (será validado os campos
+                obrigatórios e enviado notificações) ou apenas{" "}
+                <span className="font-black text-slate-700">
+                  salvar as alterações
+                </span>{" "}
+                mantendo como rascunho.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-4 pt-4">
+              <button
+                type="button"
+                onClick={() => void openDraftPromotionConfirm()}
+                disabled={!!promotingDraftId}
+                className="flex-[2] px-6 py-4 bg-[rgb(255,212,146)] text-[#a06418] font-black rounded-xl shadow-xl shadow-[#a06418]/20 hover:bg-[rgb(255,234,208)] hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
+              >
+                {!!promotingDraftId ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Promovendo...
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpCircle size={18} />
+                    Salvar e Promover
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowDraftSaveConfirm(false);
+                  if (pendingOSData && editingOSId) {
+                    await executeSaveOS(pendingOSData, editingOSId);
+                  }
                 }}
                 className="flex-1 px-6 py-4 bg-white border-2 border-slate-200 text-slate-700 font-black rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all text-xs uppercase tracking-widest cursor-pointer flex items-center justify-center gap-3"
               >
