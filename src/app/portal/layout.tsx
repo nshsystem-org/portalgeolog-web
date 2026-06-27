@@ -793,11 +793,13 @@ export default function DashboardLayout({
                         const isDriverNotify = notification.title.startsWith(
                           "Mensagem enviada ao motorista",
                         );
-                        const driverNameMatch = notification.title.match(
-                          /Mensagem enviada ao motorista (.+)/,
+                        // Extrai o nome do motorista da mensagem (não do título)
+                        // Mensagem: "{Operador} enviou uma mensagem de serviço para o motorista {Nome}."
+                        const driverNameMatch = notification.message.match(
+                          /para o motorista (.+?)\./,
                         );
                         const driverFullName = driverNameMatch
-                          ? driverNameMatch[1]
+                          ? driverNameMatch[1].trim()
                           : "";
                         const driverNameParts = driverFullName
                           .split(" ")
@@ -865,7 +867,7 @@ export default function DashboardLayout({
                                                   "Docagem cancelada"
                                                 ? "cancelou uma docagem"
                                                 : isDriverNotify
-                                                  ? "mensagem enviada ao motorista"
+                                                  ? "enviou uma mensagem de serviço para o motorista"
                                                   : isDriverDelivered
                                                     ? "recebeu a mensagem com sucesso"
                                                     : isDriverViewDetails
