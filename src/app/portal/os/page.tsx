@@ -2268,16 +2268,19 @@ export default function OSOperationalPage() {
     setOpenActionMenuId(null);
     setCalendarMenuPosition(null);
 
+    const loadingId = toast.loading("Carregando rascunho...");
     // Buscar dados atualizados do banco (não confiar no cache da osList)
     let draft: OrderService | null = null;
     try {
       draft = await fetchOSById(osId);
     } catch {
+      toast.dismiss(loadingId);
       toast.error("Não foi possível carregar o rascunho. Tente novamente.");
       return;
     }
 
     if (!draft || draft.tipo !== "rascunho") {
+      toast.dismiss(loadingId);
       toast.error("Este atendimento não é um rascunho válido.");
       return;
     }
@@ -2297,6 +2300,7 @@ export default function OSOperationalPage() {
     if (!firstWaypoint?.hora) missing.push("Hora do Itinerário 1");
 
     if (missing.length > 0) {
+      toast.dismiss(loadingId);
       const confirmed = await confirm({
         title: "Rascunho incompleto",
         message: `Antes de promover este rascunho para OS, complete os seguintes campos obrigatórios:\n\n${missing.map((item) => `• ${item}`).join("\n")}\n\nDeseja abrir o rascunho para edição?`,
@@ -2310,6 +2314,7 @@ export default function OSOperationalPage() {
       return;
     }
 
+    toast.dismiss(loadingId);
     // Abrir modal de notificações para escolher automático/manual antes de promover
     setPromotedOSIdForNotification(osId);
     setShowNotificationConfirm(true);
@@ -2378,12 +2383,14 @@ export default function OSOperationalPage() {
   }, [hasOSListLoaded, handleEditOS]);
 
   const handleReopenOS = async (osId: string) => {
+    const loadingId = toast.loading("Carregando atendimento...");
     let targetOS: OrderService | null = null;
     try {
       targetOS = await fetchOSById(osId);
     } catch {
       targetOS = osList.find((os) => os.id === osId) || null;
     }
+    toast.dismiss(loadingId);
     if (!targetOS) {
       toast.error("OS não encontrada.");
       setOpenActionMenuId(null);
@@ -2418,7 +2425,6 @@ export default function OSOperationalPage() {
       );
       await unarchiveOS(osId);
       await osTable.refresh();
-      toast.success(`${label} reabert${isDraft ? "o" : "a"} com sucesso!`);
     } catch (error) {
       console.error("Error reopening OS:", error);
       toast.error(`Não foi possível reabrir ${article} ${label}.`);
@@ -2427,6 +2433,7 @@ export default function OSOperationalPage() {
   };
 
   const handleDeleteOS = async (osId: string) => {
+    const loadingId = toast.loading("Carregando atendimento...");
     let targetOS: OrderService | null = null;
     try {
       targetOS = await fetchOSById(osId);
@@ -2434,6 +2441,7 @@ export default function OSOperationalPage() {
       /* fallback: tentar encontrar em osList */
       targetOS = osList.find((os) => os.id === osId) || null;
     }
+    toast.dismiss(loadingId);
     if (!targetOS) {
       toast.error("OS não encontrada.");
       return;
@@ -2466,7 +2474,6 @@ export default function OSOperationalPage() {
       await deleteOS(osId);
       await osTable.refresh();
       setOpenActionMenuId(null);
-      toast.success(`${label} arquivad${isDraft ? "o" : "a"} com sucesso!`);
     } catch (error) {
       console.error("Erro ao arquivar OS:", error);
       toast.error(`Erro ao arquivar ${label}.`);
@@ -2504,7 +2511,6 @@ export default function OSOperationalPage() {
         setAwaitingStatusOSId(null);
         return;
       }
-      toast.success("Atendimento concluído com sucesso!");
 
       await syncOSSnapshot(osId);
       setAwaitingStatusOSId(null);
@@ -3143,7 +3149,6 @@ export default function OSOperationalPage() {
         return;
       }
 
-      toast.success("Etapa finalizada com sucesso!");
       void syncOSSnapshot(osId);
     } catch (error) {
       console.error("Erro ao finalizar ciclo manualmente:", error);
@@ -3226,7 +3231,6 @@ export default function OSOperationalPage() {
         }
         return;
       }
-      toast.success("KM atualizado com sucesso.");
       setShowKmEdit(false);
       setKmEditCycleIndex(null);
       setKmEditNewValue("");
@@ -4692,7 +4696,7 @@ export default function OSOperationalPage() {
     try {
       if (targetId) {
         const t0 = performance.now();
-        const result = await updateOS(targetId, osData);
+        await updateOS(targetId, osData);
         const t1 = performance.now();
         console.log(`[executeSaveOS] updateOS levou ${(t1 - t0).toFixed(0)}ms`);
         // Desliga o loader imediatamente; refresh continua em background
@@ -4713,11 +4717,6 @@ export default function OSOperationalPage() {
         }
         setShowNotificationConfirm(false);
         void resetMainModalState();
-
-        if (result.changed) {
-          toast.success("Atendimento atualizado com sucesso.");
-        }
-        // Se changed === false, o DataContext ja exibiu toast informativo
       } else {
         const t0 = performance.now();
         const newOSId = await addOS(osData);
@@ -4745,7 +4744,6 @@ export default function OSOperationalPage() {
         // Rascunho: sem notificações, sem WhatsApp, sem email admin
         const isDraftCreate = (osData as { tipo?: string }).tipo === "rascunho";
         if (isDraftCreate) {
-          toast.success("Rascunho salvo com sucesso.");
           return;
         }
 
@@ -5049,7 +5047,6 @@ export default function OSOperationalPage() {
 
       // 3. Promover para OS
       await promoteDraftToOS(draftId);
-      toast.success("OS cadastrada com sucesso!");
 
       // 4. Refresh único (table + calendar)
       void osTable.refresh();
@@ -5100,7 +5097,6 @@ export default function OSOperationalPage() {
           setAwaitingStatusOSId(null);
           return;
         }
-        toast.success("Atendimento concluído com sucesso!");
 
         await syncOSSnapshot(editingOSId);
         setAwaitingStatusOSId(null);
