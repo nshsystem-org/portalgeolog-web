@@ -1452,7 +1452,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         logInfo("DataContext", "Nenhuma alteração real detectada na OS", {
           osId: id,
         });
-        toast.info("Nenhuma alteração detectada.");
         console.log(
           `[Perf][DataContext] updateOS no-op ${(performance.now() - startedAt).toFixed(0)}ms`,
         );

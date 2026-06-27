@@ -2310,24 +2310,9 @@ export default function OSOperationalPage() {
       return;
     }
 
-    setPromotingDraftId(osId);
-    try {
-      await promoteDraftToOS(osId);
-      toast.success("OS cadastrada com sucesso!");
-      void osTable.refresh();
-      if (calendarRangeRef.current) {
-        void handleCalendarRangeChange(
-          calendarRangeRef.current.from,
-          calendarRangeRef.current.to,
-          true,
-        );
-      }
-    } catch (err) {
-      console.error("Erro ao promover rascunho:", err);
-      toast.error("Não foi possível promover o rascunho. Tente novamente.");
-    } finally {
-      setPromotingDraftId(null);
-    }
+    // Abrir modal de notificações para escolher automático/manual antes de promover
+    setPromotedOSIdForNotification(osId);
+    setShowNotificationConfirm(true);
   };
 
   const handleEditOS = useCallback(async (osId: string) => {
@@ -4883,6 +4868,13 @@ export default function OSOperationalPage() {
         JSON.stringify(normalizeForCompare(finalData)) ===
         JSON.stringify(normalizeForCompare(originalFormSnapshot));
       if (isSame) {
+        // Rascunho em edição: mesmo sem alterações, abre modal para escolher
+        // Salvar e Promover / Somente Salvar (usuário pode querer apenas promover)
+        if (isDraft && editingOSId) {
+          setPendingOSData(finalData);
+          setShowDraftSaveConfirm(true);
+          return;
+        }
         toast.info("Nenhuma alteracao detectada.");
         setIsModalOpen(false);
         setEditingOSId(null);
@@ -5033,18 +5025,20 @@ export default function OSOperationalPage() {
 
   // Promover rascunho para OS após confirmação no modal de notificações
   const executeDraftSaveAndPromote = async () => {
-    if (!pendingOSData || !promotedOSIdForNotification) return;
+    if (!promotedOSIdForNotification) return;
 
     const draftId = promotedOSIdForNotification;
     setPromotingDraftId(draftId);
 
     try {
-      // 1. Salvar o rascunho silenciosamente (sem fechar modais/resetar form)
-      setOsSubmissionMode("update");
-      setIsSubmittingOS(true);
-      await updateOS(draftId, pendingOSData);
-      setIsSubmittingOS(false);
-      setOsSubmissionMode(null);
+      // 1. Salvar o rascunho silenciosamente (apenas se veio do modal de edição)
+      if (pendingOSData) {
+        setOsSubmissionMode("update");
+        setIsSubmittingOS(true);
+        await updateOS(draftId, pendingOSData);
+        setIsSubmittingOS(false);
+        setOsSubmissionMode(null);
+      }
 
       // 2. Buscar dados atualizados do banco e confirmar que ainda é rascunho
       const draft = await fetchOSById(draftId);
@@ -5067,7 +5061,7 @@ export default function OSOperationalPage() {
         );
       }
 
-      // 5. Fechar modal de edição e manter modal de notificações aberto para enviar notificações
+      // 5. Fechar modais e enviar notificações
       setEditingOSId(null);
       setOsCreationType("os");
       setIsModalOpen(false);
