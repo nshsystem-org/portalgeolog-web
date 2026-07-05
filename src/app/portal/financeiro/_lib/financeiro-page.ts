@@ -34,6 +34,7 @@ export type FinanceLookupMaps = {
   centerMap: Map<string, string>;
   driverMap: Map<string, string>;
   driverPartnerMap: Map<string, string>;
+  driverVinculoMap: Map<string, string>;
   partnerMap: Map<string, string>;
 };
 
@@ -75,7 +76,7 @@ export const getBrazilDate = (): Date => {
 };
 
 type ClienteLike = Pick<Cliente, "id" | "nome" | "centrosCusto">;
-type DriverLike = Pick<Driver, "id" | "name" | "parceiro_id">;
+type DriverLike = Pick<Driver, "id" | "name" | "parceiro_id" | "vinculo_tipo">;
 type ParceiroLike = Pick<ParceiroServico, "id" | "razaoSocialOuNomeCompleto">;
 
 export const formatCurrency = (value: number): string =>
@@ -153,6 +154,7 @@ export const createFinanceLookupMaps = (
   const centerMap = new Map<string, string>();
   const driverMap = new Map<string, string>();
   const driverPartnerMap = new Map<string, string>();
+  const driverVinculoMap = new Map<string, string>();
   const partnerMap = new Map<string, string>();
 
   clientes.forEach((cliente) => {
@@ -167,6 +169,9 @@ export const createFinanceLookupMaps = (
     if (driver.parceiro_id) {
       driverPartnerMap.set(driver.id, driver.parceiro_id);
     }
+    if (driver.vinculo_tipo) {
+      driverVinculoMap.set(driver.id, driver.vinculo_tipo);
+    }
   });
 
   parceiros.forEach((parceiro) => {
@@ -178,6 +183,7 @@ export const createFinanceLookupMaps = (
     centerMap,
     driverMap,
     driverPartnerMap,
+    driverVinculoMap,
     partnerMap,
   };
 };
@@ -191,6 +197,8 @@ export const createFinanceFilters = (filters: {
   parceiroId: string;
   statusOperacional: string;
   statusFinanceiro: string;
+  noShowFilter: string;
+  horaExtraFilter: string;
 }): FinanceQueryFilters => ({
   month: undefined,
   dataInicio: filters.dataInicio || undefined,
@@ -201,4 +209,6 @@ export const createFinanceFilters = (filters: {
   parceiroId: filters.parceiroId || undefined,
   statusOperacional: filters.statusOperacional || undefined,
   statusFinanceiro: filters.statusFinanceiro || undefined,
+  noShowFilter: filters.noShowFilter || undefined,
+  horaExtraFilter: filters.horaExtraFilter || undefined,
 });

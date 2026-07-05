@@ -10,6 +10,8 @@ interface GeologDateInputProps {
   type?: "date" | "month";
   className?: string;
   labelClassName?: string;
+  compact?: boolean;
+  placeholder?: string;
 }
 
 const pad = (value: string): string => value.padStart(2, "0");
@@ -25,16 +27,39 @@ const formatIsoToDisplay = (value: string, type: "date" | "month"): string => {
   return year && month && day ? `${day}/${month}/${year}` : "";
 };
 
+const clampDay = (digits: string): string => {
+  if (digits.length < 2) return digits;
+  const day = parseInt(digits.slice(0, 2), 10);
+  if (isNaN(day)) return digits.slice(0, 2);
+  if (day > 31) return "31" + digits.slice(2);
+  if (day === 0) return "01" + digits.slice(2);
+  return digits.slice(0, 2) + digits.slice(2);
+};
+
+const clampMonth = (digits: string): string => {
+  if (digits.length < 2) return digits;
+  const month = parseInt(digits.slice(0, 2), 10);
+  if (isNaN(month)) return digits.slice(0, 2);
+  if (month > 12) return "12" + digits.slice(2);
+  if (month === 0) return "01" + digits.slice(2);
+  return digits.slice(0, 2) + digits.slice(2);
+};
+
 const maskDigits = (value: string, type: "date" | "month"): string => {
   const digits = value.replace(/\D/g, "");
 
   if (type === "month") {
-    const truncated = digits.slice(0, 6);
+    const truncated = clampMonth(digits.slice(0, 6));
     if (truncated.length <= 2) return truncated;
     return `${truncated.slice(0, 2)}/${truncated.slice(2)}`;
   }
 
-  const truncated = digits.slice(0, 8);
+  // Para data: primeiros 2 = dia (max 31), próximos 2 = mês (max 12), resto = ano
+  const dayPart = clampDay(digits.slice(0, 2));
+  const monthPart = clampMonth(digits.slice(2, 4));
+  const yearPart = digits.slice(4, 8);
+  const truncated = dayPart + monthPart + yearPart;
+
   if (truncated.length <= 2) return truncated;
   if (truncated.length <= 4)
     return `${truncated.slice(0, 2)}/${truncated.slice(2)}`;
@@ -106,19 +131,28 @@ export default function GeologDateInput({
   type = "date",
   className = "",
   labelClassName = "",
+  compact = false,
+  placeholder: customPlaceholder,
 }: GeologDateInputProps) {
   const pickerRef = useRef<HTMLInputElement>(null);
+  const isEditingRef = useRef(false);
   const [displayValue, setDisplayValue] = useState(() =>
     formatIsoToDisplay(value, type),
   );
 
+  // Sync from external value only when not actively editing.
+  // During typing, partial values produce empty ISO which would
+  // overwrite the display and freeze the input.
   useEffect(() => {
-    setDisplayValue(formatIsoToDisplay(value, type));
+    if (isEditingRef.current) return;
+    const formatted = formatIsoToDisplay(value, type);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDisplayValue((prev) => (prev !== formatted ? formatted : prev));
   }, [value, type]);
 
   const placeholder = useMemo(
-    () => (type === "month" ? "MM/AAAA" : "DD/MM/AAAA"),
-    [type],
+    () => customPlaceholder ?? (type === "month" ? "MM/AAAA" : "DD/MM/AAAA"),
+    [type, customPlaceholder],
   );
 
   const openPicker = () => {
@@ -134,6 +168,7 @@ export default function GeologDateInput({
   };
 
   const handleTextChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    isEditingRef.current = true;
     const masked = maskDigits(event.target.value, type);
     setDisplayValue(masked);
 
@@ -142,6 +177,7 @@ export default function GeologDateInput({
   };
 
   const handleTextBlur = () => {
+    isEditingRef.current = false;
     const parsed = parseDisplayToIso(displayValue, type);
     if (!parsed) {
       setDisplayValue(formatIsoToDisplay(value, type));
@@ -149,12 +185,14 @@ export default function GeologDateInput({
   };
 
   return (
-    <div className={`space-y-2 group ${className}`}>
-      <label
-        className={`ml-1 text-[11px] font-black uppercase tracking-[0.25em] text-slate-400 ${labelClassName}`}
-      >
-        {label}
-      </label>
+    <div className={`group ${compact ? "" : "space-y-2"} ${className}`}>
+      {!compact && (
+        <label
+          className={`ml-1 text-[11px] font-black uppercase tracking-[0.25em] text-slate-400 ${labelClassName}`}
+        >
+          {label}
+        </label>
+      )}
 
       <div className="relative">
         <input
@@ -166,17 +204,22 @@ export default function GeologDateInput({
           autoComplete="off"
           placeholder={placeholder}
           maxLength={type === "month" ? 7 : 10}
-          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-base font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+          aria-label={label}
+          className={
+            compact
+              ? "w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 pr-9 text-sm font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              : "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-base font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+          }
         />
 
         <button
           type="button"
           onClick={openPicker}
-          className="absolute right-4 top-1/2 -translate-y-1/2 transition-colors hover:bg-blue-50 rounded-lg p-1 cursor-pointer"
+          className={`absolute top-1/2 -translate-y-1/2 transition-colors hover:bg-blue-50 rounded-lg p-1 cursor-pointer ${compact ? "right-2.5" : "right-4"}`}
           aria-label={`Abrir calendário de ${label}`}
         >
           <Calendar
-            size={18}
+            size={compact ? 15 : 18}
             className="text-slate-400 transition-colors hover:text-blue-500"
           />
         </button>

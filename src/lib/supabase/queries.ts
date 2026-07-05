@@ -391,6 +391,8 @@ export type FinanceQueryFilters = {
   parceiroId?: string;
   statusOperacional?: string;
   statusFinanceiro?: string;
+  noShowFilter?: string;
+  horaExtraFilter?: string;
 };
 
 export type PaginatedResult<T> = {
@@ -532,6 +534,7 @@ type OSRow = {
   os_financeiro_anexos?: FinanceAttachmentRow[] | null;
   is_freelance: boolean | null;
   tipo: string | null;
+  repasse_pago: boolean | null;
 };
 type FinanceAttachmentRow = {
   id: string;
@@ -712,6 +715,7 @@ const mapOSRecord = (
     arquivado: o.arquivado ?? undefined,
     financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
     financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
+    repassePago: o.repasse_pago ?? undefined,
     financeiroAnexos: (o.os_financeiro_anexos || []).map((anexo) => ({
       id: anexo.id,
       ordemServicoId: anexo.ordem_servico_id,
@@ -1561,7 +1565,7 @@ export async function fetchOSPage({
   });
 }
 
-const FINANCE_OS_SELECT_COLUMNS = `${OS_SELECT_COLUMNS}, financeiro_faturado_em, financeiro_recebido_em`;
+const FINANCE_OS_SELECT_COLUMNS = `${OS_SELECT_COLUMNS}, financeiro_faturado_em, financeiro_recebido_em, repasse_pago`;
 
 export async function fetchOSFinancePage({
   page = 1,
@@ -1577,6 +1581,8 @@ export async function fetchOSFinancePage({
   parceiroId,
   statusOperacional,
   statusFinanceiro,
+  noShowFilter,
+  horaExtraFilter,
 }: PaginationParams & FinanceQueryFilters = {}): Promise<
   PaginatedResult<OrderService>
 > {
@@ -1648,6 +1654,11 @@ export async function fetchOSFinancePage({
       query = query.eq("status_financeiro", statusFinanceiro);
     }
 
+    if (noShowFilter === "yes") query = query.eq("no_show", true);
+    if (noShowFilter === "no") query = query.eq("no_show", false);
+    if (horaExtraFilter === "yes") query = query.neq("hora_extra", "");
+    if (horaExtraFilter === "no") query = query.eq("hora_extra", "");
+
     if (likeTerm) {
       query = query.or(
         `protocolo.ilike.${likeTerm},os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
@@ -1687,6 +1698,8 @@ export async function fetchOSFinanceOverview(
       parceiroId,
       statusOperacional,
       statusFinanceiro,
+      noShowFilter,
+      horaExtraFilter,
     } = filters;
 
     let query = getSupabase()
@@ -1712,6 +1725,10 @@ export async function fetchOSFinanceOverview(
       query = query.eq("status_operacional", statusOperacional);
     if (statusFinanceiro)
       query = query.eq("status_financeiro", statusFinanceiro);
+    if (noShowFilter === "yes") query = query.eq("no_show", true);
+    if (noShowFilter === "no") query = query.eq("no_show", false);
+    if (horaExtraFilter === "yes") query = query.neq("hora_extra", "");
+    if (horaExtraFilter === "no") query = query.eq("hora_extra", "");
     if (parceiroId) {
       const { data: driverRows, error: driverError } = await getSupabase()
         .from("drivers")
@@ -2939,12 +2956,14 @@ export async function fetchOSFinanceStats(
       parceiroId,
       statusOperacional,
       statusFinanceiro,
+      noShowFilter,
+      horaExtraFilter,
     } = filters;
 
     let query = getSupabase()
       .from("ordens_servico")
       .select(
-        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id, repasse_pago, tipo",
+        "id, valor_bruto, custo, imposto, lucro, status_financeiro, status_operacional, data, motorista, driver_id, cliente_id, centro_custo_id, repasse_pago, tipo, no_show, no_show_percentual, hora_extra",
         { count: "exact" },
       )
       .eq("arquivado", false)
@@ -2966,6 +2985,10 @@ export async function fetchOSFinanceStats(
       query = query.eq("status_operacional", statusOperacional);
     if (statusFinanceiro)
       query = query.eq("status_financeiro", statusFinanceiro);
+    if (noShowFilter === "yes") query = query.eq("no_show", true);
+    if (noShowFilter === "no") query = query.eq("no_show", false);
+    if (horaExtraFilter === "yes") query = query.neq("hora_extra", "");
+    if (horaExtraFilter === "no") query = query.eq("hora_extra", "");
     if (parceiroId) {
       const { data: driverRows, error: driverError } = await getSupabase()
         .from("drivers")
@@ -3007,6 +3030,9 @@ export async function fetchOSFinanceStats(
       driver_id: string | null;
       repasse_pago: boolean | null;
       tipo: string | null;
+      no_show: boolean | null;
+      no_show_percentual: number | null;
+      hora_extra: string | null;
     }>;
 
     const driverIds = [
@@ -3030,8 +3056,8 @@ export async function fetchOSFinanceStats(
 
     const summary = rows.reduce(
       (acc, row) => {
-        const bruto = Number(row.valor_bruto || 0);
-        const custo = Number(row.custo || 0);
+        const brutoBase = Number(row.valor_bruto || 0);
+        const custoBase = Number(row.custo || 0);
         const imposto = Number(row.imposto || 0);
         const lucro = Number(row.lucro || 0);
         const statusFinanceiro = row.status_financeiro || "Pendente";
@@ -3039,6 +3065,20 @@ export async function fetchOSFinanceStats(
         const driverId = row.driver_id;
         const repassePago = row.repasse_pago || false;
         const isFreelance = row.tipo === "freelance";
+
+        // Ajusta bruto/custo considerando no-show e hora extra
+        const heMin = parseHoraExtraMinutes(row.hora_extra || "");
+        const heCliente = calcHoraExtraCliente(heMin);
+        const heMotorista = calcHoraExtraMotorista(heMin);
+        const noShowFator = row.no_show
+          ? (row.no_show_percentual ?? 100) / 100
+          : 1;
+        const bruto = row.no_show
+          ? (brutoBase + heCliente) * noShowFator
+          : brutoBase + heCliente;
+        const custo = row.no_show
+          ? (custoBase + heMotorista) * noShowFator
+          : custoBase + heMotorista;
 
         acc.totalOS += 1;
         acc.totalBruto += bruto;
@@ -3161,8 +3201,44 @@ export async function fetchOSLogs(osId: string): Promise<OSLog[]> {
       }
     }
 
+    // Fallback: logs de motorista (actor_id NULL) não têm perfil em user_roles.
+    // Busca avatar na tabela drivers por nome (case-insensitive) para os que
+    // ainda não têm actor_avatar_url snapshot. O match é feito por lowercase
+    // client-side porque o .in() do Supabase é case-sensitive e os nomes podem
+    // divergir entre os.motorista e drivers.name.
+    const needsDriverAvatar = rows.some(
+      (row) =>
+        !row.actor_id &&
+        !row.actor_avatar_url &&
+        row.actor_name &&
+        row.actor_name !== "Sistema",
+    );
+
+    let driverAvatarMap = new Map<string, string>();
+    if (needsDriverAvatar) {
+      try {
+        const { data: drivers } = await getSupabase()
+          .from("drivers")
+          .select("name, avatar_url")
+          .not("avatar_url", "is", null);
+
+        driverAvatarMap = new Map(
+          (drivers || []).map((d) => [
+            (d.name as string).toLowerCase(),
+            d.avatar_url as string,
+          ]),
+        );
+      } catch {
+        driverAvatarMap = new Map();
+      }
+    }
+
     return rows.map((row) => {
       const profile = row.actor_id ? profileMap.get(row.actor_id) : undefined;
+      const driverAvatar =
+        !row.actor_id && !row.actor_avatar_url && row.actor_name
+          ? driverAvatarMap.get(row.actor_name.toLowerCase())
+          : undefined;
 
       return {
         id: row.id,
@@ -3170,7 +3246,8 @@ export async function fetchOSLogs(osId: string): Promise<OSLog[]> {
         type: row.type,
         actor_name: profile?.nome || row.actor_name,
         actor_id: row.actor_id,
-        actor_avatar_url: profile?.avatar_url ?? row.actor_avatar_url,
+        actor_avatar_url:
+          profile?.avatar_url ?? row.actor_avatar_url ?? driverAvatar ?? null,
         description: row.description,
         metadata: row.metadata || {},
         created_at: row.created_at,

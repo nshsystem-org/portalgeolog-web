@@ -156,6 +156,7 @@ export interface OrderService {
   createdByName?: string;
   tipo?: "os" | "freelance" | "rascunho";
   arquivado?: boolean;
+  repassePago?: boolean;
 }
 
 export interface OSStatus {

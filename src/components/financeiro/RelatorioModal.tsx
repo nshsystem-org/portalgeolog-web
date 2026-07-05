@@ -6,12 +6,16 @@ import {
   Download,
   FileText,
   FileSpreadsheet,
+  AlertCircle,
+  Handshake,
   Truck,
-  Building2,
   TrendingUp,
   Clock,
-  AlertCircle,
-  HandCoins,
+  Users,
+  Building2,
+  Receipt,
+  Wallet,
+  CheckCircle2,
 } from "lucide-react";
 import GeologDateInput from "@/components/ui/GeologDateInput";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
@@ -20,19 +24,44 @@ export type ReportTemplate =
   | "medicao_cliente"
   | "repasse_autonomos"
   | "repasse_parceiros"
+  | "repasse_internos"
   | "performance"
   | "liberadas_faturamento"
   | "pendentes_repasse";
 
 export type ReportFormat = "pdf" | "csv";
 
+type ReportCategory = "cliente" | "interno" | "motorista";
+
 type TemplateConfig = {
   id: ReportTemplate;
   label: string;
   description: string;
-  icon: React.ReactNode;
+  category: ReportCategory;
   defaultGrouping?: string;
   extraFilters?: string[];
+};
+
+const CATEGORY_LABELS: Record<ReportCategory, string> = {
+  cliente: "Cliente",
+  interno: "Interno",
+  motorista: "Motorista",
+};
+
+const CATEGORY_ICONS: Record<ReportCategory, React.ReactNode> = {
+  cliente: <Users size={18} className="text-emerald-500" />,
+  interno: <Building2 size={18} className="text-blue-500" />,
+  motorista: <Truck size={18} className="text-amber-500" />,
+};
+
+const TEMPLATE_ICONS: Record<ReportTemplate, React.ReactNode> = {
+  medicao_cliente: <Receipt size={18} className="text-emerald-500" />,
+  repasse_autonomos: <Wallet size={18} className="text-amber-500" />,
+  repasse_parceiros: <Handshake size={18} className="text-teal-500" />,
+  repasse_internos: <Building2 size={18} className="text-blue-500" />,
+  performance: <TrendingUp size={18} className="text-emerald-500" />,
+  liberadas_faturamento: <CheckCircle2 size={18} className="text-blue-500" />,
+  pendentes_repasse: <Clock size={18} className="text-orange-500" />,
 };
 
 const TEMPLATES: TemplateConfig[] = [
@@ -41,7 +70,7 @@ const TEMPLATES: TemplateConfig[] = [
     label: "Medição para Cliente",
     description:
       "Relatório completo para envio ao cliente com todas as OS do período",
-    icon: <Building2 size={20} />,
+    category: "cliente",
     extraFilters: ["clienteId"],
   },
   {
@@ -49,32 +78,39 @@ const TEMPLATES: TemplateConfig[] = [
     label: "Repasse a Autônomos",
     description:
       "OS executadas por motoristas autônomos com valores a repassar",
-    icon: <Truck size={20} />,
+    category: "motorista",
     extraFilters: ["driverId"],
   },
   {
     id: "repasse_parceiros",
     label: "Repasse a Parceiros",
     description: "OS executadas por motoristas de parceiros estratégicos",
-    icon: <HandCoins size={20} />,
+    category: "motorista",
+  },
+  {
+    id: "repasse_internos",
+    label: "Repasse a Internos",
+    description: "OS executadas por motoristas internos com valores a repassar",
+    category: "motorista",
+    extraFilters: ["driverId"],
   },
   {
     id: "performance",
     label: "Performance Financeira",
     description: "Análise completa de receita, custo, imposto e lucro por OS",
-    icon: <TrendingUp size={20} />,
+    category: "interno",
   },
   {
     id: "liberadas_faturamento",
     label: "Liberadas para Faturamento",
     description: "OS finalizadas que ainda não foram faturadas",
-    icon: <FileText size={20} />,
+    category: "interno",
   },
   {
     id: "pendentes_repasse",
     label: "Pendentes de Repasse",
     description: "OS com pagamento ao motorista/parceiro ainda pendente",
-    icon: <Clock size={20} />,
+    category: "interno",
   },
 ];
 
@@ -122,6 +158,7 @@ export default function RelatorioModal({
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplate | "">(
     "",
   );
+  const [selectedCategory, setSelectedCategory] = useState<ReportCategory>("cliente");
   const [format, setFormat] = useState<ReportFormat>("pdf");
   const [dataInicio, setDataInicio] = useState(defaultDataInicio);
   const [dataFim, setDataFim] = useState(defaultDataFim);
@@ -163,6 +200,11 @@ export default function RelatorioModal({
     [drivers],
   );
 
+  const internalDrivers = useMemo(
+    () => drivers.filter((driver) => driver.vinculo_tipo === "interno"),
+    [drivers],
+  );
+
   const partnerDrivers = useMemo(
     () =>
       drivers.filter(
@@ -184,7 +226,8 @@ export default function RelatorioModal({
 
   const isRepasseTemplate =
     selectedTemplate === "repasse_autonomos" ||
-    selectedTemplate === "repasse_parceiros";
+    selectedTemplate === "repasse_parceiros" ||
+    selectedTemplate === "repasse_internos";
 
   const canGenerate =
     selectedTemplate &&
@@ -192,12 +235,14 @@ export default function RelatorioModal({
     dataFim &&
     (selectedTemplate !== "medicao_cliente" || clienteId) &&
     (selectedTemplate !== "repasse_autonomos" || driverId) &&
+    (selectedTemplate !== "repasse_internos" || driverId) &&
     (selectedTemplate !== "repasse_parceiros" || parceiroId);
 
   const handleGenerate = () => {
     if (!selectedTemplate || !dataInicio || !dataFim) return;
     if (selectedTemplate === "medicao_cliente" && !clienteId) return;
     if (selectedTemplate === "repasse_autonomos" && !driverId) return;
+    if (selectedTemplate === "repasse_internos" && !driverId) return;
     if (selectedTemplate === "repasse_parceiros" && !parceiroId) return;
 
     onGenerate({
@@ -210,6 +255,7 @@ export default function RelatorioModal({
         selectedTemplate === "repasse_parceiros" ? parceiroId : undefined,
       driverId:
         selectedTemplate === "repasse_autonomos" ||
+        selectedTemplate === "repasse_internos" ||
         selectedTemplate === "repasse_parceiros"
           ? driverId
           : undefined,
@@ -220,6 +266,7 @@ export default function RelatorioModal({
   const handleClose = () => {
     onClose();
     setSelectedTemplate("");
+    setSelectedCategory("cliente");
     setFormat("pdf");
     setDataInicio(defaultDataInicio);
     setDataFim(defaultDataFim);
@@ -295,50 +342,46 @@ export default function RelatorioModal({
             <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
               Tipo de Relatório
             </label>
-            <div
-              className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isTallModal ? "gap-4" : ""}`}
-            >
-              {TEMPLATES.map((template) => {
-                const isActive = selectedTemplate === template.id;
-                return (
-                  <button
-                    key={template.id}
-                    onClick={() => setSelectedTemplate(template.id)}
-                    className={`flex items-start gap-3 p-4 rounded-2xl border-2 text-left transition-all duration-200 cursor-pointer ${isTallModal ? "p-5" : ""} ${
-                      isActive
-                        ? "border-emerald-400 bg-emerald-50/30 shadow-md shadow-emerald-100/50"
-                        : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50/50"
-                    }`}
-                  >
-                    <div
-                      className={`p-2.5 rounded-xl shrink-0 ${
-                        isActive
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-100 text-slate-500"
-                      }`}
-                    >
-                      {React.cloneElement(
-                        template.icon as React.ReactElement<{ size?: number }>,
-                        {
-                          size: 20,
-                        },
-                      )}
-                    </div>
-                    <div className="min-w-0 pt-0.5">
-                      <p
-                        className={`text-sm font-black tracking-tight ${
-                          isActive ? "text-emerald-900" : "text-slate-800"
-                        }`}
-                      >
-                        {template.label}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-0.5 leading-relaxed font-medium">
-                        {template.description}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
+                <GeologSearchableSelect
+                  label="Categoria"
+                  options={(Object.keys(CATEGORY_LABELS) as ReportCategory[]).map((cat) => ({
+                    id: cat,
+                    nome: CATEGORY_LABELS[cat],
+                    icon: CATEGORY_ICONS[cat],
+                  }))}
+                  value={selectedCategory}
+                  onChange={(value) => {
+                    setSelectedCategory(value as ReportCategory);
+                    setSelectedTemplate("");
+                  }}
+                  required
+                  placeholder="Selecione uma categoria..."
+                  compact
+                  disableSearch
+                  hideDropdownPhotos
+                  hideTriggerBorder
+                  triggerClassName="!px-3 !py-1 text-sm w-full h-[55px]"
+                />
+                <GeologSearchableSelect
+                  label="Relatório"
+                  options={TEMPLATES.filter((t) => t.category === selectedCategory).map((t) => ({
+                    id: t.id,
+                    nome: t.label,
+                    icon: TEMPLATE_ICONS[t.id],
+                  }))}
+                  value={selectedTemplate}
+                  onChange={(value) => setSelectedTemplate(value as ReportTemplate)}
+                  required
+                  placeholder="Selecione um relatório..."
+                  compact
+                  disableSearch
+                  hideDropdownPhotos
+                  hideTriggerBorder
+                  triggerClassName="!px-3 !py-1 text-sm w-full h-[55px]"
+                />
+              </div>
             </div>
           </div>
 
@@ -360,13 +403,35 @@ export default function RelatorioModal({
             </div>
           )}
 
-          {/* Driver Selection (Only for Repasse a Autônomos) */}
+          {/* Driver Selection (Repasse a Autônomos) */}
           {selectedTemplate === "repasse_autonomos" && (
             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
               <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
                 <GeologSearchableSelect
                   label="Motorista Autônomo"
                   options={autonomousDrivers.map((driver) => ({
+                    id: driver.id,
+                    nome: driver.name,
+                    sublabel: driver.phone || undefined,
+                  }))}
+                  value={driverId}
+                  onChange={setDriverId}
+                  required
+                  placeholder="Selecione um motorista..."
+                  triggerClassName="px-4 py-3 text-base"
+                  dropdownPosition="up"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Driver Selection (Repasse a Internos) */}
+          {selectedTemplate === "repasse_internos" && (
+            <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+                <GeologSearchableSelect
+                  label="Motorista Interno"
+                  options={internalDrivers.map((driver) => ({
                     id: driver.id,
                     nome: driver.name,
                     sublabel: driver.phone || undefined,

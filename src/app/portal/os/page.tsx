@@ -110,6 +110,8 @@ import {
   cancelarDocagem,
   updateDocagem,
   updateDocagemInstance,
+  fetchDocagensNaoFinalizadas,
+  fetchDocagemInstanceById,
   type DocagemInstance,
   type DocagemInput,
   type DocagemSummary,
@@ -137,6 +139,7 @@ import {
   deriveCyclesOperationalStatus,
   getOperationalCycleTitle,
   isFinalizadoSemValor,
+  isOsAtrasadaOuNaoIniciada,
   type CycleOperationalStatus,
   type OperationalCycleState,
 } from "@/lib/os-messages";
@@ -562,10 +565,11 @@ export default function OSOperationalPage() {
   const [docagemInstances, setDocagemInstances] = useState<DocagemInstance[]>(
     [],
   );
+  const [docagemPendentesGlobal, setDocagemPendentesGlobal] = useState<DocagemInstance[]>([]);
   const [docagemList, setDocagemList] = useState<DocagemSummary[]>([]);
   const [docagemListLoading, setDocagemListLoading] = useState(false);
   const [docagemListFilter, setDocagemListFilter] = useState<
-    "all" | "os" | "docagem" | "rascunho" | "freelance"
+    "all" | "os" | "docagem" | "rascunho" | "freelance" | "pendencias"
   >("all");
   const [promotingDraftId, setPromotingDraftId] = useState<string | null>(null);
   const [onlyMyDrafts, setOnlyMyDrafts] = useState(false);
@@ -814,6 +818,21 @@ export default function OSOperationalPage() {
         return false;
       if (docagemListFilter === "rascunho" && item.tipo !== "rascunho")
         return false;
+      // Filtro "pendencias": OS com alerta vermelho (sem valor ou atrasada) + rascunhos antigos do usuário
+      if (docagemListFilter === "pendencias") {
+        if (item.arquivado) return false;
+        const temAlertaOS =
+          isFinalizadoSemValor(item) || isOsAtrasadaOuNaoIniciada(item);
+        const ehRascunhoAntigo =
+          item.tipo === "rascunho" &&
+          item.createdBy === currentUser?.id &&
+          item.createdAt &&
+          Math.floor(
+            (Date.now() - new Date(item.createdAt).getTime()) /
+              (1000 * 60 * 60 * 24),
+          ) >= 1;
+        if (!temAlertaOS && !ehRascunhoAntigo) return false;
+      }
       // Filtro "Meus rascunhos" — apenas rascunhos do usuário logado
       if (onlyMyDrafts && item.tipo === "rascunho" && item.createdBy !== currentUser?.id)
         return false;
@@ -929,6 +948,8 @@ export default function OSOperationalPage() {
       docagemListFilter === "freelance"
     )
       return [];
+    // No filtro "pendencias", mostramos as docagens não finalizadas antigas
+    if (docagemListFilter === "pendencias") return docagemPendentesGlobal;
     const searchValue = osTable.searchTerm.toLowerCase().trim();
     return docagemInstances.filter((item) => {
       const clienteNome =
@@ -942,6 +963,7 @@ export default function OSOperationalPage() {
     });
   }, [
     docagemInstances,
+    docagemPendentesGlobal,
     clientes,
     osTable.searchTerm,
     docagemListFilter,
@@ -1497,6 +1519,9 @@ export default function OSOperationalPage() {
       if (docagemListFilter === "os") return tipo === "os";
       if (docagemListFilter === "freelance") return tipo === "freelance";
       if (docagemListFilter === "docagem") return false;
+      // "pendencias": filtro transversal por condição de alerta — o useMemo
+      // visual re-filtra corretamente, então aceitamos o item aqui.
+      if (docagemListFilter === "pendencias") return true;
       // "all": qualquer tipo exceto rascunho (comportamento padrão)
       return tipo !== "rascunho";
     };
@@ -1645,6 +1670,24 @@ export default function OSOperationalPage() {
       setDocagemListFilter("all");
     }
   }, [showArchivedOnly, docagemListFilter]);
+
+  // Filtro "pendencias" é transversal (condição de alerta computada no
+  // frontend), então forçamos o modo calendário onde o filtro visual já funciona.
+  useEffect(() => {
+    if (docagemListFilter === "pendencias" && viewMode !== "calendar") {
+      setViewMode("calendar");
+    }
+  }, [docagemListFilter, viewMode]);
+
+  // Carrega docagens não finalizadas antigas quando filtro pendencias está ativo
+  useEffect(() => {
+    if (docagemListFilter !== "pendencias") return;
+    let cancelled = false;
+    void fetchDocagensNaoFinalizadas().then((result) => {
+      if (!cancelled) setDocagemPendentesGlobal(result);
+    });
+    return () => { cancelled = true; };
+  }, [docagemListFilter]);
 
   // Monitorar loading do filtro de arquivados
   useEffect(() => {
@@ -2358,11 +2401,25 @@ export default function OSOperationalPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const editDraftId = urlParams.get("editDraftId");
     const editOSId = urlParams.get("editOSId");
+    const editDocagemId = urlParams.get("editDocagemId");
     const filter = urlParams.get("filter");
 
     // Filtro pode ser aplicado imediatamente (não depende de osList)
     if (filter === "rascunho") {
       setDocagemListFilter("rascunho");
+    }
+    if (filter === "pendencias" || editDocagemId) {
+      setDocagemListFilter("pendencias");
+    }
+
+    // editDocagemId: busca instância e abre modal de edição
+    if (editDocagemId) {
+      void fetchDocagemInstanceById(editDocagemId).then((instance) => {
+        if (instance) setEditingDocagemInstance(instance);
+      });
+      window.history.replaceState({}, "", "/portal/os");
+      draftActionProcessedRef.current = true;
+      return;
     }
 
     // editDraftId/editOSId precisam de osList carregada
@@ -5624,6 +5681,28 @@ export default function OSOperationalPage() {
                 />
                 Freelance
               </button>
+              <button
+                onClick={() => {
+                  setShowArchivedOnly(false);
+                  setDocagemListFilter("pendencias");
+                }}
+                className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
+                  docagemListFilter === "pendencias" && !showArchivedOnly
+                    ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-red-500 text-white shadow-md"
+                    : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-1.5 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-red-50"
+                }`}
+              >
+                <AlertTriangle
+                  className={`${
+                    docagemListFilter === "pendencias" && !showArchivedOnly
+                      ? "text-white"
+                      : "text-red-500"
+                  }`}
+                  size={16}
+                  strokeWidth={2.5}
+                />
+                Pendências
+              </button>
             </div>
           )}
 
@@ -6383,15 +6462,24 @@ export default function OSOperationalPage() {
                       item.arquivado,
                     );
                     const finalizadoSemValor = isFinalizadoSemValor(item);
+                    const atrasadaOuNaoIniciada =
+                      isOsAtrasadaOuNaoIniciada(item);
+                    const temPendencia =
+                      finalizadoSemValor || atrasadaOuNaoIniciada;
+
                     return (
                       <span
                         className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border ${config.bg} ${config.border} ${config.text}`}
                       >
                         {config.icon}
                         {config.label}
-                        {finalizadoSemValor && (
+                        {temPendencia && (
                           <span
-                            title="Falta preencher valores"
+                            title={
+                              finalizadoSemValor
+                                ? "Falta preencher valores"
+                                : "Atendimento atrasado ou não iniciado"
+                            }
                             className="inline-flex items-center justify-center ml-1"
                           >
                             <span
@@ -6515,10 +6603,9 @@ export default function OSOperationalPage() {
                                       Finalizar
                                     </button>
                                   )}
-                                {!item.arquivado &&
-                                  item.status.operacional !== "Finalizado" && (
-                                    <button
-                                      onClick={() => handleDeleteOS(item.id)}
+                                {!item.arquivado && (
+                                  <button
+                                    onClick={() => handleDeleteOS(item.id)}
                                     className="group w-full px-4 py-2 text-left text-sm font-bold rounded-xl bg-rose-50 hover:bg-rose-100 flex items-center gap-3 cursor-pointer"
                                     style={{ color: "rgb(219, 132, 153)" }}
                                   >
@@ -6656,8 +6743,7 @@ export default function OSOperationalPage() {
                             : "Promover para OS"}
                         </button>
                       )}
-                      {!isArchived &&
-                        os?.status.operacional !== "Finalizado" && (
+                      {!isArchived && (
                           <button
                             onClick={() => {
                               handleDeleteOS(osId);
@@ -8677,6 +8763,31 @@ export default function OSOperationalPage() {
                     <p className="text-xs font-semibold text-red-600/80">
                       O atendimento está finalizado, mas o valor bruto e/ou o
                       custo do motorista ainda não foram lançados.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {isOsAtrasadaOuNaoIniciada(viewingOS) && (
+                <div
+                  className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 shadow-sm"
+                  title="Atendimento atrasado ou não iniciado"
+                >
+                  <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                    <AlertCircle size={20} className="text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-red-700">
+                      {viewingOS.status.operacional === "Pendente" ||
+                      viewingOS.status.operacional === "Aguardando"
+                        ? "Atendimento não iniciado"
+                        : "Atendimento atrasado"}
+                    </p>
+                    <p className="text-xs font-semibold text-red-600/80">
+                      {viewingOS.status.operacional === "Pendente" ||
+                      viewingOS.status.operacional === "Aguardando"
+                        ? "Este atendimento está programado para hoje mas ainda não entrou em rota."
+                        : "A data deste atendimento já passou e ele ainda não foi finalizado."}
                     </p>
                   </div>
                 </div>

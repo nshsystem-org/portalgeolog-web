@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Search, Plus, User, Loader2 } from "lucide-react";
+import { ChevronDown, Search, Plus, User, Loader2, X } from "lucide-react";
 import { getThumbnailUrl } from "@/utils/avatar";
 
 function VehiclePlate({
@@ -83,6 +83,7 @@ interface Option {
   sublabel?: string;
   photoUrl?: string;
   plate?: string;
+  icon?: React.ReactNode;
 }
 
 interface GeologSearchableSelectProps {
@@ -98,6 +99,8 @@ interface GeologSearchableSelectProps {
   triggerClassName?: string;
   className?: string;
   disableSearch?: boolean;
+  hideDropdownPhotos?: boolean;
+  hideTriggerBorder?: boolean;
   dropdownPosition?: "auto" | "down" | "up";
   /**
    * Modo assíncrono: quando fornecido, o dropdown busca opções no servidor
@@ -113,6 +116,7 @@ interface GeologSearchableSelectProps {
   selectedOption?: Option | null;
   asyncDebounceMs?: number;
   asyncPlaceholder?: string;
+  onClear?: () => void;
 }
 
 export default function GeologSearchableSelect({
@@ -128,11 +132,14 @@ export default function GeologSearchableSelect({
   triggerClassName = "",
   className = "",
   disableSearch = false,
+  hideDropdownPhotos = false,
+  hideTriggerBorder = false,
   dropdownPosition = "auto",
   onSearch,
   selectedOption: selectedOptionProp,
   asyncDebounceMs = 300,
   asyncPlaceholder = "Digite para buscar...",
+  onClear,
 }: GeologSearchableSelectProps) {
   const isAsync = Boolean(onSearch);
   const [isOpen, setIsOpen] = useState(false);
@@ -363,16 +370,20 @@ export default function GeologSearchableSelect({
               }}
               className={`px-4 py-3 hover:bg-blue-50 cursor-pointer flex items-center gap-3 transition-colors border-l-4 border-transparent ${value === opt.id ? "bg-blue-50/50 border-blue-600" : ""}`}
             >
-              {opt.photoUrl ? (
+              {opt.icon ? (
+                <span className="flex items-center justify-center flex-shrink-0">
+                  {opt.icon}
+                </span>
+              ) : !hideDropdownPhotos && opt.photoUrl ? (
                 <img
                   src={getThumbnailUrl(opt.photoUrl, 64) || ""}
                   alt={opt.nome}
                   className="w-9 h-9 rounded-full object-cover flex-shrink-0 border-2 border-slate-200"
                   loading="lazy"
                 />
-              ) : opt.plate ? (
+              ) : !hideDropdownPhotos && opt.plate ? (
                 <VehiclePlate plate={opt.plate} size="xs" />
-              ) : (
+              ) : hideDropdownPhotos ? null : (
                 <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 border-2 border-slate-200">
                   <User size={16} className="text-slate-400" />
                 </div>
@@ -424,11 +435,15 @@ export default function GeologSearchableSelect({
         <span
           className={`font-bold leading-none flex items-center gap-2.5 ${selectedOption ? "text-slate-900" : "text-slate-400"} ${triggerTextClass}`}
         >
-          {selectedOption?.photoUrl ? (
+          {selectedOption?.icon ? (
+            <span className="flex items-center justify-center flex-shrink-0 text-slate-500">
+              {selectedOption.icon}
+            </span>
+          ) : selectedOption?.photoUrl ? (
             <img
               src={getThumbnailUrl(selectedOption.photoUrl, 64) || ""}
               alt={selectedOption.nome}
-              className="w-8 h-8 rounded-full object-cover flex-shrink-0 border-2 border-slate-200"
+              className={`w-8 h-8 rounded-full object-cover flex-shrink-0 ${hideTriggerBorder ? "" : "border-2 border-slate-200"}`}
               loading="lazy"
             />
           ) : selectedOption?.plate ? (
@@ -438,7 +453,7 @@ export default function GeologSearchableSelect({
               withNegativeMargin
             />
           ) : selectedOption ? (
-            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 border-2 border-slate-200">
+            <div className={`w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 ${hideTriggerBorder ? "" : "border-2 border-slate-200"}`}>
               <User size={15} className="text-slate-400" />
             </div>
           ) : null}
@@ -456,6 +471,21 @@ export default function GeologSearchableSelect({
           )}
         </span>
         <div className="flex items-center gap-1">
+          {onClear && value && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                onClear();
+              }}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-500 shadow-sm transition-all hover:bg-rose-100 hover:text-rose-600 cursor-pointer"
+              title="Limpar seleção"
+              aria-label="Limpar seleção"
+            >
+              <X size={14} />
+            </button>
+          )}
           {onQuickAdd && (
             <button
               type="button"

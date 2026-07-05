@@ -163,6 +163,11 @@ export function useUserPresence() {
   const prevStatusRef = useRef<Record<string, boolean>>({});
   const lastHeartbeatSentAtRef = useRef(0);
   const knownIdsRef = useRef<Set<string>>(new Set());
+  // Garante que apenas a primeira carga (por usuario) seja tratada como inicial,
+  // evitando toasts duplicados em re-execucoes do efeito de mount (StrictMode,
+  // re-emissao do objeto user, renovacao de token, etc.).
+  const didInitialFetchRef = useRef(false);
+  const lastUserIdRef = useRef<string | null>(null);
 
   const onlineCount = users.filter((u) => u.is_online).length;
   const activeNowCount = users.filter((u) => u.is_active_now).length;
@@ -274,10 +279,25 @@ export function useUserPresence() {
       setUsers([]);
       setLoading(false);
       lastHeartbeatSentAtRef.current = 0;
+      // Resetar o guard para que o proximo login seja tratado como carga inicial.
+      didInitialFetchRef.current = false;
+      lastUserIdRef.current = null;
       return;
     }
 
-    fetchUsers(true);
+    // Resetar o guard quando o usuario muda de verdade (troca de conta na
+    // mesma sessao SPA), para que o novo usuario receba a carga inicial.
+    if (lastUserIdRef.current !== user.id) {
+      lastUserIdRef.current = user.id;
+      didInitialFetchRef.current = false;
+    }
+
+    // Marcar o guard ANTES do fetch (sincrono) para que re-execucoes concorrentes
+    // (ex.: StrictMode em dev) nao disparem fetchUsers(true) duplicado.
+    const shouldFetchInitial = !didInitialFetchRef.current;
+    didInitialFetchRef.current = true;
+
+    fetchUsers(shouldFetchInitial);
 
     // Heartbeat inicial para marcar a sessao como ativa sem esperar interacao.
     void sendHeartbeat(true);
@@ -357,6 +377,11 @@ export function useUserPresence() {
               last_activity_at:
                 newRow.last_activity_at ?? oldUser.last_activity_at,
             };
+
+            // Sincroniza o ref de status para que um fetchUsers(true) posterior
+            // nao dispare novamente o toast para uma transicao ja tratada pelo
+            // Realtime (causa do "entrou no portal" duplicado).
+            prevStatusRef.current[oldUser.id] = isOnline;
 
             const nextUsers = [...prev];
             nextUsers[userIndex] = updatedUser;

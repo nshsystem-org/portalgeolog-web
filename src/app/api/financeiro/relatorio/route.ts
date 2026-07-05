@@ -17,6 +17,7 @@ import {
   sanitizeFinanceFileName,
   parseHoraExtraMinutes,
   calcHoraExtraCliente,
+  calcHoraExtraMotorista,
   getNextDay,
 } from "@/lib/financeiro";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
@@ -26,6 +27,7 @@ export const runtime = "edge";
 export type ReportTemplate =
   | "medicao_cliente"
   | "repasse_autonomos"
+  | "repasse_internos"
   | "repasse_parceiros"
   | "performance"
   | "liberadas_faturamento"
@@ -157,6 +159,22 @@ function calcEffectiveClientValue(row: FinanceRow): number {
   const vBruto = Number(row.valor_bruto || 0);
   const heCliente = calcHoraExtraCliente(parseHoraExtraMinutes(row.hora_extra));
   const total = vBruto + heCliente;
+  if (row.no_show) {
+    const fator = (row.no_show_percentual ?? 100) / 100;
+    return total * fator;
+  }
+  return total;
+}
+
+/**
+ * Calcula o valor efetivo do repasse (custo) ao motorista/parceiro para uma OS:
+ * (custo + hora_extra_motorista) × fator_no_show
+ * Espelha a lógica usada em ValorCell (FinanceiroTable.tsx) e queries.ts.
+ */
+function calcEffectiveCustoValue(row: FinanceRow): number {
+  const vCusto = Number(row.custo || 0);
+  const heMotorista = calcHoraExtraMotorista(parseHoraExtraMinutes(row.hora_extra));
+  const total = vCusto + heMotorista;
   if (row.no_show) {
     const fator = (row.no_show_percentual ?? 100) / 100;
     return total * fator;
@@ -329,6 +347,8 @@ async function fetchReportData(
     query = query.eq("repasse_pago", false);
   } else if (template === "repasse_autonomos") {
     query = query.eq("status_operacional", "Finalizado");
+  } else if (template === "repasse_internos") {
+    query = query.eq("status_operacional", "Finalizado");
   } else {
     if (statusOperacional)
       query = query.eq("status_operacional", statusOperacional);
@@ -337,7 +357,9 @@ async function fetchReportData(
   }
 
   if (
-    (template === "repasse_autonomos" || template === "repasse_parceiros") &&
+    (template === "repasse_autonomos" ||
+      template === "repasse_parceiros" ||
+      template === "repasse_internos") &&
     repasseStatusFilter !== "all"
   ) {
     query = query.eq("repasse_pago", repasseStatusFilter === "paid");
@@ -529,6 +551,17 @@ async function fetchReportData(
         driver && !driver.parceiro_id && driver.vinculo_tipo === "autonomo"
       );
     });
+  } else if (template === "repasse_internos") {
+    rows = rows.filter((row) => {
+      // Freelance vai para autonomos, não para internos
+      if (row.tipo === "freelance") return false;
+      const driver = row.driver_id
+        ? driverDetailMap.get(row.driver_id)
+        : undefined;
+      return (
+        driver && !driver.parceiro_id && driver.vinculo_tipo === "interno"
+      );
+    });
   } else if (template === "repasse_parceiros") {
     rows = rows.filter((row) => {
       // Exclui OS freelance — não vão para o repasse do parceiro
@@ -635,7 +668,7 @@ function computeSummary(
   return rows.reduce(
     (acc, row) => {
       const bruto = Number(row.valor_bruto || 0);
-      const custo = Number(row.custo || 0);
+      const custo = calcEffectiveCustoValue(row);
       const imposto = Number(row.imposto || 0);
       const lucro = Number(row.lucro || 0);
       const statusFinanceiro = row.status_financeiro || "Pendente";
@@ -727,6 +760,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       "Status",
     ],
     repasse_autonomos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
+    repasse_internos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
     repasse_parceiros: [
       "Protocolo/Data",
       "Status",
@@ -822,7 +856,23 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             `${row.protocolo || "-"} / ${formatDate(row.data)}`,
             trajeto || "-",
             row.repasse_pago ? "Pago" : "Pendente",
-            formatCurrency(Number(row.custo || 0)),
+            formatCurrency(calcEffectiveCustoValue(row)),
+          ].join(";"),
+        );
+        break;
+      }
+      case "repasse_internos": {
+        const waypoints = data.waypointsMap.get(row.id) || [];
+        const trajeto = waypoints
+          .map((wp) => wp.label)
+          .filter(Boolean)
+          .join(" -> ");
+        lines.push(
+          [
+            `${row.protocolo || "-"} / ${formatDate(row.data)}`,
+            trajeto || "-",
+            row.repasse_pago ? "Pago" : "Pendente",
+            formatCurrency(calcEffectiveCustoValue(row)),
           ].join(";"),
         );
         break;
@@ -838,7 +888,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
               .filter(Boolean)
               .join(" -> ") || "-",
             vehicleMap.get(row.veiculo_id || "") || "-",
-            formatCurrency(Number(row.custo || 0)),
+            formatCurrency(calcEffectiveCustoValue(row)),
           ].join(";"),
         );
         break;
@@ -853,7 +903,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             formatDate(row.data),
             clienteNome,
             formatCurrency(bruto),
-            formatCurrency(Number(row.custo || 0)),
+            formatCurrency(calcEffectiveCustoValue(row)),
             formatCurrency(Number(row.imposto || 0)),
             formatCurrency(lucro),
             `${margem}%`,
@@ -883,7 +933,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             row.os_number || "-",
             formatDate(row.data),
             nomeDestinatario,
-            formatCurrency(Number(row.custo || 0)),
+            formatCurrency(calcEffectiveCustoValue(row)),
             row.status_financeiro || "Pendente",
           ].join(";"),
         );
@@ -905,6 +955,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
   const fileNameMap: Record<ReportTemplate, string> = {
     medicao_cliente: "medicao-cliente",
     repasse_autonomos: "repasse-autonomos",
+    repasse_internos: "repasse-internos",
     repasse_parceiros: "repasse-parceiros",
     performance: "performance-financeira",
     liberadas_faturamento: "liberadas-faturamento",
@@ -1200,6 +1251,7 @@ async function generatePdf(
   const titleMap: Record<ReportTemplate, string> = {
     medicao_cliente: "RELATÓRIO DE MEDIÇÃO",
     repasse_autonomos: "REPASSE A AUTÔNOMOS",
+    repasse_internos: "REPASSE A INTERNOS",
     repasse_parceiros: "REPASSE A PARCEIROS",
     performance: "PERFORMANCE FINANCEIRA",
     liberadas_faturamento: "LIBERADAS PARA FATURAMENTO",
@@ -2168,6 +2220,48 @@ async function generatePdf(
         tone: "teal",
       },
     ],
+    repasse_internos: [
+      {
+        title: "Serviços Executados",
+        value: String(data.summary.totalOS),
+        subtitle: "Volume total de ordens",
+        iconType: "document",
+        tone: "blue",
+        emphasis: true,
+      },
+      {
+        title: "Valor Total",
+        value: formatCurrency(data.summary.totalCustoAutonomos),
+        subtitle: "Repasses previstos",
+        iconType: "money",
+        tone: "cyan",
+        emphasis: true,
+      },
+      {
+        title: "Já Pago",
+        value: formatCurrency(data.summary.totalPagoAutonomos),
+        subtitle: "Repasses quitados",
+        iconType: "check",
+        tone: "emerald",
+      },
+      {
+        title: "Pendente",
+        value: formatCurrency(
+          data.summary.totalCustoAutonomos - data.summary.totalPagoAutonomos,
+        ),
+        subtitle: "Saldo em aberto",
+        iconType: "document",
+        tone: "amber",
+        emphasis: true,
+      },
+      {
+        title: "Itinerários",
+        value: String(data.summary.totalWaypoints),
+        subtitle: "Total de waypoints",
+        iconType: "route",
+        tone: "teal",
+      },
+    ],
     repasse_parceiros: [
       {
         title: "Serviços Executados",
@@ -2323,6 +2417,13 @@ async function generatePdf(
       { label: "Veículo usado", width: 140, key: "veiculo" },
       { label: "Valor", width: 88, key: "custo" },
     ],
+    repasse_internos: [
+      { label: "Protocolo/Data", width: 100, key: "protocolo_data" },
+      { label: "Status", width: 90, key: "status" },
+      { label: "Trajeto realizado", width: 360, key: "trajeto" },
+      { label: "Veículo usado", width: 140, key: "veiculo" },
+      { label: "Valor", width: 88, key: "custo" },
+    ],
     repasse_parceiros: [
       { label: "Protocolo/Data", width: 100, key: "protocolo_data" },
       { label: "Status", width: 80, key: "status" },
@@ -2373,16 +2474,20 @@ async function generatePdf(
   if (
     template === "medicao_cliente" ||
     template === "repasse_autonomos" ||
-    template === "repasse_parceiros"
+    template === "repasse_parceiros" ||
+    template === "repasse_internos"
   ) {
     const isMedicao = template === "medicao_cliente";
     const isParceiros = template === "repasse_parceiros";
+    const isInternos = template === "repasse_internos";
     // Add title
     const titleText = isMedicao
       ? "RELATÓRIO DE MEDIÇÃO"
       : isParceiros
         ? "RELATÓRIO DE REPASSE A PARCEIROS"
-        : "RELATÓRIO DE MEDIÇÃO PARA MOTORISTA";
+        : isInternos
+          ? "RELATÓRIO DE REPASSE A INTERNOS"
+          : "RELATÓRIO DE MEDIÇÃO PARA MOTORISTA";
 
     const titleWidth = regularFont.widthOfTextAtSize(titleText, 10);
     page.drawText(titleText, {
@@ -2597,7 +2702,7 @@ async function generatePdf(
           size = 7;
           break;
         case "trajeto":
-          if (template === "repasse_autonomos") {
+          if (template === "repasse_autonomos" || template === "repasse_internos") {
             // routeSegments will be set below; text is left empty
             size = 6.5;
           } else {
@@ -2630,10 +2735,12 @@ async function generatePdf(
           color = c.accentGreen;
           break;
         case "custo":
-          text = formatCurrency(Number(row.custo || 0));
+          text = formatCurrency(calcEffectiveCustoValue(row));
           font = boldFont;
           color =
-            template === "repasse_autonomos" || template === "repasse_parceiros"
+            template === "repasse_autonomos" ||
+            template === "repasse_parceiros" ||
+            template === "repasse_internos"
               ? c.accentGreen
               : c.accentRed;
           break;
@@ -2656,7 +2763,8 @@ async function generatePdf(
         case "status":
           if (
             template === "repasse_autonomos" ||
-            template === "repasse_parceiros"
+            template === "repasse_parceiros" ||
+            template === "repasse_internos"
           ) {
             text = row.repasse_pago ? "Pago" : "Pendente";
             font = boldFont;
@@ -2717,7 +2825,9 @@ async function generatePdf(
       const maxW = h.width - 10;
       const align =
         h.key === "custo" &&
-        (template === "repasse_autonomos" || template === "repasse_parceiros")
+        (template === "repasse_autonomos" ||
+          template === "repasse_parceiros" ||
+          template === "repasse_internos")
           ? "left"
           : h.key === "valor" && template === "medicao_cliente"
             ? "left"
@@ -2731,7 +2841,8 @@ async function generatePdf(
         h.key === "trajeto" &&
         (template === "repasse_autonomos" ||
           template === "medicao_cliente" ||
-          template === "repasse_parceiros")
+          template === "repasse_parceiros" ||
+          template === "repasse_internos")
       ) {
         routeSegments = [];
 
@@ -2779,7 +2890,8 @@ async function generatePdf(
             const text =
               template === "medicao_cliente"
                 ? truncateText(label, 30)
-                : template === "repasse_autonomos"
+                : template === "repasse_autonomos" ||
+                    template === "repasse_internos"
                   ? truncateText(label, 55)
                   : label;
             routeSegments.push({
@@ -3091,6 +3203,7 @@ async function generatePdf(
   const fileNameMap: Record<ReportTemplate, string> = {
     medicao_cliente: "medicao-cliente",
     repasse_autonomos: "repasse-autonomos",
+    repasse_internos: "repasse-internos",
     repasse_parceiros: "repasse-parceiros",
     performance: "performance-financeira",
     liberadas_faturamento: "liberadas-faturamento",

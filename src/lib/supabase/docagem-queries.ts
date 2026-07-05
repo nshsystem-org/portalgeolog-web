@@ -199,6 +199,56 @@ export async function createDocagem(input: DocagemInput): Promise<string> {
 // Busca de instâncias para o calendário
 // =============================================================================
 
+export async function fetchDocagemInstanceById(
+  id: string,
+): Promise<DocagemInstance | null> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("docagem_instancias")
+      .select(
+        `
+        id,
+        docagem_id,
+        data,
+        horario_inicio,
+        horario_fim,
+        endereco,
+        motorista_id,
+        veiculo_id,
+        valor,
+        custo,
+        status,
+        finalizada_em,
+        finalizada_por,
+        docagem:docagem_id (
+          protocolo,
+          cliente_id,
+          centro_custo_id,
+          solicitante_id,
+          observacao,
+          observacao_financeira
+        )
+      `,
+      )
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as Record<string, unknown>;
+    const docagem = (row.docagem as Record<string, unknown>) || {};
+    return mapDocagemInstance({
+      ...row,
+      protocolo: docagem.protocolo,
+      cliente_id: docagem.cliente_id,
+      centro_custo_id: docagem.centro_custo_id,
+      solicitante_id: docagem.solicitante_id,
+      observacao: docagem.observacao,
+      observacao_financeira: docagem.observacao_financeira,
+    });
+  });
+}
+
 export async function fetchDocagemInstancesByRange({
   from,
   to,
@@ -262,6 +312,65 @@ export async function fetchDocagemInstancesByRange({
 // =============================================================================
 // Busca de docagens para a tabela/lista
 // =============================================================================
+
+/**
+ * Busca instâncias de docagem não finalizadas e com data no passado
+ * (status pendente ou andamento, data < hoje).
+ * Usado pelo sistema de pendências da topbar.
+ */
+export async function fetchDocagensNaoFinalizadas(): Promise<DocagemInstance[]> {
+  return withRetry(async () => {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const { data, error } = await getSupabase()
+      .from("docagem_instancias")
+      .select(
+        `
+        id,
+        docagem_id,
+        data,
+        horario_inicio,
+        horario_fim,
+        endereco,
+        motorista_id,
+        veiculo_id,
+        valor,
+        custo,
+        status,
+        finalizada_em,
+        finalizada_por,
+        docagem:docagem_id (
+          protocolo,
+          cliente_id,
+          centro_custo_id,
+          solicitante_id,
+          observacao,
+          observacao_financeira
+        )
+      `,
+      )
+      .lt("data", hoje)
+      .in("status", ["pendente", "andamento"])
+      .order("data", { ascending: true })
+      .order("horario_inicio", { ascending: true });
+
+    if (error) throw error;
+
+    const rows = (data || []) as Array<Record<string, unknown>>;
+
+    return rows.map((row) => {
+      const docagem = (row.docagem as Record<string, unknown>) || {};
+      return mapDocagemInstance({
+        ...row,
+        protocolo: docagem.protocolo,
+        cliente_id: docagem.cliente_id,
+        centro_custo_id: docagem.centro_custo_id,
+        solicitante_id: docagem.solicitante_id,
+        observacao: docagem.observacao,
+        observacao_financeira: docagem.observacao_financeira,
+      });
+    });
+  });
+}
 
 export async function fetchDocagens(): Promise<DocagemSummary[]> {
   return withRetry(async () => {

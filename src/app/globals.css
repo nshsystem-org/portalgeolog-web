@@ -24,6 +24,23 @@
   animation: gradient 4s ease infinite;
 }
 
+@keyframes pendencia-pulse {
+  0%,
+  100% {
+    background-position: 0% 50%;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    background-position: 100% 50%;
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+}
+
+.animate-pendencia-pulse {
+  background-size: 200% 200%;
+  animation: pendencia-pulse 2.5s ease-in-out infinite;
+}
+
 @layer base {
   :root {
     --color-geolog-blue: #001c3a; /* Azul Escuro profundo */

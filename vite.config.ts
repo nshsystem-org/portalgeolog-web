@@ -19,6 +19,59 @@ export default defineConfig(({ command, mode }) => {
       .map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)]),
   );
 
+  // Otimizações de DEV ONLY — não afetam build/prod (wrangler deploy usa dist/)
+  const devOptimizations =
+    command === "serve"
+      ? {
+          // Pré-bundleia dependências pesadas com esbuild (cold start mais rápido)
+          optimizeDeps: {
+            include: [
+              "react",
+              "react-dom",
+              "react/jsx-runtime",
+              "react/jsx-dev-runtime",
+              "@supabase/supabase-js",
+              "@supabase/ssr",
+              "@fullcalendar/core",
+              "@fullcalendar/react",
+              "@fullcalendar/daygrid",
+              "@fullcalendar/timegrid",
+              "@fullcalendar/list",
+              "@fullcalendar/interaction",
+              "@tiptap/react",
+              "@tiptap/starter-kit",
+              "@tiptap/extension-text-align",
+              "@tiptap/extension-underline",
+              "framer-motion",
+              "leaflet",
+              "react-leaflet",
+              "date-fns",
+              "date-fns-tz",
+              "lucide-react",
+              "sonner",
+              "clsx",
+              "tailwind-merge",
+              "pdf-lib",
+              "openai",
+              "resend",
+            ],
+          },
+          // HMR mais agressivo (polling pra filesystems lentos / WSL / ProtonDrive)
+          server: {
+            hmr: { overlay: true },
+            // Não watcher node_modules nem .next nem dist (economiza CPU)
+            watch: {
+              ignored: [
+                "**/node_modules/**",
+                "**/.next/**",
+                "**/dist/**",
+                "**/.git/**",
+              ],
+            },
+          },
+        }
+      : {};
+
   return {
     define: envDefines,
     plugins: [
@@ -32,5 +85,6 @@ export default defineConfig(({ command, mode }) => {
           ]
         : []),
     ],
+    ...devOptimizations,
   };
 });

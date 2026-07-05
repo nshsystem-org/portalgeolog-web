@@ -1,9 +1,9 @@
 import {
   CheckCircle2,
-  Handshake,
+  ClipboardList,
+  HandCoins,
   ReceiptText,
   TrendingUp,
-  User,
   Wallet,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
@@ -25,12 +25,15 @@ type FinanceCardProps = {
   subtitle: string;
   icon: ReactNode;
   tone: FinanceCardTone;
+  titleColor?: string;
   valueColor?: string;
+  iconColor?: string;
+  largeValue?: boolean;
 };
 
 type FinanceiroStatsProps = {
   stats: FinanceOverview;
-  showMotorista: boolean;
+  driverId: string;
 };
 
 function FinanceCard({
@@ -39,7 +42,10 @@ function FinanceCard({
   subtitle,
   icon,
   tone,
+  titleColor,
   valueColor,
+  iconColor,
+  largeValue,
 }: FinanceCardProps): ReactElement {
   const toneMap: Record<FinanceCardTone, string> = {
     blue: "bg-blue-50/80 border-blue-100 text-blue-600 shadow-blue-100/50",
@@ -92,32 +98,34 @@ function FinanceCard({
   })();
 
   const iconColorClass = (() => {
+    if (iconColor) return iconColor;
     if (isFaturado) return "text-[rgb(135,138,28)]";
     if (isRecebido) return "text-teal-500";
     return "";
   })();
 
+  const actualTitleColor = titleColor || titleColorMap[tone];
   const actualValueColor = valueColor || valueColorMap[tone];
 
   return (
-    <div className="flex items-start gap-5 rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-200/50">
-      <div className={`rounded-2xl border p-4 shadow-sm ${iconDivClass}`}>
-        <div className={`[&>svg]:h-7 [&>svg]:w-7 ${iconColorClass}`}>
+    <div className="flex items-start gap-4 rounded-[2rem] border border-slate-200 bg-white p-5 px-7 shadow-xl shadow-slate-200/40 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-200/50">
+      <div className={`rounded-2xl border p-3 shadow-sm ${iconDivClass}`}>
+        <div className={`[&>svg]:h-6 [&>svg]:w-6 ${iconColorClass}`}>
           {icon}
         </div>
       </div>
       <div className="min-w-0 flex-1">
         <p
-          className={`mb-1.5 truncate text-[11px] font-black uppercase tracking-[0.2em] ${titleColorMap[tone]}`}
+          className={`mb-1 truncate text-[11px] font-black uppercase tracking-[0.18em] ${actualTitleColor}`}
         >
           {title}
         </p>
         <h3
-          className={`truncate text-2xl font-black tracking-tighter tabular-nums ${actualValueColor}`}
+          className={`truncate font-black tracking-wide tabular-nums ${largeValue ? "text-2xl" : "text-xl"} ${actualValueColor}`}
         >
           {value}
         </h3>
-        <p className="mt-2 truncate text-xs font-medium text-slate-400">
+        <p className="mt-1.5 truncate text-xs font-medium text-slate-400">
           {subtitle}
         </p>
       </div>
@@ -127,29 +135,32 @@ function FinanceCard({
 
 export function FinanceiroStats({
   stats,
-  showMotorista,
+  driverId,
 }: FinanceiroStatsProps): ReactElement {
   const baseCards: FinanceCardProps[] = [
     {
       title: "Liberado",
       value: formatCurrency(stats.totalLiberadoFaturamento),
       subtitle: "Já podem ser faturados",
-      icon: <Wallet size={28} className="text-blue-700" />,
+      icon: <Wallet size={22} className="text-blue-700" />,
       tone: "light-blue",
+      largeValue: true,
     },
     {
       title: "Faturado",
       value: formatCurrency(stats.totalFaturado),
       subtitle: "Aguardando recebimento",
-      icon: <ReceiptText size={28} className="text-[rgb(135,138,28)]" />,
+      icon: <ReceiptText size={22} className="text-[rgb(135,138,28)]" />,
       tone: "amber",
+      largeValue: true,
     },
     {
       title: "Recebido",
       value: formatCurrency(stats.totalRecebido),
       subtitle: "Valores recebidos em conta",
-      icon: <CheckCircle2 size={28} className="text-teal-500" />,
+      icon: <CheckCircle2 size={22} className="text-teal-500" />,
       tone: "emerald",
+      largeValue: true,
     },
   ];
 
@@ -157,88 +168,73 @@ export function FinanceiroStats({
     title: "CÁLCULO TOTAL",
     value: formatCurrency(stats.totalBruto),
     subtitle: "Valor total de todas as OS",
-    icon: <TrendingUp size={28} className="text-blue-700" />,
+    icon: <TrendingUp size={22} className="text-blue-700" />,
     tone: "blue",
+    largeValue: true,
   };
 
-  const repasseMotoristaCard: FinanceCardProps = {
-    title: "Repasse Autônomos",
-    value: formatCurrency(stats.totalCustoAutonomos),
-    subtitle: "Precisam ser repassados",
-    icon: <User size={28} className="text-orange-500" />,
-    tone: "slate",
-  };
+  // Cards focados no motorista (Option A)
+  const totalRepasse =
+    stats.totalCustoAutonomos + stats.totalCustoParceiros;
+  const totalPago = stats.totalPagoAutonomos + stats.totalPagoParceiros;
+  const aReceber = totalRepasse - totalPago;
 
-  const pagoAutonomosCard: FinanceCardProps = {
-    title: "Pagos Autônomos",
-    value: formatCurrency(stats.totalPagoAutonomos),
-    subtitle: "Já repassados",
-    icon: <User size={28} className="text-slate-600" />,
-    tone: "slate",
-    valueColor: "text-emerald-600",
-  };
+  const motoristaCards: FinanceCardProps[] = [
+    {
+      title: "Total de Serviços",
+      value: String(stats.totalOS),
+      subtitle: "OS no período filtrado",
+      icon: <ClipboardList size={22} className="text-blue-700" />,
+      tone: "blue",
+    },
+    {
+      title: "Valor Cliente",
+      value: formatCurrency(stats.totalBruto),
+      subtitle: "Total faturado ao cliente",
+      icon: <TrendingUp size={22} className="text-blue-700" />,
+      tone: "light-blue",
+    },
+    {
+      title: "Valor Motorista",
+      value: formatCurrency(totalRepasse),
+      subtitle: "Repassar ao motorista",
+      icon: <Wallet size={22} className="text-[rgb(105,49,153)]" />,
+      tone: "purple",
+      titleColor: "text-[rgb(176,154,193)]",
+      valueColor: "text-[rgb(100,40,151)]",
+      iconColor: "text-[rgb(105,49,153)]",
+    },
+    {
+      title: "Pago",
+      value: formatCurrency(totalPago),
+      subtitle: "Valor já quitado",
+      icon: <CheckCircle2 size={22} className="text-teal-500" />,
+      tone: "emerald",
+    },
+    {
+      title: "Pendente",
+      value: formatCurrency(aReceber),
+      subtitle: "Falta pagar",
+      icon: <HandCoins size={22} className="text-[rgb(179,127,81)]" />,
+      tone: "amber",
+      titleColor: "text-[rgb(230,194,163)]",
+      valueColor: "text-[rgb(179,127,81)]",
+    },
+  ];
 
-  const repasseParceirosCard: FinanceCardProps = {
-    title: "Repasse Parceiros",
-    value: formatCurrency(stats.totalCustoParceiros),
-    subtitle: "Precisam ser repassados",
-    icon: <Handshake size={28} className="text-teal-500" />,
-    tone: "slate",
-  };
-
-  const pagoParceirosCard: FinanceCardProps = {
-    title: "Pagos Parceiros",
-    value: formatCurrency(stats.totalPagoParceiros),
-    subtitle: "Já repassados",
-    icon: <Handshake size={28} className="text-slate-600" />,
-    tone: "slate",
-    valueColor: "text-emerald-600",
-  };
-
-  const statsCards = [calculoTotalCard, ...baseCards];
+  const statsCards = driverId
+    ? motoristaCards
+    : [calculoTotalCard, ...baseCards];
 
   return (
-    <>
-      <section className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
-        {statsCards.map((card) => (
-          <FinanceCard key={card.title} {...card} />
-        ))}
-      </section>
-
-      {showMotorista ? (
-        <>
-          <div className="flex items-center gap-4 py-6">
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
-            <span className="text-sm font-black uppercase tracking-[0.3em] text-slate-500">
-              Motoristas
-            </span>
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
-          </div>
-
-          <section className="relative grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
-            <div className="relative">
-              <FinanceCard {...repasseMotoristaCard} />
-              <div className="absolute top-1/2 left-full z-10 hidden h-px w-5 -translate-y-1/2 bg-slate-300 md:block">
-                <div className="absolute left-0 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-slate-400 shadow-sm" />
-                <div className="absolute right-0 top-1/2 h-2 w-2 translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-slate-400 shadow-sm" />
-              </div>
-            </div>
-            <div className="relative">
-              <FinanceCard {...pagoAutonomosCard} />
-            </div>
-            <div className="relative">
-              <FinanceCard {...repasseParceirosCard} />
-              <div className="absolute top-1/2 left-full z-10 hidden h-px w-5 -translate-y-1/2 bg-slate-300 md:block">
-                <div className="absolute left-0 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-slate-400 shadow-sm" />
-                <div className="absolute right-0 top-1/2 h-2 w-2 translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-slate-400 shadow-sm" />
-              </div>
-            </div>
-            <div className="relative">
-              <FinanceCard {...pagoParceirosCard} />
-            </div>
-          </section>
-        </>
-      ) : null}
-    </>
+    <section
+      className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${
+        driverId ? "lg:grid-cols-5" : "lg:grid-cols-4"
+      }`}
+    >
+      {statsCards.map((card) => (
+        <FinanceCard key={card.title} {...card} />
+      ))}
+    </section>
   );
 }

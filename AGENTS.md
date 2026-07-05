@@ -215,37 +215,44 @@ O sistema utiliza uma arquitetura baseada em banco de dados para notificações,
 
 # Estrutura de Autenticação e Git
 
-## 1. Perfis e Diretórios de Configuração
+## 1. Perfis e Autenticação
 
-Existem dois perfis de autenticação isolados via variáveis de ambiente. NUNCA utilize `gh auth login` ou `git push` sem os prefixos de diretório abaixo:
+A máquina possui o `gh` (GitHub CLI) configurado com **duas contas** autenticadas via keyring:
 
-### Perfil: Principal (git-portalgeolog)
+| Conta | Função | Status |
+|---|---|---|
+| `git-portalgeolog` | Admin da org `nshsystem-org` | **Ativa** (padrão) |
+| `nshsystem` | User individual | Inativa |
 
-- **GitHub CLI Config:** `~/.gh-config1`
-- **GitHub Desktop Data:** `~/.gh-app1`
-- **Alias recomendado:** `gh1` (env GH_CONFIG_DIR=~/.gh-config1 gh)
+**Repositório:** `nshsystem-org/portalgeolog-web` (organização, pertence ao `git-portalgeolog` que é admin).
 
-## 2. Comandos Obrigatórios para o Agente
+### Configuração do Git (`~/.gitconfig`)
 
-Ao executar comandos no terminal para o usuário, você deve injetar a variável de ambiente correspondente ao perfil desejado:
+O `~/.gitconfig` global usa `includeIf` para alternar perfis por pasta:
 
-- **Para checar status:** `GH_CONFIG_DIR=~/.gh-config1 gh auth status`.
+- `~/github-geolog/` → `git-portalgeolog / portalgeolog@proton.me`
+- `~/github-nshsystem/` → `nshsystem / nshsystem@protonmail.com`
+- Outras pastas → `Thorfinn / nshsystem@protonmail.com` (default global)
 
-- **Para clonar ou gerenciar repositórios:** Sempre use `GH_CONFIG_DIR=~/.gh-config[X]` antes de qualquer comando `gh`.
+**Importante:** O projeto em `~/Documents/web` **não** é coberto por nenhum `includeIf`. A config local do repo deve ser definida manualmente:
 
-- **Operações de Git (Push/Pull):**
-  Certifique-se de que o `user.name` e `user.email` no repositório local (`git config`) correspondem ao perfil autenticado no diretório de configuração fornecido.
+```bash
+git config user.name "git-portalgeolog"
+git config user.email "portalgeolog@proton.me"
+```
 
-## 3. Prevenção de Erros Conhecidos
+## 2. Comandos para o Agente
 
-- **ERRO KIO CLIENT:** Se o sistema solicitar login via navegador, pare. A autenticação deve ser feita via CLI com as pastas acima para evitar o erro de protocolo `x-github-desktop-dev-auth`.
-- **SANDBOX:** Ao sugerir a abertura do GitHub Desktop (AppImage), sempre inclua a flag `--no-sandbox` e a variável `XDG_CONFIG_HOME` correta.
+- **Verificar auth:** `gh auth status` (mostra contas ativas)
+- **Verificar usuário ativo:** `gh api user --jq .login` (deve retornar `git-portalgeolog`)
+- **Operações de Git (Push/Pull):** Usar `gh` diretamente (sem `GH_CONFIG_DIR`). O credential helper já está configurado em `~/.gitconfig` para usar `gh auth git-credential`.
+- **Verificar permissão de push:** `git push --dry-run origin main` antes de fazer push real.
 
-## 4. Solução de Problemas (Troubleshooting)
+## 3. Solução de Problemas (Troubleshooting)
 
-- **Usuário Incorreto no GitHub:** Se `gh` reportar um usuário diferente do esperado (ex: `nshsystem` em vez de `git-portalgeolog`), o token no diretório de configuração está incorreto.
-- **Como corrigir:** Execute `echo "SEU_TOKEN" | GH_CONFIG_DIR=~/.gh-config1 gh auth login --with-token` para re-vincular o perfil ao token correto.
-- **Verificação:** Sempre valide com `GH_CONFIG_DIR=~/.gh-config1 gh api user --jq .login` antes de realizar operações de escrita (push/create repo).
+- **Usuário Incorreto no GitHub:** Se `gh api user --jq .login` retornar algo diferente de `git-portalgeolog`, troque a conta ativa com `gh auth switch --user git-portalgeolog`.
+- **Erro de Auth no Push:** Se `git push` falhar com erro 403, verifique se o credential helper está configurado: `git config --global credential.helper` deve incluir `gh auth git-credential`.
+- **Clone correto:** `git clone https://github.com/nshsystem-org/portalgeolog-web.git`
 
 ## 🚀 5. Deploy & Infraestrutura (Cloudflare Workers)
 
@@ -315,7 +322,7 @@ Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir
 
 ### Links de Referência
 
-- **GitHub:** [https://github.com/git-portalgeolog/portalgeolog-web](https://github.com/git-portalgeolog/portalgeolog-web)
+- **GitHub:** [https://github.com/nshsystem-org/portalgeolog-web](https://github.com/nshsystem-org/portalgeolog-web)
 - **Produção:** [https://portalgeolog.com.br](https://portalgeolog.com.br)
 
 ---

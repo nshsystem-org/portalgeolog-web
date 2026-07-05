@@ -3,6 +3,8 @@ import {
   Eye,
   FileText,
   FileUp,
+  HandCoins,
+  Layers,
   RotateCcw,
   Upload,
 } from "lucide-react";
@@ -17,10 +19,22 @@ import {
   type FinanceActionTarget,
 } from "../_lib/financeiro-page";
 
+export type RepasseLoteTarget = {
+  driverId: string;
+  driverName: string;
+  dataInicio: string;
+  dataFim: string;
+  pendingValue: number;
+};
+
 type FinanceiroModalsProps = {
   viewingOS: OrderService | null;
   viewingOSLoading: boolean;
   actionTarget: FinanceActionTarget | null;
+  repasseTarget: OrderService | null;
+  repasseLoading: boolean;
+  repasseLoteTarget: RepasseLoteTarget | null;
+  repasseLoteLoading: boolean;
   uploading: boolean;
   faturarFile: File | null;
   faturarTipoDocumento: string;
@@ -34,12 +48,16 @@ type FinanceiroModalsProps = {
   driverPartnerMap: Map<string, string>;
   onCloseViewingOS: () => void;
   onCloseActionModal: () => void;
+  onCloseRepasse: () => void;
+  onCloseRepasseLote: () => void;
   onFaturarTipoDocumentoChange: (value: string) => void;
   onFaturarFileChange: (value: File | null) => void;
   onFaturarObservacaoChange: (value: string) => void;
   onRecebimentoObservacaoChange: (value: string) => void;
   onUploadFaturamento: () => Promise<void>;
   onConfirmRecebimento: () => Promise<void>;
+  onConfirmRepasse: () => Promise<void>;
+  onConfirmRepasseLote: () => Promise<void>;
 };
 
 function Field({
@@ -63,6 +81,8 @@ export function FinanceiroModals({
   viewingOS,
   viewingOSLoading,
   actionTarget,
+  repasseTarget,
+  repasseLoading,
   uploading,
   faturarFile,
   faturarTipoDocumento,
@@ -76,12 +96,18 @@ export function FinanceiroModals({
   driverPartnerMap,
   onCloseViewingOS,
   onCloseActionModal,
+  onCloseRepasse,
   onFaturarTipoDocumentoChange,
   onFaturarFileChange,
   onFaturarObservacaoChange,
   onRecebimentoObservacaoChange,
   onUploadFaturamento,
   onConfirmRecebimento,
+  onConfirmRepasse,
+  onCloseRepasseLote,
+  onConfirmRepasseLote,
+  repasseLoteTarget,
+  repasseLoteLoading,
 }: FinanceiroModalsProps): ReactElement {
   return (
     <>
@@ -369,6 +395,120 @@ export function FinanceiroModals({
               </Field>
             </div>
           )}
+        </StandardModal>
+      ) : null}
+
+      {repasseTarget ? (
+        <StandardModal
+          title="Registrar Repasse"
+          subtitle={`OS #${repasseTarget.os || repasseTarget.protocolo || repasseTarget.id.slice(0, 8)}`}
+          icon={<HandCoins size={22} />}
+          onClose={onCloseRepasse}
+          maxWidthClassName="max-w-2xl"
+          bodyClassName="space-y-6 p-6 md:p-8"
+          footer={
+            <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4 md:px-8">
+              <button
+                type="button"
+                onClick={onCloseRepasse}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 transition-all hover:bg-slate-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void onConfirmRepasse()}
+                disabled={repasseLoading}
+                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-100 transition-all hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
+              >
+                {repasseLoading ? (
+                  <RotateCcw size={16} className="animate-spin" />
+                ) : (
+                  <HandCoins size={16} />
+                )}
+                Confirmar Repasse
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-6">
+            <div className="rounded-3xl border border-emerald-100 bg-emerald-50/50 p-5 text-sm text-emerald-800">
+              <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em]">
+                Confirmação de Repasse
+              </p>
+              <p className="font-medium leading-relaxed">
+                Confirma que o repasse no valor de{" "}
+                <strong>
+                  {formatCurrency(Number(repasseTarget.custo || 0))}
+                </strong>{" "}
+                para o motorista{" "}
+                <strong>
+                  {repasseTarget.driverId
+                    ? driverMap.get(repasseTarget.driverId) ||
+                      repasseTarget.motorista ||
+                      "Sem motorista"
+                    : repasseTarget.motorista || "Sem motorista"}
+                </strong>{" "}
+                foi efetivamente realizado?
+              </p>
+            </div>
+          </div>
+        </StandardModal>
+      ) : null}
+
+      {repasseLoteTarget ? (
+        <StandardModal
+          title="Repasse em Lote"
+          subtitle={`${repasseLoteTarget.driverName} · ${formatDate(repasseLoteTarget.dataInicio)} – ${formatDate(repasseLoteTarget.dataFim)}`}
+          icon={<Layers size={22} />}
+          onClose={onCloseRepasseLote}
+          maxWidthClassName="max-w-2xl"
+          bodyClassName="space-y-6 p-6 md:p-8"
+          footer={
+            <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4 md:px-8">
+              <button
+                type="button"
+                onClick={onCloseRepasseLote}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 transition-all hover:bg-slate-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void onConfirmRepasseLote()}
+                disabled={repasseLoteLoading}
+                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-100 transition-all hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
+              >
+                {repasseLoteLoading ? (
+                  <RotateCcw size={16} className="animate-spin" />
+                ) : (
+                  <HandCoins size={16} />
+                )}
+                Confirmar Repasse em Lote
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-6">
+            <div className="rounded-3xl border border-emerald-100 bg-emerald-50/50 p-5 text-sm text-emerald-800">
+              <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em]">
+                Confirmação de Repasse em Lote
+              </p>
+              <p className="font-medium leading-relaxed">
+                Confirma que o repasse total de{" "}
+                <strong>{formatCurrency(repasseLoteTarget.pendingValue)}</strong>{" "}
+                para <strong>{repasseLoteTarget.driverName}</strong> referente ao
+                período de{" "}
+                <strong>{formatDate(repasseLoteTarget.dataInicio)}</strong> a{" "}
+                <strong>{formatDate(repasseLoteTarget.dataFim)}</strong> foi
+                efetivamente realizado?
+              </p>
+              <p className="mt-3 text-xs font-semibold text-emerald-700">
+                Todas as OS com repasse pendente deste motorista neste período
+                serão marcadas como pagas.
+              </p>
+            </div>
+          </div>
         </StandardModal>
       ) : null}
     </>

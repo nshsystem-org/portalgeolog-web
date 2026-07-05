@@ -48,7 +48,7 @@ import {
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
-import DraftWarnings from "@/components/DraftWarnings";
+import PendenciaWarnings from "@/components/PendenciaWarnings";
 import { ChatWidget } from "@/components/chat/ChatWidget";
 import { getThumbnailUrl } from "@/utils/avatar";
 import { getOperationalCycleTitle } from "@/lib/os-messages";
@@ -534,8 +534,8 @@ export default function DashboardLayout({
             {/* Avisos do Sistema */}
             <AnnouncementBanner />
 
-            {/* Avisos de Rascunho */}
-            <DraftWarnings />
+            {/* Avisos de Pendências (sem valor + atrasadas + rascunhos) */}
+            <PendenciaWarnings />
 
             {/* Funcionários Online */}
             <div className="relative">

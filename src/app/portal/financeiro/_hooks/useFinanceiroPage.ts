@@ -21,14 +21,18 @@ import {
   getFinanceStats,
   getOSById,
   gerarRelatorio,
+  registrarRepasse,
+  registrarRepasseLote,
   type ConfirmarRecebimentoPayload,
   type FaturarPayload,
 } from "../_services/financeiro.service";
+import type { RepasseLoteTarget } from "../_components/FinanceiroModals";
 import {
   createFinanceFilters,
   createFinanceLookupMaps,
   EMPTY_FINANCE_OVERVIEW,
   endOfWeek,
+  formatCurrency,
   getBrazilDate,
   normalizeToInputDate,
   startOfWeek,
@@ -50,13 +54,15 @@ export type FinanceiroPageState = {
   centroCustoId: string;
   parceiroId: string;
   driverId: string;
+  driverTipoFilter: string;
   statusOperacional: string;
   statusFinanceiro: string;
+  noShowFilter: string;
+  horaExtraFilter: string;
   activeQuickRange: ActiveQuickRange;
 
   // UI visibility
   showFilters: boolean;
-  showMotorista: boolean;
 
   // Stats
   stats: FinanceOverview;
@@ -70,10 +76,15 @@ export type FinanceiroPageState = {
   centerMap: Map<string, string>;
   driverMap: Map<string, string>;
   driverPartnerMap: Map<string, string>;
+  driverVinculoMap: Map<string, string>;
   partnerMap: Map<string, string>;
 
   // Actions / Modals
   actionTarget: FinanceActionTarget | null;
+  repasseTarget: OrderService | null;
+  repasseLoading: boolean;
+  repasseLoteTarget: RepasseLoteTarget | null;
+  repasseLoteLoading: boolean;
   viewingOS: OrderService | null;
   viewingOSLoading: boolean;
   openActionMenuId: string | null;
@@ -96,11 +107,13 @@ export type FinanceiroPageState = {
   setCentroCustoId: (value: string) => void;
   setParceiroId: (value: string) => void;
   setDriverId: (value: string) => void;
+  setDriverTipoFilter: (value: string) => void;
   setStatusOperacional: (value: string) => void;
   setStatusFinanceiro: (value: string) => void;
+  setNoShowFilter: (value: string) => void;
+  setHoraExtraFilter: (value: string) => void;
   setActiveQuickRange: (value: ActiveQuickRange) => void;
   setShowFilters: (value: boolean | ((prev: boolean) => boolean)) => void;
-  setShowMotorista: (value: boolean | ((prev: boolean) => boolean)) => void;
   setShowReportModal: (value: boolean | ((prev: boolean) => boolean)) => void;
   handleOpenReportModal: () => void;
   setOpenActionMenuId: (
@@ -117,10 +130,16 @@ export type FinanceiroPageState = {
   handleViewOS: (os: OrderService) => Promise<void>;
   handleOpenFaturar: (os: OrderService) => void;
   handleOpenRecebimento: (os: OrderService) => void;
+  handleOpenRepasse: (os: OrderService) => void;
+  handleOpenRepasseLote: () => void;
   closeActionModal: () => void;
+  closeRepasseModal: () => void;
+  closeRepasseLoteModal: () => void;
   closeViewingOS: () => void;
   uploadFaturamento: () => Promise<void>;
   confirmRecebimento: () => Promise<void>;
+  confirmRepasse: () => Promise<void>;
+  confirmRepasseLote: () => Promise<void>;
   handleGenerateReport: (payload: ReportPayload) => Promise<void>;
   handleOpenAttachment: (target: FinanceActionTarget) => Promise<void>;
 
@@ -146,8 +165,11 @@ export function useFinanceiroPage(): FinanceiroPageState {
   const [centroCustoId, setCentroCustoId] = useState("");
   const [parceiroId, setParceiroId] = useState("");
   const [driverId, setDriverId] = useState("");
+  const [driverTipoFilter, setDriverTipoFilter] = useState("");
   const [statusOperacional, setStatusOperacional] = useState("");
   const [statusFinanceiro, setStatusFinanceiro] = useState("");
+  const [noShowFilter, setNoShowFilter] = useState("");
+  const [horaExtraFilter, setHoraExtraFilter] = useState("");
 
   // Stats
   const [stats, setStats] = useState<FinanceOverview>(EMPTY_FINANCE_OVERVIEW);
@@ -162,6 +184,11 @@ export function useFinanceiroPage(): FinanceiroPageState {
   const [actionTarget, setActionTarget] = useState<FinanceActionTarget | null>(
     null,
   );
+  const [repasseTarget, setRepasseTarget] = useState<OrderService | null>(null);
+  const [repasseLoading, setRepasseLoading] = useState(false);
+  const [repasseLoteTarget, setRepasseLoteTarget] =
+    useState<RepasseLoteTarget | null>(null);
+  const [repasseLoteLoading, setRepasseLoteLoading] = useState(false);
   const [viewingOS, setViewingOS] = useState<OrderService | null>(null);
   const [viewingOSLoading, setViewingOSLoading] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
@@ -174,7 +201,6 @@ export function useFinanceiroPage(): FinanceiroPageState {
 
   // UI visibility
   const [showFilters, setShowFilters] = useState(false);
-  const [showMotorista, setShowMotorista] = useState(false);
   const [activeQuickRange, setActiveQuickRange] =
     useState<ActiveQuickRange>("week");
 
@@ -194,6 +220,8 @@ export function useFinanceiroPage(): FinanceiroPageState {
         parceiroId,
         statusOperacional,
         statusFinanceiro,
+        noShowFilter,
+        horaExtraFilter,
       }),
     [
       dataInicio,
@@ -204,6 +232,8 @@ export function useFinanceiroPage(): FinanceiroPageState {
       parceiroId,
       statusOperacional,
       statusFinanceiro,
+      noShowFilter,
+      horaExtraFilter,
     ],
   );
 
@@ -219,11 +249,17 @@ export function useFinanceiroPage(): FinanceiroPageState {
   );
 
   // Lookup maps
-  const { customerMap, centerMap, driverMap, driverPartnerMap, partnerMap } =
-    useMemo(
-      () => createFinanceLookupMaps(clientes, drivers, parceiros),
-      [clientes, drivers, parceiros],
-    );
+  const {
+    customerMap,
+    centerMap,
+    driverMap,
+    driverPartnerMap,
+    driverVinculoMap,
+    partnerMap,
+  } = useMemo(
+    () => createFinanceLookupMaps(clientes, drivers, parceiros),
+    [clientes, drivers, parceiros],
+  );
 
   // Permission
   const hasFinanceiroAccess = useMemo((): boolean => {
@@ -241,11 +277,25 @@ export function useFinanceiroPage(): FinanceiroPageState {
     return profile.categoria === "financeiro";
   }, [profile]);
 
+  // Load stats
+  const loadStats = useCallback(async (): Promise<void> => {
+    setOverviewLoading(true);
+    try {
+      const statsData = await getFinanceStats(filters);
+      setStats(statsData);
+    } catch (error) {
+      console.error("Erro ao carregar dashboard financeiro:", error);
+      setStats(EMPTY_FINANCE_OVERVIEW);
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, [filters]);
+
   // Load stats effect
   useEffect(() => {
     let cancelled = false;
 
-    const loadStats = async (): Promise<void> => {
+    const run = async (): Promise<void> => {
       setOverviewLoading(true);
       try {
         const statsData = await getFinanceStats(filters);
@@ -264,7 +314,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
       }
     };
 
-    void loadStats();
+    void run();
 
     return () => {
       cancelled = true;
@@ -297,8 +347,11 @@ export function useFinanceiroPage(): FinanceiroPageState {
     setCentroCustoId("");
     setParceiroId("");
     setDriverId("");
+    setDriverTipoFilter("");
     setStatusOperacional("");
     setStatusFinanceiro("");
+    setNoShowFilter("");
+    setHoraExtraFilter("");
     setActiveQuickRange("week");
   }, []);
 
@@ -370,10 +423,89 @@ export function useFinanceiroPage(): FinanceiroPageState {
     setFaturarFile(null);
   }, []);
 
+  // Open repasse modal
+  const handleOpenRepasse = useCallback((os: OrderService): void => {
+    setOpenActionMenuId(null);
+    setRepasseTarget(os);
+  }, []);
+
+  // Close repasse modal
+  const closeRepasseModal = useCallback((): void => {
+    setRepasseTarget(null);
+    setRepasseLoading(false);
+  }, []);
+
+  // Open repasse lote modal
+  const handleOpenRepasseLote = useCallback((): void => {
+    if (!driverId) return;
+    const driverName = driverMap.get(driverId) ?? "Motorista";
+    const pendingValue =
+      stats.totalCustoAutonomos - stats.totalPagoAutonomos;
+    setRepasseLoteTarget({
+      driverId,
+      driverName,
+      dataInicio,
+      dataFim,
+      pendingValue,
+    });
+  }, [driverId, driverMap, stats, dataInicio, dataFim]);
+
+  // Close repasse lote modal
+  const closeRepasseLoteModal = useCallback((): void => {
+    setRepasseLoteTarget(null);
+    setRepasseLoteLoading(false);
+  }, []);
+
+  // Confirm repasse lote
+  const confirmRepasseLote = useCallback(async (): Promise<void> => {
+    if (!repasseLoteTarget) return;
+
+    setRepasseLoteLoading(true);
+    try {
+      const result = await registrarRepasseLote(
+        repasseLoteTarget.driverId,
+        repasseLoteTarget.dataInicio,
+        repasseLoteTarget.dataFim,
+      );
+      await financeTable.refresh();
+      await loadStats();
+      toast.success(
+        `Repasse em lote registrado: ${result.count} OS (${formatCurrency(result.totalValue)})`,
+      );
+      setRepasseLoteTarget(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Erro ao registrar repasse em lote.",
+      );
+    } finally {
+      setRepasseLoteLoading(false);
+    }
+  }, [repasseLoteTarget, financeTable, loadStats]);
+
+  // Confirm repasse
+  const confirmRepasse = useCallback(async (): Promise<void> => {
+    if (!repasseTarget) return;
+
+    setRepasseLoading(true);
+    try {
+      await registrarRepasse(repasseTarget.id);
+      await financeTable.refresh();
+      await loadStats();
+      toast.success("Repasse registrado com sucesso.");
+      setRepasseTarget(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Erro ao registrar repasse.",
+      );
+    } finally {
+      setRepasseLoading(false);
+    }
+  }, [repasseTarget, financeTable, loadStats]);
+
   // Open report modal
   const handleOpenReportModal = useCallback((): void => {
-    toast.info("Implementação de melhorias em andamento...");
-
     if (!isReportModalEnabled) {
       return;
     }
@@ -510,12 +642,14 @@ export function useFinanceiroPage(): FinanceiroPageState {
     centroCustoId,
     parceiroId,
     driverId,
+    driverTipoFilter,
     statusOperacional,
     statusFinanceiro,
+    noShowFilter,
+    horaExtraFilter,
     activeQuickRange,
 
     showFilters,
-    showMotorista,
 
     stats,
     overviewLoading,
@@ -526,9 +660,14 @@ export function useFinanceiroPage(): FinanceiroPageState {
     centerMap,
     driverMap,
     driverPartnerMap,
+    driverVinculoMap,
     partnerMap,
 
     actionTarget,
+    repasseTarget,
+    repasseLoading,
+    repasseLoteTarget,
+    repasseLoteLoading,
     viewingOS,
     viewingOSLoading,
     openActionMenuId,
@@ -549,11 +688,13 @@ export function useFinanceiroPage(): FinanceiroPageState {
     setCentroCustoId,
     setParceiroId,
     setDriverId,
+    setDriverTipoFilter,
     setStatusOperacional,
     setStatusFinanceiro,
+    setNoShowFilter,
+    setHoraExtraFilter,
     setActiveQuickRange,
     setShowFilters,
-    setShowMotorista,
     setShowReportModal,
     handleOpenReportModal,
     setOpenActionMenuId,
@@ -567,10 +708,16 @@ export function useFinanceiroPage(): FinanceiroPageState {
     handleViewOS,
     handleOpenFaturar,
     handleOpenRecebimento,
+    handleOpenRepasse,
+    handleOpenRepasseLote,
     closeActionModal,
+    closeRepasseModal,
+    closeRepasseLoteModal,
     closeViewingOS,
     uploadFaturamento,
     confirmRecebimento,
+    confirmRepasse,
+    confirmRepasseLote,
     handleGenerateReport,
     handleOpenAttachment,
 

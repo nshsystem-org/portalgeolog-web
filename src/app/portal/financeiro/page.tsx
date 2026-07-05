@@ -24,30 +24,11 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         dataInicio={page.dataInicio}
         dataFim={page.dataFim}
         showFilters={page.showFilters}
-        showMotorista={page.showMotorista}
         activeQuickRange={page.activeQuickRange}
         reportLoading={page.reportLoading}
         onToggleFilters={() => page.setShowFilters((current) => !current)}
-        onToggleMotorista={() => page.setShowMotorista((current) => !current)}
         onSetQuickRange={page.setQuickRange}
         onOpenReportModal={page.handleOpenReportModal}
-      />
-
-      <FinanceiroStats stats={page.stats} showMotorista={page.showMotorista} />
-
-      <FinanceiroFilters
-        isVisible={page.showFilters}
-        dataInicio={page.dataInicio}
-        dataFim={page.dataFim}
-        clienteId={page.clienteId}
-        centroCustoId={page.centroCustoId}
-        parceiroId={page.parceiroId}
-        driverId={page.driverId}
-        statusOperacional={page.statusOperacional}
-        statusFinanceiro={page.statusFinanceiro}
-        clientes={page.clientes}
-        drivers={page.drivers}
-        parceiros={page.parceiros}
         onDataInicioChange={(value) => {
           page.setDataInicio(value);
           page.setActiveQuickRange("custom");
@@ -56,6 +37,23 @@ export default function MedicaoFinanceiraPage(): ReactElement {
           page.setDataFim(value);
           page.setActiveQuickRange("custom");
         }}
+      />
+
+      <FinanceiroStats stats={page.stats} driverId={page.driverId} />
+
+      <FinanceiroFilters
+        isVisible={page.showFilters}
+        clienteId={page.clienteId}
+        centroCustoId={page.centroCustoId}
+        parceiroId={page.parceiroId}
+        driverId={page.driverId}
+        statusOperacional={page.statusOperacional}
+        statusFinanceiro={page.statusFinanceiro}
+        noShowFilter={page.noShowFilter}
+        horaExtraFilter={page.horaExtraFilter}
+        clientes={page.clientes}
+        parceiros={page.parceiros}
+        drivers={page.drivers}
         onClienteChange={(value) => {
           page.setClienteId(value);
           page.setCentroCustoId("");
@@ -65,6 +63,8 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         onDriverChange={page.setDriverId}
         onStatusOperacionalChange={page.setStatusOperacional}
         onStatusFinanceiroChange={page.setStatusFinanceiro}
+        onNoShowFilterChange={page.setNoShowFilter}
+        onHoraExtraFilterChange={page.setHoraExtraFilter}
         onReset={page.resetFilters}
       />
 
@@ -79,11 +79,25 @@ export default function MedicaoFinanceiraPage(): ReactElement {
           totalItems: page.financeTable.totalCount,
           onPageChange: page.financeTable.setPage,
         }}
+        drivers={page.drivers}
+        driverId={page.driverId}
+        onDriverChange={page.setDriverId}
+        driverTipoFilter={page.driverTipoFilter}
+        onDriverTipoChange={page.setDriverTipoFilter}
+        pendingRepasseValue={
+          (page.stats.totalCustoAutonomos - page.stats.totalPagoAutonomos) +
+          (page.stats.totalCustoParceiros - page.stats.totalPagoParceiros)
+        }
+        repassePeriodStart={page.dataInicio}
+        repassePeriodEnd={page.dataFim}
+        statsLoading={page.overviewLoading}
+        onOpenRepasseLote={page.handleOpenRepasseLote}
         customerMap={page.customerMap}
         centerMap={page.centerMap}
         driverMap={page.driverMap}
         partnerMap={page.partnerMap}
         driverPartnerMap={page.driverPartnerMap}
+        driverVinculoMap={page.driverVinculoMap}
         actionMenuRefs={page.actionMenuRefs}
         openActionMenuId={page.openActionMenuId}
         onToggleActionMenu={(id) => {
@@ -93,12 +107,17 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         onOpenAttachment={page.handleOpenAttachment}
         onOpenFaturar={page.handleOpenFaturar}
         onOpenRecebimento={page.handleOpenRecebimento}
+        onOpenRepasse={page.handleOpenRepasse}
       />
 
       <FinanceiroModals
         viewingOS={page.viewingOS}
         viewingOSLoading={page.viewingOSLoading}
         actionTarget={page.actionTarget}
+        repasseTarget={page.repasseTarget}
+        repasseLoading={page.repasseLoading}
+        repasseLoteTarget={page.repasseLoteTarget}
+        repasseLoteLoading={page.repasseLoteLoading}
         uploading={page.uploading}
         faturarFile={page.faturarFile}
         faturarTipoDocumento={page.faturarTipoDocumento}
@@ -112,12 +131,16 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         driverPartnerMap={page.driverPartnerMap}
         onCloseViewingOS={page.closeViewingOS}
         onCloseActionModal={page.closeActionModal}
+        onCloseRepasse={page.closeRepasseModal}
+        onCloseRepasseLote={page.closeRepasseLoteModal}
         onFaturarTipoDocumentoChange={page.setFaturarTipoDocumento}
         onFaturarFileChange={page.setFaturarFile}
         onFaturarObservacaoChange={page.setFaturarObservacao}
         onRecebimentoObservacaoChange={page.setRecebimentoObservacao}
         onUploadFaturamento={page.uploadFaturamento}
         onConfirmRecebimento={page.confirmRecebimento}
+        onConfirmRepasse={page.confirmRepasse}
+        onConfirmRepasseLote={page.confirmRepasseLote}
       />
 
       {page.overviewLoading || page.dataLoading ? (

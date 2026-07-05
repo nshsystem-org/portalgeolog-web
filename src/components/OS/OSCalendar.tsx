@@ -19,6 +19,7 @@ import {
   deriveCyclesOperationalStatus,
   getCycleDisplayStatus,
   isFinalizadoSemValor,
+  isOsAtrasadaOuNaoIniciada,
   type CycleOperationalStatus,
 } from "@/lib/os-messages";
 import {
@@ -45,6 +46,7 @@ import {
   EyeOff,
   Layers,
   Archive,
+  AlertTriangle,
 } from "lucide-react";
 import { logInfo } from "@/lib/frontend-logger";
 import { getThumbnailUrl } from "@/utils/avatar";
@@ -103,9 +105,21 @@ interface OSCalendarProps {
   showArchivedOnly?: boolean;
   hideStatusLegend?: boolean;
   onRangeChange?: (from: string, to: string) => void;
-  docagemListFilter?: "all" | "os" | "docagem" | "rascunho" | "freelance";
+  docagemListFilter?:
+    | "all"
+    | "os"
+    | "docagem"
+    | "rascunho"
+    | "freelance"
+    | "pendencias";
   onFilterChange?: (
-    filter: "all" | "os" | "docagem" | "rascunho" | "freelance",
+    filter:
+      | "all"
+      | "os"
+      | "docagem"
+      | "rascunho"
+      | "freelance"
+      | "pendencias",
   ) => void;
   onArchivedToggle?: () => void;
   onlyMyDrafts?: boolean;
@@ -160,7 +174,13 @@ const weekStatusMeta: Record<
   },
 };
 
-type WeekStatusCounts = Record<WeekStatus, number> & { hasAlert?: boolean };
+type WeekStatusCounts = Record<WeekStatus, number> & {
+  hasAlert?: boolean;
+  alertCount?: number;
+  totalEvents?: number;
+  doneEvents?: number;
+  allDone?: boolean;
+};
 
 const emptyWeekStatusCounts = (): WeekStatusCounts => ({
   Pendente: 0,
@@ -168,6 +188,10 @@ const emptyWeekStatusCounts = (): WeekStatusCounts => ({
   "Em Rota": 0,
   Finalizado: 0,
   hasAlert: false,
+  alertCount: 0,
+  totalEvents: 0,
+  doneEvents: 0,
+  allDone: false,
 });
 
 // Cores por status — backgrounds mais saturados para legibilidade no calendário
@@ -489,6 +513,10 @@ const EventContent = ({
   const startTime = explicitTime || calendarFallbackTime || "--:--";
 
   const isFinalizado = !showArchivedOnly && status === "Finalizado";
+  const temPendencia =
+    !showArchivedOnly &&
+    os &&
+    (isFinalizadoSemValor(os) || isOsAtrasadaOuNaoIniciada(os));
 
   return (
     <div
@@ -811,12 +839,13 @@ const EventContent = ({
             {startTime || "--:--"}
           </span>
 
-          {!showArchivedOnly &&
-            status === "Finalizado" &&
-            os &&
-            isFinalizadoSemValor(os) && (
+          {temPendencia && (
               <div
-                title="Falta preencher valores"
+                title={
+                  os && isFinalizadoSemValor(os)
+                    ? "Falta preencher valores"
+                    : "Atendimento atrasado ou não iniciado"
+                }
                 style={{
                   width: isDayView ? "14px" : "12px",
                   height: isDayView ? "14px" : "12px",
@@ -1391,22 +1420,45 @@ export default function OSCalendar({
         countsByDate[dateKey] = emptyWeekStatusCounts();
       }
 
+      // Ignorar eventos divisores (não são atendimentos reais)
+      if (event.extendedProps.kind === "divider") return;
+
       // Contabilizar status se for um status válido
       if (weekStatusOrder.includes(status as WeekStatus)) {
         countsByDate[dateKey][status as WeekStatus] += 1;
       }
 
-      // Verificar alerta (Finalizado sem valor) — não exibir em modo arquivados
+      // Contar total de eventos reais e eventos finalizados/cancelados
+      countsByDate[dateKey].totalEvents =
+        (countsByDate[dateKey].totalEvents ?? 0) + 1;
+      if (status === "Finalizado" || status === "Cancelado") {
+        countsByDate[dateKey].doneEvents =
+          (countsByDate[dateKey].doneEvents ?? 0) + 1;
+      }
+
+      // Verificar alerta (Finalizado sem valor OU OS atrasada/não iniciada)
       if (
         !showArchivedOnly &&
         event.extendedProps.kind === "os" &&
         event.extendedProps.os &&
-        status === "Finalizado" &&
-        isFinalizadoSemValor(event.extendedProps.os)
+        (isFinalizadoSemValor(event.extendedProps.os) ||
+          isOsAtrasadaOuNaoIniciada(event.extendedProps.os))
       ) {
         countsByDate[dateKey].hasAlert = true;
+        countsByDate[dateKey].alertCount =
+          (countsByDate[dateKey].alertCount ?? 0) + 1;
       }
     });
+
+    // Computar allDone: todos os eventos do dia estão finalizados/cancelados
+    // e não há alertas
+    for (const key of Object.keys(countsByDate)) {
+      const c = countsByDate[key];
+      c.allDone =
+        (c.totalEvents ?? 0) > 0 &&
+        (c.doneEvents ?? 0) === (c.totalEvents ?? 0) &&
+        !c.hasAlert;
+    }
 
     return countsByDate;
   }, [events, showArchivedOnly]);
@@ -1579,21 +1631,56 @@ export default function OSCalendar({
         <div className="fc-os-month-cell" key={`month-cell-${dateKey}`}>
           {counts.hasAlert && (
             <div
-              title="Existem atendimentos finalizados sem valor neste dia"
+              title={`${counts.alertCount ?? 1} atendimento${(counts.alertCount ?? 1) > 1 ? "s" : ""} com pendência${(counts.alertCount ?? 1) > 1 ? "s" : ""} (valores ou atraso) neste dia`}
               style={{
                 position: "absolute",
-                top: "8px",
-                left: "8px",
-                width: "12px",
-                height: "12px",
-                borderRadius: "50%",
-                backgroundColor: "#ef4444",
-                border: "2px solid #ffffff",
-                boxShadow: "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
+                top: "3px",
+                left: "6px",
+                display: "flex",
+                alignItems: "center",
+                gap: "3px",
+                padding: "2px 6px 2px 4px",
+                borderRadius: "999px",
+                background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                color: "#fff",
+                fontSize: "11px",
+                fontWeight: 800,
+                lineHeight: 1,
+                border: "1.5px solid #fff",
+                boxShadow: "0 0 0 1px #ef4444, 0 1px 4px rgba(239, 68, 68, 0.45)",
                 zIndex: 3,
                 animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
               }}
-            />
+            >
+              <AlertTriangle size={11} strokeWidth={3} />
+              {counts.alertCount ?? 1}
+            </div>
+          )}
+          {counts.allDone && (
+            <div
+              title="Tudo finalizado — nenhum alerta neste dia"
+              style={{
+                position: "absolute",
+                top: "3px",
+                left: "6px",
+                display: "flex",
+                alignItems: "center",
+                gap: "3px",
+                padding: "2px 6px 2px 4px",
+                borderRadius: "999px",
+                background: "linear-gradient(135deg, #10b981, #059669)",
+                color: "#fff",
+                fontSize: "11px",
+                fontWeight: 800,
+                lineHeight: 1,
+                border: "1.5px solid #fff",
+                boxShadow: "0 0 0 1px #10b981, 0 1px 4px rgba(16, 185, 129, 0.4)",
+                zIndex: 3,
+              }}
+            >
+              <CheckCircle2 size={11} strokeWidth={3} />
+              OK
+            </div>
           )}
           <span className="fc-os-month-cell__day-number">
             {arg.dayNumberText}
@@ -1657,21 +1744,56 @@ export default function OSCalendar({
         >
           {counts.hasAlert && (
             <div
-              title="Existem atendimentos finalizados sem valor neste dia"
+              title={`${counts.alertCount ?? 1} atendimento${(counts.alertCount ?? 1) > 1 ? "s" : ""} com pendência${(counts.alertCount ?? 1) > 1 ? "s" : ""} (valores ou atraso) neste dia`}
               style={{
                 position: "absolute",
-                top: headerVariant === "day" ? "7px" : "3px",
-                left: headerVariant === "day" ? "12px" : "8px",
-                width: "12px",
-                height: "12px",
-                borderRadius: "50%",
-                backgroundColor: "#ef4444",
-                border: "2px solid #ffffff",
-                boxShadow: "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
+                top: headerVariant === "day" ? "3px" : "1px",
+                left: headerVariant === "day" ? "10px" : "6px",
+                display: "flex",
+                alignItems: "center",
+                gap: "3px",
+                padding: "2px 6px 2px 4px",
+                borderRadius: "999px",
+                background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                color: "#fff",
+                fontSize: "11px",
+                fontWeight: 800,
+                lineHeight: 1,
+                border: "1.5px solid #fff",
+                boxShadow: "0 0 0 1px #ef4444, 0 1px 4px rgba(239, 68, 68, 0.45)",
                 zIndex: 3,
                 animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
               }}
-            />
+            >
+              <AlertTriangle size={11} strokeWidth={3} />
+              {counts.alertCount ?? 1}
+            </div>
+          )}
+          {counts.allDone && (
+            <div
+              title="Tudo finalizado — nenhum alerta neste dia"
+              style={{
+                position: "absolute",
+                top: headerVariant === "day" ? "3px" : "1px",
+                left: headerVariant === "day" ? "10px" : "6px",
+                display: "flex",
+                alignItems: "center",
+                gap: "3px",
+                padding: "2px 6px 2px 4px",
+                borderRadius: "999px",
+                background: "linear-gradient(135deg, #10b981, #059669)",
+                color: "#fff",
+                fontSize: "11px",
+                fontWeight: 800,
+                lineHeight: 1,
+                border: "1.5px solid #fff",
+                boxShadow: "0 0 0 1px #10b981, 0 1px 4px rgba(16, 185, 129, 0.4)",
+                zIndex: 3,
+              }}
+            >
+              <CheckCircle2 size={11} strokeWidth={3} />
+              OK
+            </div>
           )}
           {headerVariant === "week" && (
             <button
@@ -1792,6 +1914,14 @@ export default function OSCalendar({
                 activeClass: "bg-emerald-600 text-white shadow-md",
                 inactiveIconClass: "text-emerald-500",
                 inactiveHover: "hover:bg-emerald-50",
+              },
+              {
+                key: "pendencias" as const,
+                label: "Pendências",
+                icon: AlertTriangle,
+                activeClass: "bg-red-500 text-white shadow-md",
+                inactiveIconClass: "text-red-500",
+                inactiveHover: "hover:bg-red-50",
               },
             ].map(
               ({
@@ -1936,6 +2066,15 @@ export default function OSCalendar({
                 if (dateInfo.isOtherMonth) {
                   return "fc-day-other-month";
                 }
+                const dateKey = toDateKey(dateInfo.date);
+                const counts = weekStatusCountsByDate[dateKey];
+                if (counts?.allDone) return "fc-day-all-done";
+                return "";
+              }}
+              dayHeaderClassNames={(dateInfo) => {
+                const dateKey = toDateKey(dateInfo.date);
+                const counts = weekStatusCountsByDate[dateKey];
+                if (counts?.allDone) return "fc-day-all-done";
                 return "";
               }}
               height="auto"
@@ -2456,6 +2595,26 @@ export default function OSCalendar({
 
           .fc-day-other-month:hover {
             background-color: #f1f5f9 !important;
+          }
+
+          /* Dia com tudo OK — todas as OS finalizados, sem alertas */
+          .fc-day-all-done {
+            background-color: #ecfdf5 !important;
+          }
+          .fc-day-all-done:hover {
+            background-color: #d1fae5 !important;
+          }
+          /* Header da semana com tudo OK — borda inferior verde */
+          .fc-col-header-cell.fc-day-all-done {
+            background-color: #ecfdf5 !important;
+            border-bottom: 3px solid #10b981 !important;
+          }
+          /* Não sobrescreve o dia atual (amarelo) */
+          .fc-daygrid-day.fc-day-today.fc-day-all-done {
+            background-color: #feffd5 !important;
+          }
+          .fc-daygrid-day.fc-day-today.fc-day-all-done:hover {
+            background-color: #feffd5 !important;
           }
 
           .fc-dayGridMonth-view .fc-daygrid-event-harness-abs {

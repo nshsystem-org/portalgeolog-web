@@ -147,7 +147,7 @@ export function DataTable<T extends { id?: string | number }>({
               <input
                 type="text"
                 placeholder={searchPlaceholder}
-                className="w-full pl-12 pr-6 py-3.5 bg-white border border-slate-200 rounded-2xl shadow-sm outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 font-bold text-sm transition-all"
+                className="w-full pl-12 pr-6 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 font-bold text-sm transition-all"
                 value={searchTerm}
                 onChange={(e) => onSearchChange(e.target.value)}
               />

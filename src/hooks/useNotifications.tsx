@@ -14,6 +14,7 @@ import {
   Archive,
   RotateCcw,
   RefreshCw,
+  HandCoins,
 } from "lucide-react";
 
 // Função helper para formatar mensagem de notificação com protocolo em azul
@@ -119,6 +120,16 @@ function getNotificationIcon(notif: AppNotification) {
       gradientClass: "from-green-500 to-green-600",
       borderClass: "hover:border-green-200",
       ringClass: "ring-green-100",
+    };
+  }
+
+  if (notif.title === "Repasse em lote registrado") {
+    return {
+      icon: <HandCoins size={20} className="text-emerald-600" />,
+      bgClass: "bg-emerald-50",
+      gradientClass: "from-emerald-500 to-emerald-600",
+      borderClass: "hover:border-emerald-200",
+      ringClass: "ring-emerald-100",
     };
   }
 

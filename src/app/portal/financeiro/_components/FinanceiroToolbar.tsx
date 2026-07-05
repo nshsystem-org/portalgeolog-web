@@ -1,28 +1,26 @@
 import {
   ArrowRightLeft,
-  Calendar,
+  ArrowRight,
   CalendarClock,
-  ChevronDown,
   Download,
   Filter,
   ReceiptText,
   RotateCcw,
-  Truck,
 } from "lucide-react";
 import type { ReactElement } from "react";
-import { formatDate } from "../_lib/financeiro-page";
+import GeologDateInput from "@/components/ui/GeologDateInput";
 
 type FinanceiroToolbarProps = {
   dataInicio: string;
   dataFim: string;
   showFilters: boolean;
-  showMotorista: boolean;
   activeQuickRange: "today" | "week" | "month" | "custom" | null;
   reportLoading: boolean;
   onToggleFilters: () => void;
-  onToggleMotorista: () => void;
   onSetQuickRange: (mode: "today" | "week" | "month") => void;
   onOpenReportModal: () => void;
+  onDataInicioChange: (value: string) => void;
+  onDataFimChange: (value: string) => void;
 };
 
 const quickRangeButtonClass = (isActive: boolean): string =>
@@ -36,22 +34,37 @@ export function FinanceiroToolbar({
   dataInicio,
   dataFim,
   showFilters,
-  showMotorista,
   activeQuickRange,
   reportLoading,
   onToggleFilters,
-  onToggleMotorista,
   onSetQuickRange,
   onOpenReportModal,
+  onDataInicioChange,
+  onDataFimChange,
 }: FinanceiroToolbarProps): ReactElement {
   return (
     <section className="rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 transition-all">
       <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2">
-          <Calendar size={14} className="text-slate-500" />
-          <span className="text-sm font-semibold text-slate-700">
-            {formatDate(dataInicio)} - {formatDate(dataFim)}
-          </span>
+        <div className="flex items-center gap-2">
+          <div className="w-[150px]">
+            <GeologDateInput
+              label="Data Inicial"
+              value={dataInicio}
+              onChange={onDataInicioChange}
+              compact
+              placeholder="DD/MM/AAAA"
+            />
+          </div>
+          <ArrowRight size={16} className="shrink-0 text-slate-300" />
+          <div className="w-[150px]">
+            <GeologDateInput
+              label="Data Final"
+              value={dataFim}
+              onChange={onDataFimChange}
+              compact
+              placeholder="DD/MM/AAAA"
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -66,26 +79,6 @@ export function FinanceiroToolbar({
           >
             <Filter size={16} />
             Filtros
-            <ChevronDown
-              size={16}
-              className={`transition-transform ${showFilters ? "rotate-180" : ""}`}
-            />
-          </button>
-          <button
-            type="button"
-            onClick={onToggleMotorista}
-            className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-black shadow-sm transition-all active:scale-95 cursor-pointer ${
-              showMotorista
-                ? "border-slate-400 bg-slate-100 text-slate-800"
-                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-            }`}
-          >
-            <Truck size={16} />
-            Motorista
-            <ChevronDown
-              size={16}
-              className={`transition-transform ${showMotorista ? "rotate-180" : ""}`}
-            />
           </button>
           <button
             type="button"

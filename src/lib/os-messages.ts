@@ -350,6 +350,64 @@ export function isFinalizadoSemValor(os: FinalizadoSemValorInput): boolean {
   return isFinalizado && faltaValor;
 }
 
+export interface OSAtrasadaInput {
+  data: string;
+  hora?: string | null;
+  status: { operacional: CycleOperationalStatus };
+  arquivado?: boolean;
+  tipo?: "os" | "freelance" | "rascunho";
+}
+
+/**
+ * Verifica se uma OS está atrasada ou não iniciada no dia:
+ *  - Data anterior a hoje + status que não seja "Finalizado" nem "Cancelado"
+ *    → deveria ter sido finalizada, mas está presa.
+ *  - Data = hoje + horário agendado já passou + status ainda "Pendente" ou "Aguardando"
+ *    → programada para hoje, o horário passou, mas nem entrou em rota.
+ *    Se não há horário definido, não flageia durante o dia (não sabemos quando ocorre).
+ * Rascunhos e arquivados são sempre ignorados.
+ */
+export function isOsAtrasadaOuNaoIniciada(os: OSAtrasadaInput): boolean {
+  if (os.arquivado) return false;
+  if (os.tipo === "rascunho") return false;
+
+  const status = os.status.operacional;
+  if (status === "Cancelado" || status === "Finalizado") return false;
+
+  if (!os.data) return false;
+  const parts = os.data.split("-").map(Number);
+  if (parts.length < 3 || isNaN(parts[0])) return false;
+  const osDate = new Date(parts[0], parts[1] - 1, parts[2]);
+
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  // Data passada: qualquer status que não seja Finalizado/Cancelado
+  if (osDate < today) return true;
+
+  // Dia atual: só flageia se o horário agendado já passou
+  if (osDate.getTime() === today.getTime()) {
+    if (status !== "Pendente" && status !== "Aguardando") return false;
+
+    // Se não há horário definido, não flageia (não sabemos quando é)
+    if (!os.hora) return false;
+
+    // Monta datetime do agendamento para comparar com agora
+    const [hStr, mStr] = os.hora.split(":");
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr ?? "0", 10);
+    if (isNaN(h) || isNaN(m)) return false;
+
+    const osDateTime = new Date(parts[0], parts[1] - 1, parts[2], h, m, 0, 0);
+
+    // Flageia somente se o horário do atendimento já passou
+    return now >= osDateTime;
+  }
+
+  return false;
+}
+
 export function formatItineraryGroups(groups: ItineraryGroup[]): string {
   if (groups.length === 0) return "";
 

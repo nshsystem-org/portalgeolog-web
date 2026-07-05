@@ -16,6 +16,56 @@ export type ConfirmarRecebimentoPayload = {
   observacao: string;
 };
 
+export async function registrarRepasse(osId: string): Promise<void> {
+  const response = await fetch("/api/financeiro/repasse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ osId }),
+  });
+
+  const body = (await response.json().catch(() => null)) as {
+    error?: string;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(body?.error || "Falha ao registrar repasse.");
+  }
+}
+
+export type RepasseLoteResult = {
+  count: number;
+  totalValue: number;
+};
+
+export async function registrarRepasseLote(
+  driverId: string,
+  dataInicio: string,
+  dataFim: string,
+): Promise<RepasseLoteResult> {
+  const response = await fetch("/api/financeiro/repasse/lote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ driverId, dataInicio, dataFim }),
+  });
+
+  const body = (await response.json().catch(() => null)) as {
+    error?: string;
+    count?: number;
+    totalValue?: number;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(body?.error || "Falha ao registrar repasse em lote.");
+  }
+
+  return {
+    count: body?.count ?? 0,
+    totalValue: body?.totalValue ?? 0,
+  };
+}
+
 export async function getFinanceStats(
   filters: FinanceQueryFilters,
 ): Promise<FinanceOverview> {
