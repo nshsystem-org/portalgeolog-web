@@ -49,6 +49,10 @@ import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import PendenciaWarnings from "@/components/PendenciaWarnings";
+import PendenciaAlertModal, {
+  shouldShowPendenciaAlert,
+  type PendenciaAlertData,
+} from "@/components/PendenciaAlertModal";
 import { ChatWidget } from "@/components/chat/ChatWidget";
 import { getThumbnailUrl } from "@/utils/avatar";
 import { getOperationalCycleTitle } from "@/lib/os-messages";
@@ -134,13 +138,28 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, profile, loading, logout } = useAuth();
+  const [pendenciaAlertData, setPendenciaAlertData] =
+    useState<PendenciaAlertData | null>(null);
+  const [pendenciaDropdownSignal, setPendenciaDropdownSignal] = useState(0);
+  const handlePendenciaAlert = useCallback(
+    (counts: {
+      semValor: number;
+      atrasadas: number;
+      docagens: number;
+      total: number;
+    }) => {
+      if (!shouldShowPendenciaAlert(counts)) return;
+      setPendenciaAlertData(counts);
+    },
+    [],
+  );
   const {
     unreadCount,
     notifications,
     markAsRead,
     markAllAsRead,
     realtimeConnected,
-  } = useNotifications();
+  } = useNotifications({ onPendenciaAlert: handlePendenciaAlert });
   const { currentVersion, updateAvailable, updateCountdown } = useAppVersion();
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<
@@ -535,7 +554,7 @@ export default function DashboardLayout({
             <AnnouncementBanner />
 
             {/* Avisos de Pendências (sem valor + atrasadas + rascunhos) */}
-            <PendenciaWarnings />
+            <PendenciaWarnings externalOpenSignal={pendenciaDropdownSignal} />
 
             {/* Funcionários Online */}
             <div className="relative">
@@ -1337,6 +1356,14 @@ export default function DashboardLayout({
           onOpenEmployeesDropdown={() => setShowEmployees(true)}
           employeesButtonRef={employeesButtonRef}
           onStepChange={setAnnouncementStep}
+        />
+
+        {/* Modal bloqueante de alerta de pendências (cron 2h) */}
+        <PendenciaAlertModal
+          data={pendenciaAlertData}
+          onClose={() => setPendenciaAlertData(null)}
+          onReview={() => setPendenciaDropdownSignal((s) => s + 1)}
+          userName={profile?.nome}
         />
 
         {/* Overlay de bloqueio durante explicação */}

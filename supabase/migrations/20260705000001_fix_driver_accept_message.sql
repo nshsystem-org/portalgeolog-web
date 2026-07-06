@@ -1,3 +1,9 @@
+-- Fix: driver_accept notification title/message was reverted to the old text
+-- ("Motorista confirmou o atendimento") by migration 20260630000001.
+-- The correct message is "visualizou os detalhes do atendimento".
+-- This patch re-applies the correct wording while preserving all other
+-- changes introduced by 20260630000001 (repasse_lote_pago branch, etc.).
+
 create or replace function public.handle_os_log_notification()
 returns trigger
 language plpgsql
@@ -242,6 +248,7 @@ begin
       );
       v_notification_type := 'success';
     when 'driver_accept' then
+      -- CORRECT: motorista visualizou os detalhes, não "confirmou"
       v_title := 'Motorista visualizou os detalhes do atendimento';
       v_message := format(
         '%s visualizou os detalhes do atendimento%s.',

@@ -110,8 +110,6 @@ import {
   cancelarDocagem,
   updateDocagem,
   updateDocagemInstance,
-  fetchDocagensNaoFinalizadas,
-  fetchDocagemInstanceById,
   type DocagemInstance,
   type DocagemInput,
   type DocagemSummary,
@@ -565,11 +563,10 @@ export default function OSOperationalPage() {
   const [docagemInstances, setDocagemInstances] = useState<DocagemInstance[]>(
     [],
   );
-  const [docagemPendentesGlobal, setDocagemPendentesGlobal] = useState<DocagemInstance[]>([]);
   const [docagemList, setDocagemList] = useState<DocagemSummary[]>([]);
   const [docagemListLoading, setDocagemListLoading] = useState(false);
   const [docagemListFilter, setDocagemListFilter] = useState<
-    "all" | "os" | "docagem" | "rascunho" | "freelance" | "pendencias"
+    "all" | "os" | "docagem" | "rascunho" | "freelance"
   >("all");
   const [promotingDraftId, setPromotingDraftId] = useState<string | null>(null);
   const [onlyMyDrafts, setOnlyMyDrafts] = useState(false);
@@ -818,21 +815,6 @@ export default function OSOperationalPage() {
         return false;
       if (docagemListFilter === "rascunho" && item.tipo !== "rascunho")
         return false;
-      // Filtro "pendencias": OS com alerta vermelho (sem valor ou atrasada) + rascunhos antigos do usuário
-      if (docagemListFilter === "pendencias") {
-        if (item.arquivado) return false;
-        const temAlertaOS =
-          isFinalizadoSemValor(item) || isOsAtrasadaOuNaoIniciada(item);
-        const ehRascunhoAntigo =
-          item.tipo === "rascunho" &&
-          item.createdBy === currentUser?.id &&
-          item.createdAt &&
-          Math.floor(
-            (Date.now() - new Date(item.createdAt).getTime()) /
-              (1000 * 60 * 60 * 24),
-          ) >= 1;
-        if (!temAlertaOS && !ehRascunhoAntigo) return false;
-      }
       // Filtro "Meus rascunhos" — apenas rascunhos do usuário logado
       if (onlyMyDrafts && item.tipo === "rascunho" && item.createdBy !== currentUser?.id)
         return false;
@@ -948,8 +930,6 @@ export default function OSOperationalPage() {
       docagemListFilter === "freelance"
     )
       return [];
-    // No filtro "pendencias", mostramos as docagens não finalizadas antigas
-    if (docagemListFilter === "pendencias") return docagemPendentesGlobal;
     const searchValue = osTable.searchTerm.toLowerCase().trim();
     return docagemInstances.filter((item) => {
       const clienteNome =
@@ -963,7 +943,6 @@ export default function OSOperationalPage() {
     });
   }, [
     docagemInstances,
-    docagemPendentesGlobal,
     clientes,
     osTable.searchTerm,
     docagemListFilter,
@@ -1519,9 +1498,6 @@ export default function OSOperationalPage() {
       if (docagemListFilter === "os") return tipo === "os";
       if (docagemListFilter === "freelance") return tipo === "freelance";
       if (docagemListFilter === "docagem") return false;
-      // "pendencias": filtro transversal por condição de alerta — o useMemo
-      // visual re-filtra corretamente, então aceitamos o item aqui.
-      if (docagemListFilter === "pendencias") return true;
       // "all": qualquer tipo exceto rascunho (comportamento padrão)
       return tipo !== "rascunho";
     };
@@ -1670,24 +1646,6 @@ export default function OSOperationalPage() {
       setDocagemListFilter("all");
     }
   }, [showArchivedOnly, docagemListFilter]);
-
-  // Filtro "pendencias" é transversal (condição de alerta computada no
-  // frontend), então forçamos o modo calendário onde o filtro visual já funciona.
-  useEffect(() => {
-    if (docagemListFilter === "pendencias" && viewMode !== "calendar") {
-      setViewMode("calendar");
-    }
-  }, [docagemListFilter, viewMode]);
-
-  // Carrega docagens não finalizadas antigas quando filtro pendencias está ativo
-  useEffect(() => {
-    if (docagemListFilter !== "pendencias") return;
-    let cancelled = false;
-    void fetchDocagensNaoFinalizadas().then((result) => {
-      if (!cancelled) setDocagemPendentesGlobal(result);
-    });
-    return () => { cancelled = true; };
-  }, [docagemListFilter]);
 
   // Monitorar loading do filtro de arquivados
   useEffect(() => {
@@ -2401,25 +2359,11 @@ export default function OSOperationalPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const editDraftId = urlParams.get("editDraftId");
     const editOSId = urlParams.get("editOSId");
-    const editDocagemId = urlParams.get("editDocagemId");
     const filter = urlParams.get("filter");
 
     // Filtro pode ser aplicado imediatamente (não depende de osList)
     if (filter === "rascunho") {
       setDocagemListFilter("rascunho");
-    }
-    if (filter === "pendencias" || editDocagemId) {
-      setDocagemListFilter("pendencias");
-    }
-
-    // editDocagemId: busca instância e abre modal de edição
-    if (editDocagemId) {
-      void fetchDocagemInstanceById(editDocagemId).then((instance) => {
-        if (instance) setEditingDocagemInstance(instance);
-      });
-      window.history.replaceState({}, "", "/portal/os");
-      draftActionProcessedRef.current = true;
-      return;
     }
 
     // editDraftId/editOSId precisam de osList carregada
@@ -5680,28 +5624,6 @@ export default function OSOperationalPage() {
                   strokeWidth={2.5}
                 />
                 Freelance
-              </button>
-              <button
-                onClick={() => {
-                  setShowArchivedOnly(false);
-                  setDocagemListFilter("pendencias");
-                }}
-                className={`flex items-center gap-2 rounded-xl font-bold text-xs uppercase tracking-widest cursor-pointer whitespace-nowrap overflow-hidden transition-all duration-300 ease-out ${
-                  docagemListFilter === "pendencias" && !showArchivedOnly
-                    ? "px-3.5 py-2.5 mr-1.5 max-w-[140px] opacity-100 bg-red-500 text-white shadow-md"
-                    : "max-w-0 opacity-0 px-0 py-0 pointer-events-none group-hover:px-3.5 group-hover:py-2.5 group-hover:mr-1.5 group-hover:max-w-[140px] group-hover:opacity-100 group-hover:pointer-events-auto text-slate-300 group-hover:text-slate-500 hover:bg-red-50"
-                }`}
-              >
-                <AlertTriangle
-                  className={`${
-                    docagemListFilter === "pendencias" && !showArchivedOnly
-                      ? "text-white"
-                      : "text-red-500"
-                  }`}
-                  size={16}
-                  strokeWidth={2.5}
-                />
-                Pendências
               </button>
             </div>
           )}

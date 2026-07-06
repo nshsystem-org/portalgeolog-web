@@ -372,7 +372,16 @@ function NotificationToastItem({
   );
 }
 
-export function useNotifications() {
+export function useNotifications(
+  options?: {
+    onPendenciaAlert?: (counts: {
+      semValor: number;
+      atrasadas: number;
+      docagens: number;
+      total: number;
+    }) => void;
+  },
+) {
   const { user, loading } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
@@ -381,11 +390,32 @@ export function useNotifications() {
   const abortRef = useRef<AbortController | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
+  const pendenciaAlertCbRef = useRef(options?.onPendenciaAlert);
+
+  // Mantém a ref do callback atualizada sem reexecutar o useEffect do realtime
+  useEffect(() => {
+    pendenciaAlertCbRef.current = options?.onPendenciaAlert;
+  }, [options?.onPendenciaAlert]);
 
   const showNotificationToast = (notif: AppNotification) => {
     toast.custom((t) => <NotificationToastItem toastId={t} notif={notif} />, {
       duration: Infinity,
     });
+  };
+
+  /**
+   * Verifica se a notificação é um alerta de pendências (cron 2h).
+   * Se for, chama o callback registrado e retorna true (não mostra toast).
+   */
+  const maybeHandlePendenciaAlert = (notif: AppNotification): boolean => {
+    const meta = notif.metadata as Record<string, unknown> | null;
+    if (meta?.kind !== "pendencia_alert") return false;
+    const counts = meta.counts as
+      | { semValor: number; atrasadas: number; docagens: number; total: number }
+      | undefined;
+    if (!counts || counts.total === 0) return false;
+    pendenciaAlertCbRef.current?.(counts);
+    return true;
   };
 
   useEffect(() => {
@@ -510,6 +540,9 @@ export function useNotifications() {
 
           if (isNew) {
             knownIdsRef.current.add(notif.id);
+            // Alertas de pendências (cron 2h) abrem modal bloqueante em vez
+            // do toast padrão. O callback é registrado via options.onPendenciaAlert.
+            if (maybeHandlePendenciaAlert(notif)) return;
             showNotificationToast(notif);
             showNativeNotification(notif);
           }

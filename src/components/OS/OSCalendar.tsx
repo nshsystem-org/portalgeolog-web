@@ -28,6 +28,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  AlertTriangle,
   CircleDashed,
   Loader2,
   Route,
@@ -46,7 +47,6 @@ import {
   EyeOff,
   Layers,
   Archive,
-  AlertTriangle,
 } from "lucide-react";
 import { logInfo } from "@/lib/frontend-logger";
 import { getThumbnailUrl } from "@/utils/avatar";
@@ -105,21 +105,9 @@ interface OSCalendarProps {
   showArchivedOnly?: boolean;
   hideStatusLegend?: boolean;
   onRangeChange?: (from: string, to: string) => void;
-  docagemListFilter?:
-    | "all"
-    | "os"
-    | "docagem"
-    | "rascunho"
-    | "freelance"
-    | "pendencias";
+  docagemListFilter?: "all" | "os" | "docagem" | "rascunho" | "freelance";
   onFilterChange?: (
-    filter:
-      | "all"
-      | "os"
-      | "docagem"
-      | "rascunho"
-      | "freelance"
-      | "pendencias",
+    filter: "all" | "os" | "docagem" | "rascunho" | "freelance",
   ) => void;
   onArchivedToggle?: () => void;
   onlyMyDrafts?: boolean;
@@ -1649,7 +1637,6 @@ export default function OSCalendar({
                 border: "1.5px solid #fff",
                 boxShadow: "0 0 0 1px #ef4444, 0 1px 4px rgba(239, 68, 68, 0.45)",
                 zIndex: 3,
-                animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
               }}
             >
               <AlertTriangle size={11} strokeWidth={3} />
@@ -1762,7 +1749,6 @@ export default function OSCalendar({
                 border: "1.5px solid #fff",
                 boxShadow: "0 0 0 1px #ef4444, 0 1px 4px rgba(239, 68, 68, 0.45)",
                 zIndex: 3,
-                animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
               }}
             >
               <AlertTriangle size={11} strokeWidth={3} />
@@ -1915,14 +1901,6 @@ export default function OSCalendar({
                 inactiveIconClass: "text-emerald-500",
                 inactiveHover: "hover:bg-emerald-50",
               },
-              {
-                key: "pendencias" as const,
-                label: "Pendências",
-                icon: AlertTriangle,
-                activeClass: "bg-red-500 text-white shadow-md",
-                inactiveIconClass: "text-red-500",
-                inactiveHover: "hover:bg-red-50",
-              },
             ].map(
               ({
                 key,
@@ -2069,12 +2047,14 @@ export default function OSCalendar({
                 const dateKey = toDateKey(dateInfo.date);
                 const counts = weekStatusCountsByDate[dateKey];
                 if (counts?.allDone) return "fc-day-all-done";
+                if (counts?.hasAlert) return "fc-day-has-alert";
                 return "";
               }}
               dayHeaderClassNames={(dateInfo) => {
                 const dateKey = toDateKey(dateInfo.date);
                 const counts = weekStatusCountsByDate[dateKey];
                 if (counts?.allDone) return "fc-day-all-done";
+                if (counts?.hasAlert) return "fc-day-has-alert";
                 return "";
               }}
               height="auto"
@@ -2614,6 +2594,26 @@ export default function OSCalendar({
             background-color: #feffd5 !important;
           }
           .fc-daygrid-day.fc-day-today.fc-day-all-done:hover {
+            background-color: #feffd5 !important;
+          }
+
+          /* Dia com alertas — pendências (valores ou atraso) */
+          .fc-day-has-alert {
+            background-color: #fef2f2 !important;
+          }
+          .fc-day-has-alert:hover {
+            background-color: #fee2e2 !important;
+          }
+          /* Header da semana com alertas — borda inferior vermelha */
+          .fc-col-header-cell.fc-day-has-alert {
+            background-color: #fef2f2 !important;
+            border-bottom: 3px solid #ef4444 !important;
+          }
+          /* Não sobrescreve o dia atual (amarelo) */
+          .fc-daygrid-day.fc-day-today.fc-day-has-alert {
+            background-color: #feffd5 !important;
+          }
+          .fc-daygrid-day.fc-day-today.fc-day-has-alert:hover {
             background-color: #feffd5 !important;
           }
 

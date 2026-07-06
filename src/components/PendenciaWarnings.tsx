@@ -25,20 +25,8 @@ import {
   FilePen,
   Package,
 } from "lucide-react";
-import { useData } from "@/context/DataContext";
 import { useAuth } from "@/context/AuthContext";
-import {
-  isFinalizadoSemValor,
-  isOsAtrasadaOuNaoIniciada,
-} from "@/lib/os-messages";
-import {
-  fetchDocagensNaoFinalizadas,
-  type DocagemInstance,
-} from "@/lib/supabase/docagem-queries";
-
-interface PendenciaWarningsProps {
-  className?: string;
-}
+import { createClient } from "@/lib/supabase/client";
 
 interface PendenciaItem {
   id: string;
@@ -49,6 +37,54 @@ interface PendenciaItem {
   motivo: "sem_valor" | "atrasada" | "rascunho" | "docagem";
   tipo?: "os" | "freelance" | "rascunho" | "docagem";
   ageDays?: number;
+}
+
+interface SystemPendenciaRow {
+  id: string;
+  source_type: "os" | "docagem";
+  source_id: string;
+  motivo: "sem_valor" | "atrasada" | "rascunho" | "docagem";
+  protocolo: string;
+  os_number: string;
+  cliente_nome: string;
+  data: string;
+  user_id: string | null;
+  age_days: number | null;
+}
+
+// Map de SystemPendenciaRow → PendenciaItem (formato esperado pelo dropdown)
+function rowToItem(row: SystemPendenciaRow): PendenciaItem {
+  return {
+    id: row.source_id,
+    protocolo: row.protocolo,
+    os: row.os_number,
+    clienteNome: row.cliente_nome,
+    data: row.data,
+    motivo: row.motivo,
+    tipo: row.source_type === "docagem" ? "docagem" : "os",
+    ageDays: row.age_days ?? undefined,
+  };
+}
+
+// Busca todas as pendências da tabela system_pendencias via Supabase (RLS: read all).
+// Filtra rascunhos pelo usuário logado; demais categorias são globais.
+async function fetchSystemPendencias(userId?: string): Promise<PendenciaItem[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("system_pendencias")
+    .select("id, source_type, source_id, motivo, protocolo, os_number, cliente_nome, data, user_id, age_days");
+  if (error) throw error;
+  const rows = (data || []) as unknown as SystemPendenciaRow[];
+  // Rascunhos são pessoais: só mostra os do próprio usuário
+  return rows
+    .filter((r) => r.motivo !== "rascunho" || !r.user_id || r.user_id === userId)
+    .map(rowToItem);
+}
+
+interface PendenciaWarningsProps {
+  className?: string;
+  /** Quando muda (incrementa), abre o dropdown externamente. */
+  externalOpenSignal?: number;
 }
 
 type FiltroPeriodo = "hoje" | "semana" | "tudo";
@@ -95,12 +131,12 @@ function salvarVistos(vistos: VistosSet): void {
  *  - docagem: instância de docagem não finalizada com data no passado
  *
  * Invisível quando total === 0. Reage ao vivo via realtime do DataContext.
- * Otimizado: único pass sobre osList + Map de clientes para lookup O(1).
+ * Otimizado: lê da tabela system_pendencias (atualizada por triggers + pg_cron).
  */
 export default function PendenciaWarnings({
   className,
+  externalOpenSignal,
 }: PendenciaWarningsProps) {
-  const { osList, clientes } = useData();
   const { user } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -193,136 +229,60 @@ export default function PendenciaWarnings({
     [soundEnabled],
   );
 
-  // Map de clientes para lookup O(1) em vez de .find() linear
-  const clienteMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const c of clientes) m.set(c.id, c.nome);
-    return m;
-  }, [clientes]);
+  // Estado das pendências — lidas da tabela system_pendencias com Realtime.
+  // Triggers em ordens_servico/docagem_instancias atualizam a tabela
+  // automaticamente; pg_cron reconcilia a cada 15 min; Realtime empurra para cá.
+  const [items, setItems] = useState<PendenciaItem[]>([]);
+  const [counts, setCounts] = useState({
+    semValor: 0,
+    atrasadas: 0,
+    rascunhos: 0,
+    docagens: 0,
+  });
+  const [loaded, setLoaded] = useState(false);
 
-  const getClienteNome = useCallback(
-    (id?: string) => clienteMap.get(id ?? "") || "Cliente não informado",
-    [clienteMap],
-  );
-
-  // Docagens não finalizadas com data no passado (fetch próprio + refresh periódico)
-  const [docagensPendentes, setDocagensPendentes] = useState<DocagemInstance[]>(
+  // Função para recalcular items e counts a partir de fetchSystemPendencias
+  const refreshPendencias = useCallback(
+    async (userId?: string) => {
+      try {
+        const rows = await fetchSystemPendencias(userId);
+        setItems(rows);
+        setCounts({
+          semValor: rows.filter((r) => r.motivo === "sem_valor").length,
+          atrasadas: rows.filter((r) => r.motivo === "atrasada").length,
+          rascunhos: rows.filter((r) => r.motivo === "rascunho").length,
+          docagens: rows.filter((r) => r.motivo === "docagem").length,
+        });
+        setLoaded(true);
+      } catch {
+        setLoaded(true);
+      }
+    },
     [],
   );
+
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const result = await fetchDocagensNaoFinalizadas();
-        if (!cancelled) setDocagensPendentes(result);
-      } catch {
-        // ignore — próxima tentativa no intervalo
-      }
-    };
-    void load();
-    const interval = setInterval(load, 60_000);
+    void refreshPendencias(user?.id);
+
+    // Realtime: escuta mudanças em system_pendencias e refaz o fetch.
+    // Como a tabela é pequena (~200 linhas), um refetch simples é mais
+    // simples e robusto que tracking individual de INSERT/DELETE.
+    const supabase = createClient();
+    const channel = supabase
+      .channel("system-pendencias-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "system_pendencias" },
+        () => {
+          void refreshPendencias(user?.id);
+        },
+      )
+      .subscribe();
+
     return () => {
-      cancelled = true;
-      clearInterval(interval);
+      supabase.removeChannel(channel);
     };
-  }, []);
-
-  // ÚNICO pass sobre osList — categoriza cada OS em sem_valor / atrasada / rascunho
-  // e monta PendenciaItem diretamente, sem arrays intermediários.
-  const { items, counts } = useMemo(() => {
-    const result: PendenciaItem[] = [];
-    let semValor = 0;
-    let atrasadas = 0;
-    let rascunhos = 0;
-
-    const now = Date.now();
-    const DAY_MS = 1000 * 60 * 60 * 24;
-
-    for (let i = 0; i < osList.length; i++) {
-      const os = osList[i];
-      if (os.arquivado) continue;
-
-      // Rascunhos antigos do usuário (pessoal)
-      if (os.tipo === "rascunho") {
-        if (!user) continue;
-        if (os.createdBy && os.createdBy !== user.id) continue;
-        const createdMs = os.createdAt
-          ? new Date(os.createdAt).getTime()
-          : now;
-        const ageDays = Math.floor((now - createdMs) / DAY_MS);
-        if (ageDays < 1) continue;
-        rascunhos++;
-        result.push({
-          id: os.id,
-          protocolo: os.protocolo || "",
-          os: os.os || "",
-          clienteNome: getClienteNome(os.clienteId),
-          data: os.data,
-          motivo: "rascunho",
-          tipo: os.tipo,
-          ageDays,
-        });
-        continue;
-      }
-
-      // OS / Freelance — verifica sem_valor e atrasada em sequência
-      const semValorFlag = isFinalizadoSemValor(os);
-      const atrasadaFlag = isOsAtrasadaOuNaoIniciada(os);
-
-      if (semValorFlag) {
-        semValor++;
-        result.push({
-          id: os.id,
-          protocolo: os.protocolo || "",
-          os: os.os || "",
-          clienteNome: getClienteNome(os.clienteId),
-          data: os.data,
-          motivo: "sem_valor",
-          tipo: os.tipo,
-        });
-      }
-      if (atrasadaFlag) {
-        atrasadas++;
-        result.push({
-          id: os.id,
-          protocolo: os.protocolo || "",
-          os: os.os || "",
-          clienteNome: getClienteNome(os.clienteId),
-          data: os.data,
-          motivo: "atrasada",
-          tipo: os.tipo,
-        });
-      }
-    }
-
-    // Docagens pendentes (fetch separado)
-    for (let i = 0; i < docagensPendentes.length; i++) {
-      const doc = docagensPendentes[i];
-      const ageDays = Math.floor(
-        (now - new Date(doc.data).getTime()) / DAY_MS,
-      );
-      result.push({
-        id: doc.id,
-        protocolo: doc.protocolo || "",
-        os: "",
-        clienteNome: getClienteNome(doc.clienteId),
-        data: doc.data,
-        motivo: "docagem",
-        tipo: "docagem",
-        ageDays,
-      });
-    }
-
-    return {
-      items: result,
-      counts: {
-        semValor,
-        atrasadas,
-        rascunhos,
-        docagens: docagensPendentes.length,
-      },
-    };
-  }, [osList, user, docagensPendentes, getClienteNome]);
+  }, [user, refreshPendencias]);
 
   const total = items.length;
   const countSemValor = counts.semValor;
@@ -352,6 +312,14 @@ export default function PendenciaWarnings({
     if (!pulse) return;
     playBeep("alerta");
   }, [pulse, playBeep]);
+
+  // Abre o dropdown quando sinalizado externamente (ex: modal de alerta).
+  useEffect(() => {
+    if (externalOpenSignal && externalOpenSignal > 0) {
+      setOpen(true);
+      playBeep("abrir");
+    }
+  }, [externalOpenSignal, playBeep]);
 
   // Tracking de itens "vistos" para marcar "novo" na próxima sessão.
   // Vistos são persistidos em localStorage; ao abrir o dropdown, os itens
@@ -498,7 +466,8 @@ export default function PendenciaWarnings({
 
   const hasPendencias = total > 0;
 
-  if (!hasPendencias) return null;
+  // Só some quando já carregou E não há pendências
+  if (loaded && !hasPendencias) return null;
 
   return (
     <div className={`relative ${className || ""}`}>
