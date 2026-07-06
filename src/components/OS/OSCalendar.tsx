@@ -105,9 +105,15 @@ interface OSCalendarProps {
   showArchivedOnly?: boolean;
   hideStatusLegend?: boolean;
   onRangeChange?: (from: string, to: string) => void;
-  docagemListFilter?: "all" | "os" | "docagem" | "rascunho" | "freelance";
+  docagemListFilter?:
+    | "all"
+    | "os"
+    | "docagem"
+    | "rascunho"
+    | "freelance"
+    | "pendencias";
   onFilterChange?: (
-    filter: "all" | "os" | "docagem" | "rascunho" | "freelance",
+    filter: "all" | "os" | "docagem" | "rascunho" | "freelance" | "pendencias",
   ) => void;
   onArchivedToggle?: () => void;
   onlyMyDrafts?: boolean;
@@ -1920,6 +1926,14 @@ export default function OSCalendar({
                 activeClass: "bg-emerald-600 text-white shadow-md",
                 inactiveIconClass: "text-emerald-500",
                 inactiveHover: "hover:bg-emerald-50",
+              },
+              {
+                key: "pendencias" as const,
+                label: "Pendências",
+                icon: AlertTriangle,
+                activeClass: "bg-red-500 text-white shadow-md",
+                inactiveIconClass: "text-red-500",
+                inactiveHover: "hover:bg-red-50",
               },
             ].map(
               ({
