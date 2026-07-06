@@ -501,10 +501,15 @@ const EventContent = ({
   const startTime = explicitTime || calendarFallbackTime || "--:--";
 
   const isFinalizado = !showArchivedOnly && status === "Finalizado";
+
+  // Passa o datetime completo do itinerário para que a comparação leve em
+  // conta o horário agendado: cards de dias futuros ou com hora ainda no
+  // futuro não são marcados como atrasados.
   const temPendencia =
     !showArchivedOnly &&
     os &&
-    (isFinalizadoSemValor(os) || isOsAtrasadaOuNaoIniciada(os));
+    (isFinalizadoSemValor(os) ||
+      isOsAtrasadaOuNaoIniciada(os, displayDateTime ?? undefined));
 
   return (
     <div
@@ -576,25 +581,32 @@ const EventContent = ({
       </div>
 
       {/* Avatar do criador (apenas rascunhos) — ao lado do círculo de identificação */}
-      {os?.tipo === "rascunho" && os.createdBy && creatorAvatarMap?.get(os.createdBy)?.avatar && (
-        <img
-          src={getThumbnailUrl(creatorAvatarMap.get(os.createdBy)!.avatar!, 40) || ""}
-          alt={creatorAvatarMap.get(os.createdBy)?.name || "Criador"}
-          style={{
-            position: "absolute",
-            top: "6px",
-            left: isDayView ? "40px" : "30px",
-            width: isDayView ? "20px" : "16px",
-            height: isDayView ? "20px" : "16px",
-            borderRadius: "50%",
-            objectFit: "cover",
-            border: "1.5px solid #fff",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-            zIndex: 2,
-            flexShrink: 0,
-          }}
-        />
-      )}
+      {os?.tipo === "rascunho" &&
+        os.createdBy &&
+        creatorAvatarMap?.get(os.createdBy)?.avatar && (
+          <img
+            src={
+              getThumbnailUrl(
+                creatorAvatarMap.get(os.createdBy)!.avatar!,
+                40,
+              ) || ""
+            }
+            alt={creatorAvatarMap.get(os.createdBy)?.name || "Criador"}
+            style={{
+              position: "absolute",
+              top: "6px",
+              left: isDayView ? "40px" : "30px",
+              width: isDayView ? "20px" : "16px",
+              height: isDayView ? "20px" : "16px",
+              borderRadius: "50%",
+              objectFit: "cover",
+              border: "1.5px solid #fff",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+              zIndex: 2,
+              flexShrink: 0,
+            }}
+          />
+        )}
 
       {/* Badges no canto superior direito */}
       {statusColors[displayStatus] && (
@@ -828,26 +840,25 @@ const EventContent = ({
           </span>
 
           {temPendencia && (
-              <div
-                title={
-                  os && isFinalizadoSemValor(os)
-                    ? "Falta preencher valores"
-                    : "Atendimento atrasado ou não iniciado"
-                }
-                style={{
-                  width: isDayView ? "14px" : "12px",
-                  height: isDayView ? "14px" : "12px",
-                  borderRadius: "50%",
-                  backgroundColor: "#ef4444",
-                  border: "2px solid #ffffff",
-                  boxShadow:
-                    "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
-                  flexShrink: 0,
-                  marginRight: isDayView ? "6px" : "4px",
-                  animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-                }}
-              />
-            )}
+            <div
+              title={
+                os && isFinalizadoSemValor(os)
+                  ? "Falta preencher valores"
+                  : "Atendimento atrasado ou não iniciado"
+              }
+              style={{
+                width: isDayView ? "14px" : "12px",
+                height: isDayView ? "14px" : "12px",
+                borderRadius: "50%",
+                backgroundColor: "#ef4444",
+                border: "2px solid #ffffff",
+                boxShadow: "0 0 0 1px #ef4444, 0 0 8px rgba(239, 68, 68, 0.5)",
+                flexShrink: 0,
+                marginRight: isDayView ? "6px" : "4px",
+                animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -1424,13 +1435,18 @@ export default function OSCalendar({
           (countsByDate[dateKey].doneEvents ?? 0) + 1;
       }
 
-      // Verificar alerta (Finalizado sem valor OU OS atrasada/não iniciada)
+      // Verificar alerta (Finalizado sem valor OU OS atrasada/não iniciada).
+      // Usa o datetime completo do itinerário para que data+hora sejam
+      // considerados: cards de dias/horas futuros não marcam o dia como alerta.
       if (
         !showArchivedOnly &&
         event.extendedProps.kind === "os" &&
         event.extendedProps.os &&
         (isFinalizadoSemValor(event.extendedProps.os) ||
-          isOsAtrasadaOuNaoIniciada(event.extendedProps.os))
+          isOsAtrasadaOuNaoIniciada(
+            event.extendedProps.os,
+            event.extendedProps.displayDateTime ?? undefined,
+          ))
       ) {
         countsByDate[dateKey].hasAlert = true;
         countsByDate[dateKey].alertCount =
@@ -1635,7 +1651,8 @@ export default function OSCalendar({
                 fontWeight: 800,
                 lineHeight: 1,
                 border: "1.5px solid #fff",
-                boxShadow: "0 0 0 1px #ef4444, 0 1px 4px rgba(239, 68, 68, 0.45)",
+                boxShadow:
+                  "0 0 0 1px #ef4444, 0 1px 4px rgba(239, 68, 68, 0.45)",
                 zIndex: 3,
               }}
             >
@@ -1661,7 +1678,8 @@ export default function OSCalendar({
                 fontWeight: 800,
                 lineHeight: 1,
                 border: "1.5px solid #fff",
-                boxShadow: "0 0 0 1px #10b981, 0 1px 4px rgba(16, 185, 129, 0.4)",
+                boxShadow:
+                  "0 0 0 1px #10b981, 0 1px 4px rgba(16, 185, 129, 0.4)",
                 zIndex: 3,
               }}
             >
@@ -1747,7 +1765,8 @@ export default function OSCalendar({
                 fontWeight: 800,
                 lineHeight: 1,
                 border: "1.5px solid #fff",
-                boxShadow: "0 0 0 1px #ef4444, 0 1px 4px rgba(239, 68, 68, 0.45)",
+                boxShadow:
+                  "0 0 0 1px #ef4444, 0 1px 4px rgba(239, 68, 68, 0.45)",
                 zIndex: 3,
               }}
             >
@@ -1773,7 +1792,8 @@ export default function OSCalendar({
                 fontWeight: 800,
                 lineHeight: 1,
                 border: "1.5px solid #fff",
-                boxShadow: "0 0 0 1px #10b981, 0 1px 4px rgba(16, 185, 129, 0.4)",
+                boxShadow:
+                  "0 0 0 1px #10b981, 0 1px 4px rgba(16, 185, 129, 0.4)",
                 zIndex: 3,
               }}
             >

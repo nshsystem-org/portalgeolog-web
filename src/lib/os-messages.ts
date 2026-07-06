@@ -352,45 +352,74 @@ export function isFinalizadoSemValor(os: FinalizadoSemValorInput): boolean {
 
 export interface OSAtrasadaInput {
   data: string;
+  hora?: string | null;
   status: { operacional: CycleOperationalStatus };
   arquivado?: boolean;
   tipo?: "os" | "freelance" | "rascunho";
 }
 
 /**
- * Verifica se uma OS está atrasada ou não iniciada no dia:
- *  - Data anterior a hoje + status que não seja "Finalizado" nem "Cancelado"
- *    → deveria ter sido finalizada, mas está presa.
- *  - Data = hoje + status ainda "Pendente" ou "Aguardando"
- *    → programada para hoje mas nem entrou em rota.
+ * Verifica se uma OS está atrasada ou não iniciada:
+ *  - Data anterior a hoje + status não Finalizado/Cancelado → atrasada.
+ *  - Data = hoje + status Pendente/Aguardando + horário já passou → atrasada.
+ *  - Data = hoje + horário ainda no futuro → NÃO atrasada.
+ *  - Data futura → NÃO atrasada.
  * Rascunhos e arquivados são sempre ignorados.
+ *
+ * @param overrideDateTime - ISO datetime "YYYY-MM-DDTHH:mm:ss" (ou só "YYYY-MM-DD")
+ *   do itinerário específico. Sobrepõe os.data e os.hora. Use em calendários com
+ *   múltiplos itinerários em dias/horas diferentes para avaliar cada card pela
+ *   data+hora do seu próprio itinerário.
  */
-export function isOsAtrasadaOuNaoIniciada(os: OSAtrasadaInput): boolean {
+export function isOsAtrasadaOuNaoIniciada(
+  os: OSAtrasadaInput,
+  overrideDateTime?: string,
+): boolean {
   if (os.arquivado) return false;
   if (os.tipo === "rascunho") return false;
 
   const status = os.status.operacional;
   if (status === "Cancelado" || status === "Finalizado") return false;
+  if (status !== "Pendente" && status !== "Aguardando") return false;
 
-  if (!os.data) return false;
-  const parts = os.data.split("-").map(Number);
+  // Determina a data de referência
+  const dataStr = overrideDateTime ? overrideDateTime.slice(0, 10) : os.data;
+  if (!dataStr) return false;
+  const parts = dataStr.split("-").map(Number);
   if (parts.length < 3 || isNaN(parts[0])) return false;
+
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
   const osDate = new Date(parts[0], parts[1] - 1, parts[2]);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Data futura: não é atraso
+  if (osDate > today) return false;
 
-  // Data passada: qualquer status que não seja Finalizado/Cancelado
+  // Data passada: sempre atrasada
   if (osDate < today) return true;
 
-  // Dia atual: ainda Pendente ou Aguardando (não entrou em rota)
-  if (
-    osDate.getTime() === today.getTime() &&
-    (status === "Pendente" || status === "Aguardando")
-  )
-    return true;
+  // Hoje: verifica se o horário agendado já passou
+  let scheduled: Date | null = null;
 
-  return false;
+  if (overrideDateTime?.includes("T")) {
+    // Calendário passa o ISO completo (ex: "2026-07-06T05:00:00")
+    const d = new Date(overrideDateTime);
+    if (!isNaN(d.getTime())) scheduled = d;
+  } else if (os.hora) {
+    // Reconstrói a partir de os.hora ("HH:mm" ou "HH:mm:ss")
+    const [h, m] = os.hora.split(":").map(Number);
+    if (!isNaN(h)) {
+      scheduled = new Date(parts[0], parts[1] - 1, parts[2], h, m || 0, 0, 0);
+    }
+  }
+
+  if (scheduled) {
+    // Horário ainda no futuro → não é atraso
+    if (scheduled > now) return false;
+  }
+
+  return true;
 }
 
 export function formatItineraryGroups(groups: ItineraryGroup[]): string {
