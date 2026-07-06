@@ -360,7 +360,9 @@ export interface OSAtrasadaInput {
 
 /**
  * Verifica se uma OS está atrasada ou não iniciada:
- *  - Data anterior a hoje + status não Finalizado/Cancelado → atrasada.
+ *  - Data passada + qualquer status não Finalizado/Cancelado → atrasada
+ *    (Pendente, Aguardando, Andamento, A caminho, etc.)
+ *  - Data = hoje + status Andamento/A caminho → NÃO atrasada (está em execução).
  *  - Data = hoje + status Pendente/Aguardando + horário já passou → atrasada.
  *  - Data = hoje + horário ainda no futuro → NÃO atrasada.
  *  - Data futura → NÃO atrasada.
@@ -380,7 +382,6 @@ export function isOsAtrasadaOuNaoIniciada(
 
   const status = os.status.operacional;
   if (status === "Cancelado" || status === "Finalizado") return false;
-  if (status !== "Pendente" && status !== "Aguardando") return false;
 
   // Determina a data de referência
   const dataStr = overrideDateTime ? overrideDateTime.slice(0, 10) : os.data;
@@ -396,10 +397,15 @@ export function isOsAtrasadaOuNaoIniciada(
   // Data futura: não é atraso
   if (osDate > today) return false;
 
-  // Data passada: sempre atrasada
+  // Data passada: qualquer status não-finalizado/cancelado é atrasada
+  // (inclui Andamento, A caminho, etc.)
   if (osDate < today) return true;
 
-  // Hoje: verifica se o horário agendado já passou
+  // Hoje: só Pendente/Aguardando podem ser "não iniciadas"
+  // (Andamento / A caminho = está sendo executada agora, não é atraso)
+  if (status !== "Pendente" && status !== "Aguardando") return false;
+
+  // Hoje + Pendente/Aguardando: verifica se o horário agendado já passou
   let scheduled: Date | null = null;
 
   if (overrideDateTime?.includes("T")) {

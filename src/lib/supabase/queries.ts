@@ -1437,6 +1437,11 @@ export type OSPageFilters = {
   arquivado?: boolean;
   tipo?: string;
   excludeTipos?: string[];
+  /** Filtro "Pendências": retorna OS com alerta (atrasadas, sem valor, ou
+   *  rascunhos antigos do usuário). Ao ativar, passa também
+   *  `pendenciasCurrentUserId` para incluir rascunhos do usuário logado. */
+  pendencias?: boolean;
+  pendenciasCurrentUserId?: string;
 };
 
 export async function fetchOSPage({
@@ -1518,6 +1523,24 @@ export async function fetchOSPage({
       for (const excludeTipo of filters.excludeTipos) {
         query = query.neq("tipo", excludeTipo);
       }
+    }
+    if (filters.pendencias) {
+      // Filtro transversal: OR de condições de alerta
+      //  1. Finalizado sem valor bruto ou custo
+      //  2. Atrasada: não rascunho, data <= hoje, não cancelado/finalizado
+      //  3. Rascunho antigo do usuário logado (>= 1 dia)
+      const todayStr = new Date().toISOString().split("T")[0];
+      const orConditions: string[] = [
+        `and(status_operacional.eq.Finalizado,or(valor_bruto.is.null,valor_bruto.eq.0,custo.is.null,custo.eq.0))`,
+        `and(tipo.neq.rascunho,data.not.is.null,data.lte.${todayStr},status_operacional.neq.Cancelado,status_operacional.neq.Finalizado)`,
+      ];
+      if (filters.pendenciasCurrentUserId) {
+        const oneDayAgo = new Date(Date.now() - 86_400_000).toISOString();
+        orConditions.push(
+          `and(tipo.eq.rascunho,created_by.eq.${filters.pendenciasCurrentUserId},created_at.lte.${oneDayAgo})`,
+        );
+      }
+      query = query.or(orConditions.join(","));
     }
 
     const { data: osRaw, error, count } = await query;

@@ -684,16 +684,24 @@ export default function OSOperationalPage() {
             : docagemListFilter === "rascunho"
               ? "rascunho"
               : undefined;
+      const isPendencias = docagemListFilter === "pendencias";
       const filters = {
         ...tableFilters,
         arquivado: showArchivedOnly ? true : undefined,
         tipo: tipoFilter,
+        // Quando pendencias está ativo, rascunhos antigos do usuário devem
+        // aparecer — não os excluímos aqui; o filtro `.or()` no servidor
+        // cuida de incluir apenas os relevantes.
         excludeTipos:
-          !tipoFilter && !showArchivedOnly ? ["rascunho"] : undefined,
+          !tipoFilter && !showArchivedOnly && !isPendencias
+            ? ["rascunho"]
+            : undefined,
         createdBy:
           onlyMyDrafts && docagemListFilter === "rascunho"
             ? currentUser?.id
             : undefined,
+        pendencias: isPendencias ? true : undefined,
+        pendenciasCurrentUserId: isPendencias ? currentUser?.id : undefined,
       };
       const result = await fetchOSPage({
         ...params,
@@ -827,21 +835,11 @@ export default function OSOperationalPage() {
         return false;
       if (docagemListFilter === "rascunho" && item.tipo !== "rascunho")
         return false;
-      // Filtro "pendencias": OS com alerta vermelho (sem valor ou atrasada) +
-      // rascunhos antigos do usuário
+      // Filtro "pendencias": o filtro preciso é no nível de evento
+      // (itinerário) dentro do OSCalendar, pois uma OS pode ter múltiplos
+      // itinerários em dias/horas diferentes. Aqui só removemos arquivados.
       if (docagemListFilter === "pendencias") {
         if (item.arquivado) return false;
-        const temAlertaOS =
-          isFinalizadoSemValor(item) || isOsAtrasadaOuNaoIniciada(item);
-        const ehRascunhoAntigo =
-          item.tipo === "rascunho" &&
-          item.createdBy === currentUser?.id &&
-          item.createdAt &&
-          Math.floor(
-            (Date.now() - new Date(item.createdAt).getTime()) /
-              (1000 * 60 * 60 * 24),
-          ) >= 1;
-        if (!temAlertaOS && !ehRascunhoAntigo) return false;
       }
       // Filtro "Meus rascunhos" — apenas rascunhos do usuário logado
       if (
@@ -6665,6 +6663,7 @@ export default function OSOperationalPage() {
                 hideStatusLegend={docagemListFilter === "rascunho"}
                 onRangeChange={handleCalendarRangeChange}
                 docagemListFilter={docagemListFilter}
+                currentUserId={currentUser?.id}
                 onFilterChange={(filter) => {
                   setShowArchivedOnly(false);
                   setOnlyMyDrafts(false);

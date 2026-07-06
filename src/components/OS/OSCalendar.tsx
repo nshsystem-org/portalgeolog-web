@@ -118,6 +118,9 @@ interface OSCalendarProps {
   onArchivedToggle?: () => void;
   onlyMyDrafts?: boolean;
   onToggleMyDrafts?: () => void;
+  /** ID do usuário logado — usado no filtro "pendencias" para incluir
+   *  rascunhos antigos do próprio usuário. */
+  currentUserId?: string;
 }
 
 type WeekStatus = "Pendente" | "Aguardando" | "Em Rota" | "Finalizado";
@@ -889,6 +892,7 @@ export default function OSCalendar({
   onArchivedToggle,
   onlyMyDrafts = false,
   onToggleMyDrafts,
+  currentUserId,
 }: OSCalendarProps) {
   const [currentView, setCurrentView] = useState<
     "dayGridMonth" | "dayGridWeek" | "dayGridDay"
@@ -1244,8 +1248,47 @@ export default function OSCalendar({
       });
     }
 
+    // Filtro "pendencias": filtra eventos individualmente pelo seu
+    // displayDateTime (itinerário específico). Só ficam os cards com
+    // alerta real — finalizado sem valor (OS-level), atrasada/não iniciada
+    // (itinerário-level), ou rascunho antigo do usuário logado.
+    if (docagemListFilter === "pendencias") {
+      return derivedEvents.filter((event) => {
+        const props = event.extendedProps;
+        // Dividers e docagens sempre passam (docagens já vêm pré-filtradas)
+        if (props.kind === "divider" || props.kind === "docagem") return true;
+        const os = props.os;
+        if (!os) return false;
+        // Finalizado sem valor → pendência OS-level (todos os cards)
+        if (isFinalizadoSemValor(os)) return true;
+        // Atrasada/não iniciada → checa pelo datetime do itinerário
+        if (
+          props.kind !== "rascunho" &&
+          isOsAtrasadaOuNaoIniciada(
+            os,
+            props.displayDateTime ?? undefined,
+          )
+        ) {
+          return true;
+        }
+        // Rascunho antigo do usuário logado (>= 1 dia)
+        if (
+          props.kind === "rascunho" &&
+          os.createdBy === currentUserId &&
+          os.createdAt &&
+          Math.floor(
+            (now.getTime() - new Date(os.createdAt).getTime()) /
+              (1000 * 60 * 60 * 24),
+          ) >= 1
+        ) {
+          return true;
+        }
+        return false;
+      });
+    }
+
     return derivedEvents;
-  }, [osList, docagemInstances, clientes, now, currentView]);
+  }, [osList, docagemInstances, clientes, now, currentView, docagemListFilter, currentUserId]);
 
   // Hover expandir coluna no modo semana
   // O FullCalendar renderiza DUAS tabelas separadas: header e body.
@@ -1446,7 +1489,8 @@ export default function OSCalendar({
       // considerados: cards de dias/horas futuros não marcam o dia como alerta.
       if (
         !showArchivedOnly &&
-        event.extendedProps.kind === "os" &&
+        (event.extendedProps.kind === "os" ||
+          event.extendedProps.kind === "freelance") &&
         event.extendedProps.os &&
         (isFinalizadoSemValor(event.extendedProps.os) ||
           isOsAtrasadaOuNaoIniciada(
