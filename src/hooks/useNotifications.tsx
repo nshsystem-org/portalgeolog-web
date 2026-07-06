@@ -93,7 +93,10 @@ const COOLDOWN_MS = 5000;
 
 function getNotificationIcon(notif: AppNotification) {
   // Casos específicos baseados no título
-  if (notif.title === "OS Arquivada" || notif.title === "Atendimento arquivado") {
+  if (
+    notif.title === "OS Arquivada" ||
+    notif.title === "Atendimento arquivado"
+  ) {
     return {
       icon: <Archive size={20} className="text-red-500" />,
       bgClass: "bg-red-50",
@@ -372,16 +375,14 @@ function NotificationToastItem({
   );
 }
 
-export function useNotifications(
-  options?: {
-    onPendenciaAlert?: (counts: {
-      semValor: number;
-      atrasadas: number;
-      docagens: number;
-      total: number;
-    }) => void;
-  },
-) {
+export function useNotifications(options?: {
+  onPendenciaAlert?: (counts: {
+    semValor: number;
+    atrasadas: number;
+    docagens: number;
+    total: number;
+  }) => void;
+}) {
   const { user, loading } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
@@ -467,6 +468,15 @@ export function useNotifications(
           if (!isMountedRef.current) return;
           knownIdsRef.current = new Set(data.map((n) => n.id));
           setNotifications(data);
+
+          // No load inicial, verifica se a notificação mais recente é um
+          // alerta de pendências (cron 2h). Se for, dispara o modal — caso
+          // contrário o usuário que carregou a página depois do cron nunca
+          // veria o modal, apenas a notificação no sino.
+          const latest = data[0];
+          if (latest) {
+            maybeHandlePendenciaAlert(latest);
+          }
           return;
         }
 

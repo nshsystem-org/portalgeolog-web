@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Sora, Space_Grotesk, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { FormValidationLocale } from "../components/FormValidationLocale";
@@ -8,30 +7,14 @@ import { DataProvider } from "@/context/DataContext";
 import { TrackingProvider } from "@/components/TrackingProvider";
 import { Toaster } from "sonner";
 
-const sora = Sora({
-  variable: "--font-sora",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
-  display: "swap",
-});
-
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
   title: "Portal Geolog | Gestão Logística Inteligente",
   description:
     "Software on-demand para a Transportadora Geolog - Controle de Frota, CRM e OS.",
 };
+
+const fontLink =
+  "https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Geist+Mono:wght@100..900&display=swap";
 
 export default function RootLayout({
   children,
@@ -40,9 +23,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="antialiased">
-      <body
-        className={`${sora.variable} ${spaceGrotesk.variable} ${geistMono.variable} font-sans`}
-      >
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link rel="stylesheet" href={fontLink} />
+      </head>
+      <body className="font-sans">
         <AuthProvider>
           <DataProvider>
             <TrackingProvider>
