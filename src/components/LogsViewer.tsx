@@ -1247,9 +1247,9 @@ export default function LogsViewer() {
                     </div>
 
                     {log.summary && (
-                      <p className="text-sm font-semibold text-slate-700 mb-1">
+                      <div className="text-sm font-semibold text-slate-700 mb-1">
                         {formatSummary(log.summary, log.error_details)}
-                      </p>
+                      </div>
                     )}
 
                     <div className="flex items-center gap-4 text-xs text-slate-400">

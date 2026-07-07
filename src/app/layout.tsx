@@ -25,11 +25,7 @@ export default function RootLayout({
     <html lang="pt-BR" className="antialiased">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="stylesheet" href={fontLink} />
       </head>
       <body className="font-sans">

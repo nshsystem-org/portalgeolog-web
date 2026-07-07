@@ -1689,7 +1689,7 @@ export default function OSCalendar({
               style={{
                 position: "absolute",
                 top: "3px",
-                left: "6px",
+                right: "6px",
                 display: "flex",
                 alignItems: "center",
                 gap: "3px",
@@ -1716,7 +1716,7 @@ export default function OSCalendar({
               style={{
                 position: "absolute",
                 top: "3px",
-                left: "6px",
+                right: "6px",
                 display: "flex",
                 alignItems: "center",
                 gap: "3px",

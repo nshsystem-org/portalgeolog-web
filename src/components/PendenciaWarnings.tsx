@@ -37,6 +37,9 @@ interface PendenciaItem {
   motivo: "sem_valor" | "atrasada" | "rascunho" | "docagem";
   tipo?: "os" | "freelance" | "rascunho" | "docagem";
   ageDays?: number;
+  /** Índice do itinerário que originou a pendência (só relevante em "atrasada").
+   *  Negativo = itinerário de retorno. 0 = itinerário principal / sem waypoints. */
+  itineraryIndex: number;
 }
 
 interface SystemPendenciaRow {
@@ -50,6 +53,13 @@ interface SystemPendenciaRow {
   data: string;
   user_id: string | null;
   age_days: number | null;
+  itinerary_index: number;
+}
+
+function itineraryLabel(index: number): string | null {
+  if (index < 0) return "Retorno";
+  if (index === 0) return null; // itinerário principal, não exibe label
+  return `Itinerário ${index + 1}`;
 }
 
 // Map de SystemPendenciaRow → PendenciaItem (formato esperado pelo dropdown)
@@ -63,6 +73,7 @@ function rowToItem(row: SystemPendenciaRow): PendenciaItem {
     motivo: row.motivo,
     tipo: row.source_type === "docagem" ? "docagem" : "os",
     ageDays: row.age_days ?? undefined,
+    itineraryIndex: row.itinerary_index ?? 0,
   };
 }
 
@@ -72,7 +83,7 @@ async function fetchSystemPendencias(userId?: string): Promise<PendenciaItem[]> 
   const supabase = createClient();
   const { data, error } = await supabase
     .from("system_pendencias")
-    .select("id, source_type, source_id, motivo, protocolo, os_number, cliente_nome, data, user_id, age_days");
+    .select("id, source_type, source_id, motivo, protocolo, os_number, cliente_nome, data, user_id, age_days, itinerary_index");
   if (error) throw error;
   const rows = (data || []) as unknown as SystemPendenciaRow[];
   // Rascunhos são pessoais: só mostra os do próprio usuário
@@ -97,7 +108,7 @@ type ItemKey = string;
 type VistosSet = Set<ItemKey>;
 
 function itemKey(item: PendenciaItem): ItemKey {
-  return `${item.motivo}:${item.id}`;
+  return `${item.motivo}:${item.id}:${item.itineraryIndex}`;
 }
 
 function carregarVistos(): VistosSet {
@@ -603,9 +614,13 @@ export default function PendenciaWarnings({
                         ? formatarData(item.data)
                         : null;
                   const tipoCfg = tipoConfig[item.tipo ?? "os"];
+                  const itinLabel =
+                    item.motivo === "atrasada"
+                      ? itineraryLabel(item.itineraryIndex)
+                      : null;
                   return (
                     <button
-                      key={`${item.motivo}-${item.id}`}
+                      key={`${item.motivo}-${item.id}-${item.itineraryIndex}`}
                       onClick={() => handleItemClick(item)}
                       className={`w-full p-3.5 hover:bg-slate-50 transition-colors text-left cursor-pointer flex items-center gap-3 ${
                         novo ? "bg-slate-50/60" : ""
@@ -622,6 +637,11 @@ export default function PendenciaWarnings({
                           <p className="text-sm font-black text-slate-800 truncate">
                             #{protocolo}
                           </p>
+                          {itinLabel && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide bg-slate-100 text-slate-500 shrink-0">
+                              {itinLabel}
+                            </span>
+                          )}
                           {novo && (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide bg-blue-100 text-blue-700 animate-pulse shrink-0">
                               <Sparkles size={9} />
