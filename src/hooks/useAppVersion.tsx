@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { RefreshCw, Sparkles, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { logInfo } from "@/lib/frontend-logger";
 
@@ -92,21 +93,86 @@ export function useAppVersion() {
       let secondsLeft = AUTO_RELOAD_DELAY / 1000;
       setUpdateCountdown(secondsLeft);
 
-      toast("Nova versão disponível", {
-        description: `A versão ${nextVersion} já está no ar. Recarregando em ${secondsLeft} segundos.`,
-        action: {
-          label: "Recarregar agora",
-          onClick: () => {
-            clearCountdown();
-            window.location.reload();
-          },
-        },
-        duration: Infinity,
-      });
+      const toastId = "app-version-update";
+
+      const renderToast = (secs: number) => {
+        const progress = ((AUTO_RELOAD_DELAY / 1000 - secs) / (AUTO_RELOAD_DELAY / 1000)) * 100;
+
+        toast.custom(
+          () => (
+            <div className="w-full max-w-md pointer-events-auto">
+              <div className="relative overflow-hidden rounded-2xl bg-white shadow-2xl shadow-slate-900/20 border border-slate-200">
+                {/* Barra de progresso no topo */}
+                <div
+                  className="absolute top-0 left-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-1000 ease-linear"
+                  style={{ width: `${progress}%` }}
+                />
+
+                <div className="p-5">
+                  <div className="flex items-start gap-4">
+                    {/* Ícone com halo animado */}
+                    <div className="relative shrink-0">
+                      <div className="absolute inset-0 rounded-2xl bg-blue-100 animate-ping opacity-60" />
+                      <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+                        <RefreshCw className="w-6 h-6 text-white animate-spin" style={{ animationDuration: "2s" }} />
+                      </div>
+                    </div>
+
+                    {/* Conteúdo */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+                          Nova versão disponível
+                        </h3>
+                      </div>
+                      <p className="text-sm text-slate-600 font-medium leading-snug">
+                            A versão <span className="font-black text-slate-800">v{nextVersion}</span> já está no ar.
+                      </p>
+                      <p className="mt-2 text-xs text-slate-400 font-bold">
+                        Recarregando automaticamente em{" "}
+                        <span className="text-blue-600 font-black tabular-nums">{secs}s</span>
+                      </p>
+
+                      {/* Botões */}
+                      <div className="mt-4 flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            clearCountdown();
+                            window.location.reload();
+                          }}
+                          className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-xs font-black uppercase tracking-wide hover:from-blue-600 hover:to-indigo-700 transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+                        >
+                          Recarregar agora
+                        </button>
+                        <button
+                          onClick={() => {
+                            toast.dismiss(toastId);
+                            clearCountdown();
+                            toastShownRef.current = false;
+                          }}
+                          className="px-3 py-2.5 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-all cursor-pointer"
+                          title="Dispensar"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ),
+          { id: toastId, duration: Infinity },
+        );
+      };
+
+      renderToast(secondsLeft);
 
       countdownRef.current = setInterval(() => {
         secondsLeft -= 1;
         setUpdateCountdown(secondsLeft);
+        renderToast(secondsLeft);
 
         if (secondsLeft <= 0) {
           clearCountdown();
