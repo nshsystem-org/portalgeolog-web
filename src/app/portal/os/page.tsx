@@ -542,6 +542,12 @@ export default function OSOperationalPage() {
   const { user: currentUser } = useAuth();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // Sinaliza que o modal foi aberto via pendência "sem_valor" e deve rolar
+  // até a seção "Resumo Financeiro" assim que estiver renderizado.
+  const [pendingScrollToValores, setPendingScrollToValores] = useState(false);
+  // Sinaliza que o modal de visualização foi aberto via pendência "atrasada"
+  // e deve rolar/destacar o ciclo operacional do itineraryIndex informado.
+  const [pendingScrollToCycleItineraryIndex, setPendingScrollToCycleItineraryIndex] = useState<number | null>(null);
   const [showObsFinanceiras, setShowObsFinanceiras] = useState(false);
   const [isQuickPassengerModalOpen, setIsQuickPassengerModalOpen] =
     useState(false);
@@ -2415,52 +2421,205 @@ export default function OSOperationalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Ações via URL vindas do DraftWarnings (layout/header)
-  // Aguarda osList carregar antes de processar editDraftId/editOSId
+  // Ações vindas do DraftWarnings/PendenciaWarnings (layout/header).
+  // Podem chegar por dois caminhos:
+  //  1. URL (?editOSId=...&scrollTo=valores) quando navega de outra página
+  //  2. CustomEvent "os-edit-action" quando o usuário JÁ está em /portal/os
+  //     (nesse caso router.push não remonta a página nem re-executa o effect).
   const draftActionProcessedRef = useRef(false);
   const hasOSListLoaded = osList.length > 0;
+
+  interface OSAction {
+    editDraftId?: string | null;
+    editOSId?: string | null;
+    viewOSId?: string | null;
+    editDocagemId?: string | null;
+    filter?: string | null;
+    scrollTo?: string | null;
+    itineraryIndex?: string | null;
+  }
+
+  const runOSAction = useCallback(
+    (action: OSAction) => {
+      const {
+        editDraftId,
+        editOSId,
+        viewOSId,
+        editDocagemId,
+        filter,
+        scrollTo,
+        itineraryIndex,
+      } = action;
+
+      if (filter === "rascunho") {
+        setDocagemListFilter("rascunho");
+      }
+      if (filter === "pendencias" || editDocagemId) {
+        setDocagemListFilter("pendencias");
+      }
+
+      if (editDocagemId) {
+        void fetchDocagemInstanceById(editDocagemId).then((instance) => {
+          if (instance) setEditingDocagemInstance(instance);
+        });
+        return;
+      }
+
+      if (editDraftId) {
+        void handleEditOS(editDraftId);
+      }
+      if (editOSId) {
+        void handleEditOS(editOSId);
+      }
+
+      // Pendência "sem_valor" pede scroll até a seção de Valores do modal
+      if (scrollTo === "valores" && (editDraftId || editOSId)) {
+        setPendingScrollToValores(true);
+      }
+
+      // Pendência "atrasada" abre visualização e destaca/rola até o ciclo
+      // operacional correspondente ao itineraryIndex.
+      if (viewOSId) {
+        setViewingOSId(viewOSId);
+        if (itineraryIndex != null) {
+          const idx = Number(itineraryIndex);
+          if (!isNaN(idx)) {
+            setPendingScrollToCycleItineraryIndex(idx);
+          }
+        }
+      }
+    },
+    [handleEditOS, setViewingOSId, setPendingScrollToCycleItineraryIndex],
+  );
+
+  // Caminho 1: ação via URL no mount (navegação cross-page)
   useEffect(() => {
     if (draftActionProcessedRef.current) return;
     const urlParams = new URLSearchParams(window.location.search);
     const editDraftId = urlParams.get("editDraftId");
     const editOSId = urlParams.get("editOSId");
+    const viewOSId = urlParams.get("viewOSId");
     const editDocagemId = urlParams.get("editDocagemId");
     const filter = urlParams.get("filter");
+    const scrollTo = urlParams.get("scrollTo");
+    const itineraryIndex = urlParams.get("itineraryIndex");
 
-    // Filtro pode ser aplicado imediatamente (não depende de osList)
-    if (filter === "rascunho") {
-      setDocagemListFilter("rascunho");
-    }
-    if (filter === "pendencias" || editDocagemId) {
-      setDocagemListFilter("pendencias");
-    }
-
-    // editDocagemId: busca instância e abre modal de edição
-    if (editDocagemId) {
-      void fetchDocagemInstanceById(editDocagemId).then((instance) => {
-        if (instance) setEditingDocagemInstance(instance);
-      });
-      window.history.replaceState({}, "", "/portal/os");
+    if (
+      !editDraftId &&
+      !editOSId &&
+      !viewOSId &&
+      !editDocagemId &&
+      !filter
+    ) {
       draftActionProcessedRef.current = true;
       return;
     }
 
-    // editDraftId/editOSId precisam de osList carregada
-    if ((editDraftId || editOSId) && !hasOSListLoaded) return;
+    // editDraftId ainda espera osList (depende de dados da lista).
+    if (editDraftId && !hasOSListLoaded) return;
 
-    if (editDraftId) {
-      void handleEditOS(editDraftId);
-    }
-
-    if (editOSId) {
-      void handleEditOS(editOSId);
-    }
-
-    if (filter || editDraftId || editOSId) {
-      window.history.replaceState({}, "", "/portal/os");
-    }
+    runOSAction({
+      editDraftId,
+      editOSId,
+      viewOSId,
+      editDocagemId,
+      filter,
+      scrollTo,
+      itineraryIndex,
+    });
+    window.history.replaceState({}, "", "/portal/os");
     draftActionProcessedRef.current = true;
-  }, [hasOSListLoaded, handleEditOS]);
+  }, [hasOSListLoaded, runOSAction]);
+
+  // Caminho 2: ação via evento quando já está na página
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<OSAction>).detail;
+      if (detail) runOSAction(detail);
+    };
+    window.addEventListener("os-edit-action", handler);
+    return () => window.removeEventListener("os-edit-action", handler);
+  }, [runOSAction]);
+
+  // Rola o corpo do modal até a seção "Resumo Financeiro" quando o modal foi
+  // aberto a partir de uma pendência "sem_valor" (faltando valores).
+  // scrollIntoView não funciona confiávelmente dentro de um container com
+  // overflow-hidden; por isso encontramos o pai scrollável manualmente e
+  // usamos scrollBy com o offset relativo ao container.
+  useEffect(() => {
+    if (!isModalOpen || !pendingScrollToValores) return;
+    let cancelled = false;
+    let attempts = 0;
+    const tryScroll = () => {
+      if (cancelled) return;
+      const target = document.getElementById("resumo-financeiro");
+      if (!target) {
+        if (++attempts < 30) requestAnimationFrame(tryScroll);
+        return;
+      }
+      let scrollParent = target.parentElement;
+      while (scrollParent) {
+        const style = getComputedStyle(scrollParent);
+        if (/(auto|scroll)/.test(style.overflowY) && scrollParent.scrollHeight > scrollParent.clientHeight) {
+          break;
+        }
+        scrollParent = scrollParent.parentElement;
+      }
+      if (scrollParent) {
+        const relativeTop =
+          target.getBoundingClientRect().top -
+          scrollParent.getBoundingClientRect().top -
+          16;
+        scrollParent.scrollTo({ top: scrollParent.scrollTop + relativeTop });
+      }
+      setPendingScrollToValores(false);
+    };
+    requestAnimationFrame(tryScroll);
+    return () => {
+      cancelled = true;
+    };
+  }, [isModalOpen, pendingScrollToValores]);
+
+  // Rola o modal de visualização até o ciclo operacional da pendência
+  // "atrasada" e destaca o card com um anel azul que some após 3s.
+  useEffect(() => {
+    if (!viewingOSId || pendingScrollToCycleItineraryIndex == null) return;
+    let cancelled = false;
+    let attempts = 0;
+    const targetId = `operational-cycle-${pendingScrollToCycleItineraryIndex}`;
+
+    const tryScroll = () => {
+      if (cancelled) return;
+      const target = document.getElementById(targetId);
+      if (!target) {
+        if (++attempts < 60) requestAnimationFrame(tryScroll);
+        return;
+      }
+      let scrollParent = target.parentElement;
+      while (scrollParent) {
+        const style = getComputedStyle(scrollParent);
+        if (/(auto|scroll)/.test(style.overflowY) && scrollParent.scrollHeight > scrollParent.clientHeight) {
+          break;
+        }
+        scrollParent = scrollParent.parentElement;
+      }
+      if (scrollParent) {
+        const relativeTop =
+          target.getBoundingClientRect().top -
+          scrollParent.getBoundingClientRect().top -
+          24;
+        scrollParent.scrollTo({ top: scrollParent.scrollTop + relativeTop });
+      }
+      // Remove o destaque após 3 segundos para o usuário ver que é aquele ciclo.
+      setTimeout(() => {
+        setPendingScrollToCycleItineraryIndex(null);
+      }, 3000);
+    };
+    requestAnimationFrame(tryScroll);
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingOSId, pendingScrollToCycleItineraryIndex]);
 
   const handleReopenOS = async (osId: string) => {
     const loadingId = toast.loading("Carregando atendimento...");
@@ -3541,6 +3700,48 @@ export default function OSOperationalPage() {
     if (!viewingOSId) return null;
     return viewingOSLive || osList.find((os) => os.id === viewingOSId) || null;
   }, [osList, viewingOSId, viewingOSLive]);
+
+  // Determina se um ciclo operacional específico está atrasado/não iniciado.
+  // Usa a data/hora do primeiro waypoint do itinerário (overrideDateTime) para
+  // avaliar cada ciclo individualmente, alinhado com recompute_os_pendencias.
+  const isOperationalCycleAtrasado = useCallback(
+    (cycle: { itineraryIndex: number }): boolean => {
+      if (!viewingOS) return false;
+      if (viewingOS.arquivado) return false;
+      if (viewingOS.tipo === "rascunho") return false;
+
+      const firstWp = (viewingOS.rota?.waypoints || []).find(
+        (wp) => (wp.itineraryIndex ?? 0) === cycle.itineraryIndex,
+      );
+
+      // A data do waypoint vem formatada para UI ("DD/MM/YYYY"); converte
+      // para ISO ("YYYY-MM-DD") antes de montar o datetime de override.
+      const wpData = firstWp?.data;
+      const isoDate = wpData
+        ? (wpData.includes("/")
+            ? wpData.split("/").reverse().join("-")
+            : wpData)
+        : undefined;
+
+      const data = isoDate || viewingOS.data;
+      const hora = firstWp?.hora || viewingOS.hora;
+      const dateTime =
+        data && hora ? `${data}T${hora}:00` : data ? `${data}T00:00:00` : undefined;
+
+      return isOsAtrasadaOuNaoIniciada(
+        {
+          data: viewingOS.data,
+          hora: viewingOS.hora,
+          status: viewingOS.status,
+          arquivado: viewingOS.arquivado,
+          tipo: viewingOS.tipo,
+        },
+        dateTime,
+      );
+    },
+    [viewingOS],
+  );
+
   const cancelTargetOS = useMemo(
     () => osList.find((os) => os.id === cancelTargetId) || null,
     [osList, cancelTargetId],
@@ -7780,7 +7981,7 @@ export default function OSOperationalPage() {
                   </div>
 
                   {/* 3. RESUMO FINANCEIRO */}
-                  <div className="space-y-8 mt-8">
+                  <div id="resumo-financeiro" className="space-y-8 mt-8">
                     <div className="flex items-center border-b-2 border-slate-100 pb-4">
                       <h3 className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3">
                         <FileText size={20} className="text-emerald-600" />{" "}
@@ -9133,10 +9334,23 @@ export default function OSOperationalPage() {
                       const cycleStatus =
                         getCycleDisplayStatus(displayedCycleState);
 
+                      const cycleId = `operational-cycle-${cycle.itineraryIndex ?? 0}`;
+                      const isHighlightedCycle =
+                        pendingScrollToCycleItineraryIndex != null &&
+                        cycle.itineraryIndex === pendingScrollToCycleItineraryIndex;
+                      const isCycleAtrasado = isOperationalCycleAtrasado(cycle);
+
                       return (
                         <div
+                          id={cycleId}
                           key={`${cycle.sequenceOrder}-${cycle.itineraryIndex}`}
-                          className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-6 space-y-6 shadow-sm relative overflow-hidden"
+                          className={`rounded-[1.75rem] border bg-slate-50/70 p-6 space-y-6 shadow-sm relative overflow-hidden transition-all duration-500 ${
+                            isHighlightedCycle
+                              ? "border-blue-400 ring-4 ring-blue-400/30"
+                              : isCycleAtrasado
+                                ? "border-red-400 ring-2 ring-red-400/20"
+                                : "border-slate-200"
+                          }`}
                         >
                           {isArchived && (
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -9145,6 +9359,14 @@ export default function OSOperationalPage() {
                                   BLOQUEADO
                                 </span>
                               </div>
+                            </div>
+                          )}
+                          {isCycleAtrasado && !isArchived && (
+                            <div className="absolute top-3 right-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500 text-white shadow-sm pointer-events-none z-10">
+                              <AlertTriangle size={11} strokeWidth={2.5} />
+                              <span className="text-[10px] font-black uppercase tracking-wider">
+                                Atrasada
+                              </span>
                             </div>
                           )}
                           <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4">

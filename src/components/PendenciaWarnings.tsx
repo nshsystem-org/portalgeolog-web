@@ -58,7 +58,7 @@ interface SystemPendenciaRow {
 
 function itineraryLabel(index: number): string | null {
   if (index < 0) return "Retorno";
-  if (index === 0) return null; // itinerário principal, não exibe label
+  if (index === 0) return "Itinerário 1";
   return `Itinerário ${index + 1}`;
 }
 
@@ -391,9 +391,31 @@ export default function PendenciaWarnings({
     [periodRefs],
   );
 
+  // Ordena por mais recente primeiro.
+  // - Rascunhos/docagens: usam ageDays (menor idade = mais recente).
+  // - Demais (sem_valor, atrasada): usam data (YYYY-MM-DD, maior = mais recente).
+  // Converte ambos para um timestamp unificado e ordena de forma descendente.
+  const recencyTs = useCallback((item: PendenciaItem): number => {
+    if (item.ageDays != null) {
+      return Date.now() - item.ageDays * 86400000;
+    }
+    if (item.data) {
+      const y = parseInt(item.data.slice(0, 4), 10);
+      const m = parseInt(item.data.slice(5, 7), 10);
+      const d = parseInt(item.data.slice(8, 10), 10);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        return new Date(y, m - 1, d).getTime();
+      }
+    }
+    return 0;
+  }, []);
+
   const itemsFiltrados = useMemo(
-    () => items.filter((item) => matchPeriodo(item, filtroPeriodo)),
-    [items, filtroPeriodo, matchPeriodo],
+    () =>
+      items
+        .filter((item) => matchPeriodo(item, filtroPeriodo))
+        .sort((a, b) => recencyTs(b) - recencyTs(a)),
+    [items, filtroPeriodo, matchPeriodo, recencyTs],
   );
 
   useEffect(() => {
@@ -413,12 +435,35 @@ export default function PendenciaWarnings({
 
   const handleItemClick = (item: PendenciaItem) => {
     setOpen(false);
+
+    // Monta os parâmetros da ação. "sem_valor" pede scroll até a seção de
+    // Determina se abre edição ou visualização.
+    // - atrasada: visualização + scroll até o ciclo operacional correto
+    // - sem_valor: edição + scroll até valores
+    // - rascunho: edição
+    const detail: Record<string, string> = {};
     if (item.motivo === "docagem") {
-      router.push(`/portal/os?filter=pendencias&editDocagemId=${item.id}`);
+      detail.filter = "pendencias";
+      detail.editDocagemId = item.id;
+    } else if (item.motivo === "atrasada") {
+      detail.viewOSId = item.id;
+      detail.itineraryIndex = String(item.itineraryIndex);
+    } else if (item.motivo === "rascunho") {
+      detail.editDraftId = item.id;
+    } else {
+      // sem_valor
+      detail.editOSId = item.id;
+      detail.scrollTo = "valores";
+    }
+
+    // Se já estamos em /portal/os, router.push não remonta a página nem
+    // re-executa o effect da URL. Disparamos um evento que a página escuta.
+    if (window.location.pathname === "/portal/os") {
+      window.dispatchEvent(new CustomEvent("os-edit-action", { detail }));
       return;
     }
-    const param = item.motivo === "rascunho" ? "editDraftId" : "editOSId";
-    router.push(`/portal/os?${param}=${item.id}`);
+    const qs = new URLSearchParams(detail).toString();
+    router.push(`/portal/os?${qs}`);
   };
 
   const motivoConfig = {
@@ -426,25 +471,29 @@ export default function PendenciaWarnings({
       label: "Faltando valores",
       icon: DollarSign,
       iconColor: "text-emerald-600",
-      iconBg: "bg-emerald-50",
+      iconBg: "bg-white",
+      badgeClass: "border border-emerald-200 font-semibold",
     },
     atrasada: {
       label: "Atrasada / Não iniciada",
       icon: Clock,
       iconColor: "text-red-500",
-      iconBg: "bg-red-50",
+      iconBg: "bg-white",
+      badgeClass: "border border-red-200 font-semibold",
     },
     rascunho: {
       label: "Rascunho antigo",
       icon: FileText,
       iconColor: "text-amber-500",
       iconBg: "bg-amber-50",
+      badgeClass: "",
     },
     docagem: {
       label: "Docagem não finalizada",
       icon: Package,
       iconColor: "text-violet-600",
-      iconBg: "bg-violet-50",
+      iconBg: "bg-white",
+      badgeClass: "border border-violet-200 font-semibold",
     },
   } as const;
 
@@ -638,7 +687,13 @@ export default function PendenciaWarnings({
                             #{protocolo}
                           </p>
                           {itinLabel && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide bg-slate-100 text-slate-500 shrink-0">
+                            <span
+                              className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border shrink-0 ${
+                                item.itineraryIndex < 0
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : "bg-amber-50 text-amber-700 border-amber-200"
+                              }`}
+                            >
                               {itinLabel}
                             </span>
                           )}
@@ -653,8 +708,8 @@ export default function PendenciaWarnings({
                           {item.clienteNome}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide ${cfg.iconBg} ${cfg.iconColor}`}>
-                            <MotivoIcon size={10} />
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide ${cfg.iconBg} ${cfg.iconColor} ${cfg.badgeClass}`}>
+                            <MotivoIcon size={9} />
                             {cfg.label}
                           </span>
                           {infoTempo && (
