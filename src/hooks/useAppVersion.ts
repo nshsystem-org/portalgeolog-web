@@ -20,7 +20,7 @@ type PendingReloadInfo = {
 };
 
 const VERSION_CHECK_INTERVAL = 300_000; // 5 minutos (300 segundos) - polling como fallback para Realtime
-const AUTO_RELOAD_DELAY = 10_000;
+const AUTO_RELOAD_DELAY = 60_000;
 const PENDING_RELOAD_KEY = "geolog-app-version-pending-reload";
 
 export function useAppVersion() {
