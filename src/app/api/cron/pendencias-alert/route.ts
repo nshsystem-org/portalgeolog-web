@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { logCron } from "@/lib/cron-logger";
 
 export const runtime = "nodejs";
 
@@ -91,13 +92,31 @@ async function processPendenciasAlert(): Promise<PendenciaCounts> {
   const supabase = getAdminClient();
   const counts = await getPendenciaCounts();
 
+  await logCron(
+    "cron/pendencias-alert",
+    `Cron executado — ${counts.total} pendências (semValor=${counts.semValor}, atrasadas=${counts.atrasadas}, docagens=${counts.docagens})`,
+    "info",
+    { counts },
+  );
+
   if (counts.total === 0) {
+    await logCron(
+      "cron/pendencias-alert",
+      "Sem pendências — notificação não inserida",
+      "info",
+    );
     return counts;
   }
 
   // Deduplicação: não insere se já existe alerta nas últimas 2h
   const jaExiste = await existsRecentAlert();
   if (jaExiste) {
+    await logCron(
+      "cron/pendencias-alert",
+      "Notificação bloqueada por deduplicação (já existe alerta nas últimas 2h)",
+      "info",
+      { counts },
+    );
     return counts;
   }
 
@@ -129,6 +148,19 @@ async function processPendenciasAlert(): Promise<PendenciaCounts> {
     console.error(
       "[cron/pendencias-alert] Erro ao inserir notificação:",
       insertError,
+    );
+    await logCron(
+      "cron/pendencias-alert",
+      "Erro ao inserir notificação pendencia_alert",
+      "error",
+      { error: String(insertError), counts },
+    );
+  } else {
+    await logCron(
+      "cron/pendencias-alert",
+      `Notificação pendencia_alert inserida — ${counts.total} pendências`,
+      "info",
+      { counts },
     );
   }
 

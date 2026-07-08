@@ -3,6 +3,7 @@ import {
   getFinalizadasSemValor,
   sendAlertaValoresEmail,
 } from "@/lib/os-alerta-valores";
+import { logCron } from "@/lib/cron-logger";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const resultado = await sendAlertaValoresEmail();
+
+    await logCron(
+      "cron/os-alerta-valores",
+      `Email de alerta enviado — ${resultado.totalOS} OS sem valor, ${resultado.enviados} email(s) enviado(s)`,
+      "info",
+      { enviados: resultado.enviados, totalOS: resultado.totalOS },
+    );
+
     return NextResponse.json({
       success: true,
       enviados: resultado.enviados,
@@ -53,6 +62,14 @@ export async function POST(request: NextRequest) {
     const message =
       error instanceof Error ? error.message : "Erro desconhecido";
     console.error("[api/cron/os-alerta-valores] POST Erro:", error);
+
+    await logCron(
+      "cron/os-alerta-valores",
+      `Erro ao enviar email de alerta: ${message}`,
+      "error",
+      { error: message },
+    );
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
