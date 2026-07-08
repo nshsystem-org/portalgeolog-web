@@ -39,25 +39,47 @@ const worker = {
       return;
     }
 
-    const url = "https://portalgeolog.com.br/api/cron/os-reminders";
+    // Map cron expression → API route
+    const cronRoutes = {
+      "*/1 * * * *": "/api/cron/os-reminders",
+      "0 11 * * *": "/api/cron/os-alerta-valores",
+      "0 19 * * *": "/api/cron/os-alerta-valores",
+      "0 */2 * * *": "/api/cron/pendencias-alert",
+    };
 
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${cronSecret}`,
-          "content-type": "application/json",
-        },
-      });
-
-      const body = await response.text();
+    const route = cronRoutes[controller.cron];
+    if (!route) {
+      // Fallback: chama os-reminders para crons não mapeados (compat)
       console.log(
-        `[worker] Cron os-reminders respondeu ${response.status}: ${body}`,
+        `[worker] Cron '${controller.cron}' não mapeado — fallback os-reminders`,
       );
-    } catch (error) {
-      console.error("[worker] Erro no cron os-reminders:", error);
+      await callCronRoute(
+        "https://portalgeolog.com.br/api/cron/os-reminders",
+        cronSecret,
+      );
+      return;
     }
+
+    const url = `https://portalgeolog.com.br${route}`;
+    await callCronRoute(url, cronSecret);
   },
 };
+
+async function callCronRoute(url, cronSecret) {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${cronSecret}`,
+        "content-type": "application/json",
+      },
+    });
+
+    const body = await response.text();
+    console.log(`[worker] Cron ${url} respondeu ${response.status}: ${body}`);
+  } catch (error) {
+    console.error(`[worker] Erro no cron ${url}:`, error);
+  }
+}
 
 export default worker;
