@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { getThumbnailUrl } from "@/utils/avatar";
@@ -18,7 +24,7 @@ import {
 } from "lucide-react";
 
 // Função helper para formatar mensagem de notificação com protocolo em azul
-function formatNotificationMessage(message: string): React.ReactNode {
+export function formatNotificationMessage(message: string): React.ReactNode {
   // Remove o [OS_ID:xxx] se existir
   let cleanMessage = message.replace(/\[OS_ID:[a-f0-9-]+\]/, "");
 
@@ -86,6 +92,14 @@ export interface AppNotification {
   created_at: string;
   read?: boolean;
   metadata?: Record<string, unknown> | null;
+  /**
+   * "sistema": eventos administrativos/operacionais (novo atendimento,
+   * repasse, docagem, etc.) — exibidos no sino.
+   * "motorista": movimentação de motorista (visualizou detalhes, iniciou/
+   * finalizou rota, mensagem enviada/entregue, atraso) — exibidos no
+   * dropdown "Motoristas" separado.
+   */
+  category: "sistema" | "motorista";
 }
 
 const AUTO_DISMISS_MS = 6000;
@@ -590,13 +604,17 @@ export function useNotifications(options?: {
     }
   };
 
-  const markAllAsRead = async () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  const markAllAsRead = async (category?: "sistema" | "motorista") => {
+    setNotifications((prev) =>
+      prev.map((n) =>
+        !category || n.category === category ? { ...n, read: true } : n,
+      ),
+    );
     try {
       await fetch("/api/app-notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markAll: true }),
+        body: JSON.stringify({ markAll: true, category }),
       });
     } catch {
       // Silencioso
@@ -609,11 +627,26 @@ export function useNotifications(options?: {
 
   const dismissAll = () => setNotifications([]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Eventos de sistema (sino) vs. movimentação de motorista (dropdown azul
+  // "Motoristas"), mantidos separados para não lotar um com o outro.
+  const systemNotifications = useMemo(
+    () => notifications.filter((n) => n.category !== "motorista"),
+    [notifications],
+  );
+  const driverNotifications = useMemo(
+    () => notifications.filter((n) => n.category === "motorista"),
+    [notifications],
+  );
+
+  const unreadCount = systemNotifications.filter((n) => !n.read).length;
+  const driverUnreadCount = driverNotifications.filter((n) => !n.read).length;
 
   return {
     notifications,
+    systemNotifications,
+    driverNotifications,
     unreadCount,
+    driverUnreadCount,
     markAsRead,
     markAllAsRead,
     dismiss,

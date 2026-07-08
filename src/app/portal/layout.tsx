@@ -56,81 +56,12 @@ import PendenciaAlertModal, {
 import { ChatWidget } from "@/components/chat/ChatWidget";
 import { getThumbnailUrl } from "@/utils/avatar";
 import { getOperationalCycleTitle } from "@/lib/os-messages";
-
-function formatShortName(fullName: string | null | undefined): string {
-  if (!fullName) return "";
-  const parts = fullName.split(" ").filter(Boolean);
-  if (parts.length === 0) return "";
-  if (parts.length === 1) return parts[0];
-  return `${parts[0]} ${parts[1]}`;
-}
-
-function extractNotificationProtocolo(
-  message: string,
-  metadata?: Record<string, unknown> | null,
-): {
-  protocolo: string | null;
-  cleanMessage: string;
-} {
-  let cleanMessage = message.replace(/\[OS_ID:[a-f0-9-]+\]/, "").trim();
-
-  // "OS 2026061284 finalizada com sucesso."
-  const osPrefixMatch = cleanMessage.match(/^OS\s+(\d{10})\b/);
-  if (osPrefixMatch) {
-    cleanMessage = cleanMessage
-      .replace(osPrefixMatch[1], "")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  // "A OS 2026051030 foi atualizada por..."
-  const osMatch = cleanMessage.match(/A\s+OS\s+(\d+)/);
-  if (osMatch) {
-    cleanMessage = cleanMessage.replace(osMatch[0], "").trim();
-  }
-
-  // "Protocolo #2026061274 foi gerado."
-  const protocoloMatch = cleanMessage.match(/Protocolo\s+#?(\d+)/);
-  if (protocoloMatch) {
-    cleanMessage = cleanMessage.replace(protocoloMatch[0], "").trim();
-  }
-
-  // "2026061117" entre aspas
-  const quotesMatch = cleanMessage.match(/"(\d{10})"/);
-  if (quotesMatch) {
-    cleanMessage = cleanMessage.replace(quotesMatch[0], "").trim();
-  }
-
-  // Capitaliza primeira letra se necessario
-  if (
-    cleanMessage.length > 0 &&
-    cleanMessage[0] === cleanMessage[0].toLowerCase()
-  ) {
-    cleanMessage = cleanMessage[0].toUpperCase() + cleanMessage.slice(1);
-  }
-
-  const protocolo =
-    osPrefixMatch?.[1] ??
-    osMatch?.[1] ??
-    protocoloMatch?.[1] ??
-    quotesMatch?.[1] ??
-    (typeof metadata?.protocolo === "string" ? metadata.protocolo : null);
-  return { protocolo, cleanMessage };
-}
-
-function timeAgo(date: string, now: number): string {
-  const d =
-    date.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(date) ? date : date + "Z";
-  const diff = Math.max(now - new Date(d).getTime(), 0);
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (minutes < 1) return "Agora";
-  if (minutes < 60) return `${minutes} min`;
-  if (hours < 24) return `${hours} h`;
-  if (days === 1) return "Ontem";
-  return `${days} d`;
-}
+import {
+  formatShortName,
+  extractNotificationProtocolo,
+  timeAgo,
+} from "@/utils/notifications";
+import MotoristaNotifications from "@/components/MotoristaNotifications";
 
 export default function DashboardLayout({
   children,
@@ -155,7 +86,9 @@ export default function DashboardLayout({
   );
   const {
     unreadCount,
-    notifications,
+    driverUnreadCount,
+    systemNotifications,
+    driverNotifications,
     markAsRead,
     markAllAsRead,
     realtimeConnected,
@@ -170,11 +103,11 @@ export default function DashboardLayout({
   const relativeTimeNow = useRelativeTimeTicker(showNotifications);
   const filteredNotifications = useMemo(() => {
     if (notificationFilter === "unread")
-      return notifications.filter((n) => !n.read);
+      return systemNotifications.filter((n) => !n.read);
     if (notificationFilter === "read")
-      return notifications.filter((n) => n.read);
-    return notifications;
-  }, [notifications, notificationFilter]);
+      return systemNotifications.filter((n) => n.read);
+    return systemNotifications;
+  }, [systemNotifications, notificationFilter]);
 
   const preloadedAvatarsRef = useRef<Set<string>>(new Set());
 
@@ -556,6 +489,15 @@ export default function DashboardLayout({
             {/* Avisos de Pendências (sem valor + atrasadas + rascunhos) */}
             <PendenciaWarnings externalOpenSignal={pendenciaDropdownSignal} />
 
+            {/* Movimentações de Motoristas (azul) — separado do sino de sistema */}
+            <MotoristaNotifications
+              notifications={driverNotifications}
+              unreadCount={driverUnreadCount}
+              markAsRead={markAsRead}
+              markAllAsRead={() => markAllAsRead("motorista")}
+              realtimeConnected={realtimeConnected}
+            />
+
             {/* Funcionários Online */}
             <div className="relative">
               <button
@@ -574,9 +516,6 @@ export default function DashboardLayout({
                     {onlineCount > 9 ? "9+" : onlineCount}
                   </span>
                 )}
-                <div
-                  className={`absolute bottom-1 right-1 w-2 h-2 rounded-full border border-white ${presenceLoading ? "bg-yellow-500 animate-pulse" : "bg-green-500"}`}
-                />
               </button>
 
               {showEmployees && (
@@ -709,14 +648,6 @@ export default function DashboardLayout({
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
-                {/* Indicador de status da conexão */}
-                <div
-                  className={`absolute bottom-1 right-1 w-2 h-2 rounded-full border border-white ${
-                    realtimeConnected
-                      ? "bg-green-500"
-                      : "bg-yellow-500 animate-pulse"
-                  }`}
-                ></div>
               </button>
 
               {showNotifications && (
@@ -776,7 +707,7 @@ export default function DashboardLayout({
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                markAllAsRead();
+                                markAllAsRead("sistema");
                                 setShowNotificationSettings(false);
                               }}
                               disabled={unreadCount === 0}
@@ -1133,7 +1064,9 @@ export default function DashboardLayout({
                                     bg: "bg-orange-500",
                                     text: "text-white",
                                   };
-                                if (t.startsWith("Mensagem enviada ao motorista"))
+                                if (
+                                  t.startsWith("Mensagem enviada ao motorista")
+                                )
                                   return {
                                     icon: Send,
                                     bg: "bg-sky-400",

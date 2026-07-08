@@ -42,6 +42,7 @@ export type AppDatabase = {
           created_by_avatar_url: string | null;
           created_at: string;
           metadata: Record<string, unknown> | null;
+          category: "sistema" | "motorista";
         };
         Insert: {
           id?: string;
@@ -56,6 +57,7 @@ export type AppDatabase = {
           created_by_avatar_url?: string | null;
           created_at?: string;
           metadata?: Record<string, unknown> | null;
+          category?: "sistema" | "motorista";
         };
         Update: {
           id?: string;
@@ -70,6 +72,7 @@ export type AppDatabase = {
           created_by_avatar_url?: string | null;
           created_at?: string;
           metadata?: Record<string, unknown> | null;
+          category?: "sistema" | "motorista";
         };
         Relationships: [];
       };

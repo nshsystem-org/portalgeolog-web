@@ -67,17 +67,39 @@ export async function GET() {
     // Como app_notifications(created_by) -> auth.users(id) e user_roles(id) -> auth.users(id),
     // o PostgREST pode precisar de ajuda se não houver FK direta entre app_notifications e user_roles.
     // Usaremos a abordagem otimizada de dois passos se o JOIN falhar ou for complexo, mas com cache.
+    //
+    // As notificações são buscadas por categoria ("sistema" e "motorista") de forma
+    // independente, cada uma com seu próprio limite. Isso evita que um volume alto de
+    // eventos de motorista (iniciou/finalizou rota, mensagens) "empurre" para fora as
+    // notificações de sistema (e vice-versa) do topo-N retornado pela API.
+    const [systemResult, driverResult] = await Promise.all([
+      adminClient
+        .from("app_notifications")
+        .select("*")
+        .in("target_audience", [tipoUsuario, "all"])
+        .eq("category", "sistema")
+        .order("created_at", { ascending: false })
+        .limit(30),
+      adminClient
+        .from("app_notifications")
+        .select("*")
+        .in("target_audience", [tipoUsuario, "all"])
+        .eq("category", "motorista")
+        .order("created_at", { ascending: false })
+        .limit(30),
+    ]);
 
-    const { data: notifications, error: notifError } = await adminClient
-      .from("app_notifications")
-      .select("*")
-      .in("target_audience", [tipoUsuario, "all"])
-      .order("created_at", { ascending: false })
-      .limit(30);
+    if (systemResult.error) throw systemResult.error;
+    if (driverResult.error) throw driverResult.error;
 
-    if (notifError) throw notifError;
-
-    const notifs = notifications ?? [];
+    const notifs = [
+      ...(systemResult.data ?? []),
+      ...(driverResult.data ?? []),
+    ].sort(
+      (a, b) =>
+        new Date(b.created_at ?? 0).getTime() -
+        new Date(a.created_at ?? 0).getTime(),
+    );
 
     // 3. Buscar nomes e avatares atuais dos autores de forma eficiente
     const uniqueCreatorIds = Array.from(
@@ -229,12 +251,15 @@ export async function PATCH(request: Request) {
     const body = (await request.json()) as {
       notificationIds?: string[];
       markAll?: boolean;
+      category?: "sistema" | "motorista";
     };
 
     const adminClient = getAdminClient();
 
     if (body.markAll) {
       // Marcar todas as notificações visíveis pelo usuário como lidas
+      // (opcionalmente restrito a uma categoria, para não misturar o
+      // "marcar todos como lidos" do sino de sistema com o de motoristas)
       const { data: roleRow } = await adminClient
         .from("user_roles")
         .select("tipo_usuario")
@@ -243,12 +268,18 @@ export async function PATCH(request: Request) {
 
       const tipoUsuario = roleRow?.tipo_usuario ?? "interno";
 
-      const { data: allNotifs } = await adminClient
+      let allNotifsQuery = adminClient
         .from("app_notifications")
         .select("id")
         .in("target_audience", [tipoUsuario, "all"])
         .order("created_at", { ascending: false })
         .limit(50);
+
+      if (body.category) {
+        allNotifsQuery = allNotifsQuery.eq("category", body.category);
+      }
+
+      const { data: allNotifs } = await allNotifsQuery;
 
       const notifIds = (allNotifs ?? []).map((n) => n.id);
       if (notifIds.length > 0) {
