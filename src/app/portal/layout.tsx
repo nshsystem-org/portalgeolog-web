@@ -495,7 +495,6 @@ export default function DashboardLayout({
               unreadCount={driverUnreadCount}
               markAsRead={markAsRead}
               markAllAsRead={() => markAllAsRead("motorista")}
-              realtimeConnected={realtimeConnected}
             />
 
             {/* Funcionários Online */}

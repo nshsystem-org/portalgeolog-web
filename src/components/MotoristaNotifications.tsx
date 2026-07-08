@@ -28,7 +28,6 @@ interface MotoristaNotificationsProps {
   unreadCount: number;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
-  realtimeConnected?: boolean;
   className?: string;
 }
 
@@ -125,7 +124,6 @@ export default function MotoristaNotifications({
   unreadCount,
   markAsRead,
   markAllAsRead,
-  realtimeConnected,
   className,
 }: MotoristaNotificationsProps) {
   const [open, setOpen] = useState(false);
