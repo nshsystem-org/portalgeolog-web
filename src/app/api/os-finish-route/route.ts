@@ -266,6 +266,8 @@ export async function POST(request: Request) {
             : `Rota finalizada${cycle ? ` — ${getOperationalCycleBannerTitle(cycle)}` : ""} (KM: ${kmFinal})`,
         metadata: {
           cycle_index: cycle?.itineraryIndex ?? null,
+          cycle_kind: cycle?.kind ?? null,
+          cycle_ordinal: cycle?.ordinal ?? null,
           km_final: kmFinal,
           status_operacional: finalStatus,
           action: finalStatus === "Finalizado" ? "finish_all" : "driver_finish",

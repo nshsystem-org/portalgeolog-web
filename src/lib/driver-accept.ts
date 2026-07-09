@@ -584,6 +584,8 @@ export async function processDriverAccept(
       description: `Motorista visualizou o atendimento${cycle ? ` — Ciclo ${cycle.itineraryIndex + 1}` : ""}`,
       metadata: {
         cycle_index: cycle?.itineraryIndex ?? null,
+        cycle_kind: cycle?.kind ?? null,
+        cycle_ordinal: cycle?.ordinal ?? null,
         motorista: os.motorista || "Motorista",
       },
     });

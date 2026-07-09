@@ -239,6 +239,8 @@ export async function POST(request: Request) {
         description: `Rota iniciada${cycle ? ` — ${getOperationalCycleBannerTitle(cycle)}` : ""} (KM: ${kmInitial})`,
         metadata: {
           cycle_index: cycle?.itineraryIndex ?? null,
+          cycle_kind: cycle?.kind ?? null,
+          cycle_ordinal: cycle?.ordinal ?? null,
           km_initial: kmInitial,
         },
       });
