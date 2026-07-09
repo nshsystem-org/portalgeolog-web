@@ -356,6 +356,13 @@ export interface OSAtrasadaInput {
   status: { operacional: CycleOperationalStatus };
   arquivado?: boolean;
   tipo?: "os" | "freelance" | "rascunho";
+  rota?: {
+    waypoints?: {
+      itineraryIndex?: number | null;
+      data?: string;
+      hora?: string;
+    }[];
+  };
 }
 
 /**
@@ -423,9 +430,54 @@ export function isOsAtrasadaOuNaoIniciada(
   if (scheduled) {
     // Horário ainda no futuro → não é atraso
     if (scheduled > now) return false;
+  } else {
+    // Sem horário agendado conhecido → não pode afirmar atraso
+    // (alinhado com recompute_os_pendencias: IF v_itin.itin_hora IS NOT NULL)
+    return false;
   }
 
   return true;
+}
+
+/**
+ * Verifica se QUALQUER itinerário/retorno da OS está atrasado ou não iniciado.
+ * Espelha a lógica do recompute_os_pendencias (SQL): itera os_waypoints
+ * agrupados por itinerary_index e avalia cada um pela sua própria data/hora.
+ *
+ * Use na tabela de OS e no banner geral do modal — onde não há um ciclo
+ * específico para avaliar, mas precisa saber se a OS tem alguma pendência.
+ *
+ * Sem waypoints (legacy): fallback para isOsAtrasadaOuNaoIniciada(os).
+ */
+export function isOsAtrasadaQualquerItinerario(os: OSAtrasadaInput): boolean {
+  const waypoints = os.rota?.waypoints || [];
+  if (waypoints.length === 0) {
+    return isOsAtrasadaOuNaoIniciada(os);
+  }
+
+  // Agrupa por itineraryIndex (igual ao SQL: DISTINCT ON itinerary_index)
+  // Mantém o primeiro waypoint de cada itinerário (menor position = data/hora de partida)
+  const itinerarios = new Map<number, { data?: string; hora?: string }>();
+  for (const wp of waypoints) {
+    const idx = wp.itineraryIndex ?? 0;
+    if (!itinerarios.has(idx)) {
+      itinerarios.set(idx, { data: wp.data, hora: wp.hora });
+    }
+  }
+
+  for (const [, { data, hora }] of itinerarios) {
+    const isoDate = data?.includes("/")
+      ? data.split("/").reverse().join("-")
+      : data;
+    const dateTime =
+      isoDate && hora
+        ? `${isoDate}T${hora}:00`
+        : isoDate
+          ? `${isoDate}T00:00:00`
+          : undefined;
+    if (isOsAtrasadaOuNaoIniciada(os, dateTime)) return true;
+  }
+  return false;
 }
 
 export function formatItineraryGroups(groups: ItineraryGroup[]): string {

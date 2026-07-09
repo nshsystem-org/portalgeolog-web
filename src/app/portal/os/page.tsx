@@ -139,6 +139,7 @@ import {
   deriveCyclesOperationalStatus,
   isFinalizadoSemValor,
   isOsAtrasadaOuNaoIniciada,
+  isOsAtrasadaQualquerItinerario,
   type CycleOperationalStatus,
   type OperationalCycleState,
 } from "@/lib/os-messages";
@@ -6700,7 +6701,7 @@ export default function OSOperationalPage() {
                     );
                     const finalizadoSemValor = isFinalizadoSemValor(item);
                     const atrasadaOuNaoIniciada =
-                      isOsAtrasadaOuNaoIniciada(item);
+                      isOsAtrasadaQualquerItinerario(item);
                     const temPendencia =
                       finalizadoSemValor || atrasadaOuNaoIniciada;
 
@@ -8996,7 +8997,7 @@ export default function OSOperationalPage() {
                 </div>
               )}
 
-              {isOsAtrasadaOuNaoIniciada(viewingOS) && (
+              {isOsAtrasadaQualquerItinerario(viewingOS) && (
                 <div
                   className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 shadow-sm"
                   title="Atendimento atrasado ou não iniciado"
