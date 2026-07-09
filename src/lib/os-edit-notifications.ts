@@ -163,15 +163,28 @@ export async function notifyDriverOnOSEdit(
   const supabase = getAdminClient();
 
   // Verifica se as notificações de edição estão habilitadas
-  const { data: flagRow } = await supabase
+  // e se os lembretes globais (avisos de atraso) estão ativos.
+  // Quando "Avisos de atraso" está desativado na config, as mensagens
+  // de alteração de endereço/horário ao motorista também são bloqueadas.
+  const { data: flagRows } = await supabase
     .from("app_settings")
-    .select("value")
-    .eq("key", "os_edit_notify_enabled")
-    .maybeSingle();
+    .select("key, value")
+    .in("key", ["os_edit_notify_enabled", "os_reminders_enabled"]);
 
-  const flagValue = (flagRow as unknown as { value?: string } | null)?.value;
-  if (flagValue === "false") {
+  const flagMap = new Map<string, string>();
+  for (const row of (flagRows || []) as unknown as { key: string; value: string }[]) {
+    flagMap.set(row.key, row.value);
+  }
+
+  if (flagMap.get("os_edit_notify_enabled") === "false") {
     console.log("[os-edit-notify] Notificações de edição desativadas. Saindo.");
+    return { sent: false, type: "none" };
+  }
+
+  if (flagMap.get("os_reminders_enabled") === "false") {
+    console.log(
+      "[os-edit-notify] Avisos de atraso (os_reminders_enabled) desativados. Bloqueando notificações de edição. Saindo.",
+    );
     return { sent: false, type: "none" };
   }
 
