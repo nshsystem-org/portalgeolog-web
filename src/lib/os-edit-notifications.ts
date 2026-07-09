@@ -20,7 +20,12 @@ interface PreviousOSState {
   motorista?: string | null;
   data?: string | null;
   hora?: string | null;
-  waypoints?: Array<{ label: string; hora?: string | null; data?: string | null }>;
+  waypoints?: Array<{
+    label: string;
+    hora?: string | null;
+    data?: string | null;
+    itineraryIndex?: number | null;
+  }>;
 }
 
 interface EditNotificationResult {
@@ -54,6 +59,7 @@ interface WaypointRow {
   label: string;
   hora: string | null;
   data: string | null;
+  itinerary_index: number | null;
 }
 
 async function resolveDriverPhone(
@@ -93,10 +99,9 @@ async function resolveDriverPhone(
 
 /**
  * Compara waypoints para detectar mudança de ENDEREÇO apenas.
- * NÃO compara hora/data dos waypoints — essas mudanças já são detectadas
- * por timeChanged (que compara os.data e os.hora da OS).
- * Comparar hora/data aqui causaria falso positivo de "endereço mudou"
- * quando na verdade só o horário mudou.
+ * NÃO compara hora/data dos waypoints — a detecção de horário é feita
+ * por waypointTimeChanged (que compara data/hora de cada waypoint
+ * individualmente, incluindo retornos e itinerários secundários).
  */
 function waypointsChanged(
   prev: PreviousOSState["waypoints"],
@@ -109,6 +114,30 @@ function waypointsChanged(
     const p = prev[i];
     const n = next[i];
     if (p.label !== n.label) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Compara waypoints para detectar mudança de HORÁRIO (data/hora) por waypoint.
+ * Ao contrário de osTimeChanged (que compara apenas os.data/os.hora
+ * sincronizados do primeiro itinerário), esta função compara cada waypoint
+ * individualmente, detectando alterações de horário em retornos e
+ * itinerários secundários que não afetam os campos da OS.
+ */
+function waypointTimeChanged(
+  prev: PreviousOSState["waypoints"],
+  next: { label: string; hora: string | null; data: string | null }[],
+): boolean {
+  if (!prev || !next) return false;
+  if (prev.length !== next.length) return true;
+
+  for (let i = 0; i < prev.length; i++) {
+    const p = prev[i];
+    const n = next[i];
+    if ((p.data || null) !== (n.data || null)) return true;
+    if ((p.hora || null) !== (n.hora || null)) return true;
   }
 
   return false;
@@ -161,7 +190,7 @@ export async function notifyDriverOnOSEdit(
 
   const { data: waypointsData } = await supabase
     .from("os_waypoints")
-    .select("label, hora, data")
+    .select("label, hora, data, itinerary_index")
     .eq("ordem_servico_id", osId)
     .order("position");
 
@@ -170,15 +199,28 @@ export async function notifyDriverOnOSEdit(
     label: w.label,
     hora: w.hora,
     data: w.data,
+    itineraryIndex: w.itinerary_index,
   }));
 
   const currentDriverId = osRecord.driver_id || null;
   const prevDriverId = previousState.driverId || null;
   const driverChanged = currentDriverId !== prevDriverId;
 
-  const timeChanged =
+  // osTimeChanged: compara os.data/os.hora (sincronizados do primeiro itinerário).
+  // Mantido como safety net — cobre o caso de a OS ter hora própria (legado).
+  const osTimeChanged =
     (osRecord.data || null) !== (previousState.data || null) ||
     (osRecord.hora || null) !== (previousState.hora || null);
+
+  // wpTimeChanged: compara data/hora de cada waypoint individualmente.
+  // Essencial para detectar mudanças de horário em retornos e itinerários
+  // secundários que não afetam os.data/os.hora da OS.
+  const wpTimeChanged = waypointTimeChanged(
+    previousState.waypoints,
+    currentWaypoints,
+  );
+
+  const timeChanged = osTimeChanged || wpTimeChanged;
 
   const addressChanged = waypointsChanged(
     previousState.waypoints,
@@ -213,7 +255,10 @@ export async function notifyDriverOnOSEdit(
               {
                 type: "body",
                 parameters: [
-                  { type: "text", text: previousState.motorista || "Motorista" },
+                  {
+                    type: "text",
+                    text: previousState.motorista || "Motorista",
+                  },
                   { type: "text", text: protocolo },
                 ],
               },
@@ -285,10 +330,7 @@ export async function notifyDriverOnOSEdit(
   // Cenário 2: Mesmo motorista, horário ou endereço mudou
   // ---------------------------------------------------------------
   if (timeChanged || addressChanged) {
-    const phone = await resolveDriverPhone(
-      currentDriverId,
-      osRecord.motorista,
-    );
+    const phone = await resolveDriverPhone(currentDriverId, osRecord.motorista);
 
     if (!phone) {
       return {
@@ -298,10 +340,12 @@ export async function notifyDriverOnOSEdit(
       };
     }
 
-    // Formata data e hora para pt-BR
+    // Formata data e hora para pt-BR.
+    // os.hora é null (a hora vive nos waypoints), então usamos a hora
+    // do primeiro waypoint do primeiro itinerário como referência principal.
     const tz = process.env.REMINDER_TIMEZONE ?? "America/Sao_Paulo";
     const dateStr = osRecord.data || "";
-    const timeStr = osRecord.hora || "";
+    const timeStr = currentWaypoints[0]?.hora || osRecord.hora || "";
 
     // Formata data de YYYY-MM-DD para DD/MM/YYYY
     let formattedDate = dateStr;

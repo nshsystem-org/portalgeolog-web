@@ -48,6 +48,9 @@ export interface PhaseDecisionInput {
   post5Sent: boolean;
   post30Sent: boolean;
   flags: ReminderFlags;
+  /** Se o ciclo agendado é do dia atual. Default true (backward compatible).
+   *  Quando false, alertas de atraso (T+5/T+30) são suprimidos para OS antigas. */
+  isToday?: boolean;
 }
 
 export interface PhaseDecision {
@@ -200,14 +203,17 @@ export function normalizePhone(phone: string | null): string | null {
  *   - Fase 1 (12h):  diffMin em [-720, 0], flag 12h on, não enviado
  *   - Fase 2 (1h):   diffMin em [-60, 0], flag start on, não enviado
  *   - Fase 3 (15min): diffMin em [-15, 0], message_sent_at != null, não enviado
- *   - Fase 4 (T+5):  diffMin em [5, 30), flag delay on, não enviado
- *   - Fase 5 (T+30): diffMin >= 30, flag delay on, T+30 não enviado
+ *   - Fase 4 (T+5):  diffMin em [5, 30), flag delay on, não enviado, isToday
+ *   - Fase 5 (T+30): diffMin >= 30, flag delay on, T+30 não enviado, isToday
  *   - Se T+30 já enviado → idle (tudo feito)
+ *   - Se diffMin > 0 e isToday === false → idle (não notifica OS de dias anteriores)
  *   - Se diffMin < 0 e fora de todas as janelas → skip
  *
  * Retorna "idle" se não há nada a fazer (ciclo completo ou já iniciado).
  */
-export function determineReminderPhase(input: PhaseDecisionInput): PhaseDecision {
+export function determineReminderPhase(
+  input: PhaseDecisionInput,
+): PhaseDecision {
   const {
     diffMin,
     messageSentAt,
@@ -239,6 +245,11 @@ export function determineReminderPhase(input: PhaseDecisionInput): PhaseDecision
   // Após o horário (diffMin > 0) — alertas de atraso
   if (!flags.delayAlert) return { phase: "idle" };
   if (post30Sent) return { phase: "idle" };
+
+  // Só notifica atraso para ciclos do dia atual.
+  // Evita notificar OS de dias anteriores (ex: 300min, 1200min no passado).
+  // A última mensagem de atraso pro motorista é a T+30.
+  if (input.isToday === false) return { phase: "idle" };
 
   const minutesLate = Math.floor(diffMin);
 

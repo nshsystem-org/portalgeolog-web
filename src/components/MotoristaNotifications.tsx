@@ -11,6 +11,7 @@ import {
   Send,
   CheckCircle2,
   AlertTriangle,
+  Navigation,
 } from "lucide-react";
 import { getThumbnailUrl } from "@/utils/avatar";
 import {
@@ -38,6 +39,7 @@ const driverTitles = {
   messageSent: "Mensagem enviada ao motorista",
   messageDelivered: "Mensagem entregue ao motorista",
   delay: "Motorista em atraso",
+  startReminder: "Lembrete de Iniciar Rota enviado",
 } as const;
 
 function isDriverTitle(
@@ -104,6 +106,15 @@ function getDriverConfig(title: string) {
       label: "Atraso",
     };
   }
+  if (isDriverTitle(title, driverTitles.startReminder)) {
+    return {
+      icon: Navigation,
+      color: "text-sky-600",
+      bg: "bg-sky-50",
+      border: "border-sky-200",
+      label: "Lembrete de início",
+    };
+  }
   // Fallback para qualquer título de motorista não mapeado
   return {
     icon: Truck,
@@ -117,6 +128,11 @@ function getDriverConfig(title: string) {
 function extractDriverNameFromTitle(title: string): string {
   const match = title.match(/^Mensagem enviada ao motorista\s+(.+)$/);
   return match?.[1]?.trim() ?? "";
+}
+
+function extractDelayMinutes(message: string): number | null {
+  const match = message.match(/Atendimento com (\d+) min de atraso/);
+  return match ? Number(match[1]) : null;
 }
 
 export default function MotoristaNotifications({
@@ -292,6 +308,12 @@ export default function MotoristaNotifications({
                     }).replace(" - ", " ")
                   : null;
                 const cycleIsReturn = cycleKind === "return";
+                const isDelay = notification.title === driverTitles.delay;
+                const delayMinutes = isDelay
+                  ? extractDelayMinutes(notification.message)
+                  : null;
+                const isStartReminder =
+                  notification.title === driverTitles.startReminder;
 
                 return (
                   <div
@@ -335,33 +357,78 @@ export default function MotoristaNotifications({
                         >
                           {formatShortName(notification.created_by_name) ||
                             "Motorista"}
-                        </span>{" "}
-                        <span
-                          className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}
-                        >
-                          {formatNotificationMessage(
-                            notification.message.replace(
-                              /\s*\[OS_ID:[a-f0-9-]+\]/gi,
-                              "",
-                            ),
-                          )}
                         </span>
-                        {driverName && (
-                          <span className="inline-flex items-center gap-1.5 ml-2">
-                            <Truck
-                              size={12}
-                              className={`${!notification.read ? "text-blue-700" : "text-slate-400"}`}
-                            />
+                        {isDelay && delayMinutes !== null ? (
+                          <>
                             <span
-                              className={`text-xs font-bold ${!notification.read ? "text-blue-800" : "text-slate-400"}`}
+                              className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}
                             >
-                              {driverName}
+                              {" "}
+                              · Atendimento com {delayMinutes} min de atraso
+                              ·{" "}
                             </span>
-                          </span>
+                            {cycleDesc && (
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                                  cycleIsReturn
+                                    ? "bg-purple-50 text-purple-700 border-purple-200"
+                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                }`}
+                              >
+                                {cycleDesc}
+                              </span>
+                            )}
+                          </>
+                        ) : isStartReminder ? (
+                          <>
+                            <span
+                              className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}
+                            >
+                              {" "}
+                              · Lembrete de iniciar rota enviado ·{" "}
+                            </span>
+                            {cycleDesc && (
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                                  cycleIsReturn
+                                    ? "bg-purple-50 text-purple-700 border-purple-200"
+                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                }`}
+                              >
+                                {cycleDesc}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span
+                              className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}
+                            >
+                              {formatNotificationMessage(
+                                notification.message.replace(
+                                  /\s*\[OS_ID:[a-f0-9-]+\]/gi,
+                                  "",
+                                ),
+                              )}
+                            </span>
+                            {driverName && (
+                              <span className="inline-flex items-center gap-1.5 ml-2">
+                                <Truck
+                                  size={12}
+                                  className={`${!notification.read ? "text-blue-700" : "text-slate-400"}`}
+                                />
+                                <span
+                                  className={`text-xs font-bold ${!notification.read ? "text-blue-800" : "text-slate-400"}`}
+                                >
+                                  {driverName}
+                                </span>
+                              </span>
+                            )}
+                          </>
                         )}
                       </p>
 
-                      {cycleDesc && (
+                      {cycleDesc && !isDelay && !isStartReminder && (
                         <div className="mt-1">
                           <span
                             className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${

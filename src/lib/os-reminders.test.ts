@@ -175,6 +175,59 @@ describe("determineReminderPhase — alertas de atraso", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Testes: determineReminderPhase — isToday (não notifica OS de dias anteriores)
+// ---------------------------------------------------------------------------
+
+describe("determineReminderPhase — isToday (OS antigas)", () => {
+  it("T+5 de OS de ontem (isToday=false) deve retornar idle", () => {
+    const decision = determineReminderPhase(
+      makeInput({ diffMin: 5, isToday: false }),
+    );
+    assert.equal(decision.phase, "idle");
+  });
+
+  it("T+30 de OS de ontem (isToday=false) deve retornar idle", () => {
+    const decision = determineReminderPhase(
+      makeInput({ diffMin: 30, isToday: false }),
+    );
+    assert.equal(decision.phase, "idle");
+  });
+
+  it("T+1200 de OS antiga (isToday=false) deve retornar idle", () => {
+    const decision = determineReminderPhase(
+      makeInput({ diffMin: 1200, isToday: false }),
+    );
+    assert.equal(decision.phase, "idle");
+  });
+
+  it("T+300 de OS antiga (isToday=false) deve retornar idle", () => {
+    const decision = determineReminderPhase(
+      makeInput({ diffMin: 300, isToday: false }),
+    );
+    assert.equal(decision.phase, "idle");
+  });
+
+  it("T+5 de OS de hoje (isToday=true) deve retornar post_start_5", () => {
+    const decision = determineReminderPhase(
+      makeInput({ diffMin: 5, isToday: true }),
+    );
+    assert.equal(decision.phase, "post_start_5");
+  });
+
+  it("T+30 de OS de hoje (isToday=true) deve retornar post_start_30", () => {
+    const decision = determineReminderPhase(
+      makeInput({ diffMin: 30, isToday: true }),
+    );
+    assert.equal(decision.phase, "post_start_30");
+  });
+
+  it("isToday default (não informado) mantém comportamento anterior", () => {
+    const decision = determineReminderPhase(makeInput({ diffMin: 10 }));
+    assert.equal(decision.phase, "post_start_5");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Testes: determineReminderPhase — feature flags
 // ---------------------------------------------------------------------------
 
@@ -230,7 +283,8 @@ describe("determineReminderPhase — feature flags", () => {
     };
     // Antes do horário
     assert.equal(
-      determineReminderPhase(makeInput({ diffMin: -500, flags: flagsOff })).phase,
+      determineReminderPhase(makeInput({ diffMin: -500, flags: flagsOff }))
+        .phase,
       "skip",
     );
     // Após o horário
@@ -273,7 +327,11 @@ describe("normalizePhone", () => {
 
 describe("utcFromLocalDateTime", () => {
   it("converte data/hora local Brasília para UTC corretamente", () => {
-    const result = utcFromLocalDateTime("2026-07-09", "14:00", "America/Sao_Paulo");
+    const result = utcFromLocalDateTime(
+      "2026-07-09",
+      "14:00",
+      "America/Sao_Paulo",
+    );
     assert.ok(result);
     // Brasília é UTC-3, então 14:00 local = 17:00 UTC
     assert.equal(result!.getUTCHours(), 17);
@@ -281,15 +339,24 @@ describe("utcFromLocalDateTime", () => {
   });
 
   it("retorna null para data nula", () => {
-    assert.equal(utcFromLocalDateTime(null, "14:00", "America/Sao_Paulo"), null);
+    assert.equal(
+      utcFromLocalDateTime(null, "14:00", "America/Sao_Paulo"),
+      null,
+    );
   });
 
   it("retorna null para hora nula", () => {
-    assert.equal(utcFromLocalDateTime("2026-07-09", null, "America/Sao_Paulo"), null);
+    assert.equal(
+      utcFromLocalDateTime("2026-07-09", null, "America/Sao_Paulo"),
+      null,
+    );
   });
 
   it("retorna null para data inválida", () => {
-    assert.equal(utcFromLocalDateTime("invalid", "14:00", "America/Sao_Paulo"), null);
+    assert.equal(
+      utcFromLocalDateTime("invalid", "14:00", "America/Sao_Paulo"),
+      null,
+    );
   });
 });
 

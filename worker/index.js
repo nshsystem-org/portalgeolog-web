@@ -21,38 +21,40 @@
 //   "0 */2 * * *"     → /api/cron/pendencias-alert
 //       Alertas de pendências a cada 2 horas.
 
+/**
+ * Injeta variáveis do Cloudflare no process.env para compatibilidade com vinext.
+ * Deve ser chamado antes de import("../dist/server/index.js").
+ */
+function injectEnv(env) {
+  if (!globalThis.process) {
+    globalThis.process = { env: {} };
+  }
+
+  // Primeiro, copia todas as variáveis do env do Cloudflare para process.env
+  Object.assign(globalThis.process.env, env);
+
+  // Depois cria um Proxy para consultar env como fallback para novas propriedades
+  const originalEnv = globalThis.process.env;
+  globalThis.process.env = new Proxy(originalEnv, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      if (prop in env) return env[prop];
+      return undefined;
+    },
+    has(target, prop) {
+      return prop in target || prop in env;
+    },
+  });
+}
+
 const worker = {
   async fetch(request, env, ctx) {
-    // Injeta variáveis do Cloudflare no process.env para compatibilidade com vinext
-    // ANTES de carregar o bundle server (evita capturas top-level de undefined)
-    if (!globalThis.process) {
-      globalThis.process = { env: {} };
-    }
-
-    // Primeiro, copia todas as variáveis do env do Cloudflare para process.env
-    // Isso garante que referências top-level no bundle server funcionem
-    Object.assign(globalThis.process.env, env);
-
-    // Depois cria um Proxy para consultar env como fallback para novas propriedades
-    const originalEnv = globalThis.process.env;
-    globalThis.process.env = new Proxy(originalEnv, {
-      get(target, prop) {
-        if (prop in target) return target[prop];
-        if (prop in env) return env[prop];
-        return undefined;
-      },
-      has(target, prop) {
-        return prop in target || prop in env;
-      },
-    });
-
+    injectEnv(env);
     const { default: handler } = await import("../dist/server/index.js");
-
     return handler(request, ctx);
   },
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async scheduled(controller, env, _ctx) {
+  async scheduled(controller, env, ctx) {
     const cronSecret = env.CRON_SECRET;
     if (!cronSecret) {
       console.warn("[worker] CRON_SECRET não configurado — pulando cron");
@@ -67,39 +69,39 @@ const worker = {
       "0 */2 * * *": "/api/cron/pendencias-alert",
     };
 
-    const route = cronRoutes[controller.cron];
+    let route = cronRoutes[controller.cron];
     if (!route) {
       // Fallback: chama os-reminders para crons não mapeados (compat)
       console.log(
         `[worker] Cron '${controller.cron}' não mapeado — fallback os-reminders`,
       );
-      await callCronRoute(
-        "https://portalgeolog.com.br/api/cron/os-reminders",
-        cronSecret,
-      );
-      return;
+      route = "/api/cron/os-reminders";
     }
 
-    const url = `https://portalgeolog.com.br${route}`;
-    await callCronRoute(url, cronSecret);
+    // Chama o handler diretamente (sem self-HTTP fetch que causa 522/timeout)
+    try {
+      injectEnv(env);
+      const { default: handler } = await import("../dist/server/index.js");
+
+      const url = `https://portalgeolog.com.br${route}`;
+      const fakeRequest = new Request(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${cronSecret}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+
+      const response = await handler(fakeRequest, ctx);
+      const body = await response.text();
+      console.log(
+        `[worker] Cron ${route} respondeu ${response.status}: ${body.substring(0, 500)}`,
+      );
+    } catch (error) {
+      console.error(`[worker] Erro no cron ${route}:`, error);
+    }
   },
 };
-
-async function callCronRoute(url, cronSecret) {
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${cronSecret}`,
-        "content-type": "application/json",
-      },
-    });
-
-    const body = await response.text();
-    console.log(`[worker] Cron ${url} respondeu ${response.status}: ${body}`);
-  } catch (error) {
-    console.error(`[worker] Erro no cron ${url}:`, error);
-  }
-}
 
 export default worker;

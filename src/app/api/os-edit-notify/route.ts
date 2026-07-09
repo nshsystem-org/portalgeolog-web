@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  *       motorista?: string | null,
  *       data?: string | null,
  *       hora?: string | null,
- *       waypoints?: Array<{ label, hora, data }>
+ *       waypoints?: Array<{ label, hora, data, itineraryIndex }>
  *     }
  *   }
  *
@@ -22,6 +22,9 @@ export const runtime = "nodejs";
  *   - cancelamento_viagem_motorista ao motorista antigo (se motorista trocado)
  *   - appointment_scheduling ao motorista novo (se motorista trocado)
  *   - alteracao_viagem_motorista ao motorista atual (se horário/endereço mudou)
+ *
+ * A detecção de horário compara data/hora de cada waypoint individualmente
+ * (incluindo retornos e itinerários secundários), não apenas os campos da OS.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -37,6 +40,7 @@ export async function POST(request: NextRequest) {
           label: string;
           hora?: string | null;
           data?: string | null;
+          itineraryIndex?: number | null;
         }>;
       };
     };

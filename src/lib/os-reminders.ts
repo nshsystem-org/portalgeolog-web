@@ -106,7 +106,10 @@ async function getReminderFlags(): Promise<ReminderFlags> {
   const { data, error } = await (
     supabase.from("app_settings") as unknown as {
       select: (cols: string) => {
-        in: (col: string, vals: string[]) => Promise<{
+        in: (
+          col: string,
+          vals: string[],
+        ) => Promise<{
           data: { key: string; value: string }[] | null;
           error: unknown;
         }>;
@@ -119,7 +122,12 @@ async function getReminderFlags(): Promise<ReminderFlags> {
   if (error) {
     console.error("[os-reminders] Erro ao ler feature flags:", error);
     // Em caso de erro, assume tudo habilitado (fail-open)
-    return { global: true, reminder12h: true, startButton: true, delayAlert: true };
+    return {
+      global: true,
+      reminder12h: true,
+      startButton: true,
+      delayAlert: true,
+    };
   }
 
   const map = new Map<string, string>();
@@ -178,7 +186,10 @@ async function markReminderSent(
         opts: { onConflict: string },
       ) => Promise<{ error: unknown }>;
     }
-  ).upsert({ cycle_id: cycleId, reminder_kind: kind, metadata }, { onConflict: "cycle_id, reminder_kind" });
+  ).upsert(
+    { cycle_id: cycleId, reminder_kind: kind, metadata },
+    { onConflict: "cycle_id, reminder_kind" },
+  );
   if (error) {
     console.error("[os-reminders] Erro ao marcar lembrete:", error);
     throw error;
@@ -204,6 +215,41 @@ async function hasReminderSent(
   return !!data;
 }
 
+/**
+ * Busca todos os reminders já enviados para um conjunto de ciclos em UMA query.
+ * Retorna um Map<cycleId, Set<reminderKind>> para consulta O(1).
+ * Reduz subrequests do Cloudflare Workers (50 → 1 por execução do cron).
+ */
+async function batchFetchReminderSent(
+  cycleIds: string[],
+): Promise<Map<string, Set<string>>> {
+  if (cycleIds.length === 0) return new Map();
+  const supabase = getAdminClient();
+  const { data, error } = await supabase
+    .from("os_cycle_reminders")
+    .select("cycle_id, reminder_kind")
+    .in("cycle_id", cycleIds);
+
+  if (error) {
+    console.error("[os-reminders] Erro ao buscar reminders em batch:", error);
+    return new Map();
+  }
+
+  const map = new Map<string, Set<string>>();
+  for (const row of (data || []) as unknown as {
+    cycle_id: string;
+    reminder_kind: string;
+  }[]) {
+    let set = map.get(row.cycle_id);
+    if (!set) {
+      set = new Set();
+      map.set(row.cycle_id, set);
+    }
+    set.add(row.reminder_kind);
+  }
+  return map;
+}
+
 async function logDriverDelay(
   osId: string,
   motorista: string,
@@ -224,6 +270,28 @@ async function logDriverDelay(
   });
   if (error) {
     console.error("[os-reminders] Erro ao logar atraso:", error);
+  }
+}
+
+async function logDriverStartReminder(
+  osId: string,
+  motorista: string,
+  cycleIndex: number,
+): Promise<void> {
+  const supabase = getAdminClient();
+  const { error } = await (
+    supabase.from("os_logs") as unknown as {
+      insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>;
+    }
+  ).insert({
+    os_id: osId,
+    type: "driver_start_reminder",
+    actor_name: motorista || "Motorista",
+    description: `Lembrete de iniciar rota enviado (ciclo ${cycleIndex + 1})`,
+    metadata: { cycle_index: cycleIndex },
+  });
+  if (error) {
+    console.error("[os-reminders] Erro ao logar lembrete de início:", error);
   }
 }
 
@@ -363,7 +431,9 @@ async function sendStartButton(
     // Atualiza driver_flow_start_message_id e messageSentAt no ciclo
     await (
       getAdminClient().from("ordens_servico") as unknown as {
-        update: (values: Record<string, unknown>) => { eq: (col: string, val: string) => Promise<unknown> };
+        update: (values: Record<string, unknown>) => {
+          eq: (col: string, val: string) => Promise<unknown>;
+        };
       }
     )
       .update({
@@ -389,6 +459,13 @@ async function sendStartButton(
       row.cycle_index,
       "msgId:",
       result.messageId,
+    );
+
+    // Gera log → dispara notificação no sino para internos via trigger
+    await logDriverStartReminder(
+      row.os_id,
+      row.motorista || "Motorista",
+      row.cycle_index,
     );
   }
 
@@ -515,7 +592,9 @@ async function sendDelayReminder(
 
     await (
       getAdminClient().from("ordens_servico") as unknown as {
-        update: (values: Record<string, unknown>) => { eq: (col: string, val: string) => Promise<unknown> };
+        update: (values: Record<string, unknown>) => {
+          eq: (col: string, val: string) => Promise<unknown>;
+        };
       }
     )
       .update({
@@ -608,7 +687,9 @@ export async function processOSReminders(): Promise<ReminderResult[]> {
   // Verifica feature flags (global + por fase) em uma única query
   const flags = await getReminderFlags();
   if (!flags.global) {
-    console.log("[os-reminders] Envio de lembretes desativado nas configurações. Saindo sem enviar.");
+    console.log(
+      "[os-reminders] Envio de lembretes desativado nas configurações. Saindo sem enviar.",
+    );
     return [];
   }
 
@@ -618,24 +699,46 @@ export async function processOSReminders(): Promise<ReminderResult[]> {
   const cycles = await fetchReminderCycles();
   const results: ReminderResult[] = [];
 
-  for (const row of cycles) {
-    const scheduledAt = getScheduledAt(row);
-    if (!scheduledAt) continue;
+  // Batch: busca todos os reminders já enviados em UMA query (reduz subrequests)
+  const cycleIds = cycles.map((c) => c.cycle_id);
+  const reminderMap = await batchFetchReminderSent(cycleIds);
 
-    // Ciclo já iniciado → nada a fazer
-    if (row.started_at) continue;
+  // Pré-calcula scheduledAt e diffMin para ordenar por prioridade (mais atrasado primeiro)
+  const cyclesWithMeta = cycles
+    .map((row) => {
+      const scheduledAt = getScheduledAt(row);
+      if (!scheduledAt || row.started_at) return null;
+      const diffMin = (now.getTime() - scheduledAt.getTime()) / 60_000;
+      const cycleIsToday = isToday(scheduledAt, tz);
+      return { row, scheduledAt, diffMin, cycleIsToday };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .sort((a, b) => b.diffMin - a.diffMin); // mais atrasado primeiro
 
-    const diffMin = (now.getTime() - scheduledAt.getTime()) / 60_000;
+  // Limite de ciclos processados por execução para não exceder o limite de
+  // subrequests do Cloudflare Workers (50 no plano free).
+  // Cada ciclo que precisa de ação consome ~4 subrequests (send + mark + 2 updates).
+  // 3 queries iniciais + 4*N ≤ 50 → N ≤ 11. Usamos 8 para margem de segurança.
+  // O cron roda a cada 1 minuto, então 8 ciclos/min = 480 ciclos/hora.
+  const MAX_CYCLES_PER_RUN = 8;
+  let processedCount = 0;
 
-    // Consulta idempotência de todas as fases de uma vez (paralelizable no futuro)
-    const [reminder12hSent, startButtonSent, preStartSent, post5Sent, post30Sent] =
-      await Promise.all([
-        hasReminderSent(row.cycle_id, REMINDER_KINDS.reminder12h),
-        hasReminderSent(row.cycle_id, REMINDER_KINDS.startButton),
-        hasReminderSent(row.cycle_id, REMINDER_KINDS.preStart),
-        hasReminderSent(row.cycle_id, REMINDER_KINDS.postStart5),
-        hasReminderSent(row.cycle_id, REMINDER_KINDS.postStart30),
-      ]);
+  for (const { row, scheduledAt, diffMin, cycleIsToday } of cyclesWithMeta) {
+    if (processedCount >= MAX_CYCLES_PER_RUN) {
+      console.log(
+        `[os-reminders] Limite de ${MAX_CYCLES_PER_RUN} ciclos por execução atingido. ` +
+          `${cyclesWithMeta.length - processedCount} ciclos restantes serão processados na próxima execução.`,
+      );
+      break;
+    }
+
+    // Consulta idempotência do Map em memória (0 subrequests)
+    const sent = reminderMap.get(row.cycle_id) ?? new Set<string>();
+    const reminder12hSent = sent.has(REMINDER_KINDS.reminder12h);
+    const startButtonSent = sent.has(REMINDER_KINDS.startButton);
+    const preStartSent = sent.has(REMINDER_KINDS.preStart);
+    const post5Sent = sent.has(REMINDER_KINDS.postStart5);
+    const post30Sent = sent.has(REMINDER_KINDS.postStart30);
 
     // Delegação para função pura — toda a lógica de decisão está aqui
     const decision = determineReminderPhase({
@@ -647,17 +750,21 @@ export async function processOSReminders(): Promise<ReminderResult[]> {
       post5Sent,
       post30Sent,
       flags,
+      isToday: cycleIsToday,
     });
 
     switch (decision.phase) {
       case "reminder_12h":
         results.push(await sendReminder12h(row, scheduledAt));
+        processedCount++;
         break;
       case "start_button":
         results.push(await sendStartButton(row, scheduledAt));
+        processedCount++;
         break;
       case "pre_start":
         results.push(await sendPreStartReminder(row, scheduledAt));
+        processedCount++;
         break;
       case "post_start_5":
         results.push(
@@ -668,6 +775,7 @@ export async function processOSReminders(): Promise<ReminderResult[]> {
             REMINDER_KINDS.postStart5,
           ),
         );
+        processedCount++;
         break;
       case "post_start_30":
         results.push(
@@ -678,6 +786,7 @@ export async function processOSReminders(): Promise<ReminderResult[]> {
             REMINDER_KINDS.postStart30,
           ),
         );
+        processedCount++;
         break;
       case "skip":
       case "idle":

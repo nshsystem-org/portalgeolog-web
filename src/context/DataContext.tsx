@@ -1472,6 +1472,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             label: w.label,
             hora: w.hora || null,
             data: w.data || null,
+            itineraryIndex: w.itineraryIndex ?? null,
           })),
         };
 
@@ -1480,7 +1481,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ osId: id, previousState }),
         }).catch((err) => {
-          console.error("[DataContext] Falha ao notificar motorista da edição:", err);
+          console.error(
+            "[DataContext] Falha ao notificar motorista da edição:",
+            err,
+          );
         });
       }
 
