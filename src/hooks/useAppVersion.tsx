@@ -38,14 +38,24 @@ export function useAppVersion() {
 
   // Busca o nome do usuário logado para personalizar o toast
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) return;
+
+      // Tenta buscar da tabela user_roles (fonte mais confiável)
+      const { data: profile } = await supabase
+        .from("user_roles")
+        .select("nome")
+        .eq("id", data.user.id)
+        .single();
+
       const name =
-        (data.user?.user_metadata?.full_name as string | undefined) ||
-        (data.user?.user_metadata?.name as string | undefined) ||
-        (data.user?.email?.split("@")[0] as string | undefined) ||
+        profile?.nome ||
+        (data.user.user_metadata?.nome as string | undefined) ||
+        (data.user.user_metadata?.full_name as string | undefined) ||
         "";
       setUserName(name);
-    });
+    })();
   }, [supabase]);
 
   const clearCountdown = useCallback(() => {
@@ -140,9 +150,14 @@ export function useAppVersion() {
                         </h3>
                       </div>
                       <p className="text-sm text-slate-600 font-medium leading-snug">
-                        {userName
-                          ? `Uma nova versão está disponível para você, ${userName}!`
-                          : "Uma nova versão está disponível para você!"}
+                        {userName ? (
+                          <>
+                            Uma nova versão está disponível para você,{" "}
+                            <span className="font-black text-slate-800">{userName}</span>!
+                          </>
+                        ) : (
+                          "Uma nova versão está disponível para você!"
+                        )}
                       </p>
                       <p className="mt-2 text-xs text-slate-400 font-bold">
                         Recarregando automaticamente em{" "}
