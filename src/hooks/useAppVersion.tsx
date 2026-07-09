@@ -29,11 +29,24 @@ export function useAppVersion() {
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
+  const [userName, setUserName] = useState<string>("");
   const currentVersionRef = useRef<string | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const toastShownRef = useRef(false);
   const reloadLoggedRef = useRef(false);
+
+  // Busca o nome do usuário logado para personalizar o toast
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const name =
+        (data.user?.user_metadata?.full_name as string | undefined) ||
+        (data.user?.user_metadata?.name as string | undefined) ||
+        (data.user?.email?.split("@")[0] as string | undefined) ||
+        "";
+      setUserName(name);
+    });
+  }, [supabase]);
 
   const clearCountdown = useCallback(() => {
     if (countdownRef.current) {
@@ -127,7 +140,9 @@ export function useAppVersion() {
                         </h3>
                       </div>
                       <p className="text-sm text-slate-600 font-medium leading-snug">
-                            A versão <span className="font-black text-slate-800">v{nextVersion}</span> já está no ar.
+                        {userName
+                          ? `Uma nova versão está disponível para você, ${userName}!`
+                          : "Uma nova versão está disponível para você!"}
                       </p>
                       <p className="mt-2 text-xs text-slate-400 font-bold">
                         Recarregando automaticamente em{" "}
@@ -180,7 +195,7 @@ export function useAppVersion() {
         }
       }, 1000) as unknown as NodeJS.Timeout;
     },
-    [clearCountdown],
+    [clearCountdown, userName],
   );
 
   const handleVersionChange = useCallback(
