@@ -766,6 +766,73 @@ export default function OSOperationalPage() {
     };
   }, [osTable]);
 
+  // Carregar flags globais de notificacao (app_settings) na montagem + Realtime
+  useEffect(() => {
+    const NOTIFY_KEYS = [
+      "os_notify_driver_enabled",
+      "os_notify_passengers_enabled",
+      "os_notify_solicitante_enabled",
+    ];
+
+    const applyFlags = (rows: { key: string; value: string }[]) => {
+      const map: Record<string, string> = {};
+      for (const row of rows) map[row.key] = row.value;
+      const driver = map["os_notify_driver_enabled"] !== "false";
+      const passengers = map["os_notify_passengers_enabled"] === "true";
+      const solicitante = map["os_notify_solicitante_enabled"] === "true";
+      setNotifyFlags({ driver, passengers, solicitante });
+      // Sincronizar notificationConfig: se flag desligou, desliga o toggle ativo
+      setNotificationConfig((prev) => ({
+        ...prev,
+        motorista: driver ? prev.motorista : false,
+        passageiros: passengers ? prev.passageiros : false,
+        solicitante: solicitante ? prev.solicitante : false,
+      }));
+    };
+
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from("app_settings")
+          .select("key, value")
+          .in("key", NOTIFY_KEYS);
+        applyFlags(data ?? []);
+      } catch {
+        // Em caso de erro, manter defaults
+      }
+    })();
+
+    // Realtime: atualiza flags ao vivo quando alguem muda em /portal/config
+    const channel = supabase
+      .channel("os-notify-flags-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "app_settings",
+          filter: `key=in.(${NOTIFY_KEYS.join(",")})`,
+        },
+        (payload) => {
+          const newRow = payload.new as { key: string; value: string } | null;
+          if (!newRow || !NOTIFY_KEYS.includes(newRow.key)) return;
+          // Recarregar todas as flags para manter consistencia
+          void (async () => {
+            const { data } = await supabase
+              .from("app_settings")
+              .select("key, value")
+              .in("key", NOTIFY_KEYS);
+            applyFlags(data ?? []);
+          })();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase]);
+
   // Aplicar filtro de protocolo via URL imediatamente na montagem
   const initialSearchSetRef = useRef(false);
   useEffect(() => {
@@ -1826,6 +1893,13 @@ export default function OSOperationalPage() {
     auto: true,
     motorista: true,
     passageiros: false,
+    solicitante: false,
+  });
+  // Flags globais (app_settings) — controlam se cada destinatario pode ser notificado.
+  // Quando false, o toggle no modal fica desativado e nao pode ser ligado pelo operador.
+  const [notifyFlags, setNotifyFlags] = useState({
+    driver: true,
+    passengers: false,
     solicitante: false,
   });
   const [isSubmittingOS, setIsSubmittingOS] = useState(false);
@@ -11642,13 +11716,15 @@ export default function OSOperationalPage() {
                   </p>
 
                   <button
+                    disabled={!notifyFlags.driver}
                     onClick={() =>
+                      notifyFlags.driver &&
                       setNotificationConfig((prev) => ({
                         ...prev,
                         motorista: !prev.motorista,
                       }))
                     }
-                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${notificationConfig.motorista ? "bg-blue-50/50 border-blue-200 text-blue-900" : "bg-white border-slate-100 text-slate-400"}`}
+                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${notifyFlags.driver ? "cursor-pointer" : "cursor-not-allowed opacity-60"} ${notificationConfig.motorista ? "bg-blue-50/50 border-blue-200 text-blue-900" : "bg-white border-slate-100 text-slate-400"}`}
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -11670,8 +11746,15 @@ export default function OSOperationalPage() {
                   </button>
 
                   <button
-                    disabled
-                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all cursor-not-allowed opacity-60 ${notificationConfig.passageiros ? "bg-blue-50/50 border-blue-200 text-blue-900" : "bg-white border-slate-100 text-slate-400"}`}
+                    disabled={!notifyFlags.passengers}
+                    onClick={() =>
+                      notifyFlags.passengers &&
+                      setNotificationConfig((prev) => ({
+                        ...prev,
+                        passageiros: !prev.passageiros,
+                      }))
+                    }
+                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${notifyFlags.passengers ? "cursor-pointer" : "cursor-not-allowed opacity-60"} ${notificationConfig.passageiros ? "bg-blue-50/50 border-blue-200 text-blue-900" : "bg-white border-slate-100 text-slate-400"}`}
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -11693,8 +11776,15 @@ export default function OSOperationalPage() {
                   </button>
 
                   <button
-                    disabled
-                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all cursor-not-allowed opacity-60 ${notificationConfig.solicitante ? "bg-blue-50/50 border-blue-200 text-blue-900" : "bg-white border-slate-100 text-slate-400"}`}
+                    disabled={!notifyFlags.solicitante}
+                    onClick={() =>
+                      notifyFlags.solicitante &&
+                      setNotificationConfig((prev) => ({
+                        ...prev,
+                        solicitante: !prev.solicitante,
+                      }))
+                    }
+                    className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${notifyFlags.solicitante ? "cursor-pointer" : "cursor-not-allowed opacity-60"} ${notificationConfig.solicitante ? "bg-blue-50/50 border-blue-200 text-blue-900" : "bg-white border-slate-100 text-slate-400"}`}
                   >
                     <div className="flex items-center gap-3">
                       <div
