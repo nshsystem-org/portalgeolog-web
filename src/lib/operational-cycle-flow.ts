@@ -7,14 +7,8 @@ import {
   type ItineraryStop,
   type OperationalCycle,
 } from "@/lib/os-messages";
-import {
-  loadOperationalCycleContextForOS,
-  updateOperationalCycleForOS,
-} from "@/lib/operational-cycles-db";
-import {
-  sendMessageWithRetry,
-  sendTemplateWithRetry,
-} from "@/lib/webhook-helpers";
+import { loadOperationalCycleContextForOS } from "@/lib/operational-cycles-db";
+import { sendMessageWithRetry } from "@/lib/webhook-helpers";
 
 interface NextCycleOSRecord {
   protocolo?: string | null;
@@ -71,18 +65,6 @@ function formatDateTime(date?: string | null, time?: string | null): string {
   if (formattedDate === "Não informado") return formattedTime;
   if (formattedTime === "Não informado") return formattedDate;
   return `${formattedDate} - ${formattedTime}`;
-}
-
-function buildStartFlowHeader(
-  cycle: Pick<OperationalCycle, "title">,
-  protocolo: string,
-): string {
-  const cleanTitle = String(cycle.title || "")
-    .replace(/\s*[—-]\s*/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return `${cleanTitle || "Itinerário"} - ${String(protocolo || "N/A").trim()}`;
 }
 
 function normalizeName(value: string): string {
@@ -370,60 +352,20 @@ export async function sendNextOperationalCycleFlow(
       );
     }
 
-    const cycleTitle = buildStartFlowHeader(
-      targetCycle,
-      String(osRecord.protocolo || "N/A"),
-    );
-    const motoristaName = String(osRecord.motorista || "Motorista");
-    const templateComponents = [
-      {
-        type: "header",
-        parameters: [{ type: "text", text: cycleTitle }],
-      },
-      {
-        type: "body",
-        parameters: [{ type: "text", text: motoristaName }],
-      },
-      {
-        type: "button",
-        sub_type: "flow",
-        index: 0,
-        parameters: [],
-      },
-    ];
-
-    const templateResult = await sendTemplateWithRetry(
+    // NOTA: O botão "INICIAR VIAGEM" (template inicio_viagem_motorista) não é mais
+    // enviado automaticamente aqui. O cron os-reminders.ts cuida do envio 1h antes
+    // do horário do próximo ciclo, evitando acúmulo de botões para o motorista.
+    console.log(
+      "[operational-cycle-flow] Detalhes do próximo ciclo enviados para",
       driverPhone,
-      "inicio_viagem_motorista",
-      "pt_BR",
-      templateComponents,
+      "ciclo:",
+      options.targetCycleIndex,
+      "— botão de iniciar será enviado pelo cron no momento adequado.",
     );
-
-    if (!templateResult.success || !templateResult.messageId) {
-      console.warn(
-        "[operational-cycle-flow] Falha ao enviar template fluxo do próximo ciclo:",
-        templateResult.error,
-      );
-      return { success: false, driverPhone, error: templateResult.error || "TEMPLATE_SEND_FAILED" };
-    }
-
-    await client
-      .from("ordens_servico")
-      .update({
-        driver_flow_start_message_id: templateResult.messageId,
-        driver_flow_finish_message_id: null,
-      })
-      .eq("id", options.osId);
-
-    await updateOperationalCycleForOS(client, options.osId, options.targetCycleIndex, {
-      messageSentAt: new Date().toISOString(),
-      state: "awaiting_accept",
-    });
 
     return {
       success: true,
       driverPhone,
-      templateMessageId: templateResult.messageId,
     };
   } catch (error) {
     console.error("[operational-cycle-flow] Erro ao preparar próximo ciclo:", error);

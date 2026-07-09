@@ -1,5 +1,25 @@
 // Wrapper para Cloudflare Workers — importa o build do vinext
 // e converte a função handler em um objeto Worker com método fetch
+//
+// CRON SCHEDULE (definido em wrangler.workers.toml → [triggers].crons):
+//
+//   "*/1 * * * *"     → /api/cron/os-reminders
+//       Roda a cada 1 minuto. Cobre TODAS as fases de lembrete do motorista:
+//         Fase 1: T-720min (12h antes)   → template lembrete_viagem_motorista
+//         Fase 2: T-60min  (1h antes)    → template inicio_viagem_motorista (botão)
+//         Fase 3: T-15min  (pre-start)   → template pre_start_viagem_motorista
+//         Fase 4: T+5min   (atraso)      → template atraso_inicio_motorista (botão)
+//         Fase 5: T+30min  (crítico)     → mesmo template + log para internos
+//       A idempotência (os_cycle_reminders) garante que cada fase só envia uma vez.
+//       As execuções intermediárias fazem apenas SELECT rápido no banco (custo baixo).
+//       Feature flags em app_settings controlam cada fase independentemente.
+//
+//   "0 11 * * *"      → /api/cron/os-alerta-valores
+//   "0 19 * * *"      → /api/cron/os-alerta-valores
+//       Alertas de valores de OS (manhã e noite).
+//
+//   "0 */2 * * *"     → /api/cron/pendencias-alert
+//       Alertas de pendências a cada 2 horas.
 
 const worker = {
   async fetch(request, env, ctx) {

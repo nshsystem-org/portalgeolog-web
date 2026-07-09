@@ -137,7 +137,6 @@ import {
   getOperationalCycleBannerTitle,
   getCycleDisplayStatus,
   deriveCyclesOperationalStatus,
-  getOperationalCycleTitle,
   isFinalizadoSemValor,
   isOsAtrasadaOuNaoIniciada,
   type CycleOperationalStatus,
@@ -2978,96 +2977,28 @@ export default function OSOperationalPage() {
         `[Perf][WhatsApp] start os=${osData.id} itinerary=${itineraryIndex}`,
       );
 
-      let msgResponse: Response;
-      let msgData: { success?: boolean; error?: string; messageId?: string };
+      const msgResponse: Response = await fetch("/api/whatsapp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          phone,
+          useTemplate: true,
+          templateName: "appointment_scheduling",
+          templateVariables: [osData.motorista],
+          language: "pt_BR",
+          os_id: osData.id,
+          cycle_index: itineraryIndex,
+        }),
+      });
+      const msgData: { success?: boolean; error?: string; messageId?: string } =
+        await msgResponse.json();
 
-      // Primeiro ciclo (itineraryIndex: 0) usa template obrigatório
-      if (itineraryIndex === 0) {
-        msgResponse = await fetch("/api/whatsapp", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            phone,
-            useTemplate: true,
-            templateName: "appointment_scheduling",
-            templateVariables: [osData.motorista],
-            language: "pt_BR",
-            os_id: osData.id,
-            cycle_index: itineraryIndex,
-          }),
-        });
-        msgData = await msgResponse.json();
-      } else {
-        // Demais ciclos usam template flow "inicio_viagem_motorista"
-        const cycles = osData.operationalCycles || [];
-        const targetCycle = cycles.find(
-          (c) => c.itineraryIndex === itineraryIndex,
-        );
-
-        if (targetCycle) {
-          const cycleTitle = getOperationalCycleTitle(targetCycle);
-          const motoristaName = osData.motorista || "Motorista";
-
-          // Construir componentes do template flow
-          const templateComponents = [
-            {
-              type: "header",
-              parameters: [
-                {
-                  type: "text",
-                  text: cycleTitle,
-                },
-              ],
-            },
-            {
-              type: "body",
-              parameters: [
-                {
-                  type: "text",
-                  text: motoristaName,
-                },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "flow",
-              index: 0,
-              parameters: [],
-            },
-          ];
-
-          // Enviar template flow via API route
-          msgResponse = await fetch("/api/whatsapp", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              phone,
-              useTemplate: true,
-              templateName: "inicio_viagem_motorista",
-              templateVariables: [], // Flow não usa variáveis no body
-              language: "pt_BR",
-              components: templateComponents,
-              os_id: osData.id,
-              cycle_index: itineraryIndex,
-            }),
-          });
-          msgData = await msgResponse.json();
-        } else {
-          // Fallback se não encontrar o ciclo
-          msgData = {
-            success: false,
-            error: "Ciclo não encontrado",
-          };
-          msgResponse = new Response(JSON.stringify(msgData), {
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-      }
+      // Todos os ciclos usam o template "appointment_scheduling" que envia apenas
+      // os detalhes da viagem com botão "Detalhes do Serviço" (sem botão de iniciar).
+      // O botão "INICIAR VIAGEM" será enviado pelo cron os-reminders.ts no momento
+      // adequado (1h antes do horário da corrida).
 
       if (!msgResponse.ok || !msgData.success) {
         console.error("[WhatsApp] Erro na API de mensagem:", msgData);

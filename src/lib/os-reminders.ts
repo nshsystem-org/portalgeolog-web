@@ -1,18 +1,41 @@
 import { createClient } from "@supabase/supabase-js";
-import { fromZonedTime } from "date-fns-tz";
-import {
-  sendMessageWithRetry,
-  sendTemplateWithRetry,
-} from "@/lib/webhook-helpers";
+import { sendTemplateWithRetry } from "@/lib/webhook-helpers";
 import { updateOperationalCycleForOS } from "@/lib/operational-cycles-db";
+import {
+  REMINDER_KINDS,
+  type ReminderKind,
+  type ReminderFlags,
+  type ReminderPhase,
+  type PhaseDecision,
+  type PhaseDecisionInput,
+  getReminderTimezone,
+  getPreStartMinutes,
+  getReminder12hMinutes,
+  getStartButtonMinutes,
+  getPostStartMinutes,
+  getCriticalDelayMinutes,
+  utcFromLocalDateTime,
+  isToday,
+  formatDateTimeLocal,
+  normalizePhone,
+  determineReminderPhase,
+} from "@/lib/os-reminders-logic";
 
-const REMINDER_KINDS = {
-  preStart: "pre_start",
-  postStart5: "post_start_5",
-  postStart30: "post_start_30",
-} as const;
-
-type ReminderKind = (typeof REMINDER_KINDS)[keyof typeof REMINDER_KINDS];
+// Re-exporta funções puras para compatibilidade com imports existentes
+export {
+  getReminderTimezone,
+  getPreStartMinutes,
+  getReminder12hMinutes,
+  getStartButtonMinutes,
+  getPostStartMinutes,
+  getCriticalDelayMinutes,
+  utcFromLocalDateTime,
+  normalizePhone,
+  determineReminderPhase,
+  type ReminderPhase,
+  type PhaseDecision,
+  type PhaseDecisionInput,
+};
 
 interface ReminderCycleRow {
   cycle_id: string;
@@ -55,81 +78,63 @@ function getAdminClient(): ReturnType<typeof createClient> {
   return _adminClient;
 }
 
-function getReminderTimezone(): string {
-  return process.env.REMINDER_TIMEZONE ?? "America/Sao_Paulo";
-}
-
-function getPreStartMinutes(): number {
-  return Number(process.env.REMINDER_PRE_START_MINUTES ?? 15);
-}
-
-function getPostStartMinutes(): number {
-  return Number(process.env.REMINDER_POST_START_MINUTES ?? 5);
-}
-
-function getCriticalDelayMinutes(): number {
-  return Number(process.env.REMINDER_CRITICAL_DELAY_MINUTES ?? 30);
-}
-
 // ---------------------------------------------------------------------------
-// Conversão de data/hora local (Brasília) para UTC
+// Feature flags por fase (app_settings)
 // ---------------------------------------------------------------------------
 
-function utcFromLocalDateTime(
-  dateStr: string | null,
-  timeStr: string | null,
-  timeZone: string,
-): Date | null {
-  if (!dateStr || !timeStr) return null;
+/**
+ * Lê os feature flags de lembretes da tabela app_settings.
+ *
+ * Flags suportados:
+ *   - os_reminders_enabled          (global, já existente)
+ *   - os_reminders_12h_enabled      (fase 1: lembrete 12h)
+ *   - os_reminders_start_button_enabled  (fase 2: botão iniciar)
+ *   - os_reminders_delay_alert_enabled   (fases 4+5: alertas de atraso)
+ *
+ * Backward compatible: se um flag não existir na tabela, assume `true`.
+ * Só desativa se o valor for explicitamente "false".
+ */
+async function getReminderFlags(): Promise<ReminderFlags> {
+  const supabase = getAdminClient();
+  const keys = [
+    "os_reminders_enabled",
+    "os_reminders_12h_enabled",
+    "os_reminders_start_button_enabled",
+    "os_reminders_delay_alert_enabled",
+  ];
 
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const [hour, minute] = timeStr.split(":").map(Number);
+  const { data, error } = await (
+    supabase.from("app_settings") as unknown as {
+      select: (cols: string) => {
+        in: (col: string, vals: string[]) => Promise<{
+          data: { key: string; value: string }[] | null;
+          error: unknown;
+        }>;
+      };
+    }
+  )
+    .select("key, value")
+    .in("key", keys);
 
-  if (
-    [year, month, day, hour, minute].some(
-      (v) => !Number.isFinite(v) || Number.isNaN(v),
-    )
-  ) {
-    return null;
+  if (error) {
+    console.error("[os-reminders] Erro ao ler feature flags:", error);
+    // Em caso de erro, assume tudo habilitado (fail-open)
+    return { global: true, reminder12h: true, startButton: true, delayAlert: true };
   }
 
-  const localIso =
-    `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-` +
-    `${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`;
+  const map = new Map<string, string>();
+  for (const row of data || []) {
+    map.set(row.key, row.value);
+  }
 
-  return fromZonedTime(localIso, timeZone);
-}
+  const isDisabled = (key: string) => map.get(key) === "false";
 
-function isToday(date: Date, tz: string): boolean {
-  const now = new Date();
-  const fmt = (d: Date) =>
-    new Intl.DateTimeFormat("pt-BR", {
-      timeZone: tz,
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(d);
-  return fmt(date) === fmt(now);
-}
-
-function formatDateTimeLocal(
-  date: Date,
-  timeZone: string,
-): { date: string; time: string; dateTime: string } {
-  const fmtDate = new Intl.DateTimeFormat("pt-BR", {
-    timeZone,
-    day: "2-digit",
-    month: "2-digit",
-  }).format(date);
-
-  const fmtTime = new Intl.DateTimeFormat("pt-BR", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-
-  return { date: fmtDate, time: fmtTime, dateTime: `${fmtDate} ${fmtTime}` };
+  return {
+    global: !isDisabled("os_reminders_enabled"),
+    reminder12h: !isDisabled("os_reminders_12h_enabled"),
+    startButton: !isDisabled("os_reminders_start_button_enabled"),
+    delayAlert: !isDisabled("os_reminders_delay_alert_enabled"),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -233,16 +238,168 @@ function getScheduledAt(row: ReminderCycleRow): Date | null {
   return utcFromLocalDateTime(row.os_data, row.os_hora, timeZone);
 }
 
-function normalizePhone(phone: string | null): string | null {
-  if (!phone) return null;
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length < 10) return null;
-  return digits.startsWith("55") ? digits : `55${digits}`;
-}
-
 // ---------------------------------------------------------------------------
 // Envio de mensagens
 // ---------------------------------------------------------------------------
+
+async function sendReminder12h(
+  row: ReminderCycleRow,
+  scheduledAt: Date,
+): Promise<ReminderResult> {
+  const phone = normalizePhone(row.driver_phone);
+  if (!phone) {
+    return {
+      cycleId: row.cycle_id,
+      osId: row.os_id,
+      kind: REMINDER_KINDS.reminder12h,
+      sent: false,
+      error: "Telefone do motorista não informado",
+    };
+  }
+
+  const tz = getReminderTimezone();
+  const { date, time } = formatDateTimeLocal(scheduledAt, tz);
+  const now = new Date();
+  const todayStr = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: tz,
+    day: "2-digit",
+    month: "2-digit",
+  }).format(now);
+  const scheduledStr = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: tz,
+    day: "2-digit",
+    month: "2-digit",
+  }).format(scheduledAt);
+  const whenLabel = todayStr === scheduledStr ? "hoje" : "amanhã";
+
+  // Usa template aprovado na Meta (lembrete_viagem_motorista) em vez de texto simples,
+  // pois mensagens de texto só funcionam dentro da janela de 24h após última interação.
+  // O template funciona fora dessa janela, garantindo entrega do lembrete 12h antes da viagem.
+  const components = [
+    {
+      type: "body",
+      parameters: [
+        { type: "text", text: row.motorista || "Motorista" },
+        { type: "text", text: date },
+        { type: "text", text: time },
+        { type: "text", text: whenLabel },
+        { type: "text", text: row.protocolo },
+      ],
+    },
+  ];
+
+  const result = await sendTemplateWithRetry(
+    phone,
+    "lembrete_viagem_motorista",
+    "pt_BR",
+    components,
+  );
+
+  if (result.success) {
+    await markReminderSent(row.cycle_id, REMINDER_KINDS.reminder12h);
+  }
+
+  return {
+    cycleId: row.cycle_id,
+    osId: row.os_id,
+    kind: REMINDER_KINDS.reminder12h,
+    sent: result.success,
+    error: result.error,
+  };
+}
+
+async function sendStartButton(
+  row: ReminderCycleRow,
+  scheduledAt: Date,
+): Promise<ReminderResult> {
+  const phone = normalizePhone(row.driver_phone);
+  if (!phone) {
+    return {
+      cycleId: row.cycle_id,
+      osId: row.os_id,
+      kind: REMINDER_KINDS.startButton,
+      sent: false,
+      error: "Telefone do motorista não informado",
+    };
+  }
+
+  // NOTA: Não usamos message_sent_at como guarda aqui.
+  // Esse campo é setado quando o operador envia detalhes da viagem (sem botão de iniciar),
+  // e também quando o webhook faz auto-aceite. Usar message_sent_at como guarda impediria
+  // o cron de enviar o botão de iniciar quando o operador já enviou apenas os detalhes.
+  // A idempotência real é garantida por hasReminderSent(cycle_id, start_button) no loop principal.
+  const cycleTitle = row.cycle_title || "Itinerário";
+  const motoristaName = row.motorista || "Motorista";
+
+  const components = [
+    {
+      type: "header",
+      parameters: [{ type: "text", text: cycleTitle }],
+    },
+    {
+      type: "body",
+      parameters: [{ type: "text", text: motoristaName }],
+    },
+    {
+      type: "button",
+      sub_type: "flow",
+      index: 0,
+      parameters: [],
+    },
+  ];
+
+  const result = await sendTemplateWithRetry(
+    phone,
+    "inicio_viagem_motorista",
+    "pt_BR",
+    components,
+  );
+
+  if (result.success && result.messageId) {
+    await markReminderSent(row.cycle_id, REMINDER_KINDS.startButton, {
+      message_id: result.messageId,
+    });
+
+    // Atualiza driver_flow_start_message_id e messageSentAt no ciclo
+    await (
+      getAdminClient().from("ordens_servico") as unknown as {
+        update: (values: Record<string, unknown>) => { eq: (col: string, val: string) => Promise<unknown> };
+      }
+    )
+      .update({
+        driver_flow_start_message_id: result.messageId,
+        driver_flow_finish_message_id: null,
+      })
+      .eq("id", row.os_id);
+
+    await updateOperationalCycleForOS(
+      getAdminClient(),
+      row.os_id,
+      row.cycle_index,
+      {
+        messageSentAt: new Date().toISOString(),
+        state: "awaiting_accept",
+      },
+    );
+
+    console.log(
+      "[os-reminders] Botão INICIAR VIAGEM enviado para",
+      phone,
+      "ciclo:",
+      row.cycle_index,
+      "msgId:",
+      result.messageId,
+    );
+  }
+
+  return {
+    cycleId: row.cycle_id,
+    osId: row.os_id,
+    kind: REMINDER_KINDS.startButton,
+    sent: result.success,
+    error: result.error,
+  };
+}
 
 async function sendPreStartReminder(
   row: ReminderCycleRow,
@@ -260,18 +417,30 @@ async function sendPreStartReminder(
   }
 
   const tz = getReminderTimezone();
-  const { time } = formatDateTimeLocal(scheduledAt, tz);
+  const { date, time } = formatDateTimeLocal(scheduledAt, tz);
   const preMin = getPreStartMinutes();
 
-  const message =
-    `⏰ *Lembrete de atendimento*\n\n` +
-    `Olá, ${row.motorista || "Motorista"}!\n\n` +
-    `Seu atendimento${row.os_number ? ` (${row.os_number})` : ""} está previsto para *${time}*` +
-    ` (menos de ${preMin} minutos).\n\n` +
-    `📑 Protocolo: *${row.protocolo}*\n\n` +
-    `Prepare-se para iniciar no horário.`;
+  // Usa template aprovado na Meta (pre_start_viagem_motorista) em vez de texto simples,
+  // pois mensagens de texto só funcionam dentro da janela de 24h após última interação.
+  const components = [
+    {
+      type: "body",
+      parameters: [
+        { type: "text", text: row.motorista || "Motorista" },
+        { type: "text", text: date },
+        { type: "text", text: time },
+        { type: "text", text: String(preMin) },
+        { type: "text", text: row.protocolo },
+      ],
+    },
+  ];
 
-  const result = await sendMessageWithRetry(phone, message);
+  const result = await sendTemplateWithRetry(
+    phone,
+    "pre_start_viagem_motorista",
+    "pt_BR",
+    components,
+  );
 
   if (result.success) {
     await markReminderSent(row.cycle_id, REMINDER_KINDS.preStart);
@@ -417,25 +586,28 @@ export async function getTodaysDelayedCycles(
 /**
  * Executa o ciclo de lembretes (chamado pelo cron do Worker).
  *
- * Fluxo por ciclo (somente ciclos do dia atual):
- *   1. T-15min (antes do horário): texto simples "prepare-se"
- *   2. T+5min (atrasado): template atraso_inicio_motorista com botão INICIAR VIAGEM
- *   3. T+30min (crítico): mesmo template + log → notificação no sino para internos
+ * Fluxo por ciclo (janela ampliada para ±12h do horário):
+ *   1. T-720min (12h antes): template lembrete_viagem_motorista (lembrete de viagem)
+ *   2. T-60min  (1h antes): template inicio_viagem_motorista com botão INICIAR VIAGEM
+ *   3. T-15min  (antes do horário): texto simples "prepare-se"
+ *   4. T+5min   (atrasado): template atraso_inicio_motorista com botão INICIAR VIAGEM
+ *   5. T+30min  (crítico): mesmo template + log → notificação no sino para internos
  *   - Se já passou 30min e T+5 ainda não foi enviado, pula T+5 e vai direto ao T+30
  *   - Funciona 24h (sem janela noturna — há viagens de manhã, tarde, noite e madrugada)
+ *   - O botão de iniciar (fase 2) só é enviado se message_sent_at ainda é nulo,
+ *     evitando duplicação com envios manuais do operador ou do webhook.
+ *
+ * Feature flags (app_settings):
+ *   - os_reminders_enabled              → global (liga/desliga tudo)
+ *   - os_reminders_12h_enabled          → fase 1 (lembrete 12h)
+ *   - os_reminders_start_button_enabled → fase 2 (botão iniciar)
+ *   - os_reminders_delay_alert_enabled  → fases 4+5 (alertas de atraso)
+ *   Se um flag não existir, assume true (backward compatible).
  */
 export async function processOSReminders(): Promise<ReminderResult[]> {
-  // Verifica se o envio de lembretes está habilitado nas configurações
-  const { data: settingRow } = await (
-    getAdminClient().from("app_settings") as unknown as {
-      select: (cols: string) => {
-        eq: (col: string, val: string) => Promise<{ data: { value: string } | null }>;
-      };
-    }
-  )
-    .select("value")
-    .eq("key", "os_reminders_enabled");
-  if (settingRow?.value === "false") {
+  // Verifica feature flags (global + por fase) em uma única query
+  const flags = await getReminderFlags();
+  if (!flags.global) {
     console.log("[os-reminders] Envio de lembretes desativado nas configurações. Saindo sem enviar.");
     return [];
   }
@@ -445,76 +617,73 @@ export async function processOSReminders(): Promise<ReminderResult[]> {
 
   const cycles = await fetchReminderCycles();
   const results: ReminderResult[] = [];
-  const preMin = getPreStartMinutes();
-  const post5Min = getPostStartMinutes();
-  const post30Min = getCriticalDelayMinutes();
 
   for (const row of cycles) {
     const scheduledAt = getScheduledAt(row);
     if (!scheduledAt) continue;
-
-    // Só ciclos agendados para HOJE
-    if (!isToday(scheduledAt, tz)) continue;
 
     // Ciclo já iniciado → nada a fazer
     if (row.started_at) continue;
 
     const diffMin = (now.getTime() - scheduledAt.getTime()) / 60_000;
 
-    // ----------------------------------------------------------------
-    // ANTES DO HORÁRIO: T-15min → texto simples "prepare-se"
-    // Só envia se motorista já teve contato (message_sent_at != null)
-    // ----------------------------------------------------------------
-    if (diffMin <= 0 && diffMin >= -preMin) {
-      const preStartSent = await hasReminderSent(
-        row.cycle_id,
-        REMINDER_KINDS.preStart,
-      );
-      if (!preStartSent && row.message_sent_at) {
+    // Consulta idempotência de todas as fases de uma vez (paralelizable no futuro)
+    const [reminder12hSent, startButtonSent, preStartSent, post5Sent, post30Sent] =
+      await Promise.all([
+        hasReminderSent(row.cycle_id, REMINDER_KINDS.reminder12h),
+        hasReminderSent(row.cycle_id, REMINDER_KINDS.startButton),
+        hasReminderSent(row.cycle_id, REMINDER_KINDS.preStart),
+        hasReminderSent(row.cycle_id, REMINDER_KINDS.postStart5),
+        hasReminderSent(row.cycle_id, REMINDER_KINDS.postStart30),
+      ]);
+
+    // Delegação para função pura — toda a lógica de decisão está aqui
+    const decision = determineReminderPhase({
+      diffMin,
+      messageSentAt: row.message_sent_at,
+      reminder12hSent,
+      startButtonSent,
+      preStartSent,
+      post5Sent,
+      post30Sent,
+      flags,
+    });
+
+    switch (decision.phase) {
+      case "reminder_12h":
+        results.push(await sendReminder12h(row, scheduledAt));
+        break;
+      case "start_button":
+        results.push(await sendStartButton(row, scheduledAt));
+        break;
+      case "pre_start":
         results.push(await sendPreStartReminder(row, scheduledAt));
-      }
-      continue;
-    }
-
-    // Ainda não chegou o horário e fora da janela pré → ignorar
-    if (diffMin < 0) continue;
-
-    // ----------------------------------------------------------------
-    // APÓS O HORÁRIO: T+5min e T+30min
-    // ----------------------------------------------------------------
-    const minutesLate = Math.floor(diffMin);
-    const post5Sent = await hasReminderSent(
-      row.cycle_id,
-      REMINDER_KINDS.postStart5,
-    );
-    const post30Sent = await hasReminderSent(
-      row.cycle_id,
-      REMINDER_KINDS.postStart30,
-    );
-
-    // T+30 já enviado → tudo feito para esse ciclo
-    if (post30Sent) continue;
-
-    if (minutesLate >= post30Min) {
-      // Passou 30min: envia T+30 diretamente (skip T+5 se necessário)
-      results.push(
-        await sendDelayReminder(
-          row,
-          scheduledAt,
-          minutesLate,
-          REMINDER_KINDS.postStart30,
-        ),
-      );
-    } else if (minutesLate >= post5Min && !post5Sent) {
-      // Entre 5min e 30min: envia T+5
-      results.push(
-        await sendDelayReminder(
-          row,
-          scheduledAt,
-          minutesLate,
-          REMINDER_KINDS.postStart5,
-        ),
-      );
+        break;
+      case "post_start_5":
+        results.push(
+          await sendDelayReminder(
+            row,
+            scheduledAt,
+            decision.minutesLate!,
+            REMINDER_KINDS.postStart5,
+          ),
+        );
+        break;
+      case "post_start_30":
+        results.push(
+          await sendDelayReminder(
+            row,
+            scheduledAt,
+            decision.minutesLate!,
+            REMINDER_KINDS.postStart30,
+          ),
+        );
+        break;
+      case "skip":
+      case "idle":
+      default:
+        // Nada a fazer para este ciclo nesta execução
+        break;
     }
   }
 

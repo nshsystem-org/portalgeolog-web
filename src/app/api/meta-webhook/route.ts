@@ -104,6 +104,95 @@ interface WaypointRecord {
 
 export const runtime = "edge";
 
+/**
+ * Trata o clique no botão "ESTOU CIENTE" do template alteracao_viagem_motorista.
+ *
+ * Quando o motorista clica, o webhook recebe msgType="button" com
+ * button.text="ESTOU CIENTE" e contextId = ID da mensagem do template.
+ *
+ * A função:
+ * 1. Busca a OS pelo phone do motorista que teve edição recente
+ * 2. Loga em os_logs (type="driver_edit_ack") → dispara notificação no sino para internos
+ * 3. Envia confirmação simples ao motorista
+ */
+async function handleEditAcknowledgment(phone: string, contextId: string) {
+  try {
+    const normalizedPhone = normalizeWhatsAppPhone(phone);
+
+    // Busca driver pelo phone para identificar qual OS foi editada
+    const { data: driverRow } = await getAdmin()
+      .from("drivers")
+      .select("id, name")
+      .eq("phone", normalizedPhone)
+      .maybeSingle() as unknown as {
+      data: { id: string; name: string } | null;
+    };
+
+    let osId: string | null = null;
+    let protocolo: string | null = null;
+
+    if (driverRow?.id) {
+      // Busca OS desse motorista com log de update nos últimos 60 min
+      const { data: recentOS } = await getAdmin()
+        .from("ordens_servico")
+        .select("id, protocolo, motorista, driver_id")
+        .eq("driver_id", driverRow.id)
+        .neq("status_operacional", "Finalizado")
+        .neq("status_operacional", "Cancelado")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle() as unknown as {
+        data: { id: string; protocolo: string } | null;
+      };
+
+      if (recentOS) {
+        osId = recentOS.id;
+        protocolo = recentOS.protocolo;
+      }
+    }
+
+    if (!osId) {
+      console.warn(
+        "[meta-webhook] OS não encontrada para confirmação de edição, phone:",
+        phone,
+      );
+      return;
+    }
+
+    // Loga a confirmação → trigger handle_os_log_notification gera notificação no sino
+    await (
+      getAdmin().from("os_logs") as unknown as {
+        insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>;
+      }
+    ).insert({
+      os_id: osId,
+      type: "driver_edit_ack",
+      actor_name: driverRow?.name || "Motorista",
+      description: `Motorista confirmou estar ciente da alteração do atendimento ${protocolo || ""}`,
+      metadata: {
+        context_id: contextId,
+        phone: normalizedPhone,
+        source: "alteracao_viagem_motorista_button",
+      },
+    });
+
+    // Envia confirmação simples ao motorista (dentro da janela 24h — ele acabou de clicar)
+    await sendMessageWithRetry(
+      normalizedPhone,
+      "✅ Recebemos sua confirmação. Obrigado!",
+    );
+
+    console.log(
+      "[meta-webhook] Confirmação de edição registrada para OS:",
+      osId,
+      "motorista:",
+      driverRow?.name,
+    );
+  } catch (err) {
+    console.error("[meta-webhook] Erro ao processar confirmação de edição:", err);
+  }
+}
+
 let _supabaseAdmin: ReturnType<typeof createClient> | null = null;
 const getAdmin = () => {
   if (!_supabaseAdmin)
@@ -462,95 +551,10 @@ async function handlePassengerDetailsRequest(phone: string, contextId: string) {
       phone,
     );
 
-    // Envia template flow "inicio_viagem_motorista" para o motorista
-    // O template contem header (titulo do ciclo), body (nome do motorista)
-    // e um botao de flow "INICIAR VIAGEM" onde o motorista digita o KM inicial
-    try {
-      const { cycles } = await loadOperationalCycleContextForOS(
-        getAdmin(),
-        String((osRecord as Record<string, unknown> | null)?.id || osId),
-        null,
-      );
-      const targetCycle = getFirstPendingOperationalCycle(cycles) || cycles[0];
-
-      if (targetCycle) {
-        if (driverPhone === "Não informado") {
-          console.warn(
-            "[meta-webhook] Template flow inicio_viagem_motorista não enviado: driverPhone não informado",
-          );
-        }
-      }
-
-      if (targetCycle && driverPhone !== "Não informado") {
-        const cycleTitle = buildStartFlowHeader(
-          targetCycle,
-          String(osRecord?.protocolo || "N/A"),
-        );
-        const motoristaName = String(osRecord?.motorista || "Motorista");
-
-        const templateComponents = [
-          {
-            type: "header",
-            parameters: [{ type: "text", text: cycleTitle }],
-          },
-          {
-            type: "body",
-            parameters: [{ type: "text", text: motoristaName }],
-          },
-          {
-            type: "button",
-            sub_type: "flow",
-            index: 0,
-            parameters: [],
-          },
-        ];
-
-        const templateResult = await sendTemplateWithRetry(
-          driverPhone,
-          "inicio_viagem_motorista",
-          "pt_BR",
-          templateComponents,
-        );
-
-        if (templateResult.success && templateResult.messageId) {
-          const ordensServicoUpdate = getAdmin().from(
-            "ordens_servico",
-          ) as unknown as OrdensServicoUpdateBuilder;
-          await ordensServicoUpdate
-            .update({
-              driver_flow_start_message_id: templateResult.messageId,
-              driver_flow_finish_message_id: null,
-            })
-            .eq("id", osId);
-
-          await updateOperationalCycleForOS(getAdmin(), osId, targetCycle.itineraryIndex, {
-            messageSentAt: new Date().toISOString(),
-            state: "awaiting_accept",
-          });
-
-          console.log(
-            "[meta-webhook] Template flow inicio_viagem_motorista enviado para",
-            driverPhone,
-            "cycle:",
-            cycleTitle,
-            "msgId:",
-            templateResult.messageId,
-            "messageSentAt atualizado para ciclo:",
-            targetCycle.itineraryIndex,
-          );
-        } else {
-          console.warn(
-            "[meta-webhook] Falha ao enviar template flow inicio_viagem_motorista:",
-            templateResult.error,
-          );
-        }
-      }
-    } catch (templateErr) {
-      console.error(
-        "[meta-webhook] Erro ao enviar template flow inicio_viagem_motorista:",
-        templateErr,
-      );
-    }
+    // NOTA: O botão "INICIAR VIAGEM" (template inicio_viagem_motorista) não é mais
+    // enviado automaticamente aqui. O cron os-reminders.ts cuida do envio no momento
+    // adequado (1h antes do horário da corrida). Isso evita acúmulo de botões quando
+    // o motorista tem múltiplas corridas no mesmo dia ou dias adiante.
   } catch (err) {
     console.error("[meta-webhook] Erro ao enviar detalhes:", err);
   }
@@ -803,67 +807,12 @@ async function sendNextCyclePreviewAndStartFlow(
       );
     }
 
-    const cycleTitle = buildStartFlowHeader(
-      targetCycle,
-      String(osRecord.protocolo || "N/A"),
+    // NOTA: O botão "INICIAR VIAGEM" não é mais enviado automaticamente aqui.
+    // O cron os-reminders.ts cuida do envio 1h antes do horário do próximo ciclo.
+    console.log(
+      "[meta-webhook] Próximo ciclo: detalhes enviados, botão de iniciar será enviado pelo cron no momento adequado. Ciclo:",
+      targetCycleIndex,
     );
-    const motoristaName = String(osRecord.motorista || "Motorista");
-    const templateComponents = [
-      {
-        type: "header",
-        parameters: [{ type: "text", text: cycleTitle }],
-      },
-      {
-        type: "body",
-        parameters: [{ type: "text", text: motoristaName }],
-      },
-      {
-        type: "button",
-        sub_type: "flow",
-        index: 0,
-        parameters: [],
-      },
-    ];
-
-    const templateResult = await sendTemplateWithRetry(
-      phone,
-      "inicio_viagem_motorista",
-      "pt_BR",
-      templateComponents,
-    );
-
-    if (templateResult.success && templateResult.messageId) {
-      const now = new Date().toISOString();
-
-      const ordensServicoUpdate = getAdmin().from(
-        "ordens_servico",
-      ) as unknown as OrdensServicoUpdateBuilder;
-      await ordensServicoUpdate
-        .update({
-          driver_flow_start_message_id: templateResult.messageId,
-          driver_flow_finish_message_id: null,
-        })
-        .eq("id", osId);
-
-      await updateOperationalCycleForOS(getAdmin(), osId, targetCycleIndex, {
-        messageSentAt: now,
-        state: "awaiting_accept",
-      });
-
-      console.log(
-        "[meta-webhook] Próximo ciclo preparado com sucesso:",
-        cycleTitle,
-        "msgId:",
-        templateResult.messageId,
-        "messageSentAt atualizado para ciclo:",
-        targetCycleIndex,
-      );
-    } else {
-      console.warn(
-        "[meta-webhook] Falha ao enviar template flow inicio_viagem_motorista para o próximo ciclo:",
-        templateResult.error,
-      );
-    }
   } catch (error) {
     console.error(
       "[meta-webhook] Erro ao preparar próximo ciclo operacional:",
@@ -1485,6 +1434,37 @@ export async function POST(request: Request) {
                 buttonText,
               },
             });
+
+            // Intercepta botão "ESTOU CIENTE" do template alteracao_viagem_motorista
+            // antes do fallback padrão (que dispararia detalhes do serviço)
+            if (
+              buttonText === "estou ciente" &&
+              contextId &&
+              phone
+            ) {
+              console.log(
+                "[meta-webhook] Confirmação de edição detectada (ESTOU CIENTE):",
+                { phone, contextId },
+              );
+              void recordWhatsAppLog({
+                source: "meta-webhook",
+                eventType: "edit_acknowledgment_detected",
+                payload: { phone, contextId, buttonText },
+              });
+              processingTasks.push(
+                (async () => {
+                  try {
+                    await handleEditAcknowledgment(phone, contextId);
+                  } catch (err) {
+                    console.error(
+                      "[meta-webhook] Erro ao processar ESTOU CIENTE:",
+                      err,
+                    );
+                  }
+                })(),
+              );
+              continue;
+            }
 
             if (contextId && phone) {
               console.log(

@@ -275,7 +275,9 @@ export async function POST(request: Request) {
       console.error("[os-finish-route] Erro ao registrar log:", logErr);
     }
 
-    // Envio de próximo ciclo para motorista
+    // Envio de próximo ciclo para motorista — apenas aviso, sem link de aceite.
+    // O cron os-reminders.ts cuidará de enviar o botão "INICIAR VIAGEM" no momento
+    // adequado (1h antes do horário do próximo ciclo).
     if (nextCycle && os.motorista) {
       try {
         const { data: driverPhone } = (await getAdmin()
@@ -285,12 +287,11 @@ export async function POST(request: Request) {
           .single()) as { data: { phone: string } | null };
 
         if (driverPhone?.phone) {
-          const nextLink = `https://portalgeolog.com.br/aceitar/${osId}?cycle_index=${nextCycle.itineraryIndex}`;
           const nextMessage = [
             `🚦 *${getOperationalCycleBannerTitle(nextCycle)}*`,
             "",
-            "O ciclo anterior foi concluído. Clique no link abaixo para aceitar o próximo atendimento:",
-            nextLink,
+            "O ciclo anterior foi concluído com sucesso! O próximo atendimento está agendado.",
+            "Você receberá o botão de iniciar viagem próximo ao horário do próximo ciclo.",
           ].join("\n");
           await sendWhatsAppMessage(
             normalizeWhatsAppPhone(driverPhone.phone),

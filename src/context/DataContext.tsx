@@ -1459,6 +1459,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return { changed: false };
       }
 
+      // Notifica motorista via WhatsApp se houve mudança relevante
+      // (horário, endereço, ou troca de motorista). Fire-and-forget —
+      // não bloqueia a UI nem falha o save se a notificação falhar.
+      if (currentOS) {
+        const previousState = {
+          driverId: currentOS.driverId || null,
+          motorista: currentOS.motorista || null,
+          data: currentOS.data || null,
+          hora: currentOS.hora || null,
+          waypoints: (currentOS.rota?.waypoints || []).map((w) => ({
+            label: w.label,
+            hora: w.hora || null,
+            data: w.data || null,
+          })),
+        };
+
+        fetch("/api/os-edit-notify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ osId: id, previousState }),
+        }).catch((err) => {
+          console.error("[DataContext] Falha ao notificar motorista da edição:", err);
+        });
+      }
+
       logInfo("DataContext", "Ordem de Serviço atualizada com sucesso", {
         osId: id,
         updates: osData,

@@ -17,6 +17,8 @@
     "start": "npx -y node@22 ./node_modules/vinext/dist/cli.js start",
     "start:next": "next start",
     "lint": "eslint",
+    "test": "npx tsx --test src/**/*.test.ts",
+    "test:reminders": "npx tsx --test src/lib/os-reminders.test.ts",
     "deploy:workers:versioned": "npm run build && npx wrangler deploy --config wrangler.workers.toml && npm run publish:app-version",
     "publish:app-version": "node ./scripts/publish-app-version.mjs",
     "kill-port": "npx kill-port 3000 3001",
