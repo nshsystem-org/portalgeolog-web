@@ -92,7 +92,11 @@ async function resolveDriverPhone(
 }
 
 /**
- * Compara waypoints para detectar mudança de endereço.
+ * Compara waypoints para detectar mudança de ENDEREÇO apenas.
+ * NÃO compara hora/data dos waypoints — essas mudanças já são detectadas
+ * por timeChanged (que compara os.data e os.hora da OS).
+ * Comparar hora/data aqui causaria falso positivo de "endereço mudou"
+ * quando na verdade só o horário mudou.
  */
 function waypointsChanged(
   prev: PreviousOSState["waypoints"],
@@ -105,8 +109,6 @@ function waypointsChanged(
     const p = prev[i];
     const n = next[i];
     if (p.label !== n.label) return true;
-    if ((p.hora || null) !== (n.hora || null)) return true;
-    if ((p.data || null) !== (n.data || null)) return true;
   }
 
   return false;
