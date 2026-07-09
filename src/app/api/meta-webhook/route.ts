@@ -120,11 +120,11 @@ async function handleEditAcknowledgment(phone: string, contextId: string) {
     const normalizedPhone = normalizeWhatsAppPhone(phone);
 
     // Busca driver pelo phone para identificar qual OS foi editada
-    const { data: driverRow } = await getAdmin()
+    const { data: driverRow } = (await getAdmin()
       .from("drivers")
       .select("id, name")
       .eq("phone", normalizedPhone)
-      .maybeSingle() as unknown as {
+      .maybeSingle()) as unknown as {
       data: { id: string; name: string } | null;
     };
 
@@ -133,7 +133,7 @@ async function handleEditAcknowledgment(phone: string, contextId: string) {
 
     if (driverRow?.id) {
       // Busca OS desse motorista com log de update nos últimos 60 min
-      const { data: recentOS } = await getAdmin()
+      const { data: recentOS } = (await getAdmin()
         .from("ordens_servico")
         .select("id, protocolo, motorista, driver_id")
         .eq("driver_id", driverRow.id)
@@ -141,7 +141,7 @@ async function handleEditAcknowledgment(phone: string, contextId: string) {
         .neq("status_operacional", "Cancelado")
         .order("updated_at", { ascending: false })
         .limit(1)
-        .maybeSingle() as unknown as {
+        .maybeSingle()) as unknown as {
         data: { id: string; protocolo: string } | null;
       };
 
@@ -162,7 +162,9 @@ async function handleEditAcknowledgment(phone: string, contextId: string) {
     // Loga a confirmação → trigger handle_os_log_notification gera notificação no sino
     await (
       getAdmin().from("os_logs") as unknown as {
-        insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>;
+        insert: (
+          values: Record<string, unknown>,
+        ) => Promise<{ error: unknown }>;
       }
     ).insert({
       os_id: osId,
@@ -189,7 +191,10 @@ async function handleEditAcknowledgment(phone: string, contextId: string) {
       driverRow?.name,
     );
   } catch (err) {
-    console.error("[meta-webhook] Erro ao processar confirmação de edição:", err);
+    console.error(
+      "[meta-webhook] Erro ao processar confirmação de edição:",
+      err,
+    );
   }
 }
 
@@ -833,10 +838,21 @@ async function handleFlowCompleted(
   const startTime = Date.now();
   try {
     // Rate limit: máximo 5 flows por minuto por telefone
-    const rateLimit = await checkRateLimit(getAdmin(), phone, "flow_completed", 5);
+    const rateLimit = await checkRateLimit(
+      getAdmin(),
+      phone,
+      "flow_completed",
+      5,
+    );
     if (!rateLimit.allowed) {
-      console.warn("[meta-webhook] Rate limit excedido para flow_completed, phone:", phone);
-      await sendMessageWithRetry(phone, `⚠️ Muitas tentativas. Aguarde ${Math.ceil((new Date(rateLimit.resetAt).getTime() - Date.now()) / 1000)} segundos e tente novamente.`);
+      console.warn(
+        "[meta-webhook] Rate limit excedido para flow_completed, phone:",
+        phone,
+      );
+      await sendMessageWithRetry(
+        phone,
+        `⚠️ Muitas tentativas. Aguarde ${Math.ceil((new Date(rateLimit.resetAt).getTime() - Date.now()) / 1000)} segundos e tente novamente.`,
+      );
       return;
     }
 
@@ -858,16 +874,26 @@ async function handleFlowCompleted(
         for (const [key, value] of Object.entries(data)) {
           if (key === "flow_token") continue;
           const num = Number(value);
-          if (!Number.isNaN(num) && num >= 0) { kmValue = num; break; }
+          if (!Number.isNaN(num) && num >= 0) {
+            kmValue = num;
+            break;
+          }
         }
       } catch {
-        console.warn("[meta-webhook] Flow response inválido:", flowValidation.error);
+        console.warn(
+          "[meta-webhook] Flow response inválido:",
+          flowValidation.error,
+        );
       }
     }
 
     if (kmValue === null) {
       console.warn("[meta-webhook] Valor de KM nao encontrado no flow");
-      await recordMetric(getAdmin(), "flow_km_extract_failed", { phone, success: false, durationMs: Date.now() - startTime });
+      await recordMetric(getAdmin(), "flow_km_extract_failed", {
+        phone,
+        success: false,
+        durationMs: Date.now() - startTime,
+      });
       return;
     }
 
@@ -916,7 +942,9 @@ async function handleFlowCompleted(
         const actorName = String(osRecord.motorista || "Motorista");
 
         // 1. Validar odômetro global do veículo (KM não pode ser menor que o último registrado)
-        const veiculoId = osRecord.veiculo_id ? String(osRecord.veiculo_id) : null;
+        const veiculoId = osRecord.veiculo_id
+          ? String(osRecord.veiculo_id)
+          : null;
         if (veiculoId) {
           const odoResult = await validateVehicleKm(
             getAdmin(),
@@ -949,7 +977,10 @@ async function handleFlowCompleted(
               {
                 type: "body",
                 parameters: [
-                  { type: "text", text: String(osRecord.motorista || "Motorista") },
+                  {
+                    type: "text",
+                    text: String(osRecord.motorista || "Motorista"),
+                  },
                 ],
               },
               {
@@ -976,17 +1007,27 @@ async function handleFlowCompleted(
                 })
                 .eq("id", osRecord.id as string);
 
-              await updateOperationalCycleForOS(getAdmin(), osId, targetCycle.itineraryIndex, {
-                messageSentAt: new Date().toISOString(),
-                state: "awaiting_accept",
-              });
+              await updateOperationalCycleForOS(
+                getAdmin(),
+                osId,
+                targetCycle.itineraryIndex,
+                {
+                  messageSentAt: new Date().toISOString(),
+                  state: "awaiting_accept",
+                },
+              );
             } else {
               console.warn(
                 "[meta-webhook] Falha ao reenviar template flow inicio_viagem_motorista após KM inválido:",
                 retryStartResult.error,
               );
             }
-            console.warn("[meta-webhook] KM inicial rejeitado por odômetro:", kmValue, "<=", odoResult.currentKm);
+            console.warn(
+              "[meta-webhook] KM inicial rejeitado por odômetro:",
+              kmValue,
+              "<=",
+              odoResult.currentKm,
+            );
             return;
           }
         }
@@ -1001,7 +1042,10 @@ async function handleFlowCompleted(
           kmValue,
         );
         if (idempotency.alreadyProcessed) {
-          console.log("[meta-webhook] Flow start já processado (idempotente), contextId:", contextId);
+          console.log(
+            "[meta-webhook] Flow start já processado (idempotente), contextId:",
+            contextId,
+          );
           return;
         }
 
@@ -1015,13 +1059,26 @@ async function handleFlowCompleted(
         );
 
         if (!kmStartResult.success) {
-          console.error("[meta-webhook] Falha ao registrar KM inicial via RPC:", kmStartResult.error);
-          await sendMessageWithRetry(phone, "⚠️ Erro ao registrar o KM inicial. Tente novamente.");
+          console.error(
+            "[meta-webhook] Falha ao registrar KM inicial via RPC:",
+            kmStartResult.error,
+          );
+          await sendMessageWithRetry(
+            phone,
+            "⚠️ Erro ao registrar o KM inicial. Tente novamente.",
+          );
           return;
         }
 
         // 4. status_operacional e route_started_at agora atualizados atomicamente dentro da RPC
-        console.log("[meta-webhook] KM inicial registrado (RPC atômica):", kmValue, "OS:", osRecord.id, "status:", kmStartResult.statusOperacional);
+        console.log(
+          "[meta-webhook] KM inicial registrado (RPC atômica):",
+          kmValue,
+          "OS:",
+          osRecord.id,
+          "status:",
+          kmStartResult.statusOperacional,
+        );
 
         // 5. Enviar template flow "finalizar_viagem_motoristas" com KM inicial no body
         const kmFormatted = kmValue.toLocaleString("pt-BR");
@@ -1038,11 +1095,23 @@ async function handleFlowCompleted(
         );
 
         if (finishResult.success && finishResult.messageId) {
-          const ordensServico2 = getAdmin().from("ordens_servico") as unknown as OrdensServicoUpdateBuilder;
-          await ordensServico2.update({ driver_flow_finish_message_id: finishResult.messageId }).eq("id", osRecord.id as string);
-          console.log("[meta-webhook] Template finalizar_viagem_motoristas enviado para", phone, "msgId:", finishResult.messageId);
+          const ordensServico2 = getAdmin().from(
+            "ordens_servico",
+          ) as unknown as OrdensServicoUpdateBuilder;
+          await ordensServico2
+            .update({ driver_flow_finish_message_id: finishResult.messageId })
+            .eq("id", osRecord.id as string);
+          console.log(
+            "[meta-webhook] Template finalizar_viagem_motoristas enviado para",
+            phone,
+            "msgId:",
+            finishResult.messageId,
+          );
         } else {
-          console.warn("[meta-webhook] Falha ao enviar template finalizar_viagem_motoristas:", finishResult.error);
+          console.warn(
+            "[meta-webhook] Falha ao enviar template finalizar_viagem_motoristas:",
+            finishResult.error,
+          );
           if (finishResult.error) {
             await enqueuePendingMessage(getAdmin(), phone, "template", {
               osId,
@@ -1055,11 +1124,14 @@ async function handleFlowCompleted(
     } else if (osRecord.driver_flow_finish_message_id === contextId) {
       // Flow de finalização: registra KM final via RPC atômica
       const activeCycle = cycles.find(
-        (c) => c.state === "awaiting_finish" || c.state === "awaiting_km_finish",
+        (c) =>
+          c.state === "awaiting_finish" || c.state === "awaiting_km_finish",
       );
       const targetCycle =
         activeCycle ||
-        cycles.find((c) => c.state !== "completed" && c.state !== "cancelled") ||
+        cycles.find(
+          (c) => c.state !== "completed" && c.state !== "cancelled",
+        ) ||
         cycles[0];
 
       if (targetCycle) {
@@ -1080,21 +1152,44 @@ async function handleFlowCompleted(
             { type: "body", parameters: [{ type: "text", text: kmFormatted }] },
             { type: "button", sub_type: "flow", index: 0, parameters: [] },
           ];
-          const retryResult = await sendTemplateWithRetry(phone, "finalizar_viagem_motoristas", "pt_BR", retryComponents);
+          const retryResult = await sendTemplateWithRetry(
+            phone,
+            "finalizar_viagem_motoristas",
+            "pt_BR",
+            retryComponents,
+          );
           if (retryResult.success && retryResult.messageId) {
             try {
-              const ordensServicoRetry = getAdmin().from("ordens_servico") as unknown as OrdensServicoUpdateBuilder;
-              await ordensServicoRetry.update({ driver_flow_finish_message_id: retryResult.messageId }).eq("id", osRecord.id as string);
+              const ordensServicoRetry = getAdmin().from(
+                "ordens_servico",
+              ) as unknown as OrdensServicoUpdateBuilder;
+              await ordensServicoRetry
+                .update({
+                  driver_flow_finish_message_id: retryResult.messageId,
+                })
+                .eq("id", osRecord.id as string);
             } catch (updateErr) {
-              console.error("[meta-webhook] Erro ao atualizar driver_flow_finish_message_id:", updateErr);
+              console.error(
+                "[meta-webhook] Erro ao atualizar driver_flow_finish_message_id:",
+                updateErr,
+              );
             }
           }
-          console.warn("[meta-webhook] KM final inválido:", kmValue, "<= inicial:", kmInicial, "OS:", osRecord.id);
+          console.warn(
+            "[meta-webhook] KM final inválido:",
+            kmValue,
+            "<= inicial:",
+            kmInicial,
+            "OS:",
+            osRecord.id,
+          );
           return;
         }
 
         // 1. Validar odômetro global do veículo
-        const veiculoId = osRecord.veiculo_id ? String(osRecord.veiculo_id) : null;
+        const veiculoId = osRecord.veiculo_id
+          ? String(osRecord.veiculo_id)
+          : null;
         if (veiculoId) {
           const odoResult = await validateVehicleKm(
             getAdmin(),
@@ -1111,7 +1206,12 @@ async function handleFlowCompleted(
               `📝 KM informado: ${kmValue.toLocaleString("pt-BR")} km\n\n` +
               `O KM deve ser *maior* que o último registrado para este veículo. Verifique o hodômetro e clique em *FINALIZAR VIAGEM* novamente.`;
             await sendMessageWithRetry(phone, odoMsg);
-            console.warn("[meta-webhook] KM final rejeitado por odômetro:", kmValue, "<=", odoResult.currentKm);
+            console.warn(
+              "[meta-webhook] KM final rejeitado por odômetro:",
+              kmValue,
+              "<=",
+              odoResult.currentKm,
+            );
             return;
           }
         }
@@ -1126,7 +1226,10 @@ async function handleFlowCompleted(
           kmValue,
         );
         if (idempotency.alreadyProcessed) {
-          console.log("[meta-webhook] Flow finish já processado (idempotente), contextId:", contextId);
+          console.log(
+            "[meta-webhook] Flow finish já processado (idempotente), contextId:",
+            contextId,
+          );
           return;
         }
 
@@ -1141,13 +1244,26 @@ async function handleFlowCompleted(
         );
 
         if (!kmFinishResult.success) {
-          console.error("[meta-webhook] Falha ao registrar KM final via RPC:", kmFinishResult.error);
-          await sendMessageWithRetry(phone, "⚠️ Erro ao registrar o KM final. Tente novamente.");
+          console.error(
+            "[meta-webhook] Falha ao registrar KM final via RPC:",
+            kmFinishResult.error,
+          );
+          await sendMessageWithRetry(
+            phone,
+            "⚠️ Erro ao registrar o KM final. Tente novamente.",
+          );
           return;
         }
 
         // 4. status_operacional e route_finished_at agora atualizados atomicamente dentro da RPC
-        console.log("[meta-webhook] KM final registrado (RPC atômica):", kmValue, "OS:", osRecord.id, "novo status:", kmFinishResult.statusOperacional);
+        console.log(
+          "[meta-webhook] KM final registrado (RPC atômica):",
+          kmValue,
+          "OS:",
+          osRecord.id,
+          "novo status:",
+          kmFinishResult.statusOperacional,
+        );
 
         // 5. Enviar mensagem de agradecimento + próximo ciclo
         try {
@@ -1164,7 +1280,10 @@ async function handleFlowCompleted(
 
           const msgResult = await sendMessageWithRetry(phone, agradecimentoMsg);
           if (!msgResult.success) {
-            console.warn("[meta-webhook] Falha ao enviar mensagem de agradecimento:", msgResult.error);
+            console.warn(
+              "[meta-webhook] Falha ao enviar mensagem de agradecimento:",
+              msgResult.error,
+            );
           }
 
           const remainingCycles = cycles
@@ -1178,13 +1297,27 @@ async function handleFlowCompleted(
 
           const nextCycle = remainingCycles[0];
           if (nextCycle) {
-            console.log("[meta-webhook] Próximo ciclo encontrado:", nextCycle.itineraryIndex, nextCycle.title);
-            await sendNextCyclePreviewAndStartFlow(String(osRecord.id), phone, nextCycle.itineraryIndex);
+            console.log(
+              "[meta-webhook] Próximo ciclo encontrado:",
+              nextCycle.itineraryIndex,
+              nextCycle.title,
+            );
+            await sendNextCyclePreviewAndStartFlow(
+              String(osRecord.id),
+              phone,
+              nextCycle.itineraryIndex,
+            );
           } else {
-            console.log("[meta-webhook] Todos os ciclos concluídos para OS:", osRecord.id);
+            console.log(
+              "[meta-webhook] Todos os ciclos concluídos para OS:",
+              osRecord.id,
+            );
           }
         } catch (msgErr) {
-          console.error("[meta-webhook] Erro ao enviar mensagem de agradecimento:", msgErr);
+          console.error(
+            "[meta-webhook] Erro ao enviar mensagem de agradecimento:",
+            msgErr,
+          );
         }
       }
     }
@@ -1263,7 +1396,7 @@ export async function POST(request: Request) {
       payload: body as Record<string, unknown>,
     });
 
-        // Validar payload com Zod
+    // Validar payload com Zod
     const validation = validateWebhookPayload(body);
     if (!validation.success) {
       console.error("[meta-webhook] Payload inválido:", validation.error);
@@ -1437,11 +1570,7 @@ export async function POST(request: Request) {
 
             // Intercepta botão "ESTOU CIENTE" do template alteracao_viagem_motorista
             // antes do fallback padrão (que dispararia detalhes do serviço)
-            if (
-              buttonText === "estou ciente" &&
-              contextId &&
-              phone
-            ) {
+            if (buttonText === "estou ciente" && contextId && phone) {
               console.log(
                 "[meta-webhook] Confirmação de edição detectada (ESTOU CIENTE):",
                 { phone, contextId },
@@ -1574,21 +1703,27 @@ export async function POST(request: Request) {
                   const adminClient = getAdmin();
 
                   // 1. Buscar rastreamento pelo message_id
-                  const { data: tracking } = await (adminClient
-                    .from("whatsapp_message_tracking") as unknown as {
-                    select: (cols: string) => {
-                      eq: (col: string, val: string) => {
-                        maybeSingle: () => Promise<{
-                          data: {
-                            os_id: string;
-                            motorista: string;
-                            cycle_index: number;
-                            status: string;
-                          } | null;
-                        }>;
+                  const { data: tracking } = await (
+                    adminClient.from(
+                      "whatsapp_message_tracking",
+                    ) as unknown as {
+                      select: (cols: string) => {
+                        eq: (
+                          col: string,
+                          val: string,
+                        ) => {
+                          maybeSingle: () => Promise<{
+                            data: {
+                              os_id: string;
+                              motorista: string;
+                              cycle_index: number;
+                              status: string;
+                            } | null;
+                          }>;
+                        };
                       };
-                    };
-                  })
+                    }
+                  )
                     .select("os_id, motorista, cycle_index, status")
                     .eq("message_id", msgId)
                     .maybeSingle();
@@ -1602,7 +1737,10 @@ export async function POST(request: Request) {
                   }
 
                   // 2. Evitar duplicatas: só processar se ainda não foi delivered/read
-                  if (tracking.status === "delivered" || tracking.status === "read") {
+                  if (
+                    tracking.status === "delivered" ||
+                    tracking.status === "read"
+                  ) {
                     console.log(
                       "[meta-webhook] Status já processado anteriormente:",
                       tracking.status,
@@ -1611,19 +1749,28 @@ export async function POST(request: Request) {
                   }
 
                   // 3. Atualizar status na tabela de rastreamento
-                  await (adminClient
-                    .from("whatsapp_message_tracking") as unknown as {
-                    update: (values: Record<string, unknown>) => {
-                      eq: (col: string, val: string) => Promise<unknown>;
-                    };
-                  }).update({ status: statusType }).eq("message_id", msgId);
+                  await (
+                    adminClient.from(
+                      "whatsapp_message_tracking",
+                    ) as unknown as {
+                      update: (values: Record<string, unknown>) => {
+                        eq: (col: string, val: string) => Promise<unknown>;
+                      };
+                    }
+                  )
+                    .update({ status: statusType })
+                    .eq("message_id", msgId);
 
                   // 4. Inserir log driver_delivered → trigger gera notificação no sino
                   const motoristaFullName = tracking.motorista || "Motorista";
 
-                  await (adminClient.from("os_logs") as unknown as {
-                    insert: (values: Record<string, unknown>) => Promise<unknown>;
-                  }).insert({
+                  await (
+                    adminClient.from("os_logs") as unknown as {
+                      insert: (
+                        values: Record<string, unknown>,
+                      ) => Promise<unknown>;
+                    }
+                  ).insert({
                     os_id: tracking.os_id,
                     type: "driver_delivered",
                     actor_name: motoristaFullName,
@@ -1643,6 +1790,93 @@ export async function POST(request: Request) {
                 } catch (err) {
                   console.error(
                     "[meta-webhook] Erro ao processar status update:",
+                    err,
+                  );
+                }
+              })(),
+            );
+          } else if (statusType === "failed") {
+            // Status failed: a Meta não conseguiu entregar a mensagem.
+            // Registramos no tracking e geramos log driver_delivered com
+            // delivery_status "failed" para alertar operadores no sino.
+            const errorCode = status?.errors?.[0]?.code || "unknown";
+            const errorTitle =
+              status?.errors?.[0]?.title || "Erro desconhecido";
+
+            processingTasks.push(
+              (async () => {
+                try {
+                  const adminClient = getAdmin();
+
+                  const { data: tracking } = await (
+                    adminClient.from(
+                      "whatsapp_message_tracking",
+                    ) as unknown as {
+                      select: (cols: string) => {
+                        eq: (
+                          col: string,
+                          val: string,
+                        ) => {
+                          maybeSingle: () => Promise<{
+                            data: {
+                              os_id: string;
+                              motorista: string;
+                              cycle_index: number;
+                              status: string;
+                            } | null;
+                          }>;
+                        };
+                      };
+                    }
+                  )
+                    .select("os_id, motorista, cycle_index, status")
+                    .eq("message_id", msgId)
+                    .maybeSingle();
+
+                  if (tracking) {
+                    await (
+                      adminClient.from(
+                        "whatsapp_message_tracking",
+                      ) as unknown as {
+                        update: (values: Record<string, unknown>) => {
+                          eq: (col: string, val: string) => Promise<unknown>;
+                        };
+                      }
+                    )
+                      .update({ status: "failed" })
+                      .eq("message_id", msgId);
+                  }
+
+                  if (tracking) {
+                    await (
+                      adminClient.from("os_logs") as unknown as {
+                        insert: (
+                          values: Record<string, unknown>,
+                        ) => Promise<unknown>;
+                      }
+                    ).insert({
+                      os_id: tracking.os_id,
+                      type: "driver_delivered",
+                      actor_name: tracking.motorista || "Motorista",
+                      actor_id: null,
+                      description: `Falha ao entregar mensagem no WhatsApp do motorista (${errorCode}: ${errorTitle})`,
+                      metadata: {
+                        cycle_index: tracking.cycle_index,
+                        message_id: msgId,
+                        delivery_status: "failed",
+                        error_code: errorCode,
+                        error_title: errorTitle,
+                      },
+                    });
+
+                    console.log(
+                      "[meta-webhook] Falha de entrega registrada para OS:",
+                      tracking.os_id,
+                    );
+                  }
+                } catch (err) {
+                  console.error(
+                    "[meta-webhook] Erro ao processar status failed:",
                     err,
                   );
                 }

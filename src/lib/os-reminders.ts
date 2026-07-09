@@ -78,6 +78,36 @@ function getAdminClient(): ReturnType<typeof createClient> {
   return _adminClient;
 }
 
+/**
+ * Rastreia message_id no banco para correlação com status updates da Meta.
+ * Usa admin client (service role) para bypassar RLS.
+ */
+async function trackWhatsAppMessage(
+  osId: string,
+  messageId: string,
+  phone: string,
+  motorista: string,
+  cycleIndex: number,
+): Promise<void> {
+  const supabase = getAdminClient();
+  const { error } = await (
+    supabase.from("whatsapp_message_tracking") as unknown as {
+      insert: (values: Record<string, unknown>) => Promise<{ error: unknown }>;
+    }
+  ).insert({
+    os_id: osId,
+    message_id: messageId,
+    phone,
+    motorista: motorista || "Motorista",
+    cycle_index: cycleIndex,
+    status: "sent",
+  });
+
+  if (error) {
+    console.error("[os-reminders] Erro ao rastrear message_id:", error);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Feature flags por fase (app_settings)
 // ---------------------------------------------------------------------------
@@ -363,8 +393,17 @@ async function sendReminder12h(
     components,
   );
 
-  if (result.success) {
+  if (result.success && result.messageId) {
     await markReminderSent(row.cycle_id, REMINDER_KINDS.reminder12h);
+
+    // Rastrear message_id para delivery/read tracking
+    await trackWhatsAppMessage(
+      row.os_id,
+      result.messageId,
+      phone,
+      row.motorista || "Motorista",
+      row.cycle_index,
+    );
   }
 
   return {
@@ -427,6 +466,15 @@ async function sendStartButton(
     await markReminderSent(row.cycle_id, REMINDER_KINDS.startButton, {
       message_id: result.messageId,
     });
+
+    // Rastrear message_id para delivery/read tracking
+    await trackWhatsAppMessage(
+      row.os_id,
+      result.messageId,
+      phone,
+      row.motorista || "Motorista",
+      row.cycle_index,
+    );
 
     // Atualiza driver_flow_start_message_id e messageSentAt no ciclo
     await (
@@ -589,6 +637,15 @@ async function sendDelayReminder(
       message_id: result.messageId,
       minutes_late: minutesLate,
     });
+
+    // Rastrear message_id para delivery/read tracking
+    await trackWhatsAppMessage(
+      row.os_id,
+      result.messageId,
+      phone,
+      row.motorista || "Motorista",
+      row.cycle_index,
+    );
 
     await (
       getAdminClient().from("ordens_servico") as unknown as {

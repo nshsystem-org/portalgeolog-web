@@ -546,7 +546,10 @@ export default function OSOperationalPage() {
   const [pendingScrollToValores, setPendingScrollToValores] = useState(false);
   // Sinaliza que o modal de visualização foi aberto via pendência "atrasada"
   // e deve rolar/destacar o ciclo operacional do itineraryIndex informado.
-  const [pendingScrollToCycleItineraryIndex, setPendingScrollToCycleItineraryIndex] = useState<number | null>(null);
+  const [
+    pendingScrollToCycleItineraryIndex,
+    setPendingScrollToCycleItineraryIndex,
+  ] = useState<number | null>(null);
   const [showObsFinanceiras, setShowObsFinanceiras] = useState(false);
   const [isQuickPassengerModalOpen, setIsQuickPassengerModalOpen] =
     useState(false);
@@ -2576,13 +2579,7 @@ export default function OSOperationalPage() {
     const scrollTo = urlParams.get("scrollTo");
     const itineraryIndex = urlParams.get("itineraryIndex");
 
-    if (
-      !editDraftId &&
-      !editOSId &&
-      !viewOSId &&
-      !editDocagemId &&
-      !filter
-    ) {
+    if (!editDraftId && !editOSId && !viewOSId && !editDocagemId && !filter) {
       draftActionProcessedRef.current = true;
       return;
     }
@@ -2632,7 +2629,10 @@ export default function OSOperationalPage() {
       let scrollParent = target.parentElement;
       while (scrollParent) {
         const style = getComputedStyle(scrollParent);
-        if (/(auto|scroll)/.test(style.overflowY) && scrollParent.scrollHeight > scrollParent.clientHeight) {
+        if (
+          /(auto|scroll)/.test(style.overflowY) &&
+          scrollParent.scrollHeight > scrollParent.clientHeight
+        ) {
           break;
         }
         scrollParent = scrollParent.parentElement;
@@ -2670,7 +2670,10 @@ export default function OSOperationalPage() {
       let scrollParent = target.parentElement;
       while (scrollParent) {
         const style = getComputedStyle(scrollParent);
-        if (/(auto|scroll)/.test(style.overflowY) && scrollParent.scrollHeight > scrollParent.clientHeight) {
+        if (
+          /(auto|scroll)/.test(style.overflowY) &&
+          scrollParent.scrollHeight > scrollParent.clientHeight
+        ) {
           break;
         }
         scrollParent = scrollParent.parentElement;
@@ -3111,16 +3114,21 @@ export default function OSOperationalPage() {
           ? osData.motorista || "Motorista"
           : `${motoristaParts[0]} ${motoristaParts[motoristaParts.length - 1]}`;
 
-      // 1. Rastrear message_id para correlação com status updates da Meta
+      // 1. Rastrear message_id para correlação com status updates da Meta.
+      //    Usa API route em vez de insert direto pois a tabela tem RLS
+      //    permitindo apenas service_role.
       if (msgData.messageId) {
         try {
-          await supabase.from("whatsapp_message_tracking").insert({
-            os_id: osData.id,
-            message_id: msgData.messageId,
-            phone: phone,
-            motorista: osData.motorista || "Motorista",
-            cycle_index: itineraryIndex,
-            status: "sent",
+          await fetch("/api/whatsapp/track", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              osId: osData.id,
+              messageId: msgData.messageId,
+              phone,
+              motorista: osData.motorista || "Motorista",
+              cycleIndex: itineraryIndex,
+            }),
           });
         } catch (trackErr) {
           console.error("[WhatsApp] Erro ao rastrear message_id:", trackErr);
@@ -3722,15 +3730,19 @@ export default function OSOperationalPage() {
       // para ISO ("YYYY-MM-DD") antes de montar o datetime de override.
       const wpData = firstWp?.data;
       const isoDate = wpData
-        ? (wpData.includes("/")
-            ? wpData.split("/").reverse().join("-")
-            : wpData)
+        ? wpData.includes("/")
+          ? wpData.split("/").reverse().join("-")
+          : wpData
         : undefined;
 
       const data = isoDate || viewingOS.data;
       const hora = firstWp?.hora || viewingOS.hora;
       const dateTime =
-        data && hora ? `${data}T${hora}:00` : data ? `${data}T00:00:00` : undefined;
+        data && hora
+          ? `${data}T${hora}:00`
+          : data
+            ? `${data}T00:00:00`
+            : undefined;
 
       return isOsAtrasadaOuNaoIniciada(
         {
@@ -9341,7 +9353,8 @@ export default function OSOperationalPage() {
                       const cycleId = `operational-cycle-${cycle.itineraryIndex ?? 0}`;
                       const isHighlightedCycle =
                         pendingScrollToCycleItineraryIndex != null &&
-                        cycle.itineraryIndex === pendingScrollToCycleItineraryIndex;
+                        cycle.itineraryIndex ===
+                          pendingScrollToCycleItineraryIndex;
                       const isCycleAtrasado = isOperationalCycleAtrasado(cycle);
 
                       return (
