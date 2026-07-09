@@ -811,7 +811,6 @@ export default function OSOperationalPage() {
           event: "UPDATE",
           schema: "public",
           table: "app_settings",
-          filter: `key=in.(${NOTIFY_KEYS.join(",")})`,
         },
         (payload) => {
           const newRow = payload.new as { key: string; value: string } | null;
