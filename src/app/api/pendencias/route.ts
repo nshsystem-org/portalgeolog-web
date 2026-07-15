@@ -63,6 +63,8 @@ interface OSRow {
   tipo: string | null;
   created_at: string | null;
   created_by: string | null;
+  isento_valor_bruto: boolean | null;
+  isento_custo: boolean | null;
 }
 
 interface ClienteRow {
@@ -83,6 +85,7 @@ interface DocagemRow {
 
 /**
  * Verifica se uma OS está finalizada sem valor (espelha isFinalizadoSemValor).
+ * Respeita flags individuais de isenção.
  */
 function checkSemValor(row: OSRow): boolean {
   if (row.status_operacional !== "Finalizado") return false;
@@ -90,14 +93,13 @@ function checkSemValor(row: OSRow): boolean {
     typeof row.valor_bruto === "string" ? Number(row.valor_bruto) : row.valor_bruto;
   const vCusto =
     typeof row.custo === "string" ? Number(row.custo) : row.custo;
-  return (
-    vBruto === null ||
-    vBruto === undefined ||
-    vBruto === 0 ||
-    vCusto === null ||
-    vCusto === undefined ||
-    vCusto === 0
-  );
+  const faltaVB =
+    !row.isento_valor_bruto &&
+    (vBruto === null || vBruto === undefined || vBruto === 0);
+  const faltaC =
+    !row.isento_custo &&
+    (vCusto === null || vCusto === undefined || vCusto === 0);
+  return faltaVB || faltaC;
 }
 
 /**
@@ -172,7 +174,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       const { data, error } = await supabase
         .from("ordens_servico")
         .select(
-          "id, protocolo, os_number, cliente_id, data, hora, status_operacional, valor_bruto, custo, arquivado, tipo, created_at, created_by",
+          "id, protocolo, os_number, cliente_id, data, hora, status_operacional, valor_bruto, custo, arquivado, tipo, created_at, created_by, isento_valor_bruto, isento_custo",
         )
         .eq("arquivado", false)
         .order("created_at", { ascending: false })

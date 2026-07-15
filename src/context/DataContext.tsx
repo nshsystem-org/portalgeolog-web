@@ -111,6 +111,8 @@ export interface OrderService {
   horaExtra?: string;
   noShow?: boolean;
   noShowPercentual?: number | null;
+  isentoValorBruto?: boolean;
+  isentoCusto?: boolean;
   clienteId: string;
   solicitante: string;
   solicitanteId?: string;

@@ -324,10 +324,14 @@ export interface FinalizadoSemValorInput {
   operationalCycles?: OperationalCycle[] | null;
   valorBruto: number | string | null;
   custo: number | string | null;
+  isentoValorBruto?: boolean;
+  isentoCusto?: boolean;
 }
 
 /** Verifica se uma OS está operacionalmente finalizada mas ainda falta
- *  preencher valor bruto e/ou custo do motorista. */
+ *  preencher valor bruto e/ou custo do motorista.
+ *  Respeita flags individuais de isenção: quando ativas, o campo correspondente
+ *  não é considerado faltando (cortesia, motorista não recebe, etc.). */
 export function isFinalizadoSemValor(os: FinalizadoSemValorInput): boolean {
   const isFinalizado =
     os.status.operacional === "Finalizado" ||
@@ -339,15 +343,13 @@ export function isFinalizadoSemValor(os: FinalizadoSemValorInput): boolean {
     typeof os.valorBruto === "string" ? Number(os.valorBruto) : os.valorBruto;
   const vCusto = typeof os.custo === "string" ? Number(os.custo) : os.custo;
 
-  const faltaValor =
-    vBruto === null ||
-    vBruto === undefined ||
-    vBruto === 0 ||
-    vCusto === null ||
-    vCusto === undefined ||
-    vCusto === 0;
+  const faltaValorBruto =
+    !os.isentoValorBruto &&
+    (vBruto === null || vBruto === undefined || vBruto === 0);
+  const faltaCusto =
+    !os.isentoCusto && (vCusto === null || vCusto === undefined || vCusto === 0);
 
-  return isFinalizado && faltaValor;
+  return isFinalizado && (faltaValorBruto || faltaCusto);
 }
 
 export interface OSAtrasadaInput {

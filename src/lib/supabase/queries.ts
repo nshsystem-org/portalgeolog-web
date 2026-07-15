@@ -188,6 +188,16 @@ const buildOSUpdateLogContext = (
         osData.noShow ? (osData.noShowPercentual ?? 100) : null,
       ],
       [
+        "Isento Valor Bruto",
+        previousOS.isentoValorBruto ?? false,
+        osData.isentoValorBruto ?? false,
+      ],
+      [
+        "Isento Repasse Motorista",
+        previousOS.isentoCusto ?? false,
+        osData.isentoCusto ?? false,
+      ],
+      [
         "Observações Financeiras",
         previousOS.obsFinanceiras || "",
         osData.obsFinanceiras || "",
@@ -535,6 +545,8 @@ type OSRow = {
   is_freelance: boolean | null;
   tipo: string | null;
   repasse_pago: boolean | null;
+  isento_valor_bruto: boolean | null;
+  isento_custo: boolean | null;
 };
 type FinanceAttachmentRow = {
   id: string;
@@ -716,6 +728,8 @@ const mapOSRecord = (
     financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
     financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
     repassePago: o.repasse_pago ?? undefined,
+    isentoValorBruto: Boolean(o.isento_valor_bruto),
+    isentoCusto: Boolean(o.isento_custo),
     financeiroAnexos: (o.os_financeiro_anexos || []).map((anexo) => ({
       id: anexo.id,
       ordemServicoId: anexo.ordem_servico_id,
@@ -1294,6 +1308,8 @@ const OS_SELECT_COLUMNS = [
   "created_by",
   "is_freelance",
   "tipo",
+  "isento_valor_bruto",
+  "isento_custo",
 ].join(",");
 
 export async function fetchOSList(): Promise<OrderService[]> {
@@ -1819,6 +1835,8 @@ export async function insertOS(osData: OSInput): Promise<OrderService> {
       (osData as OSInput & { obsFinanceiras?: string }).obsFinanceiras || "",
     custo: osData.custo ?? 0,
     tipo: (osData as OSInput & { tipo?: OrderService["tipo"] }).tipo ?? "os",
+    isento_valor_bruto: Boolean(osData.isentoValorBruto),
+    isento_custo: Boolean(osData.isentoCusto),
   };
 
   const waypointsPayload = waypoints.map((wp) => ({
@@ -1987,6 +2005,8 @@ export async function updateOSInDB(
       (osData as OSInput & { tipo?: OrderService["tipo"] }).tipo ??
       previousOS?.tipo ??
       "os",
+    isento_valor_bruto: Boolean(osData.isentoValorBruto),
+    isento_custo: Boolean(osData.isentoCusto),
   };
 
   const waypointsPayload = waypoints.map((wp) => ({

@@ -34,6 +34,8 @@ interface OSAlertaRow {
   valor_bruto: number | string | null;
   custo: number | string | null;
   cliente_id: string | null;
+  isento_valor_bruto: boolean | null;
+  isento_custo: boolean | null;
 }
 
 interface ClienteRow {
@@ -84,11 +86,10 @@ export async function getFinalizadasSemValor(): Promise<OSAlertaItem[]> {
   const { data: osRows, error } = await supabase
     .from("ordens_servico")
     .select(
-      "id, protocolo, os_number, data, hora, motorista, valor_bruto, custo, cliente_id",
+      "id, protocolo, os_number, data, hora, motorista, valor_bruto, custo, cliente_id, isento_valor_bruto, isento_custo",
     )
     .eq("status_operacional", "Finalizado")
     .eq("arquivado", false)
-    .or("valor_bruto.is.null,valor_bruto.eq.0,custo.is.null,custo.eq.0")
     .order("data", { ascending: true });
 
   if (error) throw error;
@@ -120,29 +121,37 @@ export async function getFinalizadasSemValor(): Promise<OSAlertaItem[]> {
     }
   }
 
-  return rows.map((r) => {
-    const vBruto =
-      typeof r.valor_bruto === "string"
-        ? Number(r.valor_bruto)
-        : r.valor_bruto;
-    const vCusto =
-      typeof r.custo === "string" ? Number(r.custo) : r.custo;
+  return rows
+    .map((r) => {
+      const vBruto =
+        typeof r.valor_bruto === "string"
+          ? Number(r.valor_bruto)
+          : r.valor_bruto;
+      const vCusto =
+        typeof r.custo === "string" ? Number(r.custo) : r.custo;
 
-    return {
-      id: r.id,
-      protocolo: r.protocolo || "",
-      os_number: r.os_number,
-      data: r.data,
-      hora: r.hora,
-      cliente_nome: r.cliente_id ? clienteMap.get(r.cliente_id) ?? null : null,
-      motorista: r.motorista,
-      valor_bruto: vBruto,
-      custo: vCusto,
-      falta_valor_bruto:
-        vBruto === null || vBruto === undefined || vBruto === 0,
-      falta_custo: vCusto === null || vCusto === undefined || vCusto === 0,
-    };
-  });
+      const isentoVB = Boolean(r.isento_valor_bruto);
+      const isentoC = Boolean(r.isento_custo);
+
+      return {
+        id: r.id,
+        protocolo: r.protocolo || "",
+        os_number: r.os_number,
+        data: r.data,
+        hora: r.hora,
+        cliente_nome: r.cliente_id
+          ? clienteMap.get(r.cliente_id) ?? null
+          : null,
+        motorista: r.motorista,
+        valor_bruto: vBruto,
+        custo: vCusto,
+        falta_valor_bruto:
+          !isentoVB && (vBruto === null || vBruto === undefined || vBruto === 0),
+        falta_custo:
+          !isentoC && (vCusto === null || vCusto === undefined || vCusto === 0),
+      };
+    })
+    .filter((item) => item.falta_valor_bruto || item.falta_custo);
 }
 
 function formatarDataBRT(dataISO: string | null): string {
