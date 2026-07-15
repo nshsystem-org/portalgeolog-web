@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { MapPin, Loader2, Search } from "lucide-react";
+import { hasMapboxToken } from "@/lib/mapbox-tiles";
 
 interface Suggestion {
   place_id: string;
@@ -31,12 +32,34 @@ interface NominatimResult {
   address?: NominatimAddress;
 }
 
+// Mapbox Geocoding v6 retorna GeoJSON FeatureCollection
+interface MapboxFeature {
+  id: string;
+  geometry: { coordinates: [number, number] }; // [lng, lat]
+  properties: {
+    name?: string;
+    full_address?: string;
+    place_name?: string;
+    feature_type?: string;
+    context?: { name: string; kind: string }[];
+  };
+}
+
+interface MapboxResponse {
+  type: "FeatureCollection";
+  features: MapboxFeature[];
+}
+
 interface GeologAddressInputProps {
   label: string;
   value: string;
   onChange: (value: string, coords?: { lat: number; lng: number }) => void;
   placeholder?: string;
   required?: boolean;
+  // Slot renderizado a direita do input (ex: botoes de observacao/passageiro).
+  // Quando fornecido, o icone de busca padrao e ocultado e o padding direito
+  // do input e aumentado para acomodar o slot.
+  rightSlot?: React.ReactNode;
 }
 
 export default function GeologAddressInput({
@@ -45,6 +68,7 @@ export default function GeologAddressInput({
   onChange,
   placeholder,
   required = false,
+  rightSlot,
 }: GeologAddressInputProps) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,6 +89,77 @@ export default function GeologAddressInput({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const searchAddressMapbox = async (query: string): Promise<Suggestion[]> => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+    if (!token) return [];
+
+    const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(
+      query,
+    )}&access_token=${token}&country=br&language=pt&limit=10&autocomplete=true`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Mapbox geocoding falhou: ${response.status}`);
+    }
+    const data: MapboxResponse = await response.json();
+
+    return (data.features || []).map((feature) => {
+      const [lng, lat] = feature.geometry.coordinates;
+      const props = feature.properties;
+      const mainName = props.name || props.full_address?.split(",")[0] || "";
+      const displayName = props.full_address || props.place_name || mainName;
+
+      // Constroi sub_label a partir do context (regiao, cidade, etc.)
+      const ctxParts = (props.context || [])
+        .map((c) => c.name)
+        .filter((n) => n && n !== mainName);
+      const subName = ctxParts.join(" - ") || "Brasil";
+
+      return {
+        place_id: feature.id,
+        display_name: displayName,
+        main_name: mainName,
+        sub_name: subName,
+        lat,
+        lon: lng,
+      };
+    });
+  };
+
+  const searchAddressNominatim = async (
+    query: string,
+  ): Promise<Suggestion[]> => {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1&countrycodes=br&accept-language=pt-BR`,
+    );
+    const data: NominatimResult[] = await response.json();
+
+    return (data || []).map((item: NominatimResult) => {
+      const addr = item.address || {};
+      const mainName =
+        addr.road ||
+        addr.suburb ||
+        addr.neighbourhood ||
+        addr.city_district ||
+        item.display_name.split(",")[0];
+      const neighborhood =
+        addr.suburb || addr.neighbourhood || addr.city_district || "";
+      const city = addr.city || addr.town || addr.municipality || "";
+      const state = addr.state || "";
+      const subParts = [neighborhood, city, state].filter(
+        (part) => part && part !== mainName,
+      );
+      return {
+        place_id: item.place_id.toString() || Math.random().toString(),
+        display_name: item.display_name,
+        main_name: mainName,
+        sub_name: subParts.join(" - ") || "Brasil",
+        lat: parseFloat(item.lat),
+        lon: parseFloat(item.lon),
+      };
+    });
+  };
+
   const searchAddress = async (query: string) => {
     if (query.length < 3) {
       setSuggestions([]);
@@ -73,50 +168,24 @@ export default function GeologAddressInput({
 
     setLoading(true);
     try {
-      // Nominatim Search - Very effective for neighborhoods (Palmital, etc.)
-      // when using the 'q' parameter with countrycodes restriction
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1&countrycodes=br&accept-language=pt-BR`,
-      );
-      const data = await response.json();
-
-      const formattedSuggestions = (data || []).map((item: NominatimResult) => {
-        const addr = item.address || {};
-
-        // Let's identify the most specific name (Street or Neighborhood)
-        const mainName =
-          addr.road ||
-          addr.suburb ||
-          addr.neighbourhood ||
-          addr.city_district ||
-          item.display_name.split(",")[0];
-
-        // Build the secondary label (Neighborhood, City, State)
-        const neighborhood =
-          addr.suburb || addr.neighbourhood || addr.city_district || "";
-        const city = addr.city || addr.town || addr.municipality || "";
-        const state = addr.state || "";
-
-        // Avoid repeating the mainName in the subLabel
-        const subParts = [neighborhood, city, state].filter(
-          (part) => part && part !== mainName,
-        );
-        const subName = subParts.join(" - ");
-
-        return {
-          place_id: item.place_id.toString() || Math.random().toString(),
-          display_name: item.display_name,
-          main_name: mainName,
-          sub_name: subName || "Brasil",
-          lat: parseFloat(item.lat),
-          lon: parseFloat(item.lon),
-        };
-      });
-
-      setSuggestions(formattedSuggestions);
+      // Prioriza Mapbox Geocoding (mais preciso para BR). Fallback Nominatim.
+      const results = hasMapboxToken()
+        ? await searchAddressMapbox(query)
+        : await searchAddressNominatim(query);
+      setSuggestions(results);
       setIsOpen(true);
     } catch (error) {
-      console.error("Erro na busca Nominatim:", error);
+      console.error("Erro na busca de endereco:", error);
+      // Se Mapbox falhar, tenta Nominatim como fallback
+      if (hasMapboxToken()) {
+        try {
+          const fallback = await searchAddressNominatim(query);
+          setSuggestions(fallback);
+          setIsOpen(true);
+        } catch {
+          /* silencioso */
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -158,15 +227,21 @@ export default function GeologAddressInput({
           }
           placeholder={placeholder}
           required={required}
-          className="w-full px-5 py-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-8 focus:ring-blue-500/5 transition-all shadow-sm pr-12 placeholder:text-slate-300"
+          className={`w-full px-5 py-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-8 focus:ring-blue-500/5 transition-all shadow-sm placeholder:text-slate-300 ${rightSlot ? "pr-36" : "pr-12"}`}
         />
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
-          {loading ? (
-            <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-          ) : (
-            <Search className="w-5 h-5 text-slate-300 group-focus-within:text-blue-600 transition-colors" />
-          )}
-        </div>
+        {rightSlot ? (
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
+            {rightSlot}
+          </div>
+        ) : (
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
+            {loading ? (
+              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+            ) : (
+              <Search className="w-5 h-5 text-slate-300 group-focus-within:text-blue-600 transition-colors" />
+            )}
+          </div>
+        )}
       </div>
 
       {isOpen && value.length >= 3 && (

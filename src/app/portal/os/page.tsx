@@ -124,7 +124,11 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { toast } from "sonner";
 import RequiredAsterisk from "@/components/ui/RequiredAsterisk";
 import GeologAddressInput from "@/components/ui/GeologAddressInput";
-import ItineraryMap from "@/components/Map/ItineraryMap";
+import dynamic from "next/dynamic";
+const ItineraryMap = dynamic(
+  () => import("@/components/Map/ItineraryMap"),
+  { ssr: false },
+);
 import OSCalendar from "@/components/OS/OSCalendar";
 import { useConfirm } from "@/hooks/useConfirm";
 import { BASE_URL } from "@/lib/constants";
