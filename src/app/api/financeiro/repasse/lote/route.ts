@@ -185,7 +185,7 @@ export async function POST(request: Request) {
     // Busca OS elegíveis: motorista no período com repasse pendente
     const { data: osRows, error: osError } = await adminClient
       .from("ordens_servico")
-      .select("id, cliente_id, tipo, custo, no_show, no_show_percentual, hora_extra")
+      .select("id, cliente_id, tipo, custo, no_show, no_show_percentual, hora_extra, isento_custo")
       .eq("driver_id", driverId)
       .eq("repasse_pago", false)
       .gte("data", dataInicio)
@@ -194,8 +194,11 @@ export async function POST(request: Request) {
     if (osError) throw osError;
 
     // Freelance: sempre elegível; autonomo e parceiro: todas as OS do driver
+    // Exclui OS com isento_custo=true (não há repasse a pagar)
     const eligible = (osRows ?? []).filter(
-      (os) => os.tipo === "freelance" || isAutonomo || isParceiro,
+      (os) =>
+        (os.tipo === "freelance" || isAutonomo || isParceiro) &&
+        !os.isento_custo,
     );
 
     if (eligible.length === 0) {

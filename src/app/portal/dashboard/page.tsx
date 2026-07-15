@@ -215,7 +215,7 @@ export default function Dashboard() {
   const topCustomers = useMemo(
     () =>
       sumGroup(
-        overviewRows,
+        overviewRows.filter((row) => !row.isentoValorBruto),
         (row) => row.clienteId || "",
         (row) => customerMap.get(row.clienteId || "") || "Sem cliente",
         (row) => Number(row.valorBruto || 0),
@@ -226,7 +226,7 @@ export default function Dashboard() {
   const topDrivers = useMemo(
     () =>
       sumGroup(
-        overviewRows,
+        overviewRows.filter((row) => !row.isentoCusto),
         (row) => row.driverId || row.motorista || "",
         (row) => {
           const driverName = row.driverId
@@ -250,7 +250,7 @@ export default function Dashboard() {
   const topCenters = useMemo(
     () =>
       sumGroup(
-        overviewRows,
+        overviewRows.filter((row) => !row.isentoValorBruto),
         (row) => row.centroCustoId || "",
         (row) => centerMap.get(row.centroCustoId || "") || "Sem centro",
         (row) => Number(row.valorBruto || 0),

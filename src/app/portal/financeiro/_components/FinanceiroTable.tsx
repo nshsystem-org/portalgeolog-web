@@ -63,6 +63,8 @@ function ValorCell({ item }: { item: OrderService }): ReactElement {
   const custo = item.noShow
     ? (custoBase + heMotorista) * noShowFator
     : custoBase + heMotorista;
+  const isentoVB = Boolean(item.isentoValorBruto);
+  const isentoCusto = Boolean(item.isentoCusto);
 
   return (
     <div className="pr-6 text-right">
@@ -71,8 +73,8 @@ function ValorCell({ item }: { item: OrderService }): ReactElement {
         onClick={() => setExpanded((v) => !v)}
         className="group inline-flex items-center gap-1.5 rounded-lg px-1 py-0.5 transition-colors hover:bg-slate-50 cursor-pointer"
       >
-        <span className="text-base font-black text-emerald-600">
-          {formatCurrency(bruto)}
+        <span className={`text-base font-black ${isentoVB ? "text-slate-400" : "text-emerald-600"}`}>
+          {isentoVB ? "Isento" : formatCurrency(bruto)}
         </span>
         <ChevronRight
           size={14}
@@ -93,8 +95,8 @@ function ValorCell({ item }: { item: OrderService }): ReactElement {
           <span className="flex items-center justify-end gap-1">
             <TrendingDown size={11} className="shrink-0 text-red-400" />
             <span className="text-slate-400">Repasse</span>
-            <span className="font-bold text-red-500">
-              {formatCurrency(custo)}
+            <span className={`font-bold ${isentoCusto ? "text-slate-400" : "text-red-500"}`}>
+              {isentoCusto ? "Isento" : formatCurrency(custo)}
             </span>
           </span>
           <span className="flex items-center justify-end gap-1">

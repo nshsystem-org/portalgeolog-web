@@ -76,6 +76,8 @@ type FinanceRow = {
   status_operacional: string | null;
   repasse_pago: boolean | null;
   tipo: string | null;
+  isento_valor_bruto: boolean | null;
+  isento_custo: boolean | null;
 };
 
 type DriverDetail = {
@@ -148,6 +150,15 @@ function getRequiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+/** Formata valor monetário ou retorna "Isento" se a OS tem flag ativo. */
+function formatCurrencyOrIsento(
+  value: number,
+  isento: boolean | null | undefined,
+): string {
+  if (isento) return "Isento";
+  return formatCurrency(value);
 }
 
 /**
@@ -322,7 +333,7 @@ async function fetchReportData(
   let query = adminClient
     .from("ordens_servico")
     .select(
-      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, veiculo_id, valor_bruto, custo, hora_extra, no_show, no_show_percentual, imposto, lucro, status_financeiro, status_operacional, repasse_pago, tipo",
+      "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, veiculo_id, valor_bruto, custo, hora_extra, no_show, no_show_percentual, imposto, lucro, status_financeiro, status_operacional, repasse_pago, tipo, isento_valor_bruto, isento_custo",
     )
     .eq("arquivado", false);
 
@@ -542,6 +553,8 @@ async function fetchReportData(
 
   if (template === "repasse_autonomos") {
     rows = rows.filter((row) => {
+      // Exclui OS isentas de repasse (isento_custo=true)
+      if (row.isento_custo) return false;
       // Inclui autônomos normais E OS freelance (parceiros fazendo job avulso)
       if (row.tipo === "freelance") return true;
       const driver = row.driver_id
@@ -553,6 +566,8 @@ async function fetchReportData(
     });
   } else if (template === "repasse_internos") {
     rows = rows.filter((row) => {
+      // Exclui OS isentas de repasse (isento_custo=true)
+      if (row.isento_custo) return false;
       // Freelance vai para autonomos, não para internos
       if (row.tipo === "freelance") return false;
       const driver = row.driver_id
@@ -564,6 +579,8 @@ async function fetchReportData(
     });
   } else if (template === "repasse_parceiros") {
     rows = rows.filter((row) => {
+      // Exclui OS isentas de repasse (isento_custo=true)
+      if (row.isento_custo) return false;
       // Exclui OS freelance — não vão para o repasse do parceiro
       if (row.tipo === "freelance") return false;
       const driver = row.driver_id
@@ -575,6 +592,8 @@ async function fetchReportData(
         driver.parceiro_id !== undefined
       );
     });
+  } else if (template === "pendentes_repasse") {
+    rows = rows.filter((row) => !row.isento_custo);
   }
 
   const summary = computeSummary(rows, driverDetailMap, waypointsMap);
@@ -839,7 +858,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             passageiros,
             trajeto,
             motoristaNome,
-            formatCurrency(calcEffectiveClientValue(row)),
+            formatCurrencyOrIsento(calcEffectiveClientValue(row), row.isento_valor_bruto),
             row.status_financeiro || "Pendente",
           ].join(";"),
         );
@@ -856,7 +875,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             `${row.protocolo || "-"} / ${formatDate(row.data)}`,
             trajeto || "-",
             row.repasse_pago ? "Pago" : "Pendente",
-            formatCurrency(calcEffectiveCustoValue(row)),
+            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
           ].join(";"),
         );
         break;
@@ -872,7 +891,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             `${row.protocolo || "-"} / ${formatDate(row.data)}`,
             trajeto || "-",
             row.repasse_pago ? "Pago" : "Pendente",
-            formatCurrency(calcEffectiveCustoValue(row)),
+            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
           ].join(";"),
         );
         break;
@@ -888,7 +907,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
               .filter(Boolean)
               .join(" -> ") || "-",
             vehicleMap.get(row.veiculo_id || "") || "-",
-            formatCurrency(calcEffectiveCustoValue(row)),
+            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
           ].join(";"),
         );
         break;
@@ -902,8 +921,8 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             row.os_number || "-",
             formatDate(row.data),
             clienteNome,
-            formatCurrency(bruto),
-            formatCurrency(calcEffectiveCustoValue(row)),
+            formatCurrencyOrIsento(bruto, row.isento_valor_bruto),
+            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
             formatCurrency(Number(row.imposto || 0)),
             formatCurrency(lucro),
             `${margem}%`,
@@ -919,7 +938,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             formatDate(row.data),
             clienteNome,
             motoristaNome,
-            formatCurrency(Number(row.valor_bruto || 0)),
+            formatCurrencyOrIsento(Number(row.valor_bruto || 0), row.isento_valor_bruto),
           ].join(";"),
         );
         break;
@@ -933,7 +952,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
             row.os_number || "-",
             formatDate(row.data),
             nomeDestinatario,
-            formatCurrency(calcEffectiveCustoValue(row)),
+            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
             row.status_financeiro || "Pendente",
           ].join(";"),
         );
@@ -2726,21 +2745,23 @@ async function generatePdf(
           break;
         case "valor":
         case "bruto":
-          text = formatCurrency(
+          text = formatCurrencyOrIsento(
             template === "medicao_cliente"
               ? calcEffectiveClientValue(row)
               : Number(row.valor_bruto || 0),
+            row.isento_valor_bruto,
           );
           font = boldFont;
-          color = c.accentGreen;
+          color = row.isento_valor_bruto ? c.textMedium : c.accentGreen;
           break;
         case "custo":
-          text = formatCurrency(calcEffectiveCustoValue(row));
+          text = formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo);
           font = boldFont;
-          color =
-            template === "repasse_autonomos" ||
-            template === "repasse_parceiros" ||
-            template === "repasse_internos"
+          color = row.isento_custo
+            ? c.textMedium
+            : template === "repasse_autonomos" ||
+                template === "repasse_parceiros" ||
+                template === "repasse_internos"
               ? c.accentGreen
               : c.accentRed;
           break;

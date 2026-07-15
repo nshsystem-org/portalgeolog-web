@@ -197,16 +197,16 @@ export function FinanceiroModals({
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
                 Valor bruto
               </p>
-              <p className="mt-2 text-xl font-black text-slate-800">
-                {formatCurrency(Number(viewingOS.valorBruto || 0))}
+              <p className={`mt-2 text-xl font-black ${viewingOS.isentoValorBruto ? "text-slate-400" : "text-slate-800"}`}>
+                {viewingOS.isentoValorBruto ? "Isento" : formatCurrency(Number(viewingOS.valorBruto || 0))}
               </p>
             </div>
             <div className="rounded-3xl border border-slate-200 bg-white p-5">
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
                 Custo
               </p>
-              <p className="mt-2 text-xl font-black text-red-500">
-                {formatCurrency(Number(viewingOS.custo || 0))}
+              <p className={`mt-2 text-xl font-black ${viewingOS.isentoCusto ? "text-slate-400" : "text-red-500"}`}>
+                {viewingOS.isentoCusto ? "Isento" : formatCurrency(Number(viewingOS.custo || 0))}
               </p>
             </div>
             <div className="rounded-3xl border border-slate-200 bg-white p-5">
