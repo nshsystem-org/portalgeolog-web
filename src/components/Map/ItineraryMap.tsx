@@ -1,11 +1,9 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import { useEffect, useMemo } from "react";
+import { useMemo, useRef, useEffect, useState } from "react";
+import Map, { Marker, Popup, Source, Layer, MapRef } from "react-map-gl/mapbox";
+import "mapbox-gl/dist/mapbox-gl.css";
 import { MapPin } from "lucide-react";
-import { getMapboxTileUrl, getMapAttribution } from "@/lib/mapbox-tiles";
 
 interface ItineraryMapWaypoint {
   label: string;
@@ -17,41 +15,17 @@ interface ItineraryMapProps {
   waypoints: ItineraryMapWaypoint[];
 }
 
-// Icones definidos fora do componente para evitar recriar a cada render.
-const originIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/3082/3082383.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-});
-
-const destIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-});
-
-const stopIcon = L.divIcon({
-  className: "",
-  html: '<div style="width:14px;height:14px;border-radius:50%;background:#64748b;border:3px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>',
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
-function FitBounds({ points }: { points: [number, number][] }) {
-  const map = useMap();
-  useEffect(() => {
-    if (points.length === 0) return;
-    if (points.length === 1) {
-      map.setView(points[0], 15);
-      return;
-    }
-    const bounds = L.latLngBounds(points);
-    map.fitBounds(bounds, { padding: [30, 30] });
-  }, [points, map]);
-  return null;
-}
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+const MAPBOX_STYLE = "mapbox://styles/mapbox/streets-v12";
 
 export default function ItineraryMap({ waypoints }: ItineraryMapProps) {
+  const mapRef = useRef<MapRef>(null);
+  const [popupInfo, setPopupInfo] = useState<{
+    idx: number;
+    lng: number;
+    lat: number;
+  } | null>(null);
+
   // Filtra apenas waypoints com coords validas
   const pointsWithCoords = useMemo(
     () =>
@@ -65,20 +39,82 @@ export default function ItineraryMap({ waypoints }: ItineraryMapProps) {
     [waypoints],
   );
 
-  const points: [number, number][] = useMemo(
-    () => pointsWithCoords.map((wp) => [wp.lat as number, wp.lng as number]),
-    [pointsWithCoords],
-  );
+  // GeoJSON da rota (linha conectando os waypoints na ordem)
+  const routeGeoJson = useMemo(() => {
+    if (pointsWithCoords.length < 2) return null;
+    return {
+      type: "Feature" as const,
+      properties: {},
+      geometry: {
+        type: "LineString" as const,
+        coordinates: pointsWithCoords.map((wp) => [
+          wp.lng as number,
+          wp.lat as number,
+        ]),
+      },
+    };
+  }, [pointsWithCoords]);
 
-  // Centro padrão: Rio de Janeiro (caso nao haja coords)
-  const center: [number, number] = points[0] ?? [-22.9068, -43.1729];
+  // Centro inicial: primeiro waypoint ou Rio de Janeiro
+  const initialViewState = useMemo(() => {
+    if (pointsWithCoords.length === 0) {
+      return { longitude: -43.1729, latitude: -22.9068, zoom: 11 };
+    }
+    if (pointsWithCoords.length === 1) {
+      return {
+        longitude: pointsWithCoords[0].lng as number,
+        latitude: pointsWithCoords[0].lat as number,
+        zoom: 15,
+      };
+    }
+    // Multiplos pontos: centro do bounding box
+    const lons = pointsWithCoords.map((wp) => wp.lng as number);
+    const lats = pointsWithCoords.map((wp) => wp.lat as number);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    return {
+      longitude: (minLon + maxLon) / 2,
+      latitude: (minLat + maxLat) / 2,
+      zoom: 12,
+    };
+  }, [pointsWithCoords]);
+
+  // FitBounds quando o mapa carrega ou os pontos mudam
+  useEffect(() => {
+    if (!mapRef.current || pointsWithCoords.length < 2) return;
+    const lons = pointsWithCoords.map((wp) => wp.lng as number);
+    const lats = pointsWithCoords.map((wp) => wp.lat as number);
+    mapRef.current.fitBounds(
+      [
+        [Math.min(...lons), Math.min(...lats)],
+        [Math.max(...lons), Math.max(...lats)],
+      ],
+      { padding: 40 },
+    );
+  }, [pointsWithCoords]);
+
+  if (!MAPBOX_TOKEN) {
+    return (
+      <div className="w-full h-48 rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/50 flex flex-col items-center justify-center gap-2 text-amber-700">
+        <MapPin size={28} className="text-amber-400" />
+        <p className="text-xs font-black uppercase tracking-widest text-amber-600">
+          Token Mapbox nao configurado
+        </p>
+        <p className="text-[10px] font-medium text-amber-500/70">
+          Adicione NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN no .env.local
+        </p>
+      </div>
+    );
+  }
 
   if (pointsWithCoords.length === 0) {
     return (
       <div className="w-full h-48 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center gap-2 text-slate-400">
         <MapPin size={28} className="text-slate-300" />
         <p className="text-xs font-black uppercase tracking-widest text-slate-400">
-          Preencha os endereços para visualizar o mapa
+          Preencha os enderecos para visualizar o mapa
         </p>
       </div>
     );
@@ -86,52 +122,98 @@ export default function ItineraryMap({ waypoints }: ItineraryMapProps) {
 
   return (
     <div className="w-full h-64 rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
-      <MapContainer
-        center={center}
-        zoom={13}
-        scrollWheelZoom={false}
-        style={{ height: "100%", width: "100%" }}
+      <Map
+        ref={mapRef}
+        mapboxAccessToken={MAPBOX_TOKEN}
+        initialViewState={initialViewState}
+        mapStyle={MAPBOX_STYLE}
+        scrollZoom={false}
+        style={{ width: "100%", height: "100%" }}
+        cooperativeGestures
       >
-        <TileLayer url={getMapboxTileUrl()} attribution={getMapAttribution()} />
+        {/* Linha da rota conectando os waypoints */}
+        {routeGeoJson && (
+          <Source id="route" type="geojson" data={routeGeoJson}>
+            <Layer
+              id="route-line"
+              type="line"
+              paint={{
+                "line-color": "#3b82f6",
+                "line-width": 4,
+                "line-opacity": 0.6,
+                "line-dasharray": [2, 1],
+              }}
+            />
+          </Source>
+        )}
 
+        {/* Marcadores */}
         {pointsWithCoords.map((wp, idx) => {
           const isOrigin = idx === 0;
           const isDestination = idx === pointsWithCoords.length - 1;
-          const icon = isOrigin ? originIcon : isDestination ? destIcon : stopIcon;
-          const roleLabel = isOrigin
-            ? "Origem"
-            : isDestination
-              ? "Destino"
-              : `${idx}ª Parada`;
 
           return (
             <Marker
               key={`${wp.lat}-${wp.lng}-${idx}`}
-              position={[wp.lat as number, wp.lng as number]}
-              icon={icon}
+              longitude={wp.lng as number}
+              latitude={wp.lat as number}
+              anchor="bottom"
+              onClick={(e) => {
+                e.originalEvent.stopPropagation();
+                setPopupInfo({
+                  idx,
+                  lng: wp.lng as number,
+                  lat: wp.lat as number,
+                });
+              }}
             >
-              <Popup>
-                <div className="text-xs font-bold">
-                  <span className="text-slate-500">{roleLabel}: </span>
-                  {wp.label}
-                </div>
-              </Popup>
+              <div
+                className={`flex items-center justify-center w-7 h-7 rounded-full border-2 border-white shadow-lg cursor-pointer transition-transform hover:scale-110 ${
+                  isOrigin
+                    ? "bg-emerald-500"
+                    : isDestination
+                      ? "bg-blue-600"
+                      : "bg-slate-500"
+                }`}
+              >
+                {isOrigin ? (
+                  <span className="text-white text-xs font-black">A</span>
+                ) : isDestination ? (
+                  <span className="text-white text-xs font-black">B</span>
+                ) : (
+                  <span className="text-white text-xs font-black">
+                    {idx}
+                  </span>
+                )}
+              </div>
             </Marker>
           );
         })}
 
-        {points.length >= 2 && (
-          <Polyline
-            positions={points}
-            color="#3b82f6"
-            weight={4}
-            opacity={0.6}
-            dashArray="10, 10"
-          />
+        {/* Popup do marcador selecionado */}
+        {popupInfo && (
+          <Popup
+            longitude={popupInfo.lng}
+            latitude={popupInfo.lat}
+            anchor="top"
+            onClose={() => setPopupInfo(null)}
+            closeOnClick={false}
+            closeButton={true}
+          >
+            <div className="text-xs font-bold p-1">
+              <span className="text-slate-500">
+                {popupInfo.idx === 0
+                  ? "Origem"
+                  : popupInfo.idx === pointsWithCoords.length - 1
+                    ? "Destino"
+                    : `${popupInfo.idx}ª Parada`}
+                :{" "}
+              </span>
+              {pointsWithCoords[popupInfo.idx]?.label}
+            </div>
+          </Popup>
         )}
-
-        <FitBounds points={points} />
-      </MapContainer>
+      </Map>
     </div>
   );
 }
