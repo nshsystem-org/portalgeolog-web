@@ -11,6 +11,27 @@ export type FaturarPayload = {
   observacao: string;
 };
 
+export type FaturamentoLotePayload = {
+  dataInicio: string;
+  dataFim: string;
+  clienteId: string;
+  centroCustoId: string;
+  file: File | null;
+  tipoDocumento: string;
+};
+
+export type FaturamentoLotePreview = {
+  count: number;
+  totalValue: number;
+  customerName: string;
+  centerName: string | null;
+};
+
+export type FaturamentoLoteResult = {
+  count: number;
+  totalValue: number;
+};
+
 export type ConfirmarRecebimentoPayload = {
   osId: string;
   observacao: string;
@@ -96,6 +117,58 @@ export async function faturarOS(payload: FaturarPayload): Promise<void> {
   if (!response.ok) {
     throw new Error(body?.error || "Falha ao faturar a OS.");
   }
+}
+
+export async function previewFaturamentoLote(
+  payload: Omit<FaturamentoLotePayload, "file" | "tipoDocumento">,
+): Promise<FaturamentoLotePreview> {
+  const params = new URLSearchParams({
+    dataInicio: payload.dataInicio,
+    dataFim: payload.dataFim,
+    clienteId: payload.clienteId,
+  });
+  if (payload.centroCustoId) {
+    params.set("centroCustoId", payload.centroCustoId);
+  }
+
+  const response = await fetch(
+    `/api/financeiro/faturar/lote?${params.toString()}`,
+    { credentials: "include" },
+  );
+  const body = (await response.json().catch(() => null)) as
+    | (FaturamentoLotePreview & { error?: string })
+    | null;
+
+  if (!response.ok || !body) {
+    throw new Error(body?.error || "Falha ao visualizar o faturamento em lote.");
+  }
+  return body;
+}
+
+export async function faturarOSLote(
+  payload: FaturamentoLotePayload,
+): Promise<FaturamentoLoteResult> {
+  const formData = new FormData();
+  formData.append("dataInicio", payload.dataInicio);
+  formData.append("dataFim", payload.dataFim);
+  formData.append("clienteId", payload.clienteId);
+  formData.append("centroCustoId", payload.centroCustoId);
+  formData.append("tipoDocumento", payload.tipoDocumento);
+  if (payload.file) formData.append("file", payload.file);
+
+  const response = await fetch("/api/financeiro/faturar/lote", {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+  });
+  const body = (await response.json().catch(() => null)) as
+    | (FaturamentoLoteResult & { error?: string })
+    | null;
+
+  if (!response.ok || !body) {
+    throw new Error(body?.error || "Falha ao faturar as OS em lote.");
+  }
+  return body;
 }
 
 export async function confirmarRecebimento(

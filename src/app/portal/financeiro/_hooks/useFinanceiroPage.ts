@@ -17,13 +17,17 @@ import type { ReportPayload } from "@/components/financeiro/RelatorioModal";
 import {
   confirmarRecebimento,
   faturarOS,
+  faturarOSLote,
   getComprovanteUrl,
   getFinanceStats,
   getOSById,
   gerarRelatorio,
+  previewFaturamentoLote,
   registrarRepasse,
   registrarRepasseLote,
   type ConfirmarRecebimentoPayload,
+  type FaturamentoLotePayload,
+  type FaturamentoLotePreview,
   type FaturarPayload,
 } from "../_services/financeiro.service";
 import type { RepasseLoteTarget } from "../_components/FinanceiroModals";
@@ -100,6 +104,10 @@ export type FinanceiroPageState = {
   reportLoading: boolean;
   showReportModal: boolean;
 
+  showFaturamentoLoteModal: boolean;
+  faturamentoLoteLoading: boolean;
+  faturamentoLotePreview: FaturamentoLotePreview | null;
+
   // Setters / Actions
   setDataInicio: (value: string) => void;
   setDataFim: (value: string) => void;
@@ -116,6 +124,13 @@ export type FinanceiroPageState = {
   setShowFilters: (value: boolean | ((prev: boolean) => boolean)) => void;
   setShowReportModal: (value: boolean | ((prev: boolean) => boolean)) => void;
   handleOpenReportModal: () => void;
+  handleOpenFaturamentoLote: () => void;
+  closeFaturamentoLote: () => void;
+  clearFaturamentoLotePreview: () => void;
+  handlePreviewFaturamentoLote: (
+    payload: FaturamentoLotePayload,
+  ) => Promise<void>;
+  confirmFaturamentoLote: () => Promise<void>;
   setOpenActionMenuId: (
     value: string | null | ((prev: string | null) => string | null),
   ) => void;
@@ -179,6 +194,14 @@ export function useFinanceiroPage(): FinanceiroPageState {
   const [reportLoading, setReportLoading] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const isReportModalEnabled = true;
+
+  const [showFaturamentoLoteModal, setShowFaturamentoLoteModal] =
+    useState(false);
+  const [faturamentoLoteLoading, setFaturamentoLoteLoading] = useState(false);
+  const [faturamentoLotePreview, setFaturamentoLotePreview] =
+    useState<FaturamentoLotePreview | null>(null);
+  const [faturamentoLotePayload, setFaturamentoLotePayload] =
+    useState<FaturamentoLotePayload | null>(null);
 
   // Modals / Actions
   const [actionTarget, setActionTarget] = useState<FinanceActionTarget | null>(
@@ -513,6 +536,75 @@ export function useFinanceiroPage(): FinanceiroPageState {
     setShowReportModal(true);
   }, [isReportModalEnabled]);
 
+  const handleOpenFaturamentoLote = useCallback((): void => {
+    setFaturamentoLotePreview(null);
+    setFaturamentoLotePayload(null);
+    setShowFaturamentoLoteModal(true);
+  }, []);
+
+  const closeFaturamentoLote = useCallback((): void => {
+    setShowFaturamentoLoteModal(false);
+    setFaturamentoLotePreview(null);
+    setFaturamentoLotePayload(null);
+    setFaturamentoLoteLoading(false);
+  }, []);
+
+  const clearFaturamentoLotePreview = useCallback((): void => {
+    setFaturamentoLotePreview(null);
+  }, []);
+
+  const handlePreviewFaturamentoLote = useCallback(
+    async (payload: FaturamentoLotePayload): Promise<void> => {
+      setFaturamentoLoteLoading(true);
+      try {
+        const preview = await previewFaturamentoLote(payload);
+        if (preview.count === 0) {
+          toast.error("Nenhuma OS liberada e pendente foi encontrada.");
+          return;
+        }
+        setFaturamentoLotePayload(payload);
+        setFaturamentoLotePreview(preview);
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Erro ao visualizar o faturamento em lote.",
+        );
+      } finally {
+        setFaturamentoLoteLoading(false);
+      }
+    },
+    [],
+  );
+
+  const confirmFaturamentoLote = useCallback(async (): Promise<void> => {
+    if (!faturamentoLotePayload) return;
+
+    setFaturamentoLoteLoading(true);
+    try {
+      const result = await faturarOSLote(faturamentoLotePayload);
+      await financeTable.refresh();
+      await loadStats();
+      toast.success(
+        `Faturamento concluído: ${result.count} OS (${formatCurrency(result.totalValue)}).`,
+      );
+      closeFaturamentoLote();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Erro ao confirmar o faturamento em lote.",
+      );
+    } finally {
+      setFaturamentoLoteLoading(false);
+    }
+  }, [
+    closeFaturamentoLote,
+    faturamentoLotePayload,
+    financeTable,
+    loadStats,
+  ]);
+
   // Close action modal
   const closeActionModal = useCallback((): void => {
     setActionTarget(null);
@@ -682,6 +774,10 @@ export function useFinanceiroPage(): FinanceiroPageState {
     reportLoading,
     showReportModal,
 
+    showFaturamentoLoteModal,
+    faturamentoLoteLoading,
+    faturamentoLotePreview,
+
     setDataInicio,
     setDataFim,
     setClienteId,
@@ -697,6 +793,11 @@ export function useFinanceiroPage(): FinanceiroPageState {
     setShowFilters,
     setShowReportModal,
     handleOpenReportModal,
+    handleOpenFaturamentoLote,
+    closeFaturamentoLote,
+    clearFaturamentoLotePreview,
+    handlePreviewFaturamentoLote,
+    confirmFaturamentoLote,
     setOpenActionMenuId,
     setFaturarFile,
     setFaturarTipoDocumento,

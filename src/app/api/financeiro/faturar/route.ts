@@ -28,6 +28,23 @@ function createAdminClient() {
   );
 }
 
+async function hasFinanceAccess(userId: string): Promise<boolean> {
+  const { data, error } = await createAdminClient()
+    .from("user_roles")
+    .select("categoria, specific_permissions")
+    .eq("id", userId)
+    .single();
+  if (error || !data) return false;
+  if (data.categoria === "administrador" || data.categoria === "financeiro") {
+    return true;
+  }
+  const permissions = data.specific_permissions as Record<string, unknown> | null;
+  const financePermissions = permissions?.financeiro as
+    | Record<string, unknown>
+    | undefined;
+  return financePermissions?.page_access === true;
+}
+
 async function createAuthClient() {
   const cookieStore = await cookies();
   return createServerClient(
@@ -54,6 +71,9 @@ export async function POST(request: Request) {
 
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+    if (!(await hasFinanceAccess(user.id))) {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
     }
 
     const formData = await request.formData();

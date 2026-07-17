@@ -3,6 +3,7 @@
 import type { ReactElement } from "react";
 import { RotateCcw } from "lucide-react";
 import RelatorioModal from "@/components/financeiro/RelatorioModal";
+import { FaturamentoLoteModal } from "./_components/FaturamentoLoteModal";
 import { FinanceiroAccessDenied } from "./_components/FinanceiroAccessDenied";
 import { FinanceiroFilters } from "./_components/FinanceiroFilters";
 import { FinanceiroModals } from "./_components/FinanceiroModals";
@@ -26,9 +27,11 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         showFilters={page.showFilters}
         activeQuickRange={page.activeQuickRange}
         reportLoading={page.reportLoading}
+        faturamentoLoteLoading={page.faturamentoLoteLoading}
         onToggleFilters={() => page.setShowFilters((current) => !current)}
         onSetQuickRange={page.setQuickRange}
         onOpenReportModal={page.handleOpenReportModal}
+        onOpenFaturamentoLote={page.handleOpenFaturamentoLote}
         onDataInicioChange={(value) => {
           page.setDataInicio(value);
           page.setActiveQuickRange("custom");
@@ -148,6 +151,21 @@ export default function MedicaoFinanceiraPage(): ReactElement {
           <RotateCcw size={20} className="animate-spin text-blue-600" />
           Atualizando Dashboard...
         </div>
+      ) : null}
+
+      {page.showFaturamentoLoteModal ? (
+        <FaturamentoLoteModal
+          isOpen
+          defaultDataInicio={page.dataInicio}
+          defaultDataFim={page.dataFim}
+          clientes={page.clientes}
+          preview={page.faturamentoLotePreview}
+          loading={page.faturamentoLoteLoading}
+          onClose={page.closeFaturamentoLote}
+          onBack={page.clearFaturamentoLotePreview}
+          onPreview={page.handlePreviewFaturamentoLote}
+          onConfirm={page.confirmFaturamentoLote}
+        />
       ) : null}
 
       <RelatorioModal

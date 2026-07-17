@@ -33,6 +33,11 @@ interface NominatimResult {
 }
 
 // Mapbox Geocoding v6 retorna GeoJSON FeatureCollection
+interface MapboxContextEntry {
+  name: string;
+  mapbox_id?: string;
+  kind?: string;
+}
 interface MapboxFeature {
   id: string;
   geometry: { coordinates: [number, number] }; // [lng, lat]
@@ -41,7 +46,9 @@ interface MapboxFeature {
     full_address?: string;
     place_name?: string;
     feature_type?: string;
-    context?: { name: string; kind: string }[];
+    // context é um objeto cujas chaves variam (street, neighborhood,
+    // place, region, country, postcode...). Cada valor tem { name, ... }.
+    context?: Record<string, MapboxContextEntry>;
   };
 }
 
@@ -73,8 +80,17 @@ export default function GeologAddressInput({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  // Estado local do texto — evita re-render do parent a cada keystroke.
+  // Sincroniza com a prop `value` quando ela muda externamente (ex: edit OS).
+  const [localValue, setLocalValue] = useState(value);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Sincroniza localValue quando a prop value muda externamente
+  // (ex: carregar OS para edicao, ou limpar o formulario).
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -110,7 +126,9 @@ export default function GeologAddressInput({
       const displayName = props.full_address || props.place_name || mainName;
 
       // Constroi sub_label a partir do context (regiao, cidade, etc.)
-      const ctxParts = (props.context || [])
+      // context no Mapbox v6 é um objeto: { street: {name}, neighborhood: {name}, place: {name}, ... }
+      const ctx = props.context || {};
+      const ctxParts = Object.values(ctx)
         .map((c) => c.name)
         .filter((n) => n && n !== mainName);
       const subName = ctxParts.join(" - ") || "Brasil";
@@ -192,6 +210,7 @@ export default function GeologAddressInput({
   };
 
   const handleSelect = (suggestion: Suggestion) => {
+    setLocalValue(suggestion.display_name);
     onChange(suggestion.display_name, {
       lat: suggestion.lat,
       lng: suggestion.lon,
@@ -202,13 +221,25 @@ export default function GeologAddressInput({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    onChange(val);
+    // So atualiza estado local — NAO chama onChange do parent aqui
+    // para evitar re-render do modal inteiro a cada keystroke.
+    setLocalValue(val);
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
     debounceTimer.current = setTimeout(() => {
       searchAddress(val);
     }, 500); // 500ms delay to be gentle with the API
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Ao perder o foco, propaga o texto para o parent.
+    // Se o usuario digitou sem selecionar sugestao, coords serao undefined
+    // e o parent limpara lat/lng (texto livre sem pino no mapa).
+    const val = e.target.value;
+    if (val !== value) {
+      onChange(val, undefined);
+    }
   };
 
   return (
@@ -220,10 +251,12 @@ export default function GeologAddressInput({
       <div className="relative">
         <input
           type="text"
-          value={value}
+          value={localValue}
           onChange={handleInputChange}
+          onBlur={handleBlur}
           onFocus={() =>
-            (suggestions.length > 0 || value.length >= 3) && setIsOpen(true)
+            (suggestions.length > 0 || localValue.length >= 3) &&
+            setIsOpen(true)
           }
           placeholder={placeholder}
           required={required}
@@ -244,7 +277,7 @@ export default function GeologAddressInput({
         )}
       </div>
 
-      {isOpen && value.length >= 3 && (
+      {isOpen && localValue.length >= 3 && (
         <div className="absolute z-[99999] top-full left-0 w-full mt-2 bg-white border-2 border-slate-100 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.15)] rounded-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="max-h-72 overflow-y-auto custom-scrollbar">
             {!loading && suggestions.length === 0 ? (

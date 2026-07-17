@@ -48,6 +48,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Map as MapIcon,
   IdCard,
   Building2,
   Handshake,
@@ -176,6 +177,7 @@ type FormWaypoint = {
   itineraryIndex?: number;
   hora?: string;
   data?: string;
+  useMapbox?: boolean;
 };
 type OSFormData = {
   data: string;
@@ -2299,6 +2301,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: 0,
+        useMapbox: true,
       },
       {
         label: "",
@@ -2307,6 +2310,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: 0,
+        useMapbox: true,
       },
     ],
   };
@@ -2329,7 +2333,7 @@ export default function OSOperationalPage() {
   };
 
   const hydrateFormFromOS = (osItem: OrderService) => {
-    const hydratedWaypoints = osItem.rota?.waypoints?.length
+    const mappedWaypoints = osItem.rota?.waypoints?.length
       ? osItem.rota.waypoints.map((waypoint, index) => ({
           label: waypoint.label,
           lat: waypoint.lat ?? null,
@@ -2350,6 +2354,20 @@ export default function OSOperationalPage() {
           ),
         }))
       : initialForm.waypoints;
+    const mapboxByItinerary = mappedWaypoints.reduce<Record<number, boolean>>(
+      (acc, waypoint) => {
+        const itineraryIndex = waypoint.itineraryIndex ?? 0;
+        acc[itineraryIndex] =
+          acc[itineraryIndex] ||
+          (waypoint.lat !== null && waypoint.lng !== null);
+        return acc;
+      },
+      {},
+    );
+    const hydratedWaypoints = mappedWaypoints.map((waypoint) => ({
+      ...waypoint,
+      useMapbox: mapboxByItinerary[waypoint.itineraryIndex ?? 0],
+    }));
 
     const nextFormData: OSFormData = {
       data: osItem.data,
@@ -3926,6 +3944,7 @@ export default function OSOperationalPage() {
       comment: "",
       passengers: [],
       itineraryIndex: targetIt.index,
+      useMapbox: targetIt.waypoints[0]?.useMapbox !== false,
     };
     const newWaypoints = [...formData.waypoints];
     newWaypoints.splice(insertIdx, 0, newWaypoint);
@@ -3957,6 +3976,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: newItIndex,
+        useMapbox: true,
       },
       {
         label: "",
@@ -3965,6 +3985,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: newItIndex,
+        useMapbox: true,
       },
     );
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
@@ -3989,6 +4010,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: returnIndex,
+        useMapbox: true,
       },
       {
         label: "",
@@ -3997,6 +4019,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: returnIndex,
+        useMapbox: true,
       },
     );
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
@@ -4088,6 +4111,48 @@ export default function OSOperationalPage() {
       label: value,
       lat,
       lng,
+    };
+    setFormData((prev) => ({
+      ...prev,
+      waypoints: newWaypoints,
+    }));
+  };
+
+  // Toggle para ativar/desativar Mapbox em um ciclo inteiro
+  const handleToggleMapbox = (itineraryIndex: number) => {
+    setFormData((prev) => {
+      const cycleWaypoints = prev.waypoints.filter(
+        (waypoint) => (waypoint.itineraryIndex ?? 0) === itineraryIndex,
+      );
+      const shouldEnable = cycleWaypoints[0]?.useMapbox === false;
+
+      return {
+        ...prev,
+        waypoints: prev.waypoints.map((waypoint) =>
+          (waypoint.itineraryIndex ?? 0) === itineraryIndex
+            ? {
+                ...waypoint,
+                useMapbox: shouldEnable,
+                lat: shouldEnable ? waypoint.lat : null,
+                lng: shouldEnable ? waypoint.lng : null,
+              }
+            : waypoint,
+        ),
+      };
+    });
+  };
+
+  // Atualiza apenas lat/lng do waypoint quando o usuario arrasta o pino no mapa.
+  // Nao toca no label (endereco continua o que foi digitado/selecionado).
+  const handleWaypointDrag = (
+    index: number,
+    coords: { lat: number; lng: number },
+  ) => {
+    const newWaypoints = [...formData.waypoints];
+    newWaypoints[index] = {
+      ...newWaypoints[index],
+      lat: coords.lat,
+      lng: coords.lng,
     };
     setFormData((prev) => ({
       ...prev,
@@ -7785,6 +7850,25 @@ export default function OSOperationalPage() {
                                         </label>
                                         {isOrigin && (
                                           <div className="flex items-center gap-3">
+                                            {/* Toggle Mapbox */}
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleToggleMapbox(it.index)
+                                              }
+                                              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                                                waypoint.useMapbox !== false
+                                                  ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                              }`}
+                                              title={
+                                                waypoint.useMapbox !== false
+                                                  ? "Mapbox ativado neste ciclo"
+                                                  : "Mapbox desativado neste ciclo"
+                                              }
+                                            >
+                                              <MapIcon size={14} />
+                                            </button>
                                             <div className="flex items-center gap-1.5">
                                               <Calendar
                                                 size={14}
@@ -7857,22 +7941,23 @@ export default function OSOperationalPage() {
                                         )}
                                       </div>
                                       <div className="relative">
-                                        <GeologAddressInput
-                                          label=""
-                                          value={waypoint.label}
-                                          onChange={(val, coords) =>
-                                            handleWaypointChange(
-                                              index,
-                                              val,
-                                              coords ?? undefined,
-                                            )
-                                          }
-                                          placeholder={
-                                            isOrigin
-                                              ? "Ex: Hotel H/Niterói"
-                                              : "Próximo destino..."
-                                          }
-                                          required
+                                        {waypoint.useMapbox !== false ? (
+                                          <GeologAddressInput
+                                            label=""
+                                            value={waypoint.label}
+                                            onChange={(val, coords) =>
+                                              handleWaypointChange(
+                                                index,
+                                                val,
+                                                coords ?? undefined,
+                                              )
+                                            }
+                                            placeholder={
+                                              isOrigin
+                                                ? "Ex: Hotel H/Niterói"
+                                                : "Próximo destino..."
+                                            }
+                                            required
                                           rightSlot={
                                             <>
                                               <button
@@ -7918,6 +8003,70 @@ export default function OSOperationalPage() {
                                             </>
                                           }
                                         />
+                                        ) : (
+                                          <div className="relative">
+                                            <input
+                                              type="text"
+                                              value={waypoint.label}
+                                              onChange={(e) =>
+                                                handleWaypointChange(
+                                                  index,
+                                                  e.target.value,
+                                                  null,
+                                                )
+                                              }
+                                              placeholder={
+                                                isOrigin
+                                                  ? "Ex: Hotel H/Niterói"
+                                                  : "Próximo destino..."
+                                              }
+                                              className="w-full px-4 py-3 pr-32 bg-white border-2 border-slate-200 rounded-2xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                                              required
+                                            />
+                                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  toggleWaypointComment(index)
+                                                }
+                                                className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[index] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
+                                                title="Adicionar observação"
+                                              >
+                                                <MessageSquareMore size={16} />
+                                                {waypoint.comment.trim() && (
+                                                  <>
+                                                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-ping"></span>
+                                                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></span>
+                                                  </>
+                                                )}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleAddPassenger(index)
+                                                }
+                                                className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all flex items-center justify-center shadow-sm border border-blue-100 cursor-pointer"
+                                                title="Adicionar Passageiro"
+                                              >
+                                                <Plus size={18} />
+                                              </button>
+                                              {formData.waypoints.length > 2 &&
+                                                !isOrigin &&
+                                                !isDestination && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      handleRemoveWaypoint(index)
+                                                    }
+                                                    className="p-2 bg-red-50 text-red-400 rounded-lg hover:bg-red-100 transition-all flex items-center justify-center shadow-sm border border-red-100 cursor-pointer"
+                                                    title="Remover Parada"
+                                                  >
+                                                    <X size={18} />
+                                                  </button>
+                                                )}
+                                            </div>
+                                          </div>
+                                        )}
                                       </div>
                                       {openWaypointComments[index] && (
                                         <div className="mt-3 ml-12">
@@ -8035,8 +8184,14 @@ export default function OSOperationalPage() {
                             </div>
                           );
                         })}
-                      {/* Mapa do itinerário/retorno */}
-                      <ItineraryMap waypoints={it.waypoints} />
+                      {/* Mapa do itinerário/retorno - só aparece se o Mapbox estiver ativo no ciclo */}
+                      {it.waypoints[0]?.useMapbox !== false && (
+                        <ItineraryMap
+                          waypoints={it.waypoints}
+                          waypointIndices={it.waypointIndices}
+                          onWaypointDrag={handleWaypointDrag}
+                        />
+                      )}
                       </div>
                     ))}
                   </div>
@@ -10114,7 +10269,10 @@ export default function OSOperationalPage() {
                               })}
                             </div>
                             {/* Mapa do itinerário/retorno (visualização) */}
-                            <ItineraryMap waypoints={it.waypoints} />
+                            {it.waypoints.some(
+                              (waypoint) =>
+                                waypoint.lat !== null && waypoint.lng !== null,
+                            ) && <ItineraryMap waypoints={it.waypoints} />}
                           </div>
                         ));
                       })()}

@@ -16,9 +16,11 @@ type FinanceiroToolbarProps = {
   showFilters: boolean;
   activeQuickRange: "today" | "week" | "month" | "custom" | null;
   reportLoading: boolean;
+  faturamentoLoteLoading: boolean;
   onToggleFilters: () => void;
   onSetQuickRange: (mode: "today" | "week" | "month") => void;
   onOpenReportModal: () => void;
+  onOpenFaturamentoLote: () => void;
   onDataInicioChange: (value: string) => void;
   onDataFimChange: (value: string) => void;
 };
@@ -36,9 +38,11 @@ export function FinanceiroToolbar({
   showFilters,
   activeQuickRange,
   reportLoading,
+  faturamentoLoteLoading,
   onToggleFilters,
   onSetQuickRange,
   onOpenReportModal,
+  onOpenFaturamentoLote,
   onDataInicioChange,
   onDataFimChange,
 }: FinanceiroToolbarProps): ReactElement {
@@ -116,6 +120,19 @@ export function FinanceiroToolbar({
               <Download size={16} />
             )}
             Exportar Relatório
+          </button>
+          <button
+            type="button"
+            onClick={onOpenFaturamentoLote}
+            disabled={faturamentoLoteLoading}
+            className="inline-flex items-center gap-2 rounded-2xl border border-yellow-300 bg-gradient-to-r from-yellow-50 via-yellow-100 to-yellow-200 bg-[length:200%_100%] animate-gradient px-4 py-2.5 text-sm font-black text-[rgb(100,102,20)] transition-all duration-300 hover:from-yellow-100 hover:via-yellow-200 hover:to-yellow-300 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
+          >
+            {faturamentoLoteLoading ? (
+              <RotateCcw size={16} className="animate-spin" />
+            ) : (
+              <ReceiptText size={16} />
+            )}
+            Faturar
           </button>
         </div>
       </div>
