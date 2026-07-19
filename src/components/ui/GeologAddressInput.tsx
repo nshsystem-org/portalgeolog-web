@@ -9,8 +9,16 @@ interface Suggestion {
   display_name: string;
   main_name: string;
   sub_name: string;
-  lat: number;
-  lon: number;
+  // lat/lon podem ser null quando a sugestao vem da Search Box API
+  // (as coordenadas so chegam no passo "retrieve", apos a selecao).
+  lat: number | null;
+  lon: number | null;
+  mapbox_id?: string;
+  // Numero digitado pelo usuario, injetado em sugestoes de rua
+  // (usado para geocode estruturado no momento da selecao).
+  house_number?: string;
+  // Nome original da rua (sem numero), para o geocode estruturado.
+  street_name?: string;
 }
 
 interface NominatimAddress {
@@ -32,29 +40,31 @@ interface NominatimResult {
   address?: NominatimAddress;
 }
 
-// Mapbox Geocoding v6 retorna GeoJSON FeatureCollection
-interface MapboxContextEntry {
+// Mapbox Search Box API (suggest + retrieve).
+// Entende consultas informais brasileiras (numero, quadra, lote, POIs)
+// muito melhor que o Geocoding v6.
+interface SearchBoxSuggestion {
   name: string;
-  mapbox_id?: string;
-  kind?: string;
-}
-interface MapboxFeature {
-  id: string;
-  geometry: { coordinates: [number, number] }; // [lng, lat]
-  properties: {
-    name?: string;
-    full_address?: string;
-    place_name?: string;
-    feature_type?: string;
-    // context é um objeto cujas chaves variam (street, neighborhood,
-    // place, region, country, postcode...). Cada valor tem { name, ... }.
-    context?: Record<string, MapboxContextEntry>;
-  };
+  mapbox_id: string;
+  feature_type?: string;
+  full_address?: string;
+  place_formatted?: string;
+  address?: string;
 }
 
-interface MapboxResponse {
-  type: "FeatureCollection";
-  features: MapboxFeature[];
+interface SearchBoxSuggestResponse {
+  suggestions: SearchBoxSuggestion[];
+}
+
+interface SearchBoxRetrieveResponse {
+  features: Array<{
+    geometry: { coordinates: [number, number] }; // [lng, lat]
+    properties: {
+      name?: string;
+      full_address?: string;
+      place_formatted?: string;
+    };
+  }>;
 }
 
 interface GeologAddressInputProps {
@@ -85,6 +95,20 @@ export default function GeologAddressInput({
   const [localValue, setLocalValue] = useState(value);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  // Session token da Search Box API: agrupa suggest + retrieve para billing.
+  // Renovado apos cada retrieve (fim da sessao de busca).
+  const sessionTokenRef = useRef<string>(
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2),
+  );
+
+  const renewSessionToken = () => {
+    sessionTokenRef.current =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2);
+  };
 
   // Sincroniza localValue quando a prop value muda externamente
   // (ex: carregar OS para edicao, ou limpar o formulario).
@@ -105,43 +129,121 @@ export default function GeologAddressInput({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Extrai o numero da casa digitado na consulta (ex: "rua x 38 cidade" -> "38").
+  // Ignora CEPs (5+3 digitos) e numeros com 6+ digitos.
+  const extractHouseNumber = (query: string): string | null => {
+    const withoutCep = query.replace(/\b\d{5}-?\d{3}\b/g, " ");
+    const match = withoutCep.match(
+      /(?:^|[\s,])(?:n[ºo°.]?\s*)?(\d{1,5})(?=[\s,]|$)/i,
+    );
+    return match ? match[1] : null;
+  };
+
   const searchAddressMapbox = async (query: string): Promise<Suggestion[]> => {
     const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
     if (!token) return [];
 
-    const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(
-      query,
-    )}&access_token=${token}&country=br&language=pt&limit=10&autocomplete=true`;
+    const url =
+      `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(query)}` +
+      `&access_token=${token}&session_token=${sessionTokenRef.current}` +
+      `&country=br&language=pt&limit=10` +
+      `&types=address,street,neighborhood,place,locality,postcode,poi&proximity=ip`;
 
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`Mapbox geocoding falhou: ${response.status}`);
+      throw new Error(`Mapbox Search Box falhou: ${response.status}`);
     }
-    const data: MapboxResponse = await response.json();
+    const data: SearchBoxSuggestResponse = await response.json();
+    const houseNumber = extractHouseNumber(query);
 
-    return (data.features || []).map((feature) => {
-      const [lng, lat] = feature.geometry.coordinates;
-      const props = feature.properties;
-      const mainName = props.name || props.full_address?.split(",")[0] || "";
-      const displayName = props.full_address || props.place_name || mainName;
+    return (data.suggestions || []).map((item) => {
+      const rawName = item.name || item.address || "";
+      const subName = item.place_formatted || "Brasil";
 
-      // Constroi sub_label a partir do context (regiao, cidade, etc.)
-      // context no Mapbox v6 é um objeto: { street: {name}, neighborhood: {name}, place: {name}, ... }
-      const ctx = props.context || {};
-      const ctxParts = Object.values(ctx)
-        .map((c) => c.name)
-        .filter((n) => n && n !== mainName);
-      const subName = ctxParts.join(" - ") || "Brasil";
+      // Se o usuario digitou um numero mas o Mapbox so achou a rua
+      // (sem numeracao na base), injeta o numero na sugestao — igual ao
+      // Google Maps. Na selecao, tentamos geocodificar o numero exato.
+      const isStreetWithNumber =
+        houseNumber !== null && item.feature_type === "street";
+      const mainName = isStreetWithNumber
+        ? `${rawName}, ${houseNumber}`
+        : rawName;
+      const displayName = isStreetWithNumber
+        ? [mainName, item.place_formatted].filter(Boolean).join(", ")
+        : item.full_address ||
+          [mainName, item.place_formatted].filter(Boolean).join(", ");
 
       return {
-        place_id: feature.id,
+        place_id: item.mapbox_id,
         display_name: displayName,
         main_name: mainName,
         sub_name: subName,
-        lat,
-        lon: lng,
+        lat: null,
+        lon: null,
+        mapbox_id: item.mapbox_id,
+        ...(isStreetWithNumber
+          ? { house_number: houseNumber, street_name: rawName }
+          : {}),
       };
     });
+  };
+
+  // Passo "retrieve" da Search Box API: busca as coordenadas exatas
+  // da sugestao selecionada.
+  const retrieveMapboxCoords = async (
+    mapboxId: string,
+  ): Promise<{ lat: number; lng: number } | undefined> => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+    if (!token) return undefined;
+
+    const url =
+      `https://api.mapbox.com/search/searchbox/v1/retrieve/${encodeURIComponent(mapboxId)}` +
+      `?access_token=${token}&session_token=${sessionTokenRef.current}&language=pt`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Mapbox retrieve falhou: ${response.status}`);
+    }
+    const data: SearchBoxRetrieveResponse = await response.json();
+    const coords = data.features?.[0]?.geometry?.coordinates;
+    if (!coords) return undefined;
+    return { lat: coords[1], lng: coords[0] };
+  };
+
+  // Tenta geocodificar o numero exato da casa via Geocoding v6 estruturado,
+  // com proximity no ponto da rua. Retorna undefined se a base do Mapbox
+  // nao tiver numeracao para a rua (nesse caso usamos o ponto da rua).
+  const geocodeExactNumber = async (
+    streetName: string,
+    houseNumber: string,
+    near: { lat: number; lng: number },
+    city?: string,
+  ): Promise<{ lat: number; lng: number } | undefined> => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+    if (!token) return undefined;
+
+    const url =
+      `https://api.mapbox.com/search/geocode/v6/forward` +
+      `?address_line1=${encodeURIComponent(`${streetName} ${houseNumber}`)}` +
+      (city ? `&place=${encodeURIComponent(city)}` : "") +
+      `&access_token=${token}&country=br&language=pt&limit=1` +
+      `&types=address&proximity=${near.lng},${near.lat}`;
+
+    const response = await fetch(url);
+    if (!response.ok) return undefined;
+    const data: {
+      features?: Array<{ geometry: { coordinates: [number, number] } }>;
+    } = await response.json();
+    const coords = data.features?.[0]?.geometry?.coordinates;
+    if (!coords) return undefined;
+
+    // Sanity check: o resultado precisa estar perto da rua selecionada
+    // (~3km). Evita pegar rua homonima em outra cidade.
+    const dLat = Math.abs(coords[1] - near.lat);
+    const dLng = Math.abs(coords[0] - near.lng);
+    if (dLat > 0.03 || dLng > 0.03) return undefined;
+
+    return { lat: coords[1], lng: coords[0] };
   };
 
   const searchAddressNominatim = async (
@@ -209,14 +311,49 @@ export default function GeologAddressInput({
     }
   };
 
-  const handleSelect = (suggestion: Suggestion) => {
+  const handleSelect = async (suggestion: Suggestion) => {
     setLocalValue(suggestion.display_name);
-    onChange(suggestion.display_name, {
-      lat: suggestion.lat,
-      lng: suggestion.lon,
-    });
     setIsOpen(false);
     setSuggestions([]);
+
+    // Sugestao do Nominatim ja vem com coordenadas
+    if (suggestion.lat !== null && suggestion.lon !== null) {
+      onChange(suggestion.display_name, {
+        lat: suggestion.lat,
+        lng: suggestion.lon,
+      });
+      return;
+    }
+
+    // Sugestao da Search Box API: busca coordenadas via retrieve
+    if (suggestion.mapbox_id) {
+      try {
+        let coords = await retrieveMapboxCoords(suggestion.mapbox_id);
+        // Sugestao de rua com numero injetado: tenta refinar para o
+        // ponto exato do numero (se a base tiver numeracao da rua).
+        if (coords && suggestion.house_number && suggestion.street_name) {
+          // Cidade: primeiro segmento do place_formatted
+          // (ex: "Casimiro de Abreu - Rio de Janeiro, 28880, Brasil").
+          const city = suggestion.sub_name.split(/\s*[-,]\s*/)[0]?.trim();
+          const exact = await geocodeExactNumber(
+            suggestion.street_name,
+            suggestion.house_number,
+            coords,
+            city || undefined,
+          );
+          if (exact) coords = exact;
+        }
+        onChange(suggestion.display_name, coords);
+      } catch (error) {
+        console.error("Erro ao buscar coordenadas do endereco:", error);
+        onChange(suggestion.display_name, undefined);
+      } finally {
+        renewSessionToken();
+      }
+      return;
+    }
+
+    onChange(suggestion.display_name, undefined);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,7 +427,7 @@ export default function GeologAddressInput({
             ) : (
               suggestions.map((item) => (
                 <div
-                  key={item.place_id + item.lat}
+                  key={item.place_id}
                   onClick={() => handleSelect(item)}
                   className="px-6 py-4 hover:bg-blue-50 cursor-pointer flex items-start gap-4 transition-colors border-b border-slate-50 last:border-none group/item"
                 >

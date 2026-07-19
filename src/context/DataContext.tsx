@@ -35,6 +35,7 @@ import {
   deleteVeiculoFromDB,
   updateDriverInDB,
   deleteDriverFromDB,
+  restoreDriverFromDB,
   insertSolicitante,
   updateSolicitanteInDB,
   deleteSolicitanteFromDB,
@@ -393,6 +394,7 @@ interface DataContextType {
   addDriver: (driver: Omit<Driver, "id" | "created_at">) => Promise<Driver>;
   updateDriver: (id: string, updates: Partial<Driver>) => Promise<void>;
   deleteDriver: (id: string) => Promise<void>;
+  restoreDriver: (id: string) => Promise<void>;
   updateVeiculo: (id: string, input: Partial<Vehicle>) => Promise<Vehicle>;
   deleteVeiculo: (id: string) => Promise<void>;
 
@@ -1303,6 +1305,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const restoreDriver = async (id: string): Promise<void> => {
+    try {
+      await restoreDriverFromDB(id);
+      logInfo("DataContext", "Motorista restaurado com sucesso", {
+        driverId: id,
+      });
+    } catch (error) {
+      logErrorEntry(
+        "DataContext",
+        "Falha ao restaurar motorista",
+        error as Error,
+        {
+          driverId: id,
+        },
+      );
+      throw error instanceof Error
+        ? error
+        : new Error("Não foi possível restaurar o motorista.");
+    }
+  };
+
   const updateVeiculo = async (
     id: string,
     input: Partial<Vehicle>,
@@ -1843,6 +1866,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         addDriver,
         updateDriver,
         deleteDriver,
+        restoreDriver,
         updateVeiculo,
         deleteVeiculo,
         addParceiro,

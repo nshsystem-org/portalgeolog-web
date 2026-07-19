@@ -2102,13 +2102,23 @@ export async function fetchCentrosCustoByCliente(
 
 // ── Motoristas ────────────────────────────────────────────
 
-export async function fetchDrivers(): Promise<Driver[]> {
+export async function fetchDrivers(
+  options: { arquivado?: boolean } = {},
+): Promise<Driver[]> {
   return withRetry(async () => {
-    const { data, error } = await getSupabase()
+    let query = getSupabase()
       .from("drivers")
       .select(DRIVER_SELECT_COLUMNS)
-      .eq("arquivado", false)
       .order("name");
+
+    if (options.arquivado === true) {
+      query = query.eq("arquivado", true);
+    } else if (options.arquivado === false) {
+      query = query.eq("arquivado", false);
+    }
+    // arquivado === undefined => traz todos (ativos + arquivados)
+
+    const { data, error } = await query;
 
     if (error) throw error;
     return ((data || []) as unknown as DriverRow[]).map((d) => ({
@@ -2266,6 +2276,14 @@ export async function deleteDriverFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("drivers")
     .update({ arquivado: true, status: "inactive" })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function restoreDriverFromDB(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("drivers")
+    .update({ arquivado: false, status: "active" })
     .eq("id", id);
   if (error) throw error;
 }

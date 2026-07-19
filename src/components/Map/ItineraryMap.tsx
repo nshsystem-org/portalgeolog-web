@@ -1,7 +1,16 @@
 "use client";
 
 import { useMemo, useRef, useEffect, useState } from "react";
-import Map, { Marker, Popup, Source, Layer, MapRef } from "react-map-gl/mapbox";
+import Map, {
+  Marker,
+  Popup,
+  Source,
+  Layer,
+  MapRef,
+  NavigationControl,
+  FullscreenControl,
+  ScaleControl,
+} from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { MapPin } from "lucide-react";
 import type { Feature, LineString } from "geojson";
@@ -26,7 +35,9 @@ interface ItineraryMapProps {
 }
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
-const MAPBOX_STYLE = "mapbox://styles/mapbox/streets-v12";
+// Mapbox Standard: style mais moderno (v3), com visual bem proximo ao Google Maps
+// (POIs com icones coloridos, predios 3D sutis, cores claras).
+const MAPBOX_STYLE = "mapbox://styles/mapbox/standard";
 
 export default function ItineraryMap({
   waypoints,
@@ -42,6 +53,17 @@ export default function ItineraryMap({
   const [routeGeoJson, setRouteGeoJson] = useState<Feature<LineString> | null>(
     null,
   );
+  const [zoom, setZoom] = useState<number>(12);
+
+  // Escala dos marcadores conforme o zoom: 1.0 no zoom >= 16 (nivel rua),
+  // encolhendo gradualmente ate 0.35 no zoom <= 9 (cidade vista de cima).
+  const markerScale = useMemo(() => {
+    const minZoom = 9;
+    const maxZoom = 16;
+    const minScale = 0.35;
+    const t = Math.min(1, Math.max(0, (zoom - minZoom) / (maxZoom - minZoom)));
+    return minScale + t * (1 - minScale);
+  }, [zoom]);
 
   // Filtra apenas waypoints com coords validas E com useMapbox ativado
   const pointsWithCoords = useMemo(
@@ -89,7 +111,9 @@ export default function ItineraryMap({
       .map((wp) => `${wp.lng},${wp.lat}`)
       .join(";");
 
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+    // overview=full: geometria em resolucao maxima (o padrao "simplified"
+    // devolve poucos pontos e a linha sai das ruas nas curvas).
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?geometries=geojson&overview=full&steps=false&access_token=${MAPBOX_TOKEN}`;
 
     fetch(url)
       .then((res) => res.json())
@@ -186,18 +210,35 @@ export default function ItineraryMap({
         initialViewState={initialViewState}
         mapStyle={MAPBOX_STYLE}
         scrollZoom
+        onLoad={(e) => setZoom(e.target.getZoom())}
+        onZoom={(e) => setZoom(e.viewState.zoom)}
         style={{ width: "100%", height: "100%" }}
       >
-        {/* Linha da rota conectando os waypoints (rota real pelas ruas) */}
+        <NavigationControl position="top-right" showCompass={false} />
+        <FullscreenControl position="top-right" />
+        <ScaleControl position="bottom-left" />
+
+        {/* Linha da rota conectando os waypoints (rota real pelas ruas).
+            Estilo Google Maps: linha azul #4285F4 com contorno azul-escuro. */}
         {routeGeoJson && (
           <Source id="route" type="geojson" data={routeGeoJson}>
             <Layer
+              id="route-casing"
+              type="line"
+              layout={{ "line-join": "round", "line-cap": "round" }}
+              paint={{
+                "line-color": "#1a5fc8",
+                "line-width": 8,
+                "line-opacity": 0.9,
+              }}
+            />
+            <Layer
               id="route-line"
               type="line"
+              layout={{ "line-join": "round", "line-cap": "round" }}
               paint={{
-                "line-color": "#2563eb",
+                "line-color": "#4285F4",
                 "line-width": 5,
-                "line-opacity": 0.8,
               }}
             />
           </Source>
@@ -254,7 +295,13 @@ export default function ItineraryMap({
               <div
                 className={`inline-flex items-stretch rounded-lg overflow-hidden shadow-md border text-[9px] ${bgColor} ${borderColor} text-white ${
                   onWaypointDrag ? "cursor-grab active:cursor-grabbing" : ""
-                } transition-transform hover:scale-105`}
+                }`}
+                style={{
+                  // Encolhe o marcador em zoom out (anchor="bottom":
+                  // escala a partir da base para o pino nao sair do lugar)
+                  transform: `scale(${markerScale})`,
+                  transformOrigin: "bottom center",
+                }}
               >
                 <span
                   className={`px-1.5 py-1 flex items-center justify-center ${iconBg}`}

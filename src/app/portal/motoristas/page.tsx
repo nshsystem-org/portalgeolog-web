@@ -24,6 +24,9 @@ import {
   FilterX,
   Camera,
   Upload,
+  RotateCcw,
+  ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import DriverDocsModal from "@/components/DriverDocsModal";
 import { DataTable } from "@/components/ui/DataTable";
@@ -37,6 +40,7 @@ import {
   useData,
   type ParceiroServico,
   type NovoParceiroInput,
+  type OrderService,
 } from "@/context/DataContext";
 import { useParceiros } from "@/hooks/useParceiros";
 import {
@@ -44,7 +48,11 @@ import {
   normalizeBrazilPhone,
   stripBrazilCountryCode,
 } from "@/lib/phone";
-import { fetchDriversPage } from "@/lib/supabase/queries";
+import {
+  fetchDriversPage,
+  fetchDrivers,
+  fetchOSById,
+} from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import { getThumbnailUrl } from "@/utils/avatar";
 
@@ -239,6 +247,8 @@ export default function MotoristasPage() {
   const [viewingDriver, setViewingDriver] = useState<Driver | null>(null);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
   const [editingDriverAvatarUrl, setEditingDriverAvatarUrl] = useState<string | null>(null);
+  const [blockingOS, setBlockingOS] = useState<OrderService | null>(null);
+  const [isLoadingBlockingOS, setIsLoadingBlockingOS] = useState(false);
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const supabase = createClient();
   const { parceiros } = useParceiros();
@@ -247,8 +257,13 @@ export default function MotoristasPage() {
     refreshData,
     addParceiro,
     deleteDriver,
+    restoreDriver,
   } = useData();
   const driversTable = useServerPaginatedTable(fetchDriversPage, 10);
+
+  // Motoristas arquivados (carregados sob demanda quando o filtro status="inactive" é ativado)
+  const [archivedDrivers, setArchivedDrivers] = useState<Driver[]>([]);
+  const [isLoadingArchived, setIsLoadingArchived] = useState(false);
 
   type AdvancedFilters = {
     tipoVeiculo: string;
@@ -268,6 +283,31 @@ export default function MotoristasPage() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [clientPage, setClientPage] = useState(1);
   const clientPageSize = 10;
+
+  // Carrega motoristas arquivados sob demanda quando o filtro status="inactive" é ativado
+  useEffect(() => {
+    if (advancedFilters.status !== "inactive") {
+      setArchivedDrivers([]);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingArchived(true);
+    fetchDrivers({ arquivado: true })
+      .then((drivers) => {
+        if (!cancelled) setArchivedDrivers(drivers as Driver[]);
+      })
+      .catch((error) => {
+        console.error("Erro ao carregar motoristas arquivados:", error);
+        toast.error("Erro ao carregar motoristas arquivados.");
+        if (!cancelled) setArchivedDrivers([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingArchived(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [advancedFilters.status]);
 
   const hasActiveAdvancedFilters = useMemo(() => {
     return (
@@ -366,7 +406,17 @@ export default function MotoristasPage() {
   }, [vehicles]);
 
   const filteredDrivers = useMemo(() => {
-    let base = hasActiveAdvancedFilters ? allDrivers : driversTable.items;
+    // Quando o filtro status="inactive" (Arquivado) está ativo, usamos a lista
+    // de arquivados carregada sob demanda. Caso contrário, usamos allDrivers
+    // (que só contém ativos) ou a paginação server-side.
+    let base: Driver[];
+    if (advancedFilters.status === "inactive") {
+      base = archivedDrivers;
+    } else if (hasActiveAdvancedFilters) {
+      base = allDrivers;
+    } else {
+      base = driversTable.items;
+    }
 
     if (advancedFilters.tipoVeiculo) {
       base = base.filter((driver) =>
@@ -387,14 +437,16 @@ export default function MotoristasPage() {
         (driver) => driver.vinculo_tipo === advancedFilters.vinculoTipo,
       );
     }
-    if (advancedFilters.status) {
-      base = base.filter((driver) => driver.status === advancedFilters.status);
+    if (advancedFilters.status === "active") {
+      base = base.filter((driver) => driver.status === "active");
     }
+    // status === "inactive" já foi tratado pela escolha da lista base
 
     return base;
   }, [
     allDrivers,
     driversTable.items,
+    archivedDrivers,
     hasActiveAdvancedFilters,
     advancedFilters,
   ]);
@@ -447,7 +499,63 @@ export default function MotoristasPage() {
     }));
   };
 
-  const handleRemoveVehicle = (index: number) => {
+  const handleRemoveVehicle = async (index: number): Promise<void> => {
+    // Se estamos editando um motorista, validar se o veículo está em uso
+    if (editingDriver) {
+      const vehicleIdToRemove = formData.vehicle_ids[index];
+      if (!vehicleIdToRemove) return;
+
+      // Verificar se este veículo está vinculado ao motorista no banco
+      const isCurrentlyLinked = editingDriver.driver_vehicles?.some(
+        (dv) => dv.vehicle_id === vehicleIdToRemove,
+      );
+
+      if (isCurrentlyLinked) {
+        // Verificar se há OS em aberto usando este veículo
+        const { data: blockingOSData } = await supabase
+          .from("ordens_servico")
+          .select("id, protocolo, status_operacional, veiculo_id")
+          .eq("arquivado", false)
+          .or(
+            `driver_id.eq.${editingDriver.id},and(driver_id.is.null,motorista.eq.${editingDriver.name})`,
+          )
+          .eq("veiculo_id", vehicleIdToRemove)
+          .in("status_operacional", ["Pendente", "Aguardando", "Em Rota"])
+          .limit(1);
+
+        if (blockingOSData && blockingOSData.length > 0) {
+          toast(
+            <div className="flex items-start gap-3">
+              <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+              <div className="flex-1">
+                <p className="font-semibold text-slate-800 mb-1">
+                  Veículo em uso
+                </p>
+                <p className="text-sm text-slate-600 mb-3">
+                  Este veículo está em atendimento ativo
+                </p>
+                <button
+                  onClick={() => {
+                    void handleViewBlockingOS(blockingOSData[0].id);
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  <ExternalLink size={14} />
+                  Ver OS
+                </button>
+              </div>
+            </div>,
+            {
+              duration: 10000,
+              className: "!bg-amber-50 !border-amber-200",
+            },
+          );
+          return; // Bloqueia a remoção
+        }
+      }
+    }
+
+    // Se passou na validação (ou não está editando), remove o veículo
     setFormData((prev) => ({
       ...prev,
       vehicle_ids: prev.vehicle_ids.filter((_, idx) => idx !== index),
@@ -1206,9 +1314,31 @@ export default function MotoristasPage() {
           .limit(1);
 
         if (blockingOS && blockingOS.length > 0) {
-          toast.error(
-            `Não é possível desvincular veículo(s). Existe atendimento em aberto (OS ${blockingOS[0].protocolo || blockingOS[0].id}) vinculado a este motorista.`,
-            { duration: 6000 },
+          toast(
+            <div className="flex items-start gap-3">
+              <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+              <div className="flex-1">
+                <p className="font-semibold text-slate-800 mb-1">
+                  Veículo em uso
+                </p>
+                <p className="text-sm text-slate-600 mb-3">
+                  Este veículo está em atendimento ativo
+                </p>
+                <button
+                  onClick={() => {
+                    void handleViewBlockingOS(blockingOS[0].id);
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  <ExternalLink size={14} />
+                  Ver OS
+                </button>
+              </div>
+            </div>,
+            {
+              duration: 10000,
+              className: "!bg-amber-50 !border-amber-200",
+            },
           );
           setIsSubmitting(false);
           return;
@@ -1357,6 +1487,51 @@ export default function MotoristasPage() {
     } catch (error) {
       console.error("Erro ao arquivar motorista:", error);
       toast.error("Erro ao arquivar motorista.");
+    }
+  };
+
+  const handleRestoreDriver = async (id: string): Promise<void> => {
+    const driver = archivedDrivers.find((d) => d.id === id);
+    if (!driver) return;
+
+    const confirmed = await confirm({
+      title: "Restaurar Motorista",
+      message: `Tem certeza que deseja restaurar o motorista "${driver.name}"? Ele voltará a aparecer na lista de ativos.`,
+      confirmText: "Sim, restaurar",
+      cancelText: "Cancelar",
+      type: "info",
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await restoreDriver(id);
+      // Remove da lista de arquivados imediatamente
+      setArchivedDrivers((prev) => prev.filter((d) => d.id !== id));
+      // Atualiza a lista de ativos (allDrivers vem do DataContext)
+      void refreshData();
+      void driversTable.refresh();
+      toast.success("Motorista restaurado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao restaurar motorista:", error);
+      toast.error("Erro ao restaurar motorista.");
+    }
+  };
+
+  const handleViewBlockingOS = async (osId: string): Promise<void> => {
+    setIsLoadingBlockingOS(true);
+    try {
+      const os = await fetchOSById(osId);
+      if (os) {
+        setBlockingOS(os);
+      } else {
+        toast.error("OS não encontrada.");
+      }
+    } catch (error) {
+      console.error("Erro ao carregar OS:", error);
+      toast.error("Erro ao carregar detalhes da OS.");
+    } finally {
+      setIsLoadingBlockingOS(false);
     }
   };
 
@@ -1649,11 +1824,21 @@ export default function MotoristasPage() {
             key: "status",
             title: "Status",
             align: "center",
-            render: () => (
-              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border bg-green-100 text-green-700 border-green-200">
-                ATIVO
-              </span>
-            ),
+            render: (value: unknown, item: Driver) => {
+              void value;
+              const isArchived = item.status === "inactive";
+              return (
+                <span
+                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs md:text-sm font-bold uppercase tracking-wide border ${
+                    isArchived
+                      ? "bg-slate-100 text-slate-600 border-slate-200"
+                      : "bg-green-100 text-green-700 border-green-200"
+                  }`}
+                >
+                  {isArchived ? "ARQUIVADO" : "ATIVO"}
+                </span>
+              );
+            },
           },
           {
             key: "acoes",
@@ -1661,6 +1846,7 @@ export default function MotoristasPage() {
             align: "center",
             render: (value: unknown, item: Driver) => {
               void value;
+              const isArchived = item.status === "inactive";
 
               return (
                 <div className="flex items-center justify-center gap-1">
@@ -1671,40 +1857,59 @@ export default function MotoristasPage() {
                   >
                     <Eye size={18} />
                   </button>
-                  <button
-                    onClick={() => handleOpenEditModal(item)}
-                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
-                    title="Editar Motorista"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                  <button
-                    onClick={() => setSelectedDriverForDocs(item)}
-                    className="p-2 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-all cursor-pointer relative"
-                    title="Documentações"
-                  >
-                    <FileText size={18} />
-                    {typeof item.docsCount === "number" &&
-                      item.docsCount > 0 && (
-                        <span className="absolute top-0 right-0 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-blue-900 px-1 text-[10px] font-bold text-white">
-                          {item.docsCount}
-                        </span>
-                      )}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteDriver(item.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
-                    title="Excluir Motorista"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  {isArchived ? (
+                    // Motorista arquivado: só permite visualizar e restaurar
+                    <button
+                      onClick={() => handleRestoreDriver(item.id)}
+                      className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer"
+                      title="Restaurar Motorista"
+                    >
+                      <RotateCcw size={18} />
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleOpenEditModal(item)}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
+                        title="Editar Motorista"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => setSelectedDriverForDocs(item)}
+                        className="p-2 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-all cursor-pointer relative"
+                        title="Documentações"
+                      >
+                        <FileText size={18} />
+                        {typeof item.docsCount === "number" &&
+                          item.docsCount > 0 && (
+                            <span className="absolute top-0 right-0 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-blue-900 px-1 text-[10px] font-bold text-white">
+                              {item.docsCount}
+                            </span>
+                          )}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDriver(item.id)}
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                        title="Excluir Motorista"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </>
+                  )}
                 </div>
               );
             },
           },
         ]}
         searchPlaceholder="Buscar por nome ou CPF..."
-        emptyMessage="Nenhum motorista encontrado."
+        emptyMessage={
+          isLoadingArchived
+            ? "Carregando motoristas arquivados..."
+            : advancedFilters.status === "inactive"
+              ? "Nenhum motorista arquivado encontrado."
+              : "Nenhum motorista encontrado."
+        }
         emptyIcon={<Truck size={48} />}
       />
 
@@ -2120,7 +2325,9 @@ export default function MotoristasPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleRemoveVehicle(index)}
+                            onClick={() => {
+                              void handleRemoveVehicle(index);
+                            }}
                             className="inline-flex items-center justify-center p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
                             aria-label="Remover veículo"
                           >
@@ -2753,7 +2960,9 @@ export default function MotoristasPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleRemoveVehicle(index)}
+                            onClick={() => {
+                              void handleRemoveVehicle(index);
+                            }}
                             className="inline-flex items-center justify-center p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
                             aria-label="Remover veículo"
                           >
@@ -3246,6 +3455,126 @@ export default function MotoristasPage() {
           isOpen={true}
           onClose={() => setSelectedDriverForDocs(null)}
         />
+      )}
+
+      {isLoadingBlockingOS && (
+        <StandardModal
+          onClose={() => setIsLoadingBlockingOS(false)}
+          title="Carregando OS..."
+          maxWidthClassName="max-w-md"
+        >
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="animate-spin text-blue-600 mb-4" size={48} />
+            <p className="text-slate-600">Buscando detalhes do atendimento...</p>
+          </div>
+        </StandardModal>
+      )}
+
+      {blockingOS && !isLoadingBlockingOS && (
+        <StandardModal
+          onClose={() => setBlockingOS(null)}
+          title={`OS ${blockingOS.protocolo || blockingOS.os}`}
+          subtitle={`Atendimento em aberto - ${blockingOS.status?.operacional || "Pendente"}`}
+          maxWidthClassName="max-w-3xl"
+        >
+          <div className="space-y-6">
+            {/* Informações básicas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Protocolo
+                </p>
+                <p className="text-base font-bold text-slate-800">
+                  {blockingOS.protocolo || blockingOS.os}
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Motorista
+                </p>
+                <p className="text-base font-bold text-slate-800">
+                  {blockingOS.motorista || "—"}
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Data do Serviço
+                </p>
+                <p className="text-base font-bold text-slate-800">
+                  {blockingOS.data
+                    ? new Date(blockingOS.data).toLocaleDateString("pt-BR")
+                    : "—"}
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Status
+                </p>
+                <span
+                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${
+                    blockingOS.status?.operacional === "Finalizado"
+                      ? "bg-green-100 text-green-700 border-green-200"
+                      : blockingOS.status?.operacional === "Em Rota"
+                        ? "bg-blue-100 text-blue-700 border-blue-200"
+                        : blockingOS.status?.operacional === "Aguardando"
+                          ? "bg-amber-100 text-amber-700 border-amber-200"
+                          : "bg-yellow-100 text-yellow-700 border-yellow-200"
+                  }`}
+                >
+                  {blockingOS.status?.operacional || "Pendente"}
+                </span>
+              </div>
+            </div>
+
+            {/* Observações financeiras */}
+            {blockingOS.obsFinanceiras && (
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  Observações Financeiras
+                </p>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                  {blockingOS.obsFinanceiras}
+                </p>
+              </div>
+            )}
+
+            {/* Ação sugerida */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+                <div>
+                  <p className="font-semibold text-amber-900 mb-1">
+                    Ação necessária
+                  </p>
+                  <p className="text-sm text-amber-800">
+                    Para desvincular o veículo deste motorista, você precisa primeiro
+                    finalizar ou cancelar este atendimento, ou alterar o veículo
+                    vinculado a ele.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Botões de ação */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+              <button
+                onClick={() => setBlockingOS(null)}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => {
+                  window.open(`/portal/os?open_os_protocolo=${blockingOS.protocolo || blockingOS.os}`, "_blank");
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              >
+                <ExternalLink size={16} />
+                Abrir OS em nova aba
+              </button>
+            </div>
+          </div>
+        </StandardModal>
       )}
 
       <ConfirmDialog
