@@ -75,6 +75,11 @@ export default function AdminPage() {
   }, [profile]);
 
   const handleLogout = async () => {
+    try {
+      await fetch("/api/admin/verify", { method: "DELETE" });
+    } catch {
+      // não bloqueia logout por falha de revogação de token
+    }
     await logout();
     router.push("/login");
   };

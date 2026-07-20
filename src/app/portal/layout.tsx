@@ -27,7 +27,6 @@ import {
   Bell,
   Menu,
   Building,
-  ShieldCheck,
   DollarSign,
   UserSquare2,
   Handshake,
@@ -375,15 +374,6 @@ export default function DashboardLayout({
             active={pathname === "/portal/config"}
             collapsed={collapsed}
           />
-          {profile?.categoria === "administrador" && (
-            <NavLink
-              href="/admin"
-              icon={<ShieldCheck />}
-              label="Administração"
-              active={pathname === "/admin"}
-              collapsed={collapsed}
-            />
-          )}
         </nav>
 
         {currentVersion && (

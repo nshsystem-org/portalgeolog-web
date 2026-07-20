@@ -24,7 +24,10 @@ export default function Login() {
     try {
       const success = await login(email, password);
       if (success) {
-        router.push("/portal/dashboard");
+        const redirect = new URLSearchParams(window.location.search).get(
+          "redirect",
+        );
+        router.push(redirect ?? "/portal/dashboard");
       } else {
         setError("E-mail ou senha inválidos. Tente novamente.");
       }
