@@ -29,7 +29,9 @@ export function useAppVersion() {
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
-  const [userName, setUserName] = useState<string>("");
+  // Ref para userName evita que scheduleReload/handleVersionChange/fetchLatestVersion
+  // sejam recriados ao buscar o nome do usuário, eliminando churn no canal realtime
+  const userNameRef = useRef<string>("");
   const currentVersionRef = useRef<string | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
@@ -54,7 +56,7 @@ export function useAppVersion() {
         (data.user.user_metadata?.nome as string | undefined) ||
         (data.user.user_metadata?.full_name as string | undefined) ||
         "";
-      setUserName(name);
+      userNameRef.current = name;
     })();
   }, [supabase]);
 
@@ -150,10 +152,10 @@ export function useAppVersion() {
                         </h3>
                       </div>
                       <p className="text-sm text-slate-600 font-medium leading-snug">
-                        {userName ? (
+                        {userNameRef.current ? (
                           <>
                             Uma nova versão está disponível para você,{" "}
-                            <span className="font-black text-slate-800">{userName}</span>!
+                            <span className="font-black text-slate-800">{userNameRef.current}</span>!
                           </>
                         ) : (
                           "Uma nova versão está disponível para você!"
@@ -210,7 +212,7 @@ export function useAppVersion() {
         }
       }, 1000) as unknown as NodeJS.Timeout;
     },
-    [clearCountdown, userName],
+    [clearCountdown],
   );
 
   const handleVersionChange = useCallback(

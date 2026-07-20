@@ -59,29 +59,31 @@ export function logErrorAsync(entry: LogEntry): void {
 }
 
 /**
- * Log de nível INFO
+ * Log de nível INFO — apenas console, nunca grava no banco.
+ * Gravar INFOs no Supabase consome Disk IO budget desnecessariamente:
+ * 98%+ dos registros eram INFOs de navegação/render. Use console.log diretamente
+ * para telemetria de desenvolvimento; reserve o banco para erros reais.
  */
 export function logInfo(
   component: string,
   message: string,
   details?: Record<string, unknown>,
 ): void {
-  logErrorAsync({
-    errorLevel: "info",
-    component,
-    errorMessage: message,
-    errorDetails: details,
-  });
+  if (process.env.NODE_ENV === "development") {
+    console.info(`[INFO][${component}]`, message, details ?? "");
+  }
 }
 
 /**
- * Log de nível WARNING
+ * Log de nível WARNING — grava no banco apenas em produção.
+ * Warnings indicam situações inesperadas que merecem atenção mas não são erros.
  */
 export function logWarning(
   component: string,
   message: string,
   details?: Record<string, unknown>,
 ): void {
+  console.warn(`[WARN][${component}]`, message, details ?? "");
   logErrorAsync({
     errorLevel: "warning",
     component,
@@ -135,19 +137,14 @@ export function logCritical(
 }
 
 /**
- * Log de acesso à página
+ * Log de acesso à página — apenas console, nunca grava no banco.
+ * Page views são telemetria de desenvolvimento; use analytics dedicado se necessário.
  */
 export function logPageView(
   pathname: string,
   details?: Record<string, unknown>,
 ): void {
-  logErrorAsync({
-    errorLevel: "info",
-    component: "Navigation",
-    errorMessage: `Acesso à página: ${pathname}`,
-    errorDetails: {
-      ...details,
-      pathname,
-    },
-  });
+  if (process.env.NODE_ENV === "development") {
+    console.info("[Navigation] Page view:", pathname, details ?? "");
+  }
 }

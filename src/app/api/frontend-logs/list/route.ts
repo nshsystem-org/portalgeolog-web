@@ -6,16 +6,21 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+const MAX_LIMIT = 100;
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), MAX_LIMIT);
     const offset = parseInt(searchParams.get("offset") || "0");
     const level = searchParams.get("level");
     const component = searchParams.get("component");
     const userId = searchParams.get("userId");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
+    // Filtros server-side (antes feitos no cliente com 5000 registros)
+    const search = searchParams.get("search");
+    const urlFilter = searchParams.get("url");
 
     let query = supabase
       .from("frontend_error_logs")
@@ -41,6 +46,19 @@ export async function GET(request: NextRequest) {
 
     if (endDate) {
       query = query.lte("created_at", endDate + "T23:59:59.999Z");
+    }
+
+    // Filtro de busca server-side (substitui o fetch de 5000 registros)
+    if (search && search.trim()) {
+      const term = `%${search.trim()}%`;
+      query = query.or(
+        `error_message.ilike.${term},component.ilike.${term},function_name.ilike.${term}`,
+      );
+    }
+
+    // Filtro de URL/página server-side
+    if (urlFilter && urlFilter !== "all") {
+      query = query.ilike("url", `%${urlFilter}%`);
     }
 
     const { data, error, count } = await query;

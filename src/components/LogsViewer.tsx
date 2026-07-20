@@ -217,20 +217,10 @@ export default function LogsViewer() {
       setLoading(true);
       try {
         if (targetTab === "sistema") {
-          // Buscar mais logs do backend quando filtros frontend estão ativos
-          const hasSearchFilter = searchTerm.trim() !== "";
-          const hasFrontendFilters =
-            hasSearchFilter ||
-            selectedCategory !== "all" ||
-            selectedPage !== "all";
-          const fetchLimit = hasSearchFilter
-            ? 5000
-            : hasFrontendFilters
-              ? 500
-              : PAGE_SIZE;
+          // Todos os filtros são processados server-side; sem busca massiva no cliente
           const offset = (currentPage - 1) * PAGE_SIZE;
           const systemParams = new URLSearchParams({
-            limit: fetchLimit.toString(),
+            limit: PAGE_SIZE.toString(),
             offset: offset.toString(),
           });
 
@@ -248,6 +238,15 @@ export default function LogsViewer() {
 
           if (selectedLevel && selectedLevel !== "all") {
             systemParams.append("level", selectedLevel);
+          }
+
+          // Busca e filtro de página agora são server-side
+          if (searchTerm.trim()) {
+            systemParams.append("search", searchTerm.trim());
+          }
+
+          if (selectedPage !== "all") {
+            systemParams.append("url", selectedPage);
           }
 
           const systemResponse = await fetch(
@@ -277,7 +276,6 @@ export default function LogsViewer() {
       startDate,
       endDate,
       selectedLevel,
-      selectedCategory,
       selectedPage,
     ],
   );
@@ -868,7 +866,9 @@ export default function LogsViewer() {
     return dataPatterns.some((p) => summary.startsWith(p));
   };
 
-  const categoryFilteredLogs = baseLogs.filter((log) => {
+  // search e selectedPage são filtrados server-side.
+  // selectedCategory permanece client-side (padrões complexos em component/summary).
+  const filteredLogs = baseLogs.filter((log) => {
     if (selectedCategory === "all") return true;
     if (selectedCategory === "carregamento") return isCarregamentoLog(log);
     if (selectedCategory === "dados") return isDataLog(log);
@@ -877,36 +877,13 @@ export default function LogsViewer() {
     return true;
   });
 
-  const pageFilteredLogs = categoryFilteredLogs.filter((log) => {
-    if (selectedPage === "all") return true;
-    const url = log.url || "";
-    return url.includes(selectedPage);
-  });
-
-  const filteredLogs = pageFilteredLogs.filter((log) => {
-    const term = searchTerm.trim().toLowerCase();
-    if (!term) return true;
-    return [
-      log.title,
-      log.summary,
-      log.detail || "",
-      log.component || "",
-      log.function_name || "",
-      log.error_message || "",
-      log.result || "",
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(term);
-  });
-
-  const hasFrontendFilters =
-    searchTerm.trim() !== "" ||
-    selectedCategory !== "all" ||
-    selectedPage !== "all";
-  const filteredTotal = hasFrontendFilters ? filteredLogs.length : totalRecords;
+  // search e selectedPage são filtrados server-side; selectedCategory ainda é local
+  // (baseia-se em padrões de component/summary que são complexos para SQL)
+  const hasCategoryFilter = selectedCategory !== "all";
+  const filteredTotal = hasCategoryFilter ? filteredLogs.length : totalRecords;
   const filteredTotalPages = Math.ceil(filteredTotal / PAGE_SIZE) || 1;
-  const paginatedLogs = hasFrontendFilters
+  // Quando há filtro de categoria local, paginar o resultado filtrado
+  const paginatedLogs = hasCategoryFilter
     ? filteredLogs.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
     : filteredLogs;
 
