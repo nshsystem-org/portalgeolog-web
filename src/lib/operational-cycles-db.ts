@@ -188,25 +188,32 @@ export async function fetchOperationalCyclesForOSIds(
 ): Promise<Record<string, OperationalCycle[]>> {
   if (osIds.length === 0) return {};
 
-  // Chunk em grupos de 50 para evitar URL muito longa (limite do PostgREST)
+  // Chunk em grupos de 50 para evitar URL muito longa (limite do PostgREST).
+  // Todos os chunks são disparados em paralelo (Promise.all) para evitar
+  // latência acumulada de N requests seriais (~48 chunks × 60ms = ~2.9s).
   const chunks = chunkArray(osIds, 50);
-  const grouped: Record<string, OperationalCycle[]> = {};
 
-  for (const chunk of chunks) {
-    const { data, error } = await client
-      .from("os_operational_cycles")
-      .select(OPERATIONAL_CYCLE_COLUMNS)
-      .in("ordem_servico_id", chunk)
-      .order("sequence_order");
+  const chunkResults = await Promise.all(
+    chunks.map(async (chunk) => {
+      const { data, error } = await client
+        .from("os_operational_cycles")
+        .select(OPERATIONAL_CYCLE_COLUMNS)
+        .in("ordem_servico_id", chunk)
+        .order("sequence_order");
 
-    if (error) {
-      if (isMissingOperationalCyclesTableError(error)) {
-        continue;
+      if (error) {
+        if (isMissingOperationalCyclesTableError(error)) {
+          return [] as OperationalCycleRow[];
+        }
+        throw error;
       }
-      throw error;
-    }
 
-    const rows = (data || []) as unknown as OperationalCycleRow[];
+      return (data || []) as unknown as OperationalCycleRow[];
+    }),
+  );
+
+  const grouped: Record<string, OperationalCycle[]> = {};
+  for (const rows of chunkResults) {
     for (const row of rows) {
       if (!grouped[row.ordem_servico_id]) {
         grouped[row.ordem_servico_id] = [];
