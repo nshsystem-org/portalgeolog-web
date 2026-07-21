@@ -208,14 +208,41 @@ function getNotificationIcon(notif: AppNotification) {
   }
 }
 
+// Mapa de títulos de notificação de OS -> ação curta (3ª pessoa do singular).
+// Usado apenas na notificação desktop para evitar mensagens gigantes com os
+// detalhes das alterações. O sino e o dropdown continuam exibindo a mensagem
+// completa vinda do banco.
+const OS_NOTIFICATION_SHORT_ACTIONS: Record<string, string> = {
+  "Atendimento atualizado": "atualizou o atendimento",
+  "Status do atendimento atualizado": "atualizou o status do atendimento",
+  "Atendimento arquivado": "arquivou o atendimento",
+  "Atendimento reaberto": "reabriu o atendimento",
+  "Atendimento finalizado": "finalizou o atendimento",
+  "Novo atendimento": "criou um atendimento",
+  "Motorista confirmou o atendimento": "confirmou o atendimento",
+  "Rota iniciada": "iniciou a rota",
+  "Rota finalizada": "finalizou a rota",
+  "Novo comentário no atendimento": "comentou no atendimento",
+};
+
 function showNativeNotification(notif: AppNotification): void {
   if (typeof window === "undefined") return;
   if (!("Notification" in window)) return;
   if (Notification.permission !== "granted") return;
 
-  const cleanMessage = notif.message.replace(/\s*\[OS_ID:[a-f0-9-]+\]/gi, "");
-  const body = `${notif.created_by_name ? notif.created_by_name + ": " : ""}${cleanMessage}`;
   const icon = getThumbnailUrl(notif.created_by_avatar_url, 100) || "/logo.png";
+
+  // Para notificações de OS, exibe apenas "Fulano fez atualização de OS"
+  // (sem listar os campos alterados, que deixam a notificação grande demais).
+  const shortAction = OS_NOTIFICATION_SHORT_ACTIONS[notif.title];
+  let body: string;
+  if (shortAction) {
+    const author = notif.created_by_name || "Sistema";
+    body = `${author} ${shortAction}`;
+  } else {
+    const cleanMessage = notif.message.replace(/\s*\[OS_ID:[a-f0-9-]+\]/gi, "");
+    body = `${notif.created_by_name ? notif.created_by_name + ": " : ""}${cleanMessage}`;
+  }
 
   const native = new Notification(notif.title, {
     body,

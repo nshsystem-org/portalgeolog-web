@@ -163,6 +163,29 @@ export function useUserPresence() {
   const prevStatusRef = useRef<Record<string, boolean>>({});
   const lastHeartbeatSentAtRef = useRef(0);
   const knownIdsRef = useRef<Set<string>>(new Set());
+  // Dedup de notificacao "entrou no portal" por usuario. O fetch inicial e o
+  // listener Realtime podem disparar a mesma transicao offline -> online em
+  // sequencia (race condition), gerando toast/notificacao desktop duplicada.
+  // Guardamos o timestamp da ultima notificacao por user_id e so notificamos
+  // novamente apos PRESENCE_NOTIFY_DEDUP_MS.
+  const PRESENCE_NOTIFY_DEDUP_MS = 30000;
+  const lastNotifiedAtRef = useRef<Record<string, number>>({});
+
+  // Notifica "entrou no portal" com dedup por user_id (toast + nativa).
+  // Usa id fixo no toast do sonner para que uma nova chamada substitua a
+  // anterior em vez de empilhar.
+  const notifyUserEntered = useCallback((u: PresenceUser) => {
+    const now = Date.now();
+    const last = lastNotifiedAtRef.current[u.id] ?? 0;
+    if (now - last < PRESENCE_NOTIFY_DEDUP_MS) return;
+    lastNotifiedAtRef.current[u.id] = now;
+
+    toast.custom((t) => <PresenceToastItem toastId={t} user={u} />, {
+      id: `presence-entered-${u.id}`,
+      duration: 4000,
+    });
+    showNativePresenceNotification(u);
+  }, []);
   // Garante que apenas a primeira carga (por usuario) seja tratada como inicial,
   // evitando toasts duplicados em re-execucoes do efeito de mount (StrictMode,
   // re-emissao do objeto user, renovacao de token, etc.).
@@ -200,11 +223,7 @@ export function useUserPresence() {
               knownIdsRef.current.has(u.id) &&
               u.id !== user?.id
             ) {
-              toast.custom(
-                (t) => <PresenceToastItem toastId={t} user={u} />,
-                { duration: 4000 },
-              );
-              showNativePresenceNotification(u);
+              notifyUserEntered(u);
             }
           });
         }
@@ -241,7 +260,7 @@ export function useUserPresence() {
         if (isInitial) setLoading(false);
       }
     },
-    [user?.id],
+    [user?.id, notifyUserEntered],
   );
 
   const sendHeartbeat = useCallback(
@@ -362,11 +381,7 @@ export function useUserPresence() {
 
             // Notificar se mudou para online agora
             if (!oldUser.is_online && isOnline && oldUser.id !== user?.id) {
-              toast.custom(
-                (t) => <PresenceToastItem toastId={t} user={oldUser} />,
-                { duration: 4000 },
-              );
-              showNativePresenceNotification(oldUser);
+              notifyUserEntered(oldUser);
             }
 
             const updatedUser = {
@@ -404,7 +419,7 @@ export function useUserPresence() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, supabase, fetchUsers]);
+  }, [user, supabase, fetchUsers, notifyUserEntered]);
 
   // O status offline e inferido pelo servidor quando last_seen_at ultrapassa o timeout configurado.
   // Nao e necessario enviar beacon ao sair
