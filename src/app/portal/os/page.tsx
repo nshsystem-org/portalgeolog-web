@@ -526,7 +526,6 @@ const osViewCache = new Map<string, OrderService>();
 export default function OSOperationalPage() {
   const {
     osList,
-    osCounts,
     clientes,
     solicitantes,
     drivers,
@@ -1066,21 +1065,6 @@ export default function OSOperationalPage() {
     docagemListFilter,
     showArchivedOnly,
   ]);
-
-  const docagemCounts = useMemo(() => {
-    const counts = {
-      pendente: 0,
-      andamento: 0,
-      finalizada: 0,
-      excluida: 0,
-    };
-    docagemInstances.forEach((item) => {
-      if (item.status in counts) {
-        counts[item.status as keyof typeof counts] += 1;
-      }
-    });
-    return counts;
-  }, [docagemInstances]);
 
   const syncViewingOS = useCallback(async () => {
     if (!viewingOSId) return;
@@ -5800,59 +5784,6 @@ export default function OSOperationalPage() {
 
   return (
     <div className="space-y-6">
-      {/* Operational Stats */}
-      {!showArchivedOnly && docagemListFilter !== "rascunho" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {docagemListFilter === "docagem" ? (
-            <>
-              <OpStatCard
-                label="Pendentes"
-                value={docagemCounts.pendente}
-                icon={<Clock className="text-slate-500" size={20} />}
-              />
-              <OpStatCard
-                label="Andamento"
-                value={docagemCounts.andamento}
-                icon={<Navigation className="text-violet-500" size={20} />}
-              />
-              <OpStatCard
-                label="Finalizadas"
-                value={docagemCounts.finalizada}
-                icon={<CheckCircle2 className="text-emerald-500" size={20} />}
-              />
-              <OpStatCard
-                label="Arquivadas"
-                value={docagemCounts.excluida}
-                icon={<Archive className="text-rose-500" size={20} />}
-              />
-            </>
-          ) : (
-            <>
-              <OpStatCard
-                label="Pendentes"
-                value={osCounts["Pendente"]}
-                icon={<Clock className="text-slate-500" size={20} />}
-              />
-              <OpStatCard
-                label="Aguardando"
-                value={osCounts["Aguardando"]}
-                icon={<Clock className="text-indigo-500" size={20} />}
-              />
-              <OpStatCard
-                label="Em Rota"
-                value={osCounts["Em Rota"]}
-                icon={<Navigation className="text-blue-500" size={20} />}
-              />
-              <OpStatCard
-                label="Finalizados"
-                value={osCounts["Finalizado"]}
-                icon={<CheckCircle2 className="text-emerald-500" size={20} />}
-              />
-            </>
-          )}
-        </div>
-      )}
-
       {/* Header com Toggle e Botão Nova OS */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
@@ -5906,7 +5837,7 @@ export default function OSOperationalPage() {
               }}
               className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer ${
                 viewMode === "calendar"
-                  ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
+                  ? "bg-blue-100 text-slate-800 shadow-md"
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
               }`}
             >
@@ -14208,26 +14139,3 @@ function DocagemFinanceiroSection({
   );
 }
 
-function OpStatCard({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: number;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white p-4 rounded-[1.5rem] border border-slate-100 shadow-sm flex items-center gap-4">
-      <div className="p-3 bg-slate-50 rounded-xl">{icon}</div>
-      <div>
-        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
-          {label}
-        </p>
-        <h3 className="text-2xl font-black text-slate-800 tabular-nums">
-          {value}
-        </h3>
-      </div>
-    </div>
-  );
-}

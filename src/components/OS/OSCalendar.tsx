@@ -49,6 +49,7 @@ import {
   Archive,
 } from "lucide-react";
 import { logInfo } from "@/lib/frontend-logger";
+import { motion } from "framer-motion";
 import { getThumbnailUrl } from "@/utils/avatar";
 
 interface Cliente {
@@ -783,7 +784,9 @@ const EventContent = ({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "6px",
+            width: "100%",
+            minWidth: 0,
+            flexWrap: "wrap",
             marginTop: "auto",
             marginBottom: isDayView ? "8px" : "4px",
             paddingTop: isDayView ? "12px" : "6px",
@@ -793,21 +796,45 @@ const EventContent = ({
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: "6px",
+              flexWrap: "wrap",
+              gap: isDayView ? "6px" : "3px",
+              maxWidth: "100%",
+              minWidth: 0,
               backgroundColor: docagemClockBg,
               color: "#ffffff",
-              padding: "3px 10px",
+              padding: isDayView ? "4px 12px" : "3px 8px",
               borderRadius: "8px",
               fontWeight: 800,
-              fontSize: isDayView ? "11px" : "10px",
+              fontSize: isDayView ? "13px" : "11px",
               textTransform: "uppercase",
-              whiteSpace: "nowrap",
             }}
           >
-            <Clock size={14} strokeWidth={3} />
-            {extractTimeFromDateTime(docagem?.horarioInicio) || "--:--"}
-            <ArrowRight size={12} strokeWidth={3} style={{ opacity: 0.8 }} />
-            {extractTimeFromDateTime(docagem?.horarioFim) || "--:--"}
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: isDayView ? "6px" : "3px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <Clock size={isDayView ? 14 : 10} strokeWidth={3} />
+              {extractTimeFromDateTime(docagem?.horarioInicio) || "--:--"}
+            </span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: isDayView ? "6px" : "3px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <ArrowRight
+                size={isDayView ? 12 : 8}
+                strokeWidth={3}
+                style={{ opacity: 0.8 }}
+              />
+              {extractTimeFromDateTime(docagem?.horarioFim) || "--:--"}
+            </span>
           </span>
         </div>
       )}
@@ -897,6 +924,8 @@ export default function OSCalendar({
   const [currentView, setCurrentView] = useState<
     "dayGridMonth" | "dayGridWeek" | "dayGridDay"
   >("dayGridWeek");
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const filterToggleRef = useRef<HTMLDivElement>(null);
   const calendarRef = React.useRef<FullCalendar>(null);
   const lastRangeRef = React.useRef<{ from: string; to: string } | null>(null);
   const preloadedDraftAvatarsRef = useRef<Set<string>>(new Set());
@@ -1912,10 +1941,31 @@ export default function OSCalendar({
     osList.length === 0 &&
     docagemInstances.length === 0;
 
+  const theme = useMemo(() => {
+    switch (docagemListFilter) {
+      case "os":
+        return { border: "border-blue-300", bg: "bg-blue-200/60" };
+      case "docagem":
+        return { border: "border-violet-300", bg: "bg-violet-200/60" };
+      case "rascunho":
+        return { border: "border-amber-200", bg: "bg-amber-100/60" };
+      case "freelance":
+        return { border: "border-emerald-300", bg: "bg-emerald-200/60" };
+      case "pendencias":
+        return { border: "border-red-200", bg: "bg-red-100/60" };
+      default:
+        return { border: "border-blue-100", bg: "bg-blue-50/60" };
+    }
+  }, [docagemListFilter]);
+
   return (
-    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden relative">
+    <div
+      className={`bg-white rounded-[2rem] border-2 shadow-xl shadow-slate-200/40 overflow-hidden relative transition-all duration-500 ${theme.border}`}
+    >
       {/* Header do Calendário Customizado */}
-      <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 bg-slate-50/50">
+      <div
+        className={`flex items-center justify-between p-4 md:p-6 border-b transition-all duration-500 ${theme.border} ${theme.bg}`}
+      >
         {/* Navegação - Canto Esquerdo */}
         <div className="flex items-center gap-2">
           <button
@@ -1929,13 +1979,14 @@ export default function OSCalendar({
         {/* Seletor de Visualização - Centralizado */}
         <div className="flex-1 flex items-center justify-center gap-3">
           {/* Toggle de Filtros: Todos | OS | Docagem | Rascunho | Freelance */}
-          <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1.5 shadow-sm">
-            {[
+          {(() => {
+            const filterOptions = [
               {
                 key: "all" as const,
                 label: "Todos",
                 icon: Layers,
-                activeClass: "bg-slate-800 text-white shadow-md",
+                activeClass: "bg-blue-100 text-slate-800 shadow-md",
+                activeIconClass: "text-slate-800",
                 inactiveIconClass: "text-slate-500",
                 inactiveHover: "hover:bg-slate-50",
               },
@@ -1979,34 +2030,46 @@ export default function OSCalendar({
                 inactiveIconClass: "text-red-500",
                 inactiveHover: "hover:bg-red-50",
               },
-            ].map(
-              ({
-                key,
-                label,
-                icon: Icon,
-                activeClass,
-                inactiveIconClass,
-                inactiveHover,
-              }) => {
-                const active = !showArchivedOnly && docagemListFilter === key;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => onFilterChange?.(key)}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      active ? activeClass : `text-slate-500 ${inactiveHover}`
-                    }`}
-                  >
-                    <Icon
-                      size={14}
-                      className={active ? "text-white" : inactiveIconClass}
-                    />
-                    {label}
-                  </button>
-                );
-              },
-            )}
-          </div>
+            ];
+            const activeOption = filterOptions.find(
+              (o) => !showArchivedOnly && docagemListFilter === o.key,
+            );
+            const renderButton = (opt: (typeof filterOptions)[number]) => {
+              const active = !showArchivedOnly && docagemListFilter === opt.key;
+              const Icon = opt.icon;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => onFilterChange?.(opt.key)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap ${
+                    active ? opt.activeClass : `text-slate-500 ${opt.inactiveHover}`
+                  }`}
+                >
+                  <Icon
+                    size={14}
+                    className={active ? (opt.activeIconClass ?? "text-white") : opt.inactiveIconClass}
+                  />
+                  {opt.label}
+                </button>
+              );
+            };
+            return (
+              <motion.div
+                ref={filterToggleRef}
+                layout
+                onMouseEnter={() => setFiltersExpanded(true)}
+                onMouseLeave={() => setFiltersExpanded(false)}
+                transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                className="flex items-center bg-white border border-slate-200 rounded-xl p-1.5 shadow-sm overflow-hidden"
+              >
+                {filtersExpanded && activeOption
+                  ? filterOptions.map(renderButton)
+                  : activeOption
+                    ? renderButton(activeOption)
+                    : filterOptions.map(renderButton)}
+              </motion.div>
+            );
+          })()}
 
           {/* Toggle de Visualização: Mês | Semana | Dia */}
           <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1.5 shadow-sm">
@@ -2024,7 +2087,7 @@ export default function OSCalendar({
                 }
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm uppercase tracking-wider transition-all cursor-pointer ${
                   currentView === key
-                    ? "bg-[var(--color-geolog-blue)] text-white shadow-md"
+                    ? "bg-blue-100 text-slate-800 shadow-md"
                     : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                 }`}
               >
@@ -2075,7 +2138,7 @@ export default function OSCalendar({
       </div>
 
       {/* Calendário */}
-      <div className="p-4 md:p-6 relative">
+      <div className="relative">
         {isInitialLoading ? (
           <div className="flex flex-col items-center justify-center gap-4 text-slate-400 py-16">
             <Loader2 size={48} className="text-blue-500 animate-spin" />

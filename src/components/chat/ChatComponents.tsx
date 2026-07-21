@@ -201,7 +201,7 @@ export function MessageList({
                 formatMessageDate(message.created_at);
 
             return (
-              <div key={message.id}>
+              <div key={`${message.id}-${index}`}>
                 {showDate && (
                   <div className="text-center text-xs text-slate-500 my-4">
                     {formatMessageDate(message.created_at)}

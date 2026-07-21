@@ -4,7 +4,20 @@ import { useData, type OrderService } from "@/context/DataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useParceiros } from "@/hooks/useParceiros";
 import { useMemo, useState, useEffect, useCallback } from "react";
-import { Building2, Truck, Landmark, Filter, RotateCcw } from "lucide-react";
+import {
+  Building2,
+  Truck,
+  Landmark,
+  Filter,
+  RotateCcw,
+  Route,
+  Users,
+  BellRing,
+  Clock,
+  Hourglass,
+  Navigation,
+  CheckCircle2,
+} from "lucide-react";
 import {
   fetchOSFinanceOverview,
   type FinanceQueryFilters,
@@ -109,9 +122,9 @@ function MiniListPanel({
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { parceiros } = useParceiros();
-  const { drivers, clientes, loading: dataLoading, lastOSUpdate } = useData();
+  const { drivers, clientes, osCounts, loading: dataLoading, lastOSUpdate } = useData();
   const [overviewRows, setOverviewRows] = useState<OrderService[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
 
@@ -270,26 +283,60 @@ export default function Dashboard() {
           <h2 className="text-4xl font-extrabold mb-4 text-white">
             Bem-vindo,{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-sky-300">
-              {user?.email?.split("@")[0]}
+              {profile?.nome || user?.email?.split("@")[0] || "Usuário"}
             </span>
             ! 👋
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-16">
             <StatCard
               title="Total de Viagens"
               value={stats.trips.toString()}
               color="border-l-blue-400"
+              icon={<Route size={22} />}
+              iconColor="text-blue-400"
             />
             <StatCard
               title="Motoristas Ativos"
               value={stats.drivers.toString()}
               color="border-l-cyan-400"
+              icon={<Users size={22} />}
+              iconColor="text-cyan-400"
             />
             <StatCard
               title="Alertas Pendentes"
               value={stats.alerts.toString()}
               color="border-l-[var(--color-geolog-accent)]"
+              icon={<BellRing size={22} />}
+              iconColor="text-[var(--color-geolog-accent)]"
+            />
+            <StatCard
+              title="OS Pendentes"
+              value={osCounts.Pendente.toString()}
+              color="border-l-slate-300"
+              icon={<Clock size={22} />}
+              iconColor="text-slate-300"
+            />
+            <StatCard
+              title="OS Aguardando"
+              value={osCounts.Aguardando.toString()}
+              color="border-l-indigo-400"
+              icon={<Hourglass size={22} />}
+              iconColor="text-indigo-400"
+            />
+            <StatCard
+              title="OS Em Rota"
+              value={osCounts["Em Rota"].toString()}
+              color="border-l-sky-400"
+              icon={<Navigation size={22} />}
+              iconColor="text-sky-400"
+            />
+            <StatCard
+              title="OS Finalizadas"
+              value={osCounts.Finalizado.toString()}
+              color="border-l-emerald-400"
+              icon={<CheckCircle2 size={22} />}
+              iconColor="text-emerald-400"
             />
           </div>
         </div>
@@ -323,24 +370,34 @@ function StatCard({
   title,
   value,
   color,
+  icon,
+  iconColor,
 }: {
   title: string;
   value: string;
   color: string;
+  icon: React.ReactNode;
+  iconColor: string;
 }) {
   return (
     <div
-      className={`bg-[var(--color-geolog-blue)] p-8 rounded-2xl border border-white/5 hover:shadow-xl transition-all border-l-4 ${color}`}
+      className={`relative bg-[var(--color-geolog-blue)] p-8 rounded-2xl border border-white/5 hover:shadow-xl transition-all border-l-4 ${color} overflow-hidden`}
     >
-      <p className="text-sm font-bold text-[var(--color-geolog-accent)] uppercase tracking-widest mb-2">
-        {title}
-      </p>
-      <div className="flex items-end gap-2">
-        <p className="text-5xl font-black text-white">{value}</p>
-        <span className="text-xs text-[var(--color-geolog-accent)] mb-2 font-bold">
-          UNIDADES
-        </span>
+      <div className="absolute -right-4 -top-4 text-white/5 transition-transform duration-500 group-hover:scale-110">
+        <div className="scale-[3]">{icon}</div>
+      </div>
+      <div className="relative z-10">
+        <div className={`mb-3 flex items-center gap-2 ${iconColor}`}>
+          {icon}
+          <p className="text-sm font-bold uppercase tracking-widest">
+            {title}
+          </p>
+        </div>
+        <div className="flex items-end gap-2">
+          <p className="text-5xl font-black text-white">{value}</p>
+        </div>
       </div>
     </div>
   );
 }
+

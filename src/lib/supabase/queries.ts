@@ -370,8 +370,13 @@ async function withRetry<T>(
     if (retries <= 0) throw error;
 
     // Só tenta de novo se for erro de rede (Failed to fetch) ou 5xx
+    // Mensagens variam por navegador:
+    //   Chrome/Edge/Safari: "Failed to fetch"
+    //   Firefox:            "NetworkError when attempting to fetch resource."
     const isNetworkError =
-      error instanceof TypeError && error.message === "Failed to fetch";
+      error instanceof TypeError &&
+      (/failed to fetch/i.test(error.message) ||
+        /networkerror when attempting to fetch resource/i.test(error.message));
     // @ts-expect-error - Supabase error object has status property but TypeScript doesn't recognize it
     const isServerError = error?.status >= 500;
 

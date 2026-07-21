@@ -295,13 +295,13 @@ export default function DashboardLayout({
         <div
           className={`p-6 flex items-center ${collapsed ? "justify-center" : "justify-start gap-3"} border-b border-blue-800/50 h-20 overflow-hidden`}
         >
-          <div className="p-1.5 bg-white rounded-lg flex-shrink-0">
+          <div className="flex-shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Geolog Logo" className="h-6 w-auto" />
+            <img src="/logo.png" alt="Geolog Logo" className="h-10 w-auto" />
           </div>
           {!collapsed && (
             <div className="flex flex-col leading-none">
-              <span className="text-base font-black text-white uppercase tracking-tighter whitespace-nowrap">
+              <span className="text-base font-black text-white tracking-wide whitespace-nowrap">
                 Portal Geolog
               </span>
               {displayVersion && (
@@ -1309,11 +1309,17 @@ function NavLink({
       }`}
     >
       <div
-        className={`${active ? "scale-110" : "group-hover/link:translate-x-0.5 group-hover/link:scale-110"} transition-all duration-200`}
+        className={`${active ? "scale-110 text-inherit" : "group-hover/link:translate-x-0.5 group-hover/link:scale-110 text-blue-300 group-hover/link:text-white"} transition-all duration-200`}
       >
         {cloneElement(icon as ReactElement<{ size?: number }>, { size: 20 })}
       </div>
-      {!collapsed && <span className="whitespace-nowrap">{label}</span>}
+      {!collapsed && (
+        <span
+          className={`whitespace-nowrap ${active ? "text-inherit" : "text-blue-100/85 group-hover/link:text-white"}`}
+        >
+          {label}
+        </span>
+      )}
       {active && !collapsed && (
         <div className="absolute right-4 w-2 h-2 bg-[var(--color-geolog-blue)] rounded-full" />
       )}
