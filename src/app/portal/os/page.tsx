@@ -177,7 +177,7 @@ type FormWaypoint = {
   itineraryIndex?: number;
   hora?: string;
   data?: string;
-  useMapbox?: boolean;
+  useMap?: boolean;
 };
 type OSFormData = {
   data: string;
@@ -2285,7 +2285,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: 0,
-        useMapbox: true,
+        useMap: true,
       },
       {
         label: "",
@@ -2294,7 +2294,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: 0,
-        useMapbox: true,
+        useMap: true,
       },
     ],
   };
@@ -2338,7 +2338,7 @@ export default function OSOperationalPage() {
           ),
         }))
       : initialForm.waypoints;
-    const mapboxByItinerary = mappedWaypoints.reduce<Record<number, boolean>>(
+    const mapByItinerary = mappedWaypoints.reduce<Record<number, boolean>>(
       (acc, waypoint) => {
         const itineraryIndex = waypoint.itineraryIndex ?? 0;
         acc[itineraryIndex] =
@@ -2350,7 +2350,7 @@ export default function OSOperationalPage() {
     );
     const hydratedWaypoints = mappedWaypoints.map((waypoint) => ({
       ...waypoint,
-      useMapbox: mapboxByItinerary[waypoint.itineraryIndex ?? 0],
+      useMap: mapByItinerary[waypoint.itineraryIndex ?? 0],
     }));
 
     const nextFormData: OSFormData = {
@@ -3928,7 +3928,7 @@ export default function OSOperationalPage() {
       comment: "",
       passengers: [],
       itineraryIndex: targetIt.index,
-      useMapbox: targetIt.waypoints[0]?.useMapbox !== false,
+      useMap: targetIt.waypoints[0]?.useMap !== false,
     };
     const newWaypoints = [...formData.waypoints];
     newWaypoints.splice(insertIdx, 0, newWaypoint);
@@ -3960,7 +3960,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: newItIndex,
-        useMapbox: true,
+        useMap: true,
       },
       {
         label: "",
@@ -3969,7 +3969,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: newItIndex,
-        useMapbox: true,
+        useMap: true,
       },
     );
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
@@ -3994,7 +3994,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: returnIndex,
-        useMapbox: true,
+        useMap: true,
       },
       {
         label: "",
@@ -4003,7 +4003,7 @@ export default function OSOperationalPage() {
         comment: "",
         passengers: [],
         itineraryIndex: returnIndex,
-        useMapbox: true,
+        useMap: true,
       },
     );
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
@@ -4102,13 +4102,13 @@ export default function OSOperationalPage() {
     }));
   };
 
-  // Toggle para ativar/desativar Mapbox em um ciclo inteiro
-  const handleToggleMapbox = (itineraryIndex: number) => {
+  // Toggle para ativar/desativar o mapa em um ciclo inteiro
+  const handleToggleMap = (itineraryIndex: number) => {
     setFormData((prev) => {
       const cycleWaypoints = prev.waypoints.filter(
         (waypoint) => (waypoint.itineraryIndex ?? 0) === itineraryIndex,
       );
-      const shouldEnable = cycleWaypoints[0]?.useMapbox === false;
+      const shouldEnable = cycleWaypoints[0]?.useMap === false;
 
       return {
         ...prev,
@@ -4116,7 +4116,7 @@ export default function OSOperationalPage() {
           (waypoint.itineraryIndex ?? 0) === itineraryIndex
             ? {
                 ...waypoint,
-                useMapbox: shouldEnable,
+                useMap: shouldEnable,
                 lat: shouldEnable ? waypoint.lat : null,
                 lng: shouldEnable ? waypoint.lng : null,
               }
@@ -7781,21 +7781,21 @@ export default function OSOperationalPage() {
                                         </label>
                                         {isOrigin && (
                                           <div className="flex items-center gap-3">
-                                            {/* Toggle Mapbox */}
+                                            {/* Toggle Mapa */}
                                             <button
                                               type="button"
                                               onClick={() =>
-                                                handleToggleMapbox(it.index)
+                                                handleToggleMap(it.index)
                                               }
                                               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                                                waypoint.useMapbox !== false
+                                                waypoint.useMap !== false
                                                   ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
                                                   : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                                               }`}
                                               title={
-                                                waypoint.useMapbox !== false
-                                                  ? "Mapbox ativado neste ciclo"
-                                                  : "Mapbox desativado neste ciclo"
+                                                waypoint.useMap !== false
+                                                  ? "Mapa ativado neste ciclo"
+                                                  : "Mapa desativado neste ciclo"
                                               }
                                             >
                                               <MapIcon size={14} />
@@ -7872,7 +7872,7 @@ export default function OSOperationalPage() {
                                         )}
                                       </div>
                                       <div className="relative">
-                                        {waypoint.useMapbox !== false ? (
+                                        {waypoint.useMap !== false ? (
                                           <GeologAddressInput
                                             label=""
                                             value={waypoint.label}
@@ -8115,8 +8115,8 @@ export default function OSOperationalPage() {
                             </div>
                           );
                         })}
-                      {/* Mapa do itinerário/retorno - só aparece se o Mapbox estiver ativo no ciclo */}
-                      {it.waypoints[0]?.useMapbox !== false && (
+                      {/* Mapa do itinerário/retorno - só aparece se o mapa estiver ativo no ciclo */}
+                      {it.waypoints[0]?.useMap !== false && (
                         <ItineraryMap
                           waypoints={it.waypoints}
                           waypointIndices={it.waypointIndices}

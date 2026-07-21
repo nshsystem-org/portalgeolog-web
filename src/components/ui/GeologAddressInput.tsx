@@ -1,19 +1,21 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { MapPin, Loader2, Search } from "lucide-react";
-import { hasMapboxToken } from "@/lib/mapbox-tiles";
+import { hasGoogleMapsKey } from "@/lib/google-maps-loader";
+import { useGoogleMaps } from "@/hooks/useGoogleMaps";
 
 interface Suggestion {
   place_id: string;
   display_name: string;
   main_name: string;
   sub_name: string;
-  // lat/lon podem ser null quando a sugestao vem da Search Box API
-  // (as coordenadas so chegam no passo "retrieve", apos a selecao).
+  // lat/lon podem ser null quando a sugestao vem da Places API
+  // (as coordenadas so chegam no passo "getDetails", apos a selecao).
   lat: number | null;
   lon: number | null;
-  mapbox_id?: string;
+  // ID do Place no Google Places API (usado para buscar coords na selecao).
+  google_place_id?: string;
   // Numero digitado pelo usuario, injetado em sugestoes de rua
   // (usado para geocode estruturado no momento da selecao).
   house_number?: string;
@@ -40,33 +42,6 @@ interface NominatimResult {
   address?: NominatimAddress;
 }
 
-// Mapbox Search Box API (suggest + retrieve).
-// Entende consultas informais brasileiras (numero, quadra, lote, POIs)
-// muito melhor que o Geocoding v6.
-interface SearchBoxSuggestion {
-  name: string;
-  mapbox_id: string;
-  feature_type?: string;
-  full_address?: string;
-  place_formatted?: string;
-  address?: string;
-}
-
-interface SearchBoxSuggestResponse {
-  suggestions: SearchBoxSuggestion[];
-}
-
-interface SearchBoxRetrieveResponse {
-  features: Array<{
-    geometry: { coordinates: [number, number] }; // [lng, lat]
-    properties: {
-      name?: string;
-      full_address?: string;
-      place_formatted?: string;
-    };
-  }>;
-}
-
 interface GeologAddressInputProps {
   label: string;
   value: string;
@@ -87,6 +62,7 @@ export default function GeologAddressInput({
   required = false,
   rightSlot,
 }: GeologAddressInputProps) {
+  const { google } = useGoogleMaps();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -95,20 +71,31 @@ export default function GeologAddressInput({
   const [localValue, setLocalValue] = useState(value);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
-  // Session token da Search Box API: agrupa suggest + retrieve para billing.
-  // Renovado apos cada retrieve (fim da sessao de busca).
-  const sessionTokenRef = useRef<string>(
-    typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2),
-  );
+  // Session token da Places Autocomplete API: agrupa predictions + getDetails
+  // para billing otimizado (Autocomplete Session pricing).
+  // Renovado apos cada getDetails (fim da sessao de busca).
+  const sessionTokenRef = useRef<
+    google.maps.places.AutocompleteSessionToken | string
+  >("");
 
-  const renewSessionToken = () => {
-    sessionTokenRef.current =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2);
-  };
+  const renewSessionToken = useCallback(() => {
+    if (google) {
+      sessionTokenRef.current =
+        new google.maps.places.AutocompleteSessionToken();
+    } else {
+      sessionTokenRef.current =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+    }
+  }, [google]);
+
+  // Inicializa session token quando a API carrega
+  useEffect(() => {
+    if (google && !sessionTokenRef.current) {
+      renewSessionToken();
+    }
+  }, [google, renewSessionToken]);
 
   // Sincroniza localValue quando a prop value muda externamente
   // (ex: carregar OS para edicao, ou limpar o formulario).
@@ -139,48 +126,57 @@ export default function GeologAddressInput({
     return match ? match[1] : null;
   };
 
-  const searchAddressMapbox = async (query: string): Promise<Suggestion[]> => {
-    const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
-    if (!token) return [];
+  const searchAddressGoogle = async (
+    query: string,
+  ): Promise<Suggestion[]> => {
+    if (!google) return [];
 
-    const url =
-      `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(query)}` +
-      `&access_token=${token}&session_token=${sessionTokenRef.current}` +
-      `&country=br&language=pt&limit=10` +
-      `&types=address,street,neighborhood,place,locality,postcode,poi&proximity=ip`;
+    const autocompleteService = new google.maps.places.AutocompleteService();
+    const sessionToken = sessionTokenRef.current;
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Mapbox Search Box falhou: ${response.status}`);
-    }
-    const data: SearchBoxSuggestResponse = await response.json();
+    // getPlacePredictions suporta ate 5 componentes de restricao; usamos so
+    // country=br. types vazio para retornar qualquer tipo de place (rua,
+    // endereco, bairro, cidade, POI).
+    const result = await autocompleteService.getPlacePredictions({
+      input: query,
+      sessionToken:
+        sessionToken instanceof google.maps.places.AutocompleteSessionToken
+          ? sessionToken
+          : undefined,
+      componentRestrictions: { country: "br" },
+      language: "pt-BR",
+    });
+
     const houseNumber = extractHouseNumber(query);
 
-    return (data.suggestions || []).map((item) => {
-      const rawName = item.name || item.address || "";
-      const subName = item.place_formatted || "Brasil";
+    return (result.predictions || []).map((item) => {
+      // Estrutura: main_text + secondary_text (Google Autocomplete).
+      // main_text normalmente e o nome da rua/POI; secondary_text e
+      // bairro, cidade, estado.
+      const rawName = item.structured_formatting?.main_text || item.description;
+      const subName = item.structured_formatting?.secondary_text || "Brasil";
 
-      // Se o usuario digitou um numero mas o Mapbox so achou a rua
+      // Se o usuario digitou um numero mas o Google so achou a rua
       // (sem numeracao na base), injeta o numero na sugestao — igual ao
       // Google Maps. Na selecao, tentamos geocodificar o numero exato.
       const isStreetWithNumber =
-        houseNumber !== null && item.feature_type === "street";
+        houseNumber !== null &&
+        (item.types || []).includes("route");
       const mainName = isStreetWithNumber
         ? `${rawName}, ${houseNumber}`
         : rawName;
       const displayName = isStreetWithNumber
-        ? [mainName, item.place_formatted].filter(Boolean).join(", ")
-        : item.full_address ||
-          [mainName, item.place_formatted].filter(Boolean).join(", ");
+        ? `${mainName}, ${subName}`
+        : item.description;
 
       return {
-        place_id: item.mapbox_id,
+        place_id: item.place_id,
         display_name: displayName,
         main_name: mainName,
         sub_name: subName,
         lat: null,
         lon: null,
-        mapbox_id: item.mapbox_id,
+        google_place_id: item.place_id,
         ...(isStreetWithNumber
           ? { house_number: houseNumber, street_name: rawName }
           : {}),
@@ -188,30 +184,50 @@ export default function GeologAddressInput({
     });
   };
 
-  // Passo "retrieve" da Search Box API: busca as coordenadas exatas
+  // Passo "getDetails" da Places API: busca as coordenadas exatas
   // da sugestao selecionada.
-  const retrieveMapboxCoords = async (
-    mapboxId: string,
+  const retrieveGoogleCoords = async (
+    placeId: string,
   ): Promise<{ lat: number; lng: number } | undefined> => {
-    const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
-    if (!token) return undefined;
+    if (!google) return undefined;
 
-    const url =
-      `https://api.mapbox.com/search/searchbox/v1/retrieve/${encodeURIComponent(mapboxId)}` +
-      `?access_token=${token}&session_token=${sessionTokenRef.current}&language=pt`;
+    // PlacesService exige um mapa ou um node de autocompletar; usamos um
+    // div offscreen para evitar acoplar com o mapa do ItineraryMap.
+    const dummyDiv = document.createElement("div");
+    const placesService = new google.maps.places.PlacesService(dummyDiv);
+    const sessionToken = sessionTokenRef.current;
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Mapbox retrieve falhou: ${response.status}`);
-    }
-    const data: SearchBoxRetrieveResponse = await response.json();
-    const coords = data.features?.[0]?.geometry?.coordinates;
-    if (!coords) return undefined;
-    return { lat: coords[1], lng: coords[0] };
+    // getDetails e callback-based (nao retorna Promise); wrap manual.
+    const result = await new Promise<google.maps.places.PlaceResult | null>(
+      (resolve, reject) => {
+        placesService.getDetails(
+          {
+            placeId,
+            fields: ["geometry.location"],
+            sessionToken:
+              sessionToken instanceof google.maps.places.AutocompleteSessionToken
+                ? sessionToken
+                : undefined,
+            language: "pt-BR",
+          },
+          (place, status) => {
+            if (status === google.maps.places.PlacesServiceStatus.OK) {
+              resolve(place);
+            } else {
+              reject(new Error(`PlacesService.getDetails falhou: ${status}`));
+            }
+          },
+        );
+      },
+    );
+
+    const location = result?.geometry?.location;
+    if (!location) return undefined;
+    return { lat: location.lat(), lng: location.lng() };
   };
 
-  // Tenta geocodificar o numero exato da casa via Geocoding v6 estruturado,
-  // com proximity no ponto da rua. Retorna undefined se a base do Mapbox
+  // Tenta geocodificar o numero exato da casa via Geocoder estruturado,
+  // com proximity no ponto da rua. Retorna undefined se a base do Google
   // nao tiver numeracao para a rua (nesse caso usamos o ponto da rua).
   const geocodeExactNumber = async (
     streetName: string,
@@ -219,31 +235,35 @@ export default function GeologAddressInput({
     near: { lat: number; lng: number },
     city?: string,
   ): Promise<{ lat: number; lng: number } | undefined> => {
-    const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
-    if (!token) return undefined;
+    if (!google) return undefined;
 
-    const url =
-      `https://api.mapbox.com/search/geocode/v6/forward` +
-      `?address_line1=${encodeURIComponent(`${streetName} ${houseNumber}`)}` +
-      (city ? `&place=${encodeURIComponent(city)}` : "") +
-      `&access_token=${token}&country=br&language=pt&limit=1` +
-      `&types=address&proximity=${near.lng},${near.lat}`;
+    const geocoder = new google.maps.Geocoder();
+    const addressParts = [`${streetName} ${houseNumber}`];
+    if (city) addressParts.push(city);
 
-    const response = await fetch(url);
-    if (!response.ok) return undefined;
-    const data: {
-      features?: Array<{ geometry: { coordinates: [number, number] } }>;
-    } = await response.json();
-    const coords = data.features?.[0]?.geometry?.coordinates;
-    if (!coords) return undefined;
+    const result = await geocoder.geocode({
+      address: addressParts.join(", "),
+      componentRestrictions: { country: "br" },
+      language: "pt-BR",
+      // proximity via bounds ~3km ao redor do ponto da rua
+      bounds: new google.maps.LatLngBounds(
+        { lat: near.lat - 0.03, lng: near.lng - 0.03 },
+        { lat: near.lat + 0.03, lng: near.lng + 0.03 },
+      ),
+    });
+
+    const firstResult = result.results?.[0];
+    if (!firstResult) return undefined;
+    const location = firstResult.geometry?.location;
+    if (!location) return undefined;
 
     // Sanity check: o resultado precisa estar perto da rua selecionada
     // (~3km). Evita pegar rua homonima em outra cidade.
-    const dLat = Math.abs(coords[1] - near.lat);
-    const dLng = Math.abs(coords[0] - near.lng);
+    const dLat = Math.abs(location.lat() - near.lat);
+    const dLng = Math.abs(location.lng() - near.lng);
     if (dLat > 0.03 || dLng > 0.03) return undefined;
 
-    return { lat: coords[1], lng: coords[0] };
+    return { lat: location.lat(), lng: location.lng() };
   };
 
   const searchAddressNominatim = async (
@@ -288,16 +308,16 @@ export default function GeologAddressInput({
 
     setLoading(true);
     try {
-      // Prioriza Mapbox Geocoding (mais preciso para BR). Fallback Nominatim.
-      const results = hasMapboxToken()
-        ? await searchAddressMapbox(query)
+      // Prioriza Google Places (mais preciso para BR). Fallback Nominatim.
+      const results = hasGoogleMapsKey()
+        ? await searchAddressGoogle(query)
         : await searchAddressNominatim(query);
       setSuggestions(results);
       setIsOpen(true);
     } catch (error) {
       console.error("Erro na busca de endereco:", error);
-      // Se Mapbox falhar, tenta Nominatim como fallback
-      if (hasMapboxToken()) {
+      // Se Google falhar, tenta Nominatim como fallback
+      if (hasGoogleMapsKey()) {
         try {
           const fallback = await searchAddressNominatim(query);
           setSuggestions(fallback);
@@ -325,14 +345,14 @@ export default function GeologAddressInput({
       return;
     }
 
-    // Sugestao da Search Box API: busca coordenadas via retrieve
-    if (suggestion.mapbox_id) {
+    // Sugestao da Places API: busca coordenadas via getDetails
+    if (suggestion.google_place_id) {
       try {
-        let coords = await retrieveMapboxCoords(suggestion.mapbox_id);
+        let coords = await retrieveGoogleCoords(suggestion.google_place_id);
         // Sugestao de rua com numero injetado: tenta refinar para o
-        // ponto exato do numero (se a base tiver numeracao da rua).
+        // ponto exato do numero (se a base do Google tiver numeracao da rua).
         if (coords && suggestion.house_number && suggestion.street_name) {
-          // Cidade: primeiro segmento do place_formatted
+          // Cidade: primeiro segmento do secondary_text
           // (ex: "Casimiro de Abreu - Rio de Janeiro, 28880, Brasil").
           const city = suggestion.sub_name.split(/\s*[-,]\s*/)[0]?.trim();
           const exact = await geocodeExactNumber(
