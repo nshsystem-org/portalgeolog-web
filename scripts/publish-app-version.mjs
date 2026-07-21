@@ -36,6 +36,55 @@ function getArgValue(flagName) {
   return process.argv[index + 1] || null;
 }
 
+// Faz parse de uma string "v1.0.4" -> { major, minor, patch }.
+// Retorna null se o formato for inválido.
+function parseDisplayVersion(raw) {
+  if (!raw) return null;
+  const match = String(raw)
+    .trim()
+    .match(/^v?(\d+)\.(\d+)\.(\d+)$/i);
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
+}
+
+function formatDisplayVersion({ major, minor, patch }) {
+  return `v${major}.${minor}.${patch}`;
+}
+
+// Busca a última display_version gravada no banco e retorna o próximo patch.
+// Se não houver histórico válido, começa em v0.1.0.
+async function computeNextDisplayVersion(supabase, override) {
+  const explicit = parseDisplayVersion(override);
+  if (explicit) return formatDisplayVersion(explicit);
+
+  const { data, error } = await supabase
+    .from("app_versions")
+    .select("display_version")
+    .order("deployed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.warn(
+      `Aviso: não foi possível buscar a última display_version (${error.message}). Iniciando em v0.1.0.`,
+    );
+    return "v0.1.0";
+  }
+
+  const lastParsed = parseDisplayVersion(data?.display_version);
+  if (!lastParsed) return "v0.1.0";
+
+  return formatDisplayVersion({
+    major: lastParsed.major,
+    minor: lastParsed.minor,
+    patch: lastParsed.patch + 1,
+  });
+}
+
 async function main() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -66,11 +115,19 @@ async function main() {
     },
   });
 
+  const displayVersionOverride =
+    getArgValue("--display-version") || process.env.APP_DISPLAY_VERSION;
+  const displayVersion = await computeNextDisplayVersion(
+    supabase,
+    displayVersionOverride,
+  );
+
   const { error } = await supabase.from("app_versions").insert({
     version,
     build_hash: buildHash,
     deployed_by: deployedBy,
     notes,
+    display_version: displayVersion,
   });
 
   if (error) {
@@ -78,6 +135,7 @@ async function main() {
   }
 
   console.log(`Versão publicada com sucesso: ${version}`);
+  console.log(`Display version: ${displayVersion}`);
   console.log(`Build hash: ${buildHash}`);
   console.log(`Deployed by: ${deployedBy}`);
 }

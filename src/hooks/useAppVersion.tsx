@@ -12,6 +12,7 @@ type AppVersionRow = {
   deployed_at: string;
   deployed_by: string;
   notes: string | null;
+  display_version: string | null;
 };
 
 type PendingReloadInfo = {
@@ -27,6 +28,7 @@ const PENDING_RELOAD_KEY = "geolog-app-version-pending-reload";
 export function useAppVersion() {
   const supabase = useMemo(() => createClient(), []);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  const [displayVersion, setDisplayVersion] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
   // Ref para userName evita que scheduleReload/handleVersionChange/fetchLatestVersion
@@ -216,12 +218,13 @@ export function useAppVersion() {
   );
 
   const handleVersionChange = useCallback(
-    (nextVersion: string) => {
+    (nextVersion: string, nextDisplayVersion?: string | null) => {
       if (!nextVersion) return;
 
       const previousVersion = currentVersionRef.current;
       setCurrentVersion(nextVersion);
       currentVersionRef.current = nextVersion;
+      if (nextDisplayVersion) setDisplayVersion(nextDisplayVersion);
 
       if (!previousVersion) return;
       if (previousVersion === nextVersion) return;
@@ -235,7 +238,9 @@ export function useAppVersion() {
   const fetchLatestVersion = useCallback(async () => {
     const { data, error } = await supabase
       .from("app_versions")
-      .select("version, build_hash, deployed_at, deployed_by, notes")
+      .select(
+        "version, build_hash, deployed_at, deployed_by, notes, display_version",
+      )
       .order("deployed_at", { ascending: false })
       .limit(1)
       .maybeSingle<AppVersionRow>();
@@ -247,7 +252,7 @@ export function useAppVersion() {
 
     if (!data?.version) return;
 
-    handleVersionChange(data.version);
+    handleVersionChange(data.version, data.display_version);
   }, [handleVersionChange, supabase]);
 
   useEffect(() => {
@@ -271,7 +276,7 @@ export function useAppVersion() {
         (payload) => {
           const nextRow = payload.new as AppVersionRow;
           if (nextRow?.version) {
-            handleVersionChange(nextRow.version);
+            handleVersionChange(nextRow.version, nextRow.display_version);
           }
         },
       )
@@ -294,6 +299,7 @@ export function useAppVersion() {
 
   return {
     currentVersion,
+    displayVersion,
     updateAvailable,
     updateCountdown,
   };

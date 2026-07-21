@@ -30,7 +30,6 @@ import {
   DollarSign,
   UserSquare2,
   Handshake,
-  RefreshCw,
   Info,
   CheckCircle,
   CircleCheckBig,
@@ -92,7 +91,7 @@ export default function DashboardLayout({
     markAllAsRead,
     realtimeConnected,
   } = useNotifications({ onPendenciaAlert: handlePendenciaAlert });
-  const { currentVersion, updateAvailable, updateCountdown } = useAppVersion();
+  const { displayVersion } = useAppVersion();
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<
     "all" | "unread" | "read"
@@ -301,9 +300,16 @@ export default function DashboardLayout({
             <img src="/logo.png" alt="Geolog Logo" className="h-6 w-auto" />
           </div>
           {!collapsed && (
-            <span className="text-base font-black text-white uppercase tracking-tighter whitespace-nowrap">
-              Portal Geolog
-            </span>
+            <div className="flex flex-col leading-none">
+              <span className="text-base font-black text-white uppercase tracking-tighter whitespace-nowrap">
+                Portal Geolog
+              </span>
+              {displayVersion && (
+                <span className="mt-1 text-[10px] font-bold text-blue-300/60 tracking-wider whitespace-nowrap">
+                  {displayVersion}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
@@ -375,30 +381,6 @@ export default function DashboardLayout({
             collapsed={collapsed}
           />
         </nav>
-
-        {currentVersion && (
-          <div className="px-4 pb-3">
-            <div className="rounded-2xl border border-blue-700/60 bg-blue-950/30 px-3 py-2 text-center shadow-inner shadow-black/10">
-              {collapsed ? (
-                <RefreshCw className="w-5 h-5 text-blue-300/80 mx-auto" />
-              ) : (
-                <>
-                  <p className="text-[9px] font-black uppercase tracking-[0.35em] text-blue-300/80">
-                    Versão atual
-                  </p>
-                  <p className="mt-1 text-[11px] font-black text-white leading-tight truncate">
-                    v{currentVersion}
-                  </p>
-                  {updateAvailable && updateCountdown !== null && (
-                    <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.25em] text-blue-200/80">
-                      Recarregando em {updateCountdown}s
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        )}
 
         <div className="p-4 border-t border-blue-800/50">
           <button
