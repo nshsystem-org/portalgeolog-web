@@ -39,7 +39,7 @@ BEGIN
   VALUES (
     'info',
     'Novo Centro de Custo',
-    coalesce(v_actor_name, 'Sistema') || ' criou um novo Centro de Custo.',
+    'criou um novo Centro de Custo.',
     'interno',
     v_user_id,
     v_actor_name,
