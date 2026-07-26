@@ -205,13 +205,27 @@ export async function gerarRelatorio(payload: ReportPayload): Promise<Blob> {
   if (payload.repasseStatusFilter && payload.repasseStatusFilter !== "all") {
     params.set("repasseStatusFilter", payload.repasseStatusFilter);
   }
+  const selectedIds = payload.selectionMode
+    ? (payload.selectedOsIds || []).filter(Boolean)
+    : [];
+  if (payload.selectionMode && selectedIds.length > 0) {
+    params.set("selectionMode", "true");
+  }
 
-  const response = await fetch(
-    `/api/financeiro/relatorio?${params.toString()}`,
-    {
-      credentials: "include",
-    },
-  );
+  // Com muitas OS selecionadas a lista de UUIDs não cabe na query string
+  // (erro 431). Nesse caso os IDs vão no body de um POST; sem seleção,
+  // mantém o GET simples.
+  const response =
+    selectedIds.length > 0
+      ? await fetch(`/api/financeiro/relatorio?${params.toString()}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ selectedOsIds: selectedIds }),
+        })
+      : await fetch(`/api/financeiro/relatorio?${params.toString()}`, {
+          credentials: "include",
+        });
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {

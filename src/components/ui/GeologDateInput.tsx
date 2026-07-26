@@ -10,6 +10,7 @@ interface GeologDateInputProps {
   type?: "date" | "month";
   className?: string;
   labelClassName?: string;
+  inputClassName?: string;
   compact?: boolean;
   placeholder?: string;
 }
@@ -131,6 +132,7 @@ export default function GeologDateInput({
   type = "date",
   className = "",
   labelClassName = "",
+  inputClassName = "",
   compact = false,
   placeholder: customPlaceholder,
 }: GeologDateInputProps) {
@@ -207,8 +209,8 @@ export default function GeologDateInput({
           aria-label={label}
           className={
             compact
-              ? "w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 pr-9 text-sm font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              : "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-base font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              ? `w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 pr-9 text-sm font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 ${inputClassName}`
+              : `w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-base font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 ${inputClassName}`
           }
         />
 

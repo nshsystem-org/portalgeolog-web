@@ -9,7 +9,7 @@ type ColumnRender<T> = {
 
 export interface Column<T> {
   key: keyof T | string;
-  title: string;
+  title: ReactNode;
   render?: ColumnRender<T>;
   width?: string;
   align?: "left" | "center" | "right";

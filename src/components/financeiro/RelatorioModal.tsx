@@ -16,9 +16,17 @@ import {
   Receipt,
   Wallet,
   CheckCircle2,
+  CheckCircle,
+  ListChecks,
+  Calendar,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Rocket,
 } from "lucide-react";
 import GeologDateInput from "@/components/ui/GeologDateInput";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
+import OSPickerPanel from "@/components/financeiro/OSPickerPanel";
 
 export type ReportTemplate =
   | "medicao_cliente"
@@ -51,7 +59,31 @@ const CATEGORY_LABELS: Record<ReportCategory, string> = {
 const CATEGORY_ICONS: Record<ReportCategory, React.ReactNode> = {
   cliente: <Users size={18} className="text-emerald-500" />,
   interno: <Building2 size={18} className="text-blue-500" />,
-  motorista: <Truck size={18} className="text-amber-500" />,
+  motorista: <Truck size={18} className="text-orange-500" />,
+};
+
+const CATEGORY_COLORS: Record<
+  ReportCategory,
+  { active: string; icon: string; hover: string }
+> = {
+  cliente: {
+    active:
+      "border-emerald-400 bg-emerald-50 text-emerald-800 shadow-md shadow-emerald-100/50",
+    icon: "text-emerald-600",
+    hover: "hover:border-emerald-200 hover:bg-emerald-50/50",
+  },
+  interno: {
+    active:
+      "border-blue-400 bg-blue-50 text-blue-700 shadow-md shadow-blue-100/50",
+    icon: "text-blue-600",
+    hover: "hover:border-blue-200 hover:bg-blue-50/50",
+  },
+  motorista: {
+    active:
+      "border-orange-400 bg-orange-50 text-orange-800 shadow-md shadow-orange-100/50",
+    icon: "text-orange-600",
+    hover: "hover:border-orange-200 hover:bg-orange-50/50",
+  },
 };
 
 const TEMPLATE_ICONS: Record<ReportTemplate, React.ReactNode> = {
@@ -123,6 +155,14 @@ export type ReportPayload = {
   parceiroId?: string;
   driverId?: string;
   repasseStatusFilter?: "all" | "pending" | "paid";
+  /**
+   * Modo Seleção: quando ativo, o relatório inclui apenas as OS cujos IDs
+   * estão em `selectedOsIds`, ignorando o filtro automático de período.
+   * Atualmente só é respeitado pelo template `medicao_cliente`, mas foi
+   * modelado de forma genérica para ser expandido a outros templates.
+   */
+  selectionMode?: boolean;
+  selectedOsIds?: string[];
 };
 
 interface RelatorioModalProps {
@@ -169,6 +209,26 @@ export default function RelatorioModal({
     "all" | "pending" | "paid"
   >("all");
   const [isTallModal, setIsTallModal] = useState(false);
+
+  // Estado para recolher o painel de configuração no modo seleção.
+  const [isConfigCollapsed, setIsConfigCollapsed] = useState(false);
+  // Modo Seleção — por enquanto só exposto para "medicao_cliente".
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedOsIds, setSelectedOsIds] = useState<string[]>([]);
+  // Soma dos valores das OS marcadas (alimentada pelo OSPickerPanel).
+  const [, setSelectedOsTotal] = useState(0);
+  // Mês exibido no calendário do painel de seleção (ex: "Junho 2026").
+  const [pickerMonthLabel, setPickerMonthLabel] = useState("");
+
+  const isMedicaoCliente = selectedTemplate === "medicao_cliente";
+  const selectionEnabled = isMedicaoCliente && Boolean(clienteId);
+  // Modo Seleção ativo = layout em duas colunas (config à esquerda, picker
+  // à direita) e modal mais largo.
+  const showSelectionLayout = selectionEnabled && selectionMode;
+
+  const dateRangeInvalid = Boolean(
+    dataInicio && dataFim && dataInicio > dataFim,
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -224,26 +284,54 @@ export default function RelatorioModal({
     }
   }, [driverId, driverPartnerMap, parceiroId, selectedTemplate]);
 
+  // Reset da seleção manual ao trocar de template (a seleção só faz sentido
+  // para medicao_cliente; os IDs marcados pertencem àquele contexto).
+  useEffect(() => {
+    if (selectedTemplate !== "medicao_cliente") {
+      setSelectionMode(false);
+      setSelectedOsIds([]);
+      setSelectedOsTotal(0);
+    }
+  }, [selectedTemplate]);
+
   const isRepasseTemplate =
     selectedTemplate === "repasse_autonomos" ||
     selectedTemplate === "repasse_parceiros" ||
     selectedTemplate === "repasse_internos";
 
+  // Wizard flow: o período só aparece após a etapa de seleção da entidade
+  // (cliente/motorista/parceiro) estar completa. Templates sem seleção de
+  // entidade mostram o período imediatamente após a escolha do template.
+  const isSelectionStepComplete =
+    !!selectedTemplate &&
+    ((selectedTemplate === "medicao_cliente" && !!clienteId) ||
+      (selectedTemplate === "repasse_autonomos" && !!driverId) ||
+      (selectedTemplate === "repasse_internos" && !!driverId) ||
+      (selectedTemplate === "repasse_parceiros" && !!parceiroId) ||
+      selectedTemplate === "performance" ||
+      selectedTemplate === "liberadas_faturamento" ||
+      selectedTemplate === "pendentes_repasse");
+
   const canGenerate =
     selectedTemplate &&
     dataInicio &&
     dataFim &&
+    !dateRangeInvalid &&
     (selectedTemplate !== "medicao_cliente" || clienteId) &&
     (selectedTemplate !== "repasse_autonomos" || driverId) &&
     (selectedTemplate !== "repasse_internos" || driverId) &&
-    (selectedTemplate !== "repasse_parceiros" || parceiroId);
+    (selectedTemplate !== "repasse_parceiros" || parceiroId) &&
+    // No Modo Seleção, é obrigatório marcar ao menos uma OS.
+    (!selectionEnabled || !selectionMode || selectedOsIds.length > 0);
 
   const handleGenerate = () => {
-    if (!selectedTemplate || !dataInicio || !dataFim) return;
+    if (!selectedTemplate || !dataInicio || !dataFim || dateRangeInvalid)
+      return;
     if (selectedTemplate === "medicao_cliente" && !clienteId) return;
     if (selectedTemplate === "repasse_autonomos" && !driverId) return;
     if (selectedTemplate === "repasse_internos" && !driverId) return;
     if (selectedTemplate === "repasse_parceiros" && !parceiroId) return;
+    if (selectionEnabled && selectionMode && selectedOsIds.length === 0) return;
 
     onGenerate({
       template: selectedTemplate,
@@ -260,7 +348,17 @@ export default function RelatorioModal({
           ? driverId
           : undefined,
       repasseStatusFilter: isRepasseTemplate ? repasseStatusFilter : undefined,
+      selectionMode: selectionEnabled && selectionMode,
+      selectedOsIds:
+        selectionEnabled && selectionMode ? selectedOsIds : undefined,
     });
+  };
+
+  const handleClienteChange = (value: string) => {
+    setClienteId(value);
+    // Trocou de cliente: descarta seleção anterior (pertencia a outro cliente).
+    setSelectedOsIds([]);
+    setSelectedOsTotal(0);
   };
 
   const handleClose = () => {
@@ -274,7 +372,383 @@ export default function RelatorioModal({
     setParceiroId("");
     setDriverId("");
     setRepasseStatusFilter("all");
+    setSelectionMode(false);
+    setSelectedOsIds([]);
+    setSelectedOsTotal(0);
+    setIsConfigCollapsed(false);
   };
+
+  // Conteúdo de configuração do relatório, compartilhado entre os layouts.
+  const reportConfig = (
+    <>
+      {/* Template Selection — chips de categoria + cards de relatório */}
+      <div className="space-y-3 mt-3 animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className={`p-5 rounded-3xl border space-y-4 ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+          {/* Chips de categoria */}
+          <div className="relative flex flex-wrap gap-2">
+            {(Object.keys(CATEGORY_LABELS) as ReportCategory[]).map((cat) => {
+              const isActive = selectedCategory === cat;
+              const colors = CATEGORY_COLORS[cat];
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory(cat);
+                    setSelectedTemplate("");
+                  }}
+                  aria-pressed={isActive}
+                  className={`relative z-10 flex items-center gap-2 rounded-xl border-2 px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
+                    isActive
+                      ? colors.active
+                      : `border-slate-100 bg-white text-slate-600 ${colors.hover}`
+                  }`}
+                >
+                  {CATEGORY_ICONS[cat]}
+                  {CATEGORY_LABELS[cat]}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Cards de relatório da categoria selecionada — título apenas */}
+          <div
+            className={`grid gap-3 ${
+              showSelectionLayout ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
+            }`}
+          >
+            {TEMPLATES.filter((t) => t.category === selectedCategory).map(
+              (template) => {
+                const isActive = selectedTemplate === template.id;
+                const colors = CATEGORY_COLORS[selectedCategory];
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => setSelectedTemplate(template.id)}
+                    aria-pressed={isActive}
+                    className={`relative flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-all cursor-pointer ${
+                      isActive
+                        ? colors.active
+                        : `border-slate-100 bg-white ${colors.hover}`
+                    }`}
+                  >
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                        isActive ? "bg-white shadow-sm" : "bg-slate-50"
+                      }`}
+                    >
+                      {TEMPLATE_ICONS[template.id]}
+                    </span>
+                    <span className="min-w-0 flex-1 pr-5">
+                      <span className={`block text-sm font-black leading-tight ${isActive ? colors.icon : "text-slate-800"}`}>
+                        {template.label}
+                      </span>
+                    </span>
+                    {isActive && (
+                      <CheckCircle
+                        size={18}
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 ${colors.icon}`}
+                      />
+                    )}
+                  </button>
+                );
+              },
+            )}
+          </div>
+        </div>
+      </div>
+
+
+      {/* Cliente Selection (Only for Medição ao Cliente) */}
+      {selectedTemplate === "medicao_cliente" && (
+        <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-4">
+          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+            <GeologSearchableSelect
+              options={clientes}
+              value={clienteId}
+              onChange={handleClienteChange}
+              placeholder="Selecione um cliente..."
+              triggerClassName="px-4 py-3 text-base"
+              dropdownPosition="up"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Driver Selection (Repasse a Autônomos) */}
+      {selectedTemplate === "repasse_autonomos" && (
+        <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+            <GeologSearchableSelect
+              label="Motorista Autônomo"
+              options={autonomousDrivers.map((driver) => ({
+                id: driver.id,
+                nome: driver.name,
+                sublabel: driver.phone || undefined,
+              }))}
+              value={driverId}
+              onChange={setDriverId}
+              required
+              placeholder="Selecione um motorista..."
+              triggerClassName="px-4 py-3 text-base"
+              dropdownPosition="up"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Driver Selection (Repasse a Internos) */}
+      {selectedTemplate === "repasse_internos" && (
+        <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+            <GeologSearchableSelect
+              label="Motorista Interno"
+              options={internalDrivers.map((driver) => ({
+                id: driver.id,
+                nome: driver.name,
+                sublabel: driver.phone || undefined,
+              }))}
+              value={driverId}
+              onChange={setDriverId}
+              required
+              placeholder="Selecione um motorista..."
+              triggerClassName="px-4 py-3 text-base"
+              dropdownPosition="up"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Partner Selection (Only for Repasse a Parceiros) */}
+      {selectedTemplate === "repasse_parceiros" && (
+        <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-4">
+          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+            <GeologSearchableSelect
+              label="Parceiro"
+              options={parceiros.map((partner) => ({
+                id: partner.id,
+                nome: partner.razaoSocialOuNomeCompleto,
+              }))}
+              value={parceiroId}
+              onChange={(value) => {
+                setParceiroId(value);
+                setDriverId("");
+              }}
+              required
+              placeholder="Selecione um parceiro..."
+              triggerClassName="px-4 py-3 text-base"
+              dropdownPosition="up"
+            />
+          </div>
+
+          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <GeologSearchableSelect
+                  label="Motorista do parceiro"
+                  options={partnerDrivers.map((driver) => ({
+                    id: driver.id,
+                    nome: driver.name,
+                    sublabel: driver.phone || undefined,
+                  }))}
+                  value={driverId}
+                  onChange={setDriverId}
+                  disabled={!parceiroId}
+                  placeholder={
+                    parceiroId
+                      ? "Opcional: selecione um motorista..."
+                      : "Selecione um parceiro primeiro..."
+                  }
+                  triggerClassName="px-4 py-3 text-base"
+                  dropdownPosition="up"
+                />
+              </div>
+              {driverId && (
+                <button
+                  onClick={() => setDriverId("")}
+                  className="shrink-0 p-2 text-slate-400 hover:text-red-400 hover:bg-red-50 rounded-xl transition-all cursor-pointer mt-6"
+                  title="Limpar seleção de motorista"
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Repasse filter (if template supports it) */}
+      {isRepasseTemplate && (
+        <div className="animate-in fade-in duration-300">
+          <div className="space-y-3">
+            <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
+              Status do Repasse
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {[
+                {
+                  value: "all" as const,
+                  label: "Exportar tudo",
+                  activeClass:
+                    "border-blue-400 bg-blue-50 text-blue-700 shadow-md shadow-blue-100/50",
+                },
+                {
+                  value: "pending" as const,
+                  label: "Pendentes",
+                  activeClass:
+                    "border-amber-400 bg-amber-50 text-amber-900 shadow-md shadow-amber-100/50",
+                },
+                {
+                  value: "paid" as const,
+                  label: "Pagos",
+                  activeClass:
+                    "border-emerald-400 bg-emerald-50 text-emerald-900 shadow-md shadow-emerald-100/50",
+                },
+              ].map((option) => {
+                const isActive = repasseStatusFilter === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setRepasseStatusFilter(option.value)}
+                    aria-pressed={isActive}
+                    className={`flex items-center justify-center gap-3 px-5 py-3 rounded-2xl border-2 cursor-pointer transition-all ${
+                      isActive
+                        ? option.activeClass
+                        : "border-slate-100 bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50/50"
+                    }`}
+                  >
+                    <span className="text-sm font-black tracking-tight">
+                      {option.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info Banners */}
+      {selectedTemplate === "pendentes_repasse" && (
+        <div className="flex items-center gap-3 p-4 rounded-2xl bg-amber-50/60 border border-amber-200">
+          <AlertCircle size={20} className="text-amber-600 shrink-0" />
+          <div>
+            <p className="text-sm font-black text-amber-800">
+              Apenas ordens com repasse pendente
+            </p>
+            <p className="text-xs font-medium text-amber-600 mt-0.5">
+              Motoristas autônomos e parceiros que ainda não tiveram o pagamento
+              registrado.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {selectedTemplate === "liberadas_faturamento" && (
+        <div className="flex items-center gap-3 p-4 rounded-2xl bg-blue-50/60 border border-blue-200">
+          <AlertCircle size={20} className="text-blue-600 shrink-0" />
+          <div>
+            <p className="text-sm font-black text-blue-800">
+              Apenas ordens prontas para faturar
+            </p>
+            <p className="text-xs font-medium text-blue-600 mt-0.5">
+              Status operacional: Finalizado | Status financeiro: Pendente.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Period — aparece por último, após a etapa de seleção da entidade */}
+      {isSelectionStepComplete && (
+        <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className={`p-5 rounded-3xl border space-y-4 ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex items-end gap-2 max-w-[360px]">
+              <div className="flex-1 min-w-0">
+                <GeologDateInput
+                  label="De"
+                  value={dataInicio}
+                  onChange={setDataInicio}
+                  labelClassName="text-emerald-600 font-bold"
+                  inputClassName={
+                    selectionMode
+                      ? "!bg-white/80 !border-slate-300"
+                      : "!border-slate-300"
+                  }
+                />
+              </div>
+              <div className="mb-3.5 flex items-center justify-center">
+                <ArrowRight
+                  size={16}
+                  className="text-slate-400 animate-pulse"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <GeologDateInput
+                  label="Até"
+                  value={dataFim}
+                  onChange={setDataFim}
+                  labelClassName="text-blue-600 font-bold"
+                  inputClassName={
+                    selectionMode
+                      ? "!bg-white/80 !border-slate-300"
+                      : "!border-slate-300"
+                  }
+                />
+              </div>
+            </div>
+
+            {/* Toggle Fixo vs Seleção inline no canto direito — só no modo Fixo */}
+            {isMedicaoCliente && !selectionMode && (
+              <div className="ml-auto flex rounded-2xl border-2 border-slate-100 bg-white p-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectionMode(false)}
+                  aria-pressed={!selectionMode}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
+                    !selectionMode
+                      ? "bg-slate-800 text-white shadow-sm"
+                      : "text-slate-400 hover:text-slate-700"
+                  }`}
+                >
+                  <Calendar size={16} />
+                  Fixo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectionMode(true);
+                    setIsConfigCollapsed(true);
+                  }}
+                  aria-pressed={selectionMode}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
+                    selectionMode
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-slate-700"
+                  }`}
+                >
+                  <ListChecks size={16} />
+                  Seleção
+                </button>
+              </div>
+            )}
+          </div>
+
+          {dateRangeInvalid && (
+            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+              <AlertCircle size={16} className="shrink-0 text-red-500" />
+              <p className="text-xs font-bold text-red-600">
+                A data inicial não pode ser maior que a data final.
+              </p>
+            </div>
+          )}
+        </div>
+        </div>
+      )}
+    </>
+  );
 
   if (!isOpen) return null;
 
@@ -284,318 +758,157 @@ export default function RelatorioModal({
     >
       <div
         className="absolute inset-0 bg-[#001C3A]/60 backdrop-blur-md"
-        onClick={handleClose}
+        onClick={loading ? undefined : handleClose}
       />
       <div
         role="dialog"
         aria-modal="true"
-        className={`relative bg-white w-full max-w-3xl ${isTallModal ? "max-w-[720px] h-[90vh] rounded-[1.5rem]" : "max-h-[92vh] rounded-[2.5rem]"} shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200`}
+        className={`relative bg-white w-full ${
+          showSelectionLayout
+            ? "max-w-[96vw] w-full h-[98vh] rounded-[1.5rem]"
+            : isTallModal
+              ? "max-w-[720px] h-[90vh] rounded-[1.5rem]"
+              : "max-w-3xl max-h-[92vh] rounded-[2.5rem]"
+        } shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200`}
         style={{ textRendering: "geometricPrecision" }}
       >
         <div
-          className={`flex items-center justify-between px-8 pt-6 pb-5 ${isTallModal ? "px-6 pt-4 pb-3" : ""} bg-blue-50/70 border-b border-blue-100`}
+          className={`relative flex items-center justify-between px-6 py-3 bg-blue-50/70 border-b border-blue-100 shrink-0`}
         >
-          <div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-              Exportar Relatório
-            </h2>
-            <p className="text-sm font-medium text-slate-500 mt-1">
-              Selecione o tipo de relatório e o período desejado.
-            </p>
+          <div className="flex items-center gap-3">
+            <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                Exportar Relatório
+              </h2>
+              {!showSelectionLayout && (
+                <p className="text-xs font-medium text-slate-500 mt-0.5">
+                  Selecione o tipo de relatório e o período desejado.
+                </p>
+              )}
+            </div>
+
           </div>
+          {showSelectionLayout && pickerMonthLabel && (() => {
+            const [month, year] = pickerMonthLabel.split(' ');
+            return (
+              <p className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+                <span className="text-base font-black uppercase tracking-widest text-slate-900">
+                  {month}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-black tracking-wider border border-emerald-200">
+                  {year}
+                </span>
+              </p>
+            );
+          })()}
           <button
-            onClick={handleClose}
-            className="p-2.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+            onClick={loading ? undefined : handleClose}
+            disabled={loading}
+            className={`p-2 rounded-xl transition-all ${loading ? "text-slate-300 cursor-not-allowed" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"}`}
           >
-            <X size={22} />
+            <X size={20} />
           </button>
         </div>
 
-        <div
-          className={`flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-8 ${isTallModal ? "px-6 pb-6 space-y-5" : ""}`}
-        >
-          {/* Period */}
-          <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500 mt-6">
-            <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
-              Selecione o período
-            </label>
-            <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <GeologDateInput
-                  label="Data Inicial"
-                  value={dataInicio}
-                  onChange={setDataInicio}
-                  labelClassName="text-emerald-600 font-bold"
-                />
-                <GeologDateInput
-                  label="Data Final"
-                  value={dataFim}
-                  onChange={setDataFim}
-                  labelClassName="text-blue-600 font-bold"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Template Selection */}
-          <div className="space-y-3">
-            <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
-              Tipo de Relatório
-            </label>
-            <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
-                <GeologSearchableSelect
-                  label="Categoria"
-                  options={(Object.keys(CATEGORY_LABELS) as ReportCategory[]).map((cat) => ({
-                    id: cat,
-                    nome: CATEGORY_LABELS[cat],
-                    icon: CATEGORY_ICONS[cat],
-                  }))}
-                  value={selectedCategory}
-                  onChange={(value) => {
-                    setSelectedCategory(value as ReportCategory);
-                    setSelectedTemplate("");
-                  }}
-                  required
-                  placeholder="Selecione uma categoria..."
-                  compact
-                  disableSearch
-                  hideDropdownPhotos
-                  hideTriggerBorder
-                  triggerClassName="!px-3 !py-1 text-sm w-full h-[55px]"
-                />
-                <GeologSearchableSelect
-                  label="Relatório"
-                  options={TEMPLATES.filter((t) => t.category === selectedCategory).map((t) => ({
-                    id: t.id,
-                    nome: t.label,
-                    icon: TEMPLATE_ICONS[t.id],
-                  }))}
-                  value={selectedTemplate}
-                  onChange={(value) => setSelectedTemplate(value as ReportTemplate)}
-                  required
-                  placeholder="Selecione um relatório..."
-                  compact
-                  disableSearch
-                  hideDropdownPhotos
-                  hideTriggerBorder
-                  triggerClassName="!px-3 !py-1 text-sm w-full h-[55px]"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Cliente Selection (Only for Medição ao Cliente) */}
-          {selectedTemplate === "medicao_cliente" && (
-            <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
-                <GeologSearchableSelect
-                  label="Cliente / Empresa Destino"
-                  options={clientes}
-                  value={clienteId}
-                  onChange={setClienteId}
-                  required
-                  placeholder="Selecione um cliente..."
-                  triggerClassName="px-4 py-3 text-base"
-                  dropdownPosition="up"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Driver Selection (Repasse a Autônomos) */}
-          {selectedTemplate === "repasse_autonomos" && (
-            <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
-                <GeologSearchableSelect
-                  label="Motorista Autônomo"
-                  options={autonomousDrivers.map((driver) => ({
-                    id: driver.id,
-                    nome: driver.name,
-                    sublabel: driver.phone || undefined,
-                  }))}
-                  value={driverId}
-                  onChange={setDriverId}
-                  required
-                  placeholder="Selecione um motorista..."
-                  triggerClassName="px-4 py-3 text-base"
-                  dropdownPosition="up"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Driver Selection (Repasse a Internos) */}
-          {selectedTemplate === "repasse_internos" && (
-            <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
-                <GeologSearchableSelect
-                  label="Motorista Interno"
-                  options={internalDrivers.map((driver) => ({
-                    id: driver.id,
-                    nome: driver.name,
-                    sublabel: driver.phone || undefined,
-                  }))}
-                  value={driverId}
-                  onChange={setDriverId}
-                  required
-                  placeholder="Selecione um motorista..."
-                  triggerClassName="px-4 py-3 text-base"
-                  dropdownPosition="up"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Partner Selection (Only for Repasse a Parceiros) */}
-          {selectedTemplate === "repasse_parceiros" && (
-            <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-4">
-              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
-                <GeologSearchableSelect
-                  label="Parceiro"
-                  options={parceiros.map((partner) => ({
-                    id: partner.id,
-                    nome: partner.razaoSocialOuNomeCompleto,
-                  }))}
-                  value={parceiroId}
-                  onChange={(value) => {
-                    setParceiroId(value);
-                    setDriverId("");
-                  }}
-                  required
-                  placeholder="Selecione um parceiro..."
-                  triggerClassName="px-4 py-3 text-base"
-                  dropdownPosition="up"
-                />
-              </div>
-
-              <div className="bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <GeologSearchableSelect
-                      label="Motorista do parceiro"
-                      options={partnerDrivers.map((driver) => ({
-                        id: driver.id,
-                        nome: driver.name,
-                        sublabel: driver.phone || undefined,
-                      }))}
-                      value={driverId}
-                      onChange={setDriverId}
-                      disabled={!parceiroId}
-                      placeholder={
-                        parceiroId
-                          ? "Opcional: selecione um motorista..."
-                          : "Selecione um parceiro primeiro..."
-                      }
-                      triggerClassName="px-4 py-3 text-base"
-                      dropdownPosition="up"
-                    />
-                  </div>
-                  {driverId && (
-                    <button
-                      onClick={() => setDriverId("")}
-                      className="shrink-0 p-2 text-slate-400 hover:text-red-400 hover:bg-red-50 rounded-xl transition-all cursor-pointer mt-6"
-                      title="Limpar seleção de motorista"
-                    >
-                      <X size={18} />
-                    </button>
+        {showSelectionLayout ? (
+          /* Layout em duas colunas: configuração (esq) + picker OS (dir).
+             O painel da esquerda pode ser recolhido para dar mais espaço. */
+          <div className="flex flex-1 min-h-0 h-full overflow-hidden">
+            {/* Painel de configuração recolhível */}
+            <div
+              className={`flex h-full shrink-0 flex-col overflow-hidden border-r transition-all duration-300 ease-in-out ${
+                selectionMode
+                  ? "border-blue-200 bg-blue-100/60"
+                  : "border-slate-200 bg-slate-50/30"
+              }`}
+              style={{ width: isConfigCollapsed ? 56 : 500 }}
+            >
+              {/* Cabeçalho / gatilho de recolher/expandir */}
+              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5 shrink-0">
+                {!isConfigCollapsed && (
+                  <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                    Configuração
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsConfigCollapsed((prev) => !prev)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-200 hover:text-slate-700 cursor-pointer"
+                  title={
+                    isConfigCollapsed
+                      ? "Expandir configuração"
+                      : "Recolher configuração"
+                  }
+                >
+                  {isConfigCollapsed ? (
+                    <ChevronRight size={18} />
+                  ) : (
+                    <ChevronLeft size={18} />
                   )}
+                </button>
+              </div>
+
+              {/* Conteúdo do formulário com fade suave */}
+              <div
+                className={`flex-1 overflow-y-auto custom-scrollbar transition-all duration-300 ease-in-out ${
+                  isConfigCollapsed
+                    ? "opacity-0 w-0 px-0 pb-0"
+                    : "opacity-100 px-6 pb-6 space-y-6"
+                }`}
+                style={{
+                  visibility: isConfigCollapsed ? "hidden" : "visible",
+                }}
+              >
+                {reportConfig}
+              </div>
+
+              {/* Barra lateral minimalista quando recolhida */}
+              {isConfigCollapsed && (
+                <div className="flex flex-1 flex-col items-center gap-4 py-4 opacity-100 transition-opacity duration-300 delay-150">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                    <ListChecks size={16} />
+                  </div>
+                  <span
+                    className="text-[10px] font-black uppercase tracking-widest text-slate-400"
+                    style={{
+                      writingMode: "vertical-rl",
+                      transform: "rotate(180deg)",
+                    }}
+                  >
+                    Config
+                  </span>
                 </div>
-              </div>
+              )}
             </div>
-          )}
 
-          {/* Repasse filter (if template supports it) */}
-          {isRepasseTemplate && (
-            <div className="animate-in fade-in duration-300">
-              <div className="space-y-3">
-                <label className="block text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1">
-                  Status do Repasse
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {[
-                    {
-                      value: "all" as const,
-                      label: "Exportar tudo",
-                      activeClass:
-                        "border-blue-400 bg-blue-50 text-blue-700 shadow-md shadow-blue-100/50",
-                    },
-                    {
-                      value: "pending" as const,
-                      label: "Pendentes",
-                      activeClass:
-                        "border-amber-400 bg-amber-50 text-amber-900 shadow-md shadow-amber-100/50",
-                    },
-                    {
-                      value: "paid" as const,
-                      label: "Pagos",
-                      activeClass:
-                        "border-emerald-400 bg-emerald-50 text-emerald-900 shadow-md shadow-emerald-100/50",
-                    },
-                  ].map((option) => {
-                    const isActive = repasseStatusFilter === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setRepasseStatusFilter(option.value)}
-                        aria-pressed={isActive}
-                        className={`flex items-center justify-center gap-3 px-5 py-3 rounded-2xl border-2 cursor-pointer transition-all ${
-                          isActive
-                            ? option.activeClass
-                            : "border-slate-100 bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50/50"
-                        }`}
-                      >
-                        <span className="text-sm font-black tracking-tight">
-                          {option.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            <div className="flex h-full flex-1 flex-col overflow-hidden p-3 transition-all duration-300">
+              <OSPickerPanel
+                clienteId={clienteId}
+                defaultDataInicio={dataInicio}
+                defaultDataFim={dataFim}
+                defaultStatusFilter="liberado"
+                selectedIds={selectedOsIds}
+                onSelectionChange={setSelectedOsIds}
+                onSelectedTotalChange={setSelectedOsTotal}
+                onMonthLabelChange={setPickerMonthLabel}
+              />
             </div>
-          )}
+          </div>
+        ) : (
+          /* Layout clássico de coluna única. */
+          <div
+            className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-8 ${isTallModal ? "px-6 pb-6 space-y-5" : ""}`}
+          >
+            {reportConfig}
+          </div>
+        )}
 
-          {/* Info Banners */}
-          {selectedTemplate === "pendentes_repasse" && (
-            <div className="flex items-center gap-3 p-4 rounded-2xl bg-amber-50/60 border border-amber-200">
-              <AlertCircle size={20} className="text-amber-600 shrink-0" />
-              <div>
-                <p className="text-sm font-black text-amber-800">
-                  Apenas ordens com repasse pendente
-                </p>
-                <p className="text-xs font-medium text-amber-600 mt-0.5">
-                  Motoristas autônomos e parceiros que ainda não tiveram o
-                  pagamento registrado.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {selectedTemplate === "liberadas_faturamento" && (
-            <div className="flex items-center gap-3 p-4 rounded-2xl bg-blue-50/60 border border-blue-200">
-              <AlertCircle size={20} className="text-blue-600 shrink-0" />
-              <div>
-                <p className="text-sm font-black text-blue-800">
-                  Apenas ordens prontas para faturar
-                </p>
-                <p className="text-xs font-medium text-blue-600 mt-0.5">
-                  Status operacional: Finalizado | Status financeiro: Pendente.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div
-          className={`px-8 py-5 ${isTallModal ? "px-6 py-4" : ""} bg-blue-50/70 border-t border-blue-100 flex items-center justify-between gap-5`}
-        >
+        <div className="px-6 py-4 bg-blue-50/70 border-t border-blue-100 flex items-center justify-between gap-4 shrink-0">
           {/* Format toggles */}
-          <div className="flex gap-3">
+          <div className="flex gap-2.5">
             <button
               onClick={() => setFormat("pdf")}
-              className={`cursor-pointer flex items-center gap-2 ${isTallModal ? "px-5 py-3" : "px-4 py-2.5"} rounded-lg border-2 text-sm font-black transition-all ${
+              className={`cursor-pointer flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm font-black transition-all ${
                 format === "pdf"
                   ? "border-blue-400 bg-blue-50 text-blue-700 shadow-sm"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
@@ -606,7 +919,7 @@ export default function RelatorioModal({
             </button>
             <button
               onClick={() => setFormat("csv")}
-              className={`cursor-pointer flex items-center gap-2 ${isTallModal ? "px-5 py-3" : "px-4 py-2.5"} rounded-lg border-2 text-sm font-black transition-all ${
+              className={`cursor-pointer flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm font-black transition-all ${
                 format === "csv"
                   ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
@@ -615,20 +928,49 @@ export default function RelatorioModal({
               <FileSpreadsheet size={16} />
               Excel
             </button>
+
+            {/* Toggle Fixo vs Seleção no rodapé — só no modo Seleção */}
+            {isMedicaoCliente && isSelectionStepComplete && selectionMode && (
+              <div className="flex rounded-2xl border-2 border-slate-100 bg-white p-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectionMode(false)}
+                  aria-pressed={!selectionMode}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
+                    !selectionMode
+                      ? "bg-slate-800 text-white shadow-sm"
+                      : "text-slate-400 hover:text-slate-700"
+                  }`}
+                >
+                  <Calendar size={16} />
+                  Fixo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectionMode(true);
+                    setIsConfigCollapsed(true);
+                  }}
+                  aria-pressed={selectionMode}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
+                    selectionMode
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-slate-700"
+                  }`}
+                >
+                  <ListChecks size={16} />
+                  Seleção
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleClose}
-              className={`cursor-pointer ${isTallModal ? "px-7 py-3.5" : "px-6 py-3"} text-sm font-black text-slate-500 hover:text-slate-700 transition-colors`}
-            >
-              Cancelar
-            </button>
+          <div className="flex items-center gap-3">
             <button
               onClick={handleGenerate}
               disabled={!canGenerate || loading}
-              className={`flex items-center gap-2 ${isTallModal ? "px-10 py-3.5" : "px-8 py-3"} rounded-2xl text-base font-black transition-all shadow-lg shadow-slate-200/40 ${
+              className={`flex items-center gap-2 px-7 py-2.5 rounded-xl text-sm font-black transition-all shadow-md ${
                 canGenerate && !loading
                   ? "cursor-pointer bg-slate-900 text-white hover:bg-slate-800 hover:-translate-y-0.5 active:translate-y-0"
                   : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
@@ -636,18 +978,95 @@ export default function RelatorioModal({
             >
               {loading ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Gerando...
                 </>
               ) : (
                 <>
-                  <Download size={18} />
+                  <Download size={16} />
                   Gerar Relatório
                 </>
               )}
             </button>
           </div>
         </div>
+
+        {/* Overlay de exportação — foguete em movimento, não fechável */}
+        {loading && (
+          <div className="absolute inset-0 z-[10000] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-sm animate-in fade-in duration-200">
+            {/* Estrelas de fundo */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              {Array.from({ length: 24 }).map((_, i) => {
+                const top = (i * 37) % 100;
+                const left = (i * 53) % 100;
+                const delay = (i % 6) * 0.3;
+                const size = 1 + (i % 3);
+                return (
+                  <span
+                    key={i}
+                    className="absolute rounded-full bg-white/70 animate-pulse"
+                    style={{
+                      top: `${top}%`,
+                      left: `${left}%`,
+                      width: `${size}px`,
+                      height: `${size}px`,
+                      animationDelay: `${delay}s`,
+                      animationDuration: `${1.5 + (i % 4) * 0.5}s`,
+                    }}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Foguete + rastro */}
+            <div className="relative flex flex-col items-center">
+              <div className="relative animate-bounce" style={{ animationDuration: "1.4s" }}>
+                {/* Rastro do foguete */}
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 top-full -mt-1 w-1.5 h-16 rounded-full bg-gradient-to-b from-orange-400 via-orange-500 to-transparent animate-pulse"
+                  style={{ animationDuration: "0.4s" }}
+                />
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 top-full -mt-1 w-3 h-10 rounded-full bg-gradient-to-b from-yellow-300/60 to-transparent blur-[2px] animate-pulse"
+                  style={{ animationDuration: "0.3s", animationDelay: "0.1s" }}
+                />
+                {/* Ícone do foguete */}
+                <Rocket
+                  size={64}
+                  className="text-white drop-shadow-[0_0_12px_rgba(255,200,100,0.6)] -rotate-45"
+                  strokeWidth={1.5}
+                />
+              </div>
+
+              {/* Texto */}
+              <div className="mt-10 text-center">
+                <p className="text-white text-xl font-black tracking-tight">
+                  Exportando relatório
+                </p>
+                <p className="text-slate-400 text-sm font-medium mt-1.5">
+                  Aguarde, estamos preparando seu documento...
+                </p>
+              </div>
+
+              {/* Barra de progresso indeterminada */}
+              <div className="mt-6 w-56 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                <div
+                  className="h-full w-1/3 rounded-full bg-gradient-to-r from-orange-400 via-yellow-300 to-orange-400"
+                  style={{
+                    animation: "rocket-progress 1.2s ease-in-out infinite",
+                  }}
+                />
+              </div>
+            </div>
+
+            <style>{`
+              @keyframes rocket-progress {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(400%); }
+              }
+            `}</style>
+          </div>
+        )}
       </div>
     </div>
   );

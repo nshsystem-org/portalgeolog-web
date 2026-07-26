@@ -52,6 +52,15 @@ type FinanceFilters = {
   statusFinanceiro?: string;
   searchTerm?: string;
   repasseStatusFilter?: RepasseStatusFilter;
+  /**
+   * Modo Seleção: quando ativo e com `selectedOsIds` não vazio, a query
+   * busca apenas as OS cujos IDs estão na lista, ignorando o filtro
+   * automático de período/status do template. Atualmente aplicável
+   * apenas ao template `medicao_cliente`, mas modelado de forma genérica
+   * para suportar expansão.
+   */
+  selectionMode?: boolean;
+  selectedOsIds?: string[];
 };
 
 type FinanceRow = {
@@ -219,6 +228,12 @@ async function createAuthClient() {
 const parseFilters = (request: Request): FinanceFilters => {
   const url = new URL(request.url);
   const repasseStatusFilter = url.searchParams.get("repasseStatusFilter");
+  const selectionModeRaw = url.searchParams.get("selectionMode");
+  const selectedOsIdsRaw = url.searchParams.get("selectedOsIds") || "";
+  const selectedOsIds = selectedOsIdsRaw
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
   return {
     template:
       (url.searchParams.get("template") as ReportTemplate) || "medicao_cliente",
@@ -238,6 +253,8 @@ const parseFilters = (request: Request): FinanceFilters => {
       repasseStatusFilter === "pending" || repasseStatusFilter === "paid"
         ? repasseStatusFilter
         : "all",
+    selectionMode: selectionModeRaw === "true" && selectedOsIds.length > 0,
+    selectedOsIds: selectedOsIds.length > 0 ? selectedOsIds : undefined,
   };
 };
 
@@ -328,6 +345,8 @@ async function fetchReportData(
     statusFinanceiro,
     searchTerm,
     repasseStatusFilter = "all",
+    selectionMode = false,
+    selectedOsIds = [],
   } = filters;
 
   let query = adminClient
@@ -337,73 +356,182 @@ async function fetchReportData(
     )
     .eq("arquivado", false);
 
-  if (month) {
-    query = query
-      .gte("data", `${month}-01`)
-      .lt("data", getNextMonthFirstDay(month));
-  }
-  if (dataInicio) query = query.gte("data", dataInicio);
-  if (dataFim) query = query.lt("data", getNextDay(dataFim));
-  if (clienteId) query = query.eq("cliente_id", clienteId);
-  if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
-  if (motorista)
-    query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
-  if (driverId) query = query.eq("driver_id", driverId);
+  // ── Modo Seleção ────────────────────────────────────────────────────
+  // Quando ativo, o relatório inclui APENAS as OS marcadas manualmente,
+  // ignorando o filtro automático de período e os filtros específicos do
+  // template. Mantemos `cliente_id` (quando informado) como trava de
+  // segurança para evitar vazamento cross-cliente.
+  //
+  // Chunking: com centenas de UUIDs, `.in("id", [...])` gera uma URL
+  // longa demais para o PostgREST. Dividimos em lotes de 100 e unimos
+  // os resultados, preservando a ordenação por data.
+  const SELECTION_CHUNK_SIZE = 200;
 
-  if (template === "liberadas_faturamento") {
-    query = query
-      .eq("status_operacional", "Finalizado")
-      .eq("status_financeiro", "Pendente");
-  } else if (template === "pendentes_repasse") {
-    query = query.eq("repasse_pago", false);
-  } else if (template === "repasse_autonomos") {
-    query = query.eq("status_operacional", "Finalizado");
-  } else if (template === "repasse_internos") {
-    query = query.eq("status_operacional", "Finalizado");
+  let rows: FinanceRow[];
+
+  if (selectionMode && selectedOsIds.length > 0) {
+    const chunks: string[][] = [];
+    for (let i = 0; i < selectedOsIds.length; i += SELECTION_CHUNK_SIZE) {
+      chunks.push(selectedOsIds.slice(i, i + SELECTION_CHUNK_SIZE));
+    }
+
+    const chunkResults = await Promise.all(
+      chunks.map(async (chunk) => {
+        let q = adminClient
+          .from("ordens_servico")
+          .select(
+            "id, protocolo, os_number, data, cliente_id, centro_custo_id, solicitante, motorista, driver_id, veiculo_id, valor_bruto, custo, hora_extra, no_show, no_show_percentual, imposto, lucro, status_financeiro, status_operacional, repasse_pago, tipo, isento_valor_bruto, isento_custo",
+          )
+          .eq("arquivado", false)
+          .in("id", chunk);
+        if (clienteId) q = q.eq("cliente_id", clienteId);
+        const { data, error } = await q.order("data", { ascending: true });
+        if (error) throw error;
+        return (data || []) as FinanceRow[];
+      }),
+    );
+
+    rows = chunkResults.flat();
+    // Reordenar após merge dos chunks (cada chunk já vem ordenado por data,
+    // mas a intercalação entre chunks precisa de uma ordenação final).
+    rows.sort((a, b) => {
+      const da = a.data || "";
+      const db = b.data || "";
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
   } else {
-    if (statusOperacional)
-      query = query.eq("status_operacional", statusOperacional);
-    if (statusFinanceiro)
-      query = query.eq("status_financeiro", statusFinanceiro);
+    if (month) {
+      query = query
+        .gte("data", `${month}-01`)
+        .lt("data", getNextMonthFirstDay(month));
+    }
+    if (dataInicio) query = query.gte("data", dataInicio);
+    if (dataFim) query = query.lt("data", getNextDay(dataFim));
+    if (clienteId) query = query.eq("cliente_id", clienteId);
+    if (centroCustoId) query = query.eq("centro_custo_id", centroCustoId);
+    if (motorista)
+      query = query.ilike("motorista", `%${sanitizeSearchTerm(motorista)}%`);
+    if (driverId) query = query.eq("driver_id", driverId);
+
+    if (template === "liberadas_faturamento") {
+      query = query
+        .eq("status_operacional", "Finalizado")
+        .eq("status_financeiro", "Pendente");
+    } else if (template === "pendentes_repasse") {
+      query = query.eq("repasse_pago", false);
+    } else if (template === "repasse_autonomos") {
+      query = query.eq("status_operacional", "Finalizado");
+    } else if (template === "repasse_internos") {
+      query = query.eq("status_operacional", "Finalizado");
+    } else {
+      if (statusOperacional)
+        query = query.eq("status_operacional", statusOperacional);
+      if (statusFinanceiro)
+        query = query.eq("status_financeiro", statusFinanceiro);
+    }
+
+    if (
+      (template === "repasse_autonomos" ||
+        template === "repasse_parceiros" ||
+        template === "repasse_internos") &&
+      repasseStatusFilter !== "all"
+    ) {
+      query = query.eq("repasse_pago", repasseStatusFilter === "paid");
+    }
+
+    if (searchTerm) {
+      const likeTerm = `%${sanitizeSearchTerm(searchTerm)}%`;
+      query = query.or(
+        `os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`,
+      );
+    }
+
+    if (parceiroId) {
+      const { data: driverRows, error: driverError } = await adminClient
+        .from("drivers")
+        .select("id")
+        .eq("parceiro_id", parceiroId)
+        .eq("status", "active");
+      if (driverError) throw driverError;
+      const ids = (driverRows || []).map((row) => row.id);
+      if (ids.length === 0) return emptyReportData(dataInicio, dataFim, month);
+      query = query.in("driver_id", ids);
+    }
+
+    const { data: rowsRaw, error: rowsError } = await query.order("data", {
+      ascending: true,
+    });
+    if (rowsError) throw rowsError;
+    rows = (rowsRaw || []) as FinanceRow[];
   }
-
-  if (
-    (template === "repasse_autonomos" ||
-      template === "repasse_parceiros" ||
-      template === "repasse_internos") &&
-    repasseStatusFilter !== "all"
-  ) {
-    query = query.eq("repasse_pago", repasseStatusFilter === "paid");
-  }
-
-  if (searchTerm) {
-    const likeTerm = `%${sanitizeSearchTerm(searchTerm)}%`;
-    query = query.or(`os_number.ilike.${likeTerm},motorista.ilike.${likeTerm}`);
-  }
-
-  if (parceiroId) {
-    const { data: driverRows, error: driverError } = await adminClient
-      .from("drivers")
-      .select("id")
-      .eq("parceiro_id", parceiroId)
-      .eq("status", "active");
-    if (driverError) throw driverError;
-    const ids = (driverRows || []).map((row) => row.id);
-    if (ids.length === 0) return emptyReportData(dataInicio, dataFim, month);
-    query = query.in("driver_id", ids);
-  }
-
-  const { data: rowsRaw, error: rowsError } = await query.order("data", {
-    ascending: true,
-  });
-  if (rowsError) throw rowsError;
-
-  let rows = (rowsRaw || []) as FinanceRow[];
 
   const osIds = rows.map((r) => r.id);
   const waypointsMap = new Map<string, ReportWaypoint[]>();
   const passengerNamesMap = new Map<string, string>();
 
+  // ── Coletar IDs de entidades relacionadas (disponíveis desde já) ──
+  // Estas fetches só dependem de `rows` e podem rodar em paralelo com
+  // a árvore de waypoints (que é sequencial: wp → wp_pass → passageiros).
+  const clientIds = Array.from(
+    new Set(rows.map((row) => row.cliente_id).filter(Boolean) as string[]),
+  );
+  const centerIds = Array.from(
+    new Set(rows.map((row) => row.centro_custo_id).filter(Boolean) as string[]),
+  );
+  const driverIds = Array.from(
+    new Set(rows.map((row) => row.driver_id).filter(Boolean) as string[]),
+  );
+  const vehicleIds = Array.from(
+    new Set(rows.map((row) => row.veiculo_id).filter(Boolean) as string[]),
+  );
+
+  // Chunk size maior: UUIDs têm 36 chars + vírgula = 37 bytes. 200 UUIDs
+  // = ~7.4KB, ainda dentro do limite do PostgREST (~8KB de URL).
+  const FETCH_CHUNK = 200;
+
+  // ── Disparar fetches independentes em paralelo ──────────────────────
+  const relatedEntitiesPromise = (async () => {
+    const [clientesRes, centrosRes, driversRes, veiculosRes] =
+      await Promise.all([
+        clientIds.length > 0
+          ? adminClient.from("clientes").select("id, nome").in("id", clientIds)
+          : Promise.resolve({ data: [] as Array<{ id: string; nome: string }> }),
+        centerIds.length > 0
+          ? adminClient
+              .from("centros_custo")
+              .select("id, nome")
+              .in("id", centerIds)
+          : Promise.resolve({ data: [] as Array<{ id: string; nome: string }> }),
+        driverIds.length > 0
+          ? adminClient
+              .from("drivers")
+              .select("id, name, parceiro_id, vinculo_tipo")
+              .in("id", driverIds)
+          : Promise.resolve({ data: [] as Array<DriverDetail> }),
+        vehicleIds.length > 0
+          ? adminClient
+              .from("veiculos")
+              .select("id, placa, modelo")
+              .in("id", vehicleIds)
+          : Promise.resolve({ data: [] as Array<{ id: string; placa: string; modelo: string }> }),
+      ]);
+
+    const driverParceiroIds = (driversRes.data || [])
+      .filter((d) => d.parceiro_id)
+      .map((d) => d.parceiro_id) as string[];
+
+    const parceirosRes =
+      driverParceiroIds.length > 0
+        ? await adminClient
+            .from("parceiros_servico")
+            .select("id, razao_social_ou_nome_completo")
+            .in("id", [...new Set(driverParceiroIds)])
+        : { data: [] };
+
+    return { clientesRes, centrosRes, driversRes, veiculosRes, parceirosRes };
+  })();
+
+  // ── Árvore de waypoints (sequencial: wp → wp_pass → passageiros) ────
   if (osIds.length > 0) {
     const wpRows = await fetchInChunks<OSWaypointRow>(
       adminClient,
@@ -412,6 +540,7 @@ async function fetchReportData(
       osIds,
       "id, ordem_servico_id, position, label, lat, lng, comment, itinerary_index, hora, data",
       "position",
+      FETCH_CHUNK,
     );
     const wpIds = wpRows.map((w) => w.id);
 
@@ -423,6 +552,8 @@ async function fetchReportData(
             "waypoint_id",
             wpIds,
             "id, waypoint_id, passageiro_id",
+            undefined,
+            FETCH_CHUNK,
           )
         : [];
 
@@ -439,7 +570,7 @@ async function fetchReportData(
       const passData = await fetchInChunks<{
         id: string;
         nome_completo: string;
-      }>(adminClient, "passageiros", "id", passengerIds, "id, nome_completo");
+      }>(adminClient, "passageiros", "id", passengerIds, "id, nome_completo", undefined, FETCH_CHUNK);
       passData.forEach((p: { id: string; nome_completo: string }) => {
         passengerNamesMap.set(p.id, p.nome_completo);
       });
@@ -469,58 +600,15 @@ async function fetchReportData(
     });
   }
 
-  const clientIds = Array.from(
-    new Set(rows.map((row) => row.cliente_id).filter(Boolean) as string[]),
-  );
-  const centerIds = Array.from(
-    new Set(rows.map((row) => row.centro_custo_id).filter(Boolean) as string[]),
-  );
-  const driverIds = Array.from(
-    new Set(rows.map((row) => row.driver_id).filter(Boolean) as string[]),
-  );
+  // ── Aguardar fetches paralelas das entidades relacionadas ───────────
+  const { clientesRes, centrosRes, driversRes, veiculosRes, parceirosRes } =
+    await relatedEntitiesPromise;
 
-  const [{ data: clientes }, { data: centrosCusto }, { data: drivers }] =
-    await Promise.all([
-      clientIds.length > 0
-        ? adminClient.from("clientes").select("id, nome").in("id", clientIds)
-        : Promise.resolve({ data: [] as Array<{ id: string; nome: string }> }),
-      centerIds.length > 0
-        ? adminClient
-            .from("centros_custo")
-            .select("id, nome")
-            .in("id", centerIds)
-        : Promise.resolve({ data: [] as Array<{ id: string; nome: string }> }),
-      driverIds.length > 0
-        ? adminClient
-            .from("drivers")
-            .select("id, name, parceiro_id, vinculo_tipo")
-            .in("id", driverIds)
-        : Promise.resolve({ data: [] as Array<DriverDetail> }),
-    ]);
-
-  const driverParceiroIds = (drivers || [])
-    .filter((d) => d.parceiro_id)
-    .map((d) => d.parceiro_id) as string[];
-
-  const { data: parceirosRaw } =
-    driverParceiroIds.length > 0
-      ? await adminClient
-          .from("parceiros_servico")
-          .select("id, razao_social_ou_nome_completo")
-          .in("id", [...new Set(driverParceiroIds)])
-      : { data: [] };
-
-  const vehicleIds = Array.from(
-    new Set(rows.map((row) => row.veiculo_id).filter(Boolean) as string[]),
-  );
-
-  const { data: veiculosRaw } =
-    vehicleIds.length > 0
-      ? await adminClient
-          .from("veiculos")
-          .select("id, placa, modelo")
-          .in("id", vehicleIds)
-      : { data: [] };
+  const clientes = clientesRes.data;
+  const centrosCusto = centrosRes.data;
+  const drivers = driversRes.data;
+  const veiculosRaw = veiculosRes.data;
+  const parceirosRaw = parceirosRes.data;
 
   const clienteMap = new Map(
     (clientes || []).map((item) => [item.id, item.nome]),
@@ -3249,6 +3337,28 @@ async function generatePdf(
 // ── Handler ────────────────────────────────────────────────
 
 export async function GET(request: Request) {
+  return handleReportRequest(request);
+}
+
+/**
+ * POST aceita `selectedOsIds` no body JSON para evitar o erro 431
+ * (Request Header Fields Too Large) quando centenas de OS são
+ * selecionadas — a lista não cabe na query string.
+ */
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => null)) as {
+    selectedOsIds?: string[];
+  } | null;
+  const selectedOsIds = (body?.selectedOsIds || [])
+    .map((id) => String(id).trim())
+    .filter(Boolean);
+  return handleReportRequest(request, selectedOsIds);
+}
+
+async function handleReportRequest(
+  request: Request,
+  bodySelectedOsIds?: string[],
+) {
   try {
     const authClient = await createAuthClient();
     const {
@@ -3261,6 +3371,11 @@ export async function GET(request: Request) {
     }
 
     const filters = parseFilters(request);
+    if (bodySelectedOsIds && bodySelectedOsIds.length > 0) {
+      filters.selectedOsIds = bodySelectedOsIds;
+      filters.selectionMode =
+        new URL(request.url).searchParams.get("selectionMode") === "true";
+    }
     const template = filters.template || "medicao_cliente";
     const format = filters.format || "pdf";
 
