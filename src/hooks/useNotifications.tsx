@@ -223,6 +223,7 @@ const OS_NOTIFICATION_SHORT_ACTIONS: Record<string, string> = {
   "Rota iniciada": "iniciou a rota",
   "Rota finalizada": "finalizou a rota",
   "Novo comentário no atendimento": "comentou no atendimento",
+  "Novo Centro de Custo": "criou um novo Centro de Custo",
 };
 
 function showNativeNotification(notif: AppNotification): void {
@@ -656,8 +657,16 @@ export function useNotifications(options?: {
 
   // Eventos de sistema (sino) vs. movimentação de motorista (dropdown azul
   // "Motoristas"), mantidos separados para não lotar um com o outro.
+  // Alertas de pendências (cron 2h, metadata.kind === "pendencia_alert") são
+  // tratados exclusivamente pelo modal bloqueante (PendenciaAlertModal) e por
+  // isso são removidos do sino — não faz sentido listá-los junto das demais
+  // notificações operacionais.
+  const isPendenciaAlert = (n: AppNotification): boolean =>
+    (n.metadata as Record<string, unknown> | null)?.kind === "pendencia_alert";
+
   const systemNotifications = useMemo(
-    () => notifications.filter((n) => n.category !== "motorista"),
+    () =>
+      notifications.filter((n) => n.category !== "motorista" && !isPendenciaAlert(n)),
     [notifications],
   );
   const driverNotifications = useMemo(

@@ -787,7 +787,10 @@ export default function DashboardLayout({
                                               : notification.title ===
                                                   "Docagem cancelada"
                                                 ? "cancelou uma docagem"
-                                                : isDriverNotify
+                                                : notification.title ===
+                                                    "Novo Centro de Custo"
+                                                  ? "criou um novo Centro de Custo"
+                                                  : isDriverNotify
                                                   ? "enviou uma mensagem de serviço para o motorista"
                                                   : isDriverDelivered
                                                     ? "recebeu a mensagem com sucesso"
@@ -1053,6 +1056,12 @@ export default function DashboardLayout({
                                   return {
                                     icon: Navigation,
                                     bg: "bg-blue-600",
+                                    text: "text-white",
+                                  };
+                                if (t === "Novo Centro de Custo")
+                                  return {
+                                    icon: Building,
+                                    bg: "bg-indigo-500",
                                     text: "text-white",
                                   };
                                 switch (notification.type) {
