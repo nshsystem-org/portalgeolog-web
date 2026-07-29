@@ -78,7 +78,23 @@ import {
   DollarSign,
   AlertCircle,
   ArrowUpCircle,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   useData,
   type OrderService,
@@ -169,6 +185,8 @@ import {
 
 type FormPassenger = { id: string; solicitanteId: string; nome: string };
 type FormWaypoint = {
+  /** Identificador estável usado para reordenar (drag and drop) e para manter estado de UI vinculado ao waypoint, independente da posição no array. */
+  id?: string;
   label: string;
   lat: number | null;
   lng: number | null;
@@ -228,6 +246,52 @@ const getItineraries = (waypoints: FormWaypoint[]): LocalItineraryGroup[] => {
 };
 
 const getItinerarySectionTitle = (): string => "Rotas e Destinos";
+
+const createWaypointId = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `wp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+// Wrapper que torna um waypoint arrastável (drag and drop) dentro do seu itinerário.
+// Mantém o JSX interno do waypoint intacto, apenas injeta o ref/estilo do dnd-kit
+// e repassa attributes/listeners para o botão de "alça" via render prop.
+type SortableWaypointRenderArgs = {
+  attributes: ReturnType<typeof useSortable>["attributes"];
+  listeners: ReturnType<typeof useSortable>["listeners"];
+  setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
+  isDragging: boolean;
+};
+const SortableWaypointItem = ({
+  id,
+  children,
+}: {
+  id: string;
+  children: (args: SortableWaypointRenderArgs) => React.ReactNode;
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 30 : undefined,
+    position: "relative",
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
+    </div>
+  );
+};
 
 const normalizeHoraExtraForInput = (value?: string | null): string => {
   if (!value) return "";
@@ -2279,6 +2343,7 @@ export default function OSOperationalPage() {
     obsFinanceiras: "",
     waypoints: [
       {
+        id: createWaypointId(),
         label: "",
         lat: null,
         lng: null,
@@ -2288,6 +2353,7 @@ export default function OSOperationalPage() {
         useMap: true,
       },
       {
+        id: createWaypointId(),
         label: "",
         lat: null,
         lng: null,
@@ -2319,6 +2385,7 @@ export default function OSOperationalPage() {
   const hydrateFormFromOS = (osItem: OrderService) => {
     const mappedWaypoints = osItem.rota?.waypoints?.length
       ? osItem.rota.waypoints.map((waypoint, index) => ({
+          id: createWaypointId(),
           label: waypoint.label,
           lat: waypoint.lat ?? null,
           lng: waypoint.lng ?? null,
@@ -2386,13 +2453,12 @@ export default function OSOperationalPage() {
     setOriginalFormSnapshot(snapshot);
 
     setOpenWaypointComments(
-      hydratedWaypoints.reduce<Record<number, boolean>>(
-        (acc, waypoint, index) => {
-          acc[index] = Boolean(waypoint.comment.trim());
-          return acc;
-        },
-        {},
-      ),
+      hydratedWaypoints.reduce<Record<string, boolean>>((acc, waypoint) => {
+        if (waypoint.id) {
+          acc[waypoint.id] = Boolean(waypoint.comment.trim());
+        }
+        return acc;
+      }, {}),
     );
   };
 
@@ -3586,13 +3652,16 @@ export default function OSOperationalPage() {
 
   const [formData, setFormData] = useState(initialForm);
   const [openWaypointComments, setOpenWaypointComments] = useState<
-    Record<number, boolean>
+    Record<string, boolean>
   >({});
   const waypointTimelineRefs = useRef<Record<number, HTMLDivElement | null>>(
     {},
   );
   const [destinationPassengerLineEnds, setDestinationPassengerLineEnds] =
     useState<Record<number, number>>({});
+  const waypointDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
   const initialQuickPassengerForm = {
     nomeCompleto: "",
     celular: "",
@@ -3922,6 +3991,7 @@ export default function OSOperationalPage() {
     const insertIdx =
       targetIt.waypointIndices[targetIt.waypointIndices.length - 1]; // before destination
     const newWaypoint = {
+      id: createWaypointId(),
       label: "",
       lat: null,
       lng: null,
@@ -3932,16 +4002,6 @@ export default function OSOperationalPage() {
     };
     const newWaypoints = [...formData.waypoints];
     newWaypoints.splice(insertIdx, 0, newWaypoint);
-    setOpenWaypointComments((prev) => {
-      const next: Record<number, boolean> = {};
-      Object.entries(prev).forEach(([key, value]) => {
-        const k = Number(key);
-        if (k < insertIdx) next[k] = value;
-        if (k >= insertIdx) next[k + 1] = value;
-      });
-      next[insertIdx] = false;
-      return next;
-    });
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
   };
 
@@ -3954,6 +4014,7 @@ export default function OSOperationalPage() {
     const newWaypoints = [...formData.waypoints];
     newWaypoints.push(
       {
+        id: createWaypointId(),
         label: "",
         lat: null,
         lng: null,
@@ -3963,6 +4024,7 @@ export default function OSOperationalPage() {
         useMap: true,
       },
       {
+        id: createWaypointId(),
         label: "",
         lat: null,
         lng: null,
@@ -3988,6 +4050,7 @@ export default function OSOperationalPage() {
     const newWaypoints = [...formData.waypoints];
     newWaypoints.push(
       {
+        id: createWaypointId(),
         label: "",
         lat: null,
         lng: null,
@@ -3997,6 +4060,7 @@ export default function OSOperationalPage() {
         useMap: true,
       },
       {
+        id: createWaypointId(),
         label: "",
         lat: null,
         lng: null,
@@ -4007,6 +4071,62 @@ export default function OSOperationalPage() {
       },
     );
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
+  };
+
+  const handleWaypointDragEnd = (
+    itineraryIndex: number,
+    event: DragEndEvent,
+  ) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setFormData((prev) => {
+      const itineraries = getItineraries(prev.waypoints);
+      const it = itineraries.find((group) => group.index === itineraryIndex);
+      if (!it) return prev;
+
+      const idsInItinerary = it.waypointIndices.map(
+        (idx) => prev.waypoints[idx].id,
+      );
+      const oldPos = idsInItinerary.indexOf(String(active.id));
+      const newPos = idsInItinerary.indexOf(String(over.id));
+      if (oldPos === -1 || newPos === -1) return prev;
+
+      // Captura data/hora da origem antiga (posição 0) antes de reordenar
+      const oldOriginWaypoint = prev.waypoints[it.waypointIndices[0]];
+      const savedData = oldOriginWaypoint?.data;
+      const savedHora = oldOriginWaypoint?.hora;
+
+      const reorderedGroup = arrayMove(
+        it.waypointIndices.map((idx) => prev.waypoints[idx]),
+        oldPos,
+        newPos,
+      );
+
+      // Transfere data/hora para a nova origem (primeiro item após reordenar)
+      if (savedData || savedHora) {
+        reorderedGroup[0] = {
+          ...reorderedGroup[0],
+          data: savedData,
+          hora: savedHora,
+        };
+        // Limpa data/hora dos outros waypoints do grupo (não são mais origem)
+        for (let i = 1; i < reorderedGroup.length; i++) {
+          reorderedGroup[i] = {
+            ...reorderedGroup[i],
+            data: undefined,
+            hora: undefined,
+          };
+        }
+      }
+
+      const newWaypoints = [...prev.waypoints];
+      it.waypointIndices.forEach((globalIdx, i) => {
+        newWaypoints[globalIdx] = reorderedGroup[i];
+      });
+
+      return { ...prev, waypoints: newWaypoints };
+    });
   };
 
   const handleRemoveWaypoint = (index: number) => {
@@ -4021,15 +4141,6 @@ export default function OSOperationalPage() {
     // If removing origin or destination of an itinerary with > 2 waypoints, convert next/prev stop
     const newWaypoints = [...formData.waypoints];
     newWaypoints.splice(index, 1);
-    setOpenWaypointComments((prev) => {
-      const next: Record<number, boolean> = {};
-      Object.entries(prev).forEach(([key, value]) => {
-        const k = Number(key);
-        if (k < index) next[k] = value;
-        if (k > index) next[k - 1] = value;
-      });
-      return next;
-    });
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
   };
 
@@ -4064,18 +4175,6 @@ export default function OSOperationalPage() {
         }
         return wp;
       });
-    setOpenWaypointComments((prev) => {
-      const next: Record<number, boolean> = {};
-      let offset = 0;
-      formData.waypoints.forEach((_, idx) => {
-        if (indicesToRemove.has(idx)) {
-          offset++;
-        } else {
-          next[idx - offset] = prev[idx];
-        }
-      });
-      return next;
-    });
     setFormData((prev) => ({ ...prev, waypoints: reindexedWaypoints }));
   };
 
@@ -4234,13 +4333,13 @@ export default function OSOperationalPage() {
     }));
   };
 
-  const toggleWaypointComment = (index: number) => {
-    const isOpen = Boolean(openWaypointComments[index]);
+  const toggleWaypointComment = (waypointId: string) => {
+    const isOpen = Boolean(openWaypointComments[waypointId]);
 
     if (isOpen) {
       setOpenWaypointComments((prev) => {
         const next = { ...prev };
-        delete next[index];
+        delete next[waypointId];
         return next;
       });
       return;
@@ -4248,7 +4347,7 @@ export default function OSOperationalPage() {
 
     setOpenWaypointComments((prev) => ({
       ...prev,
-      [index]: true,
+      [waypointId]: true,
     }));
   };
 
@@ -7546,7 +7645,7 @@ export default function OSOperationalPage() {
                         required
                       />
                     </div>
-                    <div className="space-y-2.5 w-full md:w-[20%]">
+                    <div className="flex flex-col w-full md:w-[20%]">
                       <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1">
                         OS{" "}
                         <span className="text-slate-400 text-xs font-normal normal-case tracking-normal">
@@ -7559,7 +7658,7 @@ export default function OSOperationalPage() {
                         value={formData.os}
                         onChange={handleInputChange}
                         placeholder="Ex: 9988"
-                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase placeholder:text-slate-300 shadow-sm -mt-[6px]"
+                        className="w-full h-[68px] px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-lg text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all uppercase placeholder:text-slate-300 shadow-sm mt-auto"
                       />
                     </div>
                   </div>
@@ -7711,6 +7810,19 @@ export default function OSOperationalPage() {
                             </span>
                           </h4>
                         )}
+                        <DndContext
+                          sensors={waypointDragSensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={(event) =>
+                            handleWaypointDragEnd(it.index, event)
+                          }
+                        >
+                          <SortableContext
+                            items={it.waypointIndices.map(
+                              (idx) => formData.waypoints[idx].id ?? `wp-${idx}`,
+                            )}
+                            strategy={verticalListSortingStrategy}
+                          >
                         {it.waypointIndices.map((index, relIdx) => {
                           const waypoint = formData.waypoints[index];
                           const isOrigin = relIdx === 0;
@@ -7725,14 +7837,24 @@ export default function OSOperationalPage() {
                             : isDestination
                               ? "DESTINO FINAL"
                               : `${relIdx}ª PARADA`;
+                          const sortableId = waypoint.id ?? `wp-${index}`;
 
                           return (
+                            <SortableWaypointItem
+                              key={sortableId}
+                              id={sortableId}
+                            >
+                              {({
+                                attributes,
+                                listeners,
+                                setActivatorNodeRef,
+                                isDragging,
+                              }) => (
                             <div
-                              key={index}
                               ref={(el) => {
                                 waypointTimelineRefs.current[index] = el;
                               }}
-                              className="relative group"
+                              className={`relative group ${isDragging ? "shadow-lg" : ""}`}
                             >
                               {!isDestination &&
                                 index < formData.waypoints.length - 1 && (
@@ -7759,26 +7881,38 @@ export default function OSOperationalPage() {
                                   <div className="space-y-4">
                                     <div className="flex-1 space-y-3">
                                       <div className="flex items-center justify-between ml-1 mb-2">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.25em]">
-                                          <div
-                                            className={`inline-flex items-stretch rounded-xl overflow-hidden shadow-sm border text-[10px] md:text-[11px] ${isOrigin ? "bg-emerald-500 border-emerald-400 text-white" : isDestination ? "bg-blue-600 border-blue-500 text-white" : "bg-slate-100 border-slate-200 text-slate-600"}`}
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            ref={setActivatorNodeRef}
+                                            {...attributes}
+                                            {...listeners}
+                                            className="flex items-center justify-center w-6 h-6 rounded-lg text-slate-300 opacity-0 group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-500 transition-all cursor-grab active:cursor-grabbing touch-none"
+                                            title="Arrastar para reordenar"
                                           >
-                                            <span
-                                              className={`px-3 py-1.5 flex items-center justify-center ${isOrigin ? "bg-emerald-600" : isDestination ? "bg-blue-700" : "bg-slate-200 text-slate-700"}`}
+                                            <GripVertical size={16} />
+                                          </button>
+                                          <label className="text-[10px] font-black uppercase tracking-[0.25em]">
+                                            <div
+                                              className={`inline-flex items-stretch rounded-xl overflow-hidden shadow-sm border text-[10px] md:text-[11px] ${isOrigin ? "bg-emerald-500 border-emerald-400 text-white" : isDestination ? "bg-blue-600 border-blue-500 text-white" : "bg-slate-100 border-slate-200 text-slate-600"}`}
                                             >
-                                              {isOrigin ? (
-                                                <MapPin size={14} />
-                                              ) : isDestination ? (
-                                                <Flag size={14} />
-                                              ) : (
-                                                <Circle size={14} />
-                                              )}
-                                            </span>
-                                            <span className="px-4 py-1.5 font-black tracking-wide text-[11px]">
-                                              {stopLabel}
-                                            </span>
-                                          </div>
-                                        </label>
+                                              <span
+                                                className={`px-3 py-1.5 flex items-center justify-center ${isOrigin ? "bg-emerald-600" : isDestination ? "bg-blue-700" : "bg-slate-200 text-slate-700"}`}
+                                              >
+                                                {isOrigin ? (
+                                                  <MapPin size={14} />
+                                                ) : isDestination ? (
+                                                  <Flag size={14} />
+                                                ) : (
+                                                  <Circle size={14} />
+                                                )}
+                                              </span>
+                                              <span className="px-4 py-1.5 font-black tracking-wide text-[11px]">
+                                                {stopLabel}
+                                              </span>
+                                            </div>
+                                          </label>
+                                        </div>
                                         {isOrigin && (
                                           <div className="flex items-center gap-3">
                                             {/* Toggle Mapa */}
@@ -7894,9 +8028,11 @@ export default function OSOperationalPage() {
                                               <button
                                                 type="button"
                                                 onClick={() =>
-                                                  toggleWaypointComment(index)
+                                                  toggleWaypointComment(
+                                                    sortableId,
+                                                  )
                                                 }
-                                                className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[index] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
+                                                className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[sortableId] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
                                                 title="Adicionar observação"
                                               >
                                                 <MessageSquareMore size={16} />
@@ -7958,9 +8094,11 @@ export default function OSOperationalPage() {
                                               <button
                                                 type="button"
                                                 onClick={() =>
-                                                  toggleWaypointComment(index)
+                                                  toggleWaypointComment(
+                                                    sortableId,
+                                                  )
                                                 }
-                                                className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[index] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
+                                                className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[sortableId] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
                                                 title="Adicionar observação"
                                               >
                                                 <MessageSquareMore size={16} />
@@ -7999,7 +8137,7 @@ export default function OSOperationalPage() {
                                           </div>
                                         )}
                                       </div>
-                                      {openWaypointComments[index] && (
+                                      {openWaypointComments[sortableId] && (
                                         <div className="mt-3 ml-12">
                                           <textarea
                                             value={waypoint.comment}
@@ -8113,8 +8251,12 @@ export default function OSOperationalPage() {
                                 </div>
                               </div>
                             </div>
+                              )}
+                            </SortableWaypointItem>
                           );
                         })}
+                          </SortableContext>
+                        </DndContext>
                       {/* Mapa do itinerário/retorno - só aparece se o mapa estiver ativo no ciclo */}
                       {it.waypoints[0]?.useMap !== false && (
                         <ItineraryMap

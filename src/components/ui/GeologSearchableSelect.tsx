@@ -213,7 +213,7 @@ export default function GeologSearchableSelect({
     selectedOptionProp ??
     options.find((opt) => opt.id === value) ??
     (isAsync ? asyncOptions.find((opt) => opt.id === value) : undefined);
-  const triggerPaddingClass = compact ? "px-2 py-1.5" : "px-5 py-4";
+  const triggerPaddingClass = compact ? "px-2 py-1.5" : "px-5 py-4 h-[68px]";
   const triggerTextClass = triggerClassName?.includes("text-")
     ? ""
     : compact
