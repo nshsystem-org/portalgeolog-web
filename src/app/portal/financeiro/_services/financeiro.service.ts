@@ -193,7 +193,9 @@ export async function confirmarRecebimento(
   }
 }
 
-export async function gerarRelatorio(payload: ReportPayload): Promise<Blob> {
+export async function gerarRelatorio(
+  payload: ReportPayload,
+): Promise<{ blob: Blob; fileName: string | null }> {
   const params = new URLSearchParams();
   params.set("template", payload.template);
   params.set("format", payload.format);
@@ -234,7 +236,14 @@ export async function gerarRelatorio(payload: ReportPayload): Promise<Blob> {
     throw new Error(body?.error || "Falha ao gerar relatório.");
   }
 
-  return response.blob();
+  // Extrai o nome do arquivo do header Content-Disposition (definido pelo
+  // backend com base no template + período). Fallback para null quando
+  // ausente — o chamador monta um nome genérico nesse caso.
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  const fileName = match ? decodeURIComponent(match[1]) : null;
+
+  return { blob: await response.blob(), fileName };
 }
 
 export async function getComprovanteUrl(attachmentId: string): Promise<string> {

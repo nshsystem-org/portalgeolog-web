@@ -265,10 +265,14 @@ export default function RelatorioModal({
     [drivers],
   );
 
+  // Sem parceiro selecionado ("Todos os parceiros"), o select de motorista
+  // lista todos os drivers vinculados a qualquer parceiro.
   const partnerDrivers = useMemo(
     () =>
-      drivers.filter(
-        (driver) => driverPartnerMap.get(driver.id) === parceiroId,
+      drivers.filter((driver) =>
+        parceiroId
+          ? driverPartnerMap.get(driver.id) === parceiroId
+          : Boolean(driverPartnerMap.get(driver.id)),
       ),
     [drivers, driverPartnerMap, parceiroId],
   );
@@ -300,14 +304,15 @@ export default function RelatorioModal({
     selectedTemplate === "repasse_internos";
 
   // Wizard flow: o período só aparece após a etapa de seleção da entidade
-  // (cliente/motorista/parceiro) estar completa. Templates sem seleção de
-  // entidade mostram o período imediatamente após a escolha do template.
+  // estar completa. Apenas `medicao_cliente` exige entidade (cliente); nos
+  // templates de repasse a seleção de motorista/parceiro é opcional
+  // ("Todos"), então o período aparece logo após a escolha do template.
   const isSelectionStepComplete =
     !!selectedTemplate &&
     ((selectedTemplate === "medicao_cliente" && !!clienteId) ||
-      (selectedTemplate === "repasse_autonomos" && !!driverId) ||
-      (selectedTemplate === "repasse_internos" && !!driverId) ||
-      (selectedTemplate === "repasse_parceiros" && !!parceiroId) ||
+      selectedTemplate === "repasse_autonomos" ||
+      selectedTemplate === "repasse_internos" ||
+      selectedTemplate === "repasse_parceiros" ||
       selectedTemplate === "performance" ||
       selectedTemplate === "liberadas_faturamento" ||
       selectedTemplate === "pendentes_repasse");
@@ -318,9 +323,6 @@ export default function RelatorioModal({
     dataFim &&
     !dateRangeInvalid &&
     (selectedTemplate !== "medicao_cliente" || clienteId) &&
-    (selectedTemplate !== "repasse_autonomos" || driverId) &&
-    (selectedTemplate !== "repasse_internos" || driverId) &&
-    (selectedTemplate !== "repasse_parceiros" || parceiroId) &&
     // No Modo Seleção, é obrigatório marcar ao menos uma OS.
     (!selectionEnabled || !selectionMode || selectedOsIds.length > 0);
 
@@ -328,9 +330,6 @@ export default function RelatorioModal({
     if (!selectedTemplate || !dataInicio || !dataFim || dateRangeInvalid)
       return;
     if (selectedTemplate === "medicao_cliente" && !clienteId) return;
-    if (selectedTemplate === "repasse_autonomos" && !driverId) return;
-    if (selectedTemplate === "repasse_internos" && !driverId) return;
-    if (selectedTemplate === "repasse_parceiros" && !parceiroId) return;
     if (selectionEnabled && selectionMode && selectedOsIds.length === 0) return;
 
     onGenerate({
@@ -378,6 +377,106 @@ export default function RelatorioModal({
     setIsConfigCollapsed(false);
   };
 
+  // Bloco de período reutilizável. Para relatórios de motorista (repasse),
+  // é renderizado logo após a seleção do template; para medicao_cliente,
+  // permanece na posição original (após a seleção da entidade).
+  const periodSection = (
+    <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
+      <div className={`p-5 rounded-3xl border space-y-4 ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="flex items-end gap-2 max-w-[360px]">
+          <div className="flex-1 min-w-0">
+            <GeologDateInput
+              label="De"
+              value={dataInicio}
+              onChange={setDataInicio}
+              labelClassName="text-emerald-600 font-bold"
+              inputClassName={
+                selectionMode
+                  ? "!bg-white/80 !border-slate-300"
+                  : "!border-slate-300"
+              }
+            />
+          </div>
+          <div className="mb-3.5 flex items-center justify-center">
+            <ArrowRight
+              size={16}
+              className="text-slate-400 animate-pulse"
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <GeologDateInput
+              label="Até"
+              value={dataFim}
+              onChange={setDataFim}
+              labelClassName="text-blue-600 font-bold"
+              inputClassName={
+                selectionMode
+                  ? "!bg-white/80 !border-slate-300"
+                  : "!border-slate-300"
+              }
+            />
+          </div>
+        </div>
+
+        {/* Toggle Fixo vs Seleção inline no canto direito.
+            - medicao_cliente: interativo (alterna entre Fixo/Seleção).
+            - repasse_*: visível travado em "Fixo" (Seleção desabilitado;
+              modo seleção será implementado depois para motoristas). */}
+        {(isMedicaoCliente || isRepasseTemplate) && !selectionMode && (
+          <div className="ml-auto flex rounded-2xl border-2 border-slate-100 bg-white p-1">
+            <button
+              type="button"
+              onClick={() => setSelectionMode(false)}
+              aria-pressed={!selectionMode}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
+                !selectionMode
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-700"
+              }`}
+            >
+              <Calendar size={16} />
+              Fixo
+            </button>
+            <button
+              type="button"
+              onClick={
+                isRepasseTemplate
+                  ? undefined
+                  : () => {
+                      setSelectionMode(true);
+                      setIsConfigCollapsed(true);
+                    }
+              }
+              disabled={isRepasseTemplate}
+              aria-pressed={selectionMode}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all ${
+                isRepasseTemplate
+                  ? "cursor-not-allowed text-slate-300"
+                  : selectionMode
+                    ? "bg-blue-600 text-white shadow-sm cursor-pointer"
+                    : "text-slate-400 hover:text-slate-700 cursor-pointer"
+              }`}
+            >
+              <ListChecks size={16} />
+              Seleção
+            </button>
+          </div>
+        )}
+      </div>
+
+      {dateRangeInvalid && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+          <AlertCircle size={16} className="shrink-0 text-red-500" />
+          <p className="text-xs font-bold text-red-600">
+            A data inicial não pode ser maior que a data final.
+          </p>
+        </div>
+      )}
+    </div>
+    </div>
+  );
+
   // Conteúdo de configuração do relatório, compartilhado entre os layouts.
   const reportConfig = (
     <>
@@ -411,12 +510,34 @@ export default function RelatorioModal({
             })}
           </div>
 
-          {/* Cards de relatório da categoria selecionada — título apenas */}
+          {/* Cards de relatório da categoria selecionada.
+              Quando um template já foi selecionado, os cards recolhem ao
+              sair do hover do grupo, exibindo um label compacto do template
+              ativo. Ao passar o mouse novamente, os cards reaparecem
+              (libera espaço na modal). */}
           <div
             className={`grid gap-3 ${
               showSelectionLayout ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
-            }`}
+            } ${selectedTemplate ? "group/template-cards" : ""}`}
           >
+            {selectedTemplate && (
+              <div className="col-span-full flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 group-hover/template-cards:hidden">
+                {TEMPLATE_ICONS[selectedTemplate as ReportTemplate]}
+                <span className="text-sm font-black tracking-tight text-slate-700 whitespace-nowrap">
+                  {TEMPLATES.find((t) => t.id === selectedTemplate)?.label}
+                </span>
+                <span className="ml-auto whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  Passe o mouse para trocar
+                </span>
+              </div>
+            )}
+            <div
+              className={`contents ${
+                selectedTemplate
+                  ? "hidden group-hover/template-cards:contents"
+                  : "contents"
+              }`}
+            >
             {TEMPLATES.filter((t) => t.category === selectedCategory).map(
               (template) => {
                 const isActive = selectedTemplate === template.id;
@@ -455,9 +576,14 @@ export default function RelatorioModal({
                 );
               },
             )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Period — para relatórios de motorista (repasse), aparece logo
+          após a seleção do template, antes dos filtros de motorista/parceiro. */}
+      {isRepasseTemplate && isSelectionStepComplete && periodSection}
 
 
       {/* Cliente Selection (Only for Medição ao Cliente) */}
@@ -482,15 +608,17 @@ export default function RelatorioModal({
           <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
             <GeologSearchableSelect
               label="Motorista Autônomo"
-              options={autonomousDrivers.map((driver) => ({
-                id: driver.id,
-                nome: driver.name,
-                sublabel: driver.phone || undefined,
-              }))}
+              options={[
+                { id: "", nome: "Todos os motoristas autônomos" },
+                ...autonomousDrivers.map((driver) => ({
+                  id: driver.id,
+                  nome: driver.name,
+                  sublabel: driver.phone || undefined,
+                })),
+              ]}
               value={driverId}
               onChange={setDriverId}
-              required
-              placeholder="Selecione um motorista..."
+              placeholder="Todos os motoristas autônomos"
               triggerClassName="px-4 py-3 text-base"
               dropdownPosition="up"
             />
@@ -504,15 +632,17 @@ export default function RelatorioModal({
           <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
             <GeologSearchableSelect
               label="Motorista Interno"
-              options={internalDrivers.map((driver) => ({
-                id: driver.id,
-                nome: driver.name,
-                sublabel: driver.phone || undefined,
-              }))}
+              options={[
+                { id: "", nome: "Todos os motoristas internos" },
+                ...internalDrivers.map((driver) => ({
+                  id: driver.id,
+                  nome: driver.name,
+                  sublabel: driver.phone || undefined,
+                })),
+              ]}
               value={driverId}
               onChange={setDriverId}
-              required
-              placeholder="Selecione um motorista..."
+              placeholder="Todos os motoristas internos"
               triggerClassName="px-4 py-3 text-base"
               dropdownPosition="up"
             />
@@ -526,17 +656,19 @@ export default function RelatorioModal({
           <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
             <GeologSearchableSelect
               label="Parceiro"
-              options={parceiros.map((partner) => ({
-                id: partner.id,
-                nome: partner.razaoSocialOuNomeCompleto,
-              }))}
+              options={[
+                { id: "", nome: "Todos os parceiros" },
+                ...parceiros.map((partner) => ({
+                  id: partner.id,
+                  nome: partner.razaoSocialOuNomeCompleto,
+                })),
+              ]}
               value={parceiroId}
               onChange={(value) => {
                 setParceiroId(value);
                 setDriverId("");
               }}
-              required
-              placeholder="Selecione um parceiro..."
+              placeholder="Todos os parceiros"
               triggerClassName="px-4 py-3 text-base"
               dropdownPosition="up"
             />
@@ -547,19 +679,17 @@ export default function RelatorioModal({
               <div className="flex-1">
                 <GeologSearchableSelect
                   label="Motorista do parceiro"
-                  options={partnerDrivers.map((driver) => ({
-                    id: driver.id,
-                    nome: driver.name,
-                    sublabel: driver.phone || undefined,
-                  }))}
+                  options={[
+                    { id: "", nome: "Todos os motoristas" },
+                    ...partnerDrivers.map((driver) => ({
+                      id: driver.id,
+                      nome: driver.name,
+                      sublabel: driver.phone || undefined,
+                    })),
+                  ]}
                   value={driverId}
                   onChange={setDriverId}
-                  disabled={!parceiroId}
-                  placeholder={
-                    parceiroId
-                      ? "Opcional: selecione um motorista..."
-                      : "Selecione um parceiro primeiro..."
-                  }
+                  placeholder="Todos os motoristas"
                   triggerClassName="px-4 py-3 text-base"
                   dropdownPosition="up"
                 />
@@ -660,93 +790,9 @@ export default function RelatorioModal({
         </div>
       )}
 
-      {/* Period — aparece por último, após a etapa de seleção da entidade */}
-      {isSelectionStepComplete && (
-        <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
-          <div className={`p-5 rounded-3xl border space-y-4 ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex items-end gap-2 max-w-[360px]">
-              <div className="flex-1 min-w-0">
-                <GeologDateInput
-                  label="De"
-                  value={dataInicio}
-                  onChange={setDataInicio}
-                  labelClassName="text-emerald-600 font-bold"
-                  inputClassName={
-                    selectionMode
-                      ? "!bg-white/80 !border-slate-300"
-                      : "!border-slate-300"
-                  }
-                />
-              </div>
-              <div className="mb-3.5 flex items-center justify-center">
-                <ArrowRight
-                  size={16}
-                  className="text-slate-400 animate-pulse"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <GeologDateInput
-                  label="Até"
-                  value={dataFim}
-                  onChange={setDataFim}
-                  labelClassName="text-blue-600 font-bold"
-                  inputClassName={
-                    selectionMode
-                      ? "!bg-white/80 !border-slate-300"
-                      : "!border-slate-300"
-                  }
-                />
-              </div>
-            </div>
-
-            {/* Toggle Fixo vs Seleção inline no canto direito — só no modo Fixo */}
-            {isMedicaoCliente && !selectionMode && (
-              <div className="ml-auto flex rounded-2xl border-2 border-slate-100 bg-white p-1">
-                <button
-                  type="button"
-                  onClick={() => setSelectionMode(false)}
-                  aria-pressed={!selectionMode}
-                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
-                    !selectionMode
-                      ? "bg-slate-800 text-white shadow-sm"
-                      : "text-slate-400 hover:text-slate-700"
-                  }`}
-                >
-                  <Calendar size={16} />
-                  Fixo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectionMode(true);
-                    setIsConfigCollapsed(true);
-                  }}
-                  aria-pressed={selectionMode}
-                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
-                    selectionMode
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-400 hover:text-slate-700"
-                  }`}
-                >
-                  <ListChecks size={16} />
-                  Seleção
-                </button>
-              </div>
-            )}
-          </div>
-
-          {dateRangeInvalid && (
-            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-              <AlertCircle size={16} className="shrink-0 text-red-500" />
-              <p className="text-xs font-bold text-red-600">
-                A data inicial não pode ser maior que a data final.
-              </p>
-            </div>
-          )}
-        </div>
-        </div>
-      )}
+      {/* Period — para medicao_cliente e demais templates, aparece após
+          a etapa de seleção da entidade. */}
+      {!isRepasseTemplate && isSelectionStepComplete && periodSection}
     </>
   );
 

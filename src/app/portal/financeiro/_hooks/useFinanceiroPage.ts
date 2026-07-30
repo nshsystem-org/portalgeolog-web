@@ -681,7 +681,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
     async (payload: ReportPayload): Promise<void> => {
       setReportLoading(true);
       try {
-        const blob = await gerarRelatorio(payload);
+        const { blob, fileName: serverFileName } = await gerarRelatorio(payload);
         const url = window.URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
@@ -691,7 +691,11 @@ export function useFinanceiroPage(): FinanceiroPageState {
             : payload.format === "xlsx"
               ? "xlsx"
               : "pdf";
-        const fileName = `relatorio-${payload.template}-${payload.dataInicio}-ate-${payload.dataFim}.${ext}`;
+        // Usa o nome definido pelo backend (Content-Disposition) quando
+        // disponível; senão monta um nome genérico com o template.
+        const fileName =
+          serverFileName ||
+          `relatorio-${payload.template}-${payload.dataInicio}-ate-${payload.dataFim}.${ext}`;
         anchor.download = fileName;
         document.body.appendChild(anchor);
         anchor.click();

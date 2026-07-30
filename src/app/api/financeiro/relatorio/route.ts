@@ -1347,6 +1347,12 @@ async function generateXlsx(
 
   if (template === "medicao_cliente") {
     await buildMedicaoClienteSheet(workbook, data, filters);
+  } else if (
+    template === "repasse_autonomos" ||
+    template === "repasse_internos" ||
+    template === "repasse_parceiros"
+  ) {
+    buildRepasseSheet(workbook, data, template, filters);
   } else {
     buildGenericSheet(workbook, data, template);
   }
@@ -1597,6 +1603,310 @@ async function buildMedicaoClienteSheet(
 }
 
 /**
+ * Planilha estilizada para os templates de Repasse (Autônomos, Internos
+ * e Parceiros). Layout espelhado na Medição para Cliente:
+ *  - Linha 1: título mesclado em azul marinho
+ *  - Linha 2: subtítulo mesclado em azul claro com período + total de OS
+ *  - Linha 3: cabeçalho azul forte com fonte branca em maiúsculas
+ *  - Linhas 4+: dados das OS com bordas finas, zebra striping e valor em R$
+ *  - Última linha: TOTAL em negrito com soma dos valores
+ *
+ * Colunas:
+ *  - Parceiros: DATA | PROTOCOLO GEOLOG | STATUS | PARCEIRO | MOTORISTA | TRAJETO | VEÍCULO | VALOR
+ *  - Autônomos/Internos: DATA | PROTOCOLO GEOLOG | STATUS | MOTORISTA | TRAJETO | VEÍCULO | VALOR
+ */
+function buildRepasseSheet(
+  workbook: ExcelJS.Workbook,
+  data: ReportData,
+  template: "repasse_autonomos" | "repasse_internos" | "repasse_parceiros",
+  filters: FinanceFilters,
+): void {
+  const isParceiros = template === "repasse_parceiros";
+  const sheetNameMap = {
+    repasse_autonomos: "Repasse Autônomos",
+    repasse_internos: "Repasse Internos",
+    repasse_parceiros: "Repasse Parceiros",
+  } as const;
+  const sheet = workbook.addWorksheet(sheetNameMap[template], {
+    views: [{ state: "frozen", ySplit: 3 }],
+  });
+
+  // Larguras dinâmicas para colunas de texto longo
+  const maxParceiroLen = isParceiros
+    ? data.rows.reduce((max, row) => {
+        const driver = row.driver_id
+          ? data.driverDetailMap.get(row.driver_id)
+          : undefined;
+        const txt = driver?.parceiro_id
+          ? data.parceiroMap.get(driver.parceiro_id) || "-"
+          : "-";
+        return txt.length > max ? txt.length : max;
+      }, "PARCEIRO".length)
+    : 0;
+
+  const maxMotoristaLen = data.rows.reduce((max, row) => {
+    const txt =
+      data.driverMap.get(row.driver_id || "") || row.motorista || "-";
+    return txt.length > max ? txt.length : max;
+  }, "MOTORISTA".length);
+
+  const maxVeiculoLen = data.rows.reduce((max, row) => {
+    const txt = data.vehicleMap.get(row.veiculo_id || "") || "-";
+    return txt.length > max ? txt.length : max;
+  }, "VEÍCULO USADO".length);
+
+  const columns = isParceiros
+    ? [
+        { header: "DATA", key: "data", width: 12 },
+        { header: "PROTOCOLO GEOLOG", key: "protocolo", width: 20 },
+        { header: "STATUS", key: "status", width: 14 },
+        {
+          header: "PARCEIRO",
+          key: "parceiro",
+          width: Math.max(maxParceiroLen + 2, 14),
+        },
+        {
+          header: "MOTORISTA",
+          key: "motorista",
+          width: Math.max(maxMotoristaLen + 2, 14),
+        },
+        { header: "TRAJETO REALIZADO", key: "trajeto", width: 80 },
+        {
+          header: "VEÍCULO USADO",
+          key: "veiculo",
+          width: Math.max(maxVeiculoLen + 2, 14),
+        },
+        { header: "VALOR", key: "valor", width: 16 },
+      ]
+    : [
+        { header: "DATA", key: "data", width: 12 },
+        { header: "PROTOCOLO GEOLOG", key: "protocolo", width: 20 },
+        { header: "STATUS", key: "status", width: 14 },
+        {
+          header: "MOTORISTA",
+          key: "motorista",
+          width: Math.max(maxMotoristaLen + 2, 14),
+        },
+        { header: "TRAJETO REALIZADO", key: "trajeto", width: 80 },
+        {
+          header: "VEÍCULO USADO",
+          key: "veiculo",
+          width: Math.max(maxVeiculoLen + 2, 14),
+        },
+        { header: "VALOR", key: "valor", width: 16 },
+      ];
+  sheet.columns = columns;
+
+  const lastColLetter = sheet.getColumn(columns.length).letter;
+
+  // ── Linha 1: Título principal ────────────────────────────────────
+  // Só mostra o nome do destinatário quando um específico foi selecionado
+  // no filtro. Sem filtro, é um relatório geral.
+  const labelMap = {
+    repasse_autonomos: "REPASSE A AUTÔNOMOS",
+    repasse_internos: "REPASSE A INTERNOS",
+    repasse_parceiros: "REPASSE A PARCEIROS",
+  } as const;
+
+  let titleText: string;
+  if (isParceiros) {
+    titleText = filters.parceiroId
+      ? `${labelMap[template]} – ${(data.parceiroMap.get(filters.parceiroId) || "GERAL").toUpperCase()}`
+      : `RELATÓRIO GERAL DE ${labelMap[template]}`;
+  } else {
+    titleText = filters.driverId
+      ? `${labelMap[template]} – ${(data.driverMap.get(filters.driverId) || "GERAL").toUpperCase()}`
+      : `RELATÓRIO GERAL DE ${labelMap[template]}`;
+  }
+
+  const titleRow = sheet.getRow(1);
+  titleRow.height = 28;
+  const titleCell = titleRow.getCell(1);
+  titleCell.value = titleText;
+  sheet.mergeCells(`A1:${lastColLetter}1`);
+  titleCell.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
+  titleCell.alignment = { vertical: "middle", horizontal: "center" };
+  titleCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF1E3A8A" }, // azul marinho
+  };
+
+  // ── Linha 2: Subtítulo (período + total de OS) ───────────────────
+  const subtitleRow = sheet.getRow(2);
+  subtitleRow.height = 20;
+  const subtitleCell = subtitleRow.getCell(1);
+  subtitleCell.value = `Período: ${data.periodLabel}  |  Total de OS: ${data.summary.totalOS}`;
+  sheet.mergeCells(`A2:${lastColLetter}2`);
+  subtitleCell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
+  subtitleCell.alignment = { vertical: "middle", horizontal: "center" };
+  subtitleCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF3B82F6" }, // azul claro
+  };
+
+  // ── Linha 3: Cabeçalho das colunas ───────────────────────────────
+  const headerRow = sheet.getRow(3);
+  headerRow.height = 22;
+  columns.forEach((col, idx) => {
+    const cell = headerRow.getCell(idx + 1);
+    cell.value = col.header;
+    cell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1E40AF" }, // azul forte
+    };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFFFFFFF" } },
+      bottom: { style: "thin", color: { argb: "FFFFFFFF" } },
+      left: { style: "thin", color: { argb: "FFFFFFFF" } },
+      right: { style: "thin", color: { argb: "FFFFFFFF" } },
+    };
+  });
+
+  // ── Linhas de dados ──────────────────────────────────────────────
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: "thin", color: { argb: "FFCBD5E1" } },
+    bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+    left: { style: "thin", color: { argb: "FFCBD5E1" } },
+    right: { style: "thin", color: { argb: "FFCBD5E1" } },
+  };
+
+  // Índice da coluna de VALOR (última). TRAJETO REALIZADO fica em linha
+  // única (sem wrapText), igual ao TRECHO da Medição para Cliente — o
+  // usuário amplia a coluna manualmente ou clica na célula para ver tudo.
+  const valorColIdx = columns.length;
+
+  let totalValor = 0;
+  data.rows.forEach((row, idx) => {
+    const rowNumber = idx + 4;
+    const excelRow = sheet.getRow(rowNumber);
+    excelRow.height = 18;
+
+    const driver = row.driver_id
+      ? data.driverDetailMap.get(row.driver_id)
+      : undefined;
+    const parceiroNomeLinha = isParceiros
+      ? driver?.parceiro_id
+        ? data.parceiroMap.get(driver.parceiro_id) || "-"
+        : "-"
+      : "";
+    const motoristaNome =
+      data.driverMap.get(row.driver_id || "") || row.motorista || "-";
+    const waypoints = data.waypointsMap.get(row.id) || [];
+    const trajetoList = waypoints.map((wp) => wp.label).filter(Boolean);
+    const placaModelo = data.vehicleMap.get(row.veiculo_id || "") || "-";
+
+    excelRow.getCell(1).value = formatDate(row.data);
+    excelRow.getCell(2).value = row.protocolo || "-";
+    excelRow.getCell(3).value = row.repasse_pago ? "Pago" : "Pendente";
+    if (isParceiros) {
+      excelRow.getCell(4).value = parceiroNomeLinha;
+      excelRow.getCell(5).value = motoristaNome;
+      excelRow.getCell(6).value = trajetoList.join(" -> ") || "-";
+      excelRow.getCell(7).value = placaModelo;
+    } else {
+      excelRow.getCell(4).value = motoristaNome;
+      excelRow.getCell(5).value = trajetoList.join(" -> ") || "-";
+      excelRow.getCell(6).value = placaModelo;
+    }
+
+    const valor = calcEffectiveCustoValue(row);
+    const isento = row.isento_custo;
+    const valorCell = excelRow.getCell(valorColIdx);
+    if (isento) {
+      valorCell.value = "Isento";
+      valorCell.alignment = { horizontal: "center" };
+    } else {
+      valorCell.value = valor;
+      valorCell.numFmt = '"R$" #,##0.00';
+      valorCell.alignment = { horizontal: "right" };
+      totalValor += valor;
+    }
+
+    // Estilo das células
+    for (let c = 1; c <= columns.length; c++) {
+      const cell = excelRow.getCell(c);
+      cell.border = thinBorder;
+      if (!cell.font) {
+        cell.font = { size: 10, color: { argb: "FF1F2937" } };
+      } else {
+        cell.font = { ...cell.font, size: 10, color: { argb: "FF1F2937" } };
+      }
+      // Sem wrapText — TRAJETO REALIZADO fica em linha única (igual ao
+      // TRECHO da Medição para Cliente).
+      if (!cell.alignment) {
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: "left",
+        };
+      } else {
+        cell.alignment = {
+          ...cell.alignment,
+          vertical: "middle",
+        };
+      }
+    }
+    // Zebra striping suave
+    if (idx % 2 === 1) {
+      for (let c = 1; c <= columns.length; c++) {
+        excelRow.getCell(c).fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF1F5F9" },
+        };
+      }
+    }
+  });
+
+  // ── Linha de TOTAL ───────────────────────────────────────────────
+  const totalRowNumber = data.rows.length + 4;
+  const totalRow = sheet.getRow(totalRowNumber);
+  totalRow.height = 24;
+  // Mescla da coluna A até a penúltima (deixa VALOR separado à direita)
+  const totalMergeEndCol = sheet.getColumn(columns.length - 1).letter;
+  sheet.mergeCells(`A${totalRowNumber}:${totalMergeEndCol}${totalRowNumber}`);
+  const totalLabelCell = totalRow.getCell(1);
+  totalLabelCell.value = "TOTAL";
+  totalLabelCell.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } };
+  totalLabelCell.alignment = {
+    vertical: "middle",
+    horizontal: "right",
+  };
+  totalLabelCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF1E3A8A" },
+  };
+  const totalValueCell = totalRow.getCell(valorColIdx);
+  totalValueCell.value = totalValor;
+  totalValueCell.numFmt = '"R$" #,##0.00';
+  totalValueCell.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } };
+  totalValueCell.alignment = { vertical: "middle", horizontal: "right" };
+  totalValueCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF1E3A8A" },
+  };
+  for (let c = 1; c <= columns.length; c++) {
+    totalRow.getCell(c).border = {
+      top: { style: "medium", color: { argb: "FFFFFFFF" } },
+      bottom: { style: "medium", color: { argb: "FFFFFFFF" } },
+      left: { style: "thin", color: { argb: "FFFFFFFF" } },
+      right: { style: "thin", color: { argb: "FFFFFFFF" } },
+    };
+  }
+
+  // Definir a área de impressão e ajustes finais
+  sheet.pageSetup.fitToPage = true;
+  sheet.pageSetup.fitToWidth = 1;
+  sheet.pageSetup.fitToHeight = 0;
+}
+
+/**
  * Planilha genérica (sem estilização avançada) para os demais templates.
  * Reaproveita as colunas já definidas no gerador de CSV.
  */
@@ -1624,9 +1934,11 @@ function buildGenericSheet(
     repasse_autonomos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
     repasse_internos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
     repasse_parceiros: [
-      "Protocolo/Data",
+      "Data",
+      "Protocolo",
       "Status",
-      "Parceiro/Motorista",
+      "Parceiro",
+      "Motorista",
       "Trajeto realizado",
       "Veículo usado",
       "Valor",
@@ -1728,12 +2040,14 @@ function buildGenericSheet(
         );
         break;
       case "repasse_parceiros":
-        rowData[headers[0]] = `${row.protocolo || "-"} / ${formatDate(row.data)}`;
-        rowData[headers[1]] = row.repasse_pago ? "Pago" : "Pendente";
-        rowData[headers[2]] = `${parceiroNome || "-"} / ${motoristaNome || "-"}`;
-        rowData[headers[3]] = trajeto || "-";
-        rowData[headers[4]] = data.vehicleMap.get(row.veiculo_id || "") || "-";
-        rowData[headers[5]] = formatCurrencyOrIsento(
+        rowData[headers[0]] = formatDate(row.data);
+        rowData[headers[1]] = row.protocolo || "-";
+        rowData[headers[2]] = row.repasse_pago ? "Pago" : "Pendente";
+        rowData[headers[3]] = parceiroNome || "-";
+        rowData[headers[4]] = motoristaNome || "-";
+        rowData[headers[5]] = trajeto || "-";
+        rowData[headers[6]] = data.vehicleMap.get(row.veiculo_id || "") || "-";
+        rowData[headers[7]] = formatCurrencyOrIsento(
           calcEffectiveCustoValue(row),
           row.isento_custo,
         );
