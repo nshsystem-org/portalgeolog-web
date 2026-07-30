@@ -7,7 +7,6 @@ import {
   FileText,
   FileSpreadsheet,
   AlertCircle,
-  Handshake,
   Truck,
   TrendingUp,
   Clock,
@@ -31,9 +30,7 @@ import OSPickerPanel from "@/components/financeiro/OSPickerPanel";
 
 export type ReportTemplate =
   | "medicao_cliente"
-  | "repasse_autonomos"
-  | "repasse_parceiros"
-  | "repasse_internos"
+  | "repasse_motorista"
   | "resumo_motoristas"
   | "performance"
   | "liberadas_faturamento"
@@ -90,9 +87,7 @@ const CATEGORY_COLORS: Record<
 
 const TEMPLATE_ICONS: Record<ReportTemplate, React.ReactNode> = {
   medicao_cliente: <Receipt size={18} className="text-emerald-500" />,
-  repasse_autonomos: <Wallet size={18} className="text-amber-500" />,
-  repasse_parceiros: <Handshake size={18} className="text-teal-500" />,
-  repasse_internos: <Building2 size={18} className="text-blue-500" />,
+  repasse_motorista: <Wallet size={18} className="text-amber-500" />,
   resumo_motoristas: <ClipboardList size={18} className="text-purple-500" />,
   performance: <TrendingUp size={18} className="text-emerald-500" />,
   liberadas_faturamento: <CheckCircle2 size={18} className="text-blue-500" />,
@@ -109,25 +104,12 @@ const TEMPLATES: TemplateConfig[] = [
     extraFilters: ["clienteId"],
   },
   {
-    id: "repasse_autonomos",
-    label: "Repasse a Autônomos",
+    id: "repasse_motorista",
+    label: "Repasse a Motoristas",
     description:
-      "OS executadas por motoristas autônomos com valores a repassar",
+      "OS executadas por motoristas autônomos, internos ou parceiros, com valores a repassar",
     category: "motorista",
-    extraFilters: ["driverId"],
-  },
-  {
-    id: "repasse_parceiros",
-    label: "Repasse a Parceiros",
-    description: "OS executadas por motoristas de parceiros estratégicos",
-    category: "motorista",
-  },
-  {
-    id: "repasse_internos",
-    label: "Repasse a Internos",
-    description: "OS executadas por motoristas internos com valores a repassar",
-    category: "motorista",
-    extraFilters: ["driverId"],
+    extraFilters: ["driverId", "parceiroId"],
   },
   {
     id: "resumo_motoristas",
@@ -189,6 +171,7 @@ interface RelatorioModalProps {
     name: string;
     phone?: string;
     vinculo_tipo?: string;
+    avatar_url?: string;
   }>;
   driverPartnerMap?: Map<string, string>;
 }
@@ -262,16 +245,11 @@ export default function RelatorioModal({
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  const autonomousDrivers = useMemo(
-    () =>
-      drivers.filter(
-        (driver) => driver.vinculo_tipo === "autonomo" || !driver.vinculo_tipo,
-      ),
-    [drivers],
-  );
-
-  const internalDrivers = useMemo(
-    () => drivers.filter((driver) => driver.vinculo_tipo === "interno"),
+  // Motoristas "individuais" (autônomos e internos) — não vinculados a
+  // nenhum parceiro. Selecionáveis diretamente no primeiro select do
+  // Repasse a Motoristas, sem etapa adicional.
+  const individualDrivers = useMemo(
+    () => drivers.filter((driver) => driver.vinculo_tipo !== "parceiro"),
     [drivers],
   );
 
@@ -287,8 +265,52 @@ export default function RelatorioModal({
     [drivers, driverPartnerMap, parceiroId],
   );
 
+  // Opções do select unificado "Motorista ou Parceiro": motoristas
+  // individuais (id prefixado "driver:") + parceiros (id prefixado
+  // "parceiro:"). Selecionar um parceiro revela um segundo select para
+  // escolher (opcionalmente) um motorista específico dele.
+  const motoristaParceiroOptions = useMemo(
+    () => [
+      ...individualDrivers.map((driver) => ({
+        id: `driver:${driver.id}`,
+        nome: driver.name,
+        sublabel: driver.phone,
+        typeLabel: driver.vinculo_tipo === "interno" ? "Interno" : "Autônomo",
+        photoUrl: driver.avatar_url,
+      })),
+      ...parceiros.map((partner) => ({
+        id: `parceiro:${partner.id}`,
+        nome: partner.razaoSocialOuNomeCompleto,
+        typeLabel: "Parceiro",
+      })),
+    ],
+    [individualDrivers, parceiros],
+  );
+
+  // Quando um parceiro está selecionado, o primeiro select sempre mostra
+  // o parceiro — mesmo se um motorista dele foi escolhido no segundo
+  // select (cascata). O motorista aparece no segundo select.
+  const motoristaParceiroValue = parceiroId
+    ? `parceiro:${parceiroId}`
+    : driverId
+      ? `driver:${driverId}`
+      : "";
+
+  const handleMotoristaParceiroChange = (value: string) => {
+    if (value.startsWith("driver:")) {
+      setDriverId(value.slice("driver:".length));
+      setParceiroId("");
+    } else if (value.startsWith("parceiro:")) {
+      setParceiroId(value.slice("parceiro:".length));
+      setDriverId("");
+    } else {
+      setDriverId("");
+      setParceiroId("");
+    }
+  };
+
   useEffect(() => {
-    if (selectedTemplate !== "repasse_parceiros") return;
+    if (selectedTemplate !== "repasse_motorista") return;
     if (
       driverId &&
       parceiroId &&
@@ -308,10 +330,7 @@ export default function RelatorioModal({
     }
   }, [selectedTemplate]);
 
-  const isRepasseTemplate =
-    selectedTemplate === "repasse_autonomos" ||
-    selectedTemplate === "repasse_parceiros" ||
-    selectedTemplate === "repasse_internos";
+  const isRepasseTemplate = selectedTemplate === "repasse_motorista";
 
   // Wizard flow: o período só aparece após a etapa de seleção da entidade
   // estar completa. Apenas `medicao_cliente` exige entidade (cliente); nos
@@ -320,9 +339,7 @@ export default function RelatorioModal({
   const isSelectionStepComplete =
     !!selectedTemplate &&
     ((selectedTemplate === "medicao_cliente" && !!clienteId) ||
-      selectedTemplate === "repasse_autonomos" ||
-      selectedTemplate === "repasse_internos" ||
-      selectedTemplate === "repasse_parceiros" ||
+      selectedTemplate === "repasse_motorista" ||
       selectedTemplate === "resumo_motoristas" ||
       selectedTemplate === "performance" ||
       selectedTemplate === "liberadas_faturamento" ||
@@ -350,13 +367,9 @@ export default function RelatorioModal({
       dataFim,
       clienteId: selectedTemplate === "medicao_cliente" ? clienteId : undefined,
       parceiroId:
-        selectedTemplate === "repasse_parceiros" ? parceiroId : undefined,
+        selectedTemplate === "repasse_motorista" ? parceiroId : undefined,
       driverId:
-        selectedTemplate === "repasse_autonomos" ||
-        selectedTemplate === "repasse_internos" ||
-        selectedTemplate === "repasse_parceiros"
-          ? driverId
-          : undefined,
+        selectedTemplate === "repasse_motorista" ? driverId : undefined,
       repasseStatusFilter: isRepasseTemplate ? repasseStatusFilter : undefined,
       selectionMode: selectionEnabled && selectionMode,
       selectedOsIds:
@@ -613,109 +626,73 @@ export default function RelatorioModal({
         </div>
       )}
 
-      {/* Driver Selection (Repasse a Autônomos) */}
-      {selectedTemplate === "repasse_autonomos" && (
-        <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
-            <GeologSearchableSelect
-              label="Motorista Autônomo"
-              options={[
-                { id: "", nome: "Todos os motoristas autônomos" },
-                ...autonomousDrivers.map((driver) => ({
-                  id: driver.id,
-                  nome: driver.name,
-                  sublabel: driver.phone || undefined,
-                })),
-              ]}
-              value={driverId}
-              onChange={setDriverId}
-              placeholder="Todos os motoristas autônomos"
-              triggerClassName="px-4 py-3 text-base"
-              dropdownPosition="up"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Driver Selection (Repasse a Internos) */}
-      {selectedTemplate === "repasse_internos" && (
-        <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
-            <GeologSearchableSelect
-              label="Motorista Interno"
-              options={[
-                { id: "", nome: "Todos os motoristas internos" },
-                ...internalDrivers.map((driver) => ({
-                  id: driver.id,
-                  nome: driver.name,
-                  sublabel: driver.phone || undefined,
-                })),
-              ]}
-              value={driverId}
-              onChange={setDriverId}
-              placeholder="Todos os motoristas internos"
-              triggerClassName="px-4 py-3 text-base"
-              dropdownPosition="up"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Partner Selection (Only for Repasse a Parceiros) */}
-      {selectedTemplate === "repasse_parceiros" && (
+      {/* Motorista/Parceiro Selection (Repasse a Motoristas) — select único
+          com motoristas individuais (autônomos/internos) e parceiros. Ao
+          escolher um parceiro, um segundo select aparece para restringir a
+          um motorista específico dele (opcional). */}
+      {selectedTemplate === "repasse_motorista" && (
         <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-4">
           <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
             <GeologSearchableSelect
-              label="Parceiro"
+              label="Motorista ou Parceiro"
               options={[
-                { id: "", nome: "Todos os parceiros" },
-                ...parceiros.map((partner) => ({
-                  id: partner.id,
-                  nome: partner.razaoSocialOuNomeCompleto,
-                })),
+                {
+                  id: "",
+                  nome: "Todos os motoristas e parceiros",
+                  nomeNode: (
+                    <span className="flex items-center gap-2">
+                      <span>Todos os motoristas e parceiros</span>
+                      <span className="px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-800">Autônomo</span>
+                      <span className="px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-900">Interno</span>
+                      <span className="px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-cyan-100 text-cyan-800">Parceiro</span>
+                    </span>
+                  ),
+                },
+                ...motoristaParceiroOptions,
               ]}
-              value={parceiroId}
-              onChange={(value) => {
-                setParceiroId(value);
-                setDriverId("");
-              }}
-              placeholder="Todos os parceiros"
+              value={motoristaParceiroValue}
+              onChange={handleMotoristaParceiroChange}
+              placeholder="Todos os motoristas e parceiros"
               triggerClassName="px-4 py-3 text-base"
               dropdownPosition="up"
             />
           </div>
 
-          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <GeologSearchableSelect
-                  label="Motorista do parceiro"
-                  options={[
-                    { id: "", nome: "Todos os motoristas" },
-                    ...partnerDrivers.map((driver) => ({
-                      id: driver.id,
-                      nome: driver.name,
-                      sublabel: driver.phone || undefined,
-                    })),
-                  ]}
-                  value={driverId}
-                  onChange={setDriverId}
-                  placeholder="Todos os motoristas"
-                  triggerClassName="px-4 py-3 text-base"
-                  dropdownPosition="up"
-                />
+          {parceiroId && (
+            <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <GeologSearchableSelect
+                    label="Motorista do parceiro"
+                    options={[
+                      { id: "", nome: "Todos os motoristas" },
+                      ...partnerDrivers.map((driver) => ({
+                        id: driver.id,
+                        nome: driver.name,
+                        sublabel: driver.phone || undefined,
+                        typeLabel: "Motorista",
+                        photoUrl: driver.avatar_url,
+                      })),
+                    ]}
+                    value={driverId}
+                    onChange={setDriverId}
+                    placeholder="Todos os motoristas"
+                    triggerClassName="px-4 py-3 text-base"
+                    dropdownPosition="up"
+                  />
+                </div>
+                {driverId && (
+                  <button
+                    onClick={() => setDriverId("")}
+                    className="shrink-0 p-2 text-slate-400 hover:text-red-400 hover:bg-red-50 rounded-xl transition-all cursor-pointer mt-6"
+                    title="Limpar seleção de motorista"
+                  >
+                    <X size={18} />
+                  </button>
+                )}
               </div>
-              {driverId && (
-                <button
-                  onClick={() => setDriverId("")}
-                  className="shrink-0 p-2 text-slate-400 hover:text-red-400 hover:bg-red-50 rounded-xl transition-all cursor-pointer mt-6"
-                  title="Limpar seleção de motorista"
-                >
-                  <X size={18} />
-                </button>
-              )}
             </div>
-          </div>
+          )}
         </div>
       )}
 

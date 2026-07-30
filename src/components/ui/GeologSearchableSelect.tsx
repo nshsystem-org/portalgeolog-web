@@ -80,7 +80,9 @@ function normalizePhoneDigits(value: string): string {
 interface Option {
   id: string;
   nome: string;
+  nomeNode?: React.ReactNode;
   sublabel?: string;
+  typeLabel?: string;
   photoUrl?: string;
   plate?: string;
   icon?: React.ReactNode;
@@ -388,16 +390,31 @@ export default function GeologSearchableSelect({
                   <User size={16} className="text-slate-400" />
                 </div>
               )}
-              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+              <div className="flex flex-col gap-0 min-w-0 flex-1">
                 <span className="font-bold text-slate-900 text-sm truncate">
-                  {opt.nome}
+                  {opt.nomeNode ?? opt.nome}
                 </span>
                 {opt.sublabel && (
-                  <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-[11px] font-black text-blue-900">
+                  <span className="text-[11px] text-slate-400 font-medium">
                     {formatPhone(opt.sublabel)}
                   </span>
                 )}
               </div>
+              {opt.typeLabel && (
+                <span
+                  className={`flex-shrink-0 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                    opt.typeLabel === "Autônomo"
+                      ? "bg-orange-100 text-orange-800"
+                      : opt.typeLabel === "Interno"
+                        ? "bg-blue-100 text-blue-900"
+                        : opt.typeLabel === "Parceiro"
+                          ? "bg-cyan-100 text-cyan-800"
+                          : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {opt.typeLabel}
+                </span>
+              )}
             </div>
           ))
         ) : isAsync && isLoading ? (
@@ -458,14 +475,24 @@ export default function GeologSearchableSelect({
             </div>
           ) : null}
           {selectedOption ? (
-            <>
-              {selectedOption.nome}
-              {selectedOption.sublabel && (
-                <span className="ml-2 inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-0.5 text-xs font-black text-blue-900">
-                  {formatPhone(selectedOption.sublabel)}
+            <div className="flex items-center gap-2 overflow-hidden flex-1">
+              <span className="font-bold truncate">{selectedOption.nomeNode ?? selectedOption.nome}</span>
+              {selectedOption.typeLabel && (
+                <span
+                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                    selectedOption.typeLabel === "Autônomo"
+                      ? "bg-orange-100 text-orange-800"
+                      : selectedOption.typeLabel === "Interno"
+                        ? "bg-blue-100 text-blue-900"
+                        : selectedOption.typeLabel === "Parceiro"
+                          ? "bg-cyan-100 text-cyan-800"
+                          : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {selectedOption.typeLabel}
                 </span>
               )}
-            </>
+            </div>
           ) : (
             placeholder
           )}

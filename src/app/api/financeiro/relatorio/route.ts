@@ -266,9 +266,7 @@ const LOGO_BASE64 =
 
 export type ReportTemplate =
   | "medicao_cliente"
-  | "repasse_autonomos"
-  | "repasse_internos"
-  | "repasse_parceiros"
+  | "repasse_motorista"
   | "resumo_motoristas"
   | "performance"
   | "liberadas_faturamento"
@@ -441,6 +439,22 @@ function calcEffectiveCustoValue(row: FinanceRow): number {
     return total * fator;
   }
   return total;
+}
+
+/**
+ * Classifica o vínculo de uma OS com o motorista: Freelance (sempre que
+ * `tipo === "freelance"`, independente do vínculo do motorista), Parceiro
+ * (motorista com parceiro_id), Interno (vinculo_tipo === "interno") ou
+ * Autônomo (default). Usada no Repasse a Motoristas e no Resumo Geral.
+ */
+function getRowVinculoTipo(
+  row: Pick<FinanceRow, "tipo">,
+  driverDetail: DriverDetail | undefined,
+): "Freelance" | "Parceiro" | "Interno" | "Autônomo" {
+  if (row.tipo === "freelance") return "Freelance";
+  if (driverDetail?.parceiro_id) return "Parceiro";
+  if (driverDetail?.vinculo_tipo === "interno") return "Interno";
+  return "Autônomo";
 }
 
 function createAdminClient() {
@@ -660,9 +674,7 @@ async function fetchReportData(
         .eq("status_financeiro", "Pendente");
     } else if (template === "pendentes_repasse") {
       query = query.eq("repasse_pago", false);
-    } else if (template === "repasse_autonomos") {
-      query = query.eq("status_operacional", "Finalizado");
-    } else if (template === "repasse_internos") {
+    } else if (template === "repasse_motorista") {
       query = query.eq("status_operacional", "Finalizado");
     } else if (template === "resumo_motoristas") {
       // Resumo geral: todas as OS finalizadas no período, de todos os
@@ -676,12 +688,7 @@ async function fetchReportData(
         query = query.eq("status_financeiro", statusFinanceiro);
     }
 
-    if (
-      (template === "repasse_autonomos" ||
-        template === "repasse_parceiros" ||
-        template === "repasse_internos") &&
-      repasseStatusFilter !== "all"
-    ) {
+    if (template === "repasse_motorista" && repasseStatusFilter !== "all") {
       query = query.eq("repasse_pago", repasseStatusFilter === "paid");
     }
 
@@ -885,46 +892,14 @@ async function fetchReportData(
     }),
   );
 
-  if (template === "repasse_autonomos") {
+  if (template === "repasse_motorista") {
+    // Relatório único de repasse: inclui qualquer OS finalizada com um
+    // motorista vinculado (autônomo, interno, parceiro ou freelance),
+    // independente do vínculo dele mudar ao longo do período. A coluna
+    // TIPO no relatório mostra a classificação de cada OS individualmente.
     rows = rows.filter((row) => {
-      // Exclui OS isentas de repasse (isento_custo=true)
       if (row.isento_custo) return false;
-      // Inclui autônomos normais E OS freelance (parceiros fazendo job avulso)
-      if (row.tipo === "freelance") return true;
-      const driver = row.driver_id
-        ? driverDetailMap.get(row.driver_id)
-        : undefined;
-      return (
-        driver && !driver.parceiro_id && driver.vinculo_tipo === "autonomo"
-      );
-    });
-  } else if (template === "repasse_internos") {
-    rows = rows.filter((row) => {
-      // Exclui OS isentas de repasse (isento_custo=true)
-      if (row.isento_custo) return false;
-      // Freelance vai para autonomos, não para internos
-      if (row.tipo === "freelance") return false;
-      const driver = row.driver_id
-        ? driverDetailMap.get(row.driver_id)
-        : undefined;
-      return (
-        driver && !driver.parceiro_id && driver.vinculo_tipo === "interno"
-      );
-    });
-  } else if (template === "repasse_parceiros") {
-    rows = rows.filter((row) => {
-      // Exclui OS isentas de repasse (isento_custo=true)
-      if (row.isento_custo) return false;
-      // Exclui OS freelance — não vão para o repasse do parceiro
-      if (row.tipo === "freelance") return false;
-      const driver = row.driver_id
-        ? driverDetailMap.get(row.driver_id)
-        : undefined;
-      return (
-        driver &&
-        driver.parceiro_id !== null &&
-        driver.parceiro_id !== undefined
-      );
+      return Boolean(row.driver_id);
     });
   } else if (template === "pendentes_repasse") {
     rows = rows.filter((row) => !row.isento_custo);
@@ -1096,7 +1071,11 @@ function computeSummary(
   );
 }
 
-function generateCsv(data: ReportData, template: ReportTemplate): Response {
+function generateCsv(
+  data: ReportData,
+  template: ReportTemplate,
+  filters: FinanceFilters,
+): Response {
   const {
     rows,
     clienteMap,
@@ -1106,6 +1085,18 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
     parceiroMap,
     vehicleMap,
   } = data;
+
+  // Determina se a coluna PARCEIRO deve aparecer no CSV (mesma lógica
+  // do Excel e PDF).
+  const showParceiroColCsv = (() => {
+    if (template !== "repasse_motorista") return true;
+    if (!filters.driverId || filters.parceiroId) return true;
+    const driverDetail = driverDetailMap.get(filters.driverId);
+    return (
+      driverDetail?.parceiro_id !== null &&
+      driverDetail?.parceiro_id !== undefined
+    );
+  })();
 
   const headersMap: Record<ReportTemplate, string[]> = {
     medicao_cliente: [
@@ -1121,12 +1112,13 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       "Valor Bruto",
       "Status",
     ],
-    repasse_autonomos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
-    repasse_internos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
-    repasse_parceiros: [
-      "Protocolo/Data",
+    repasse_motorista: [
+      "Data",
+      "Protocolo",
       "Status",
-      "Parceiro/Motorista",
+      "Tipo",
+      ...(showParceiroColCsv ? ["Parceiro"] : []),
+      "Motorista",
       "Trajeto realizado",
       "Veículo usado",
       "Valor",
@@ -1316,53 +1308,26 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
         );
         break;
       }
-      case "repasse_autonomos": {
+      case "repasse_motorista": {
         const waypoints = data.waypointsMap.get(row.id) || [];
         const trajeto = waypoints
           .map((wp) => wp.label)
           .filter(Boolean)
           .join(" -> ");
-        lines.push(
-          [
-            `${row.protocolo || "-"} / ${formatDate(row.data)}`,
-            trajeto || "-",
-            row.repasse_pago ? "Pago" : "Pendente",
-            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
-          ].join(";"),
-        );
+        const csvRow = [
+          formatDate(row.data),
+          row.protocolo || "-",
+          row.repasse_pago ? "Pago" : "Pendente",
+          getRowVinculoTipo(row, driver),
+          ...(showParceiroColCsv ? [parceiroNome || "-"] : []),
+          motoristaNome || "-",
+          trajeto || "-",
+          vehicleMap.get(row.veiculo_id || "") || "-",
+          formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
+        ];
+        lines.push(csvRow.join(";"));
         break;
       }
-      case "repasse_internos": {
-        const waypoints = data.waypointsMap.get(row.id) || [];
-        const trajeto = waypoints
-          .map((wp) => wp.label)
-          .filter(Boolean)
-          .join(" -> ");
-        lines.push(
-          [
-            `${row.protocolo || "-"} / ${formatDate(row.data)}`,
-            trajeto || "-",
-            row.repasse_pago ? "Pago" : "Pendente",
-            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
-          ].join(";"),
-        );
-        break;
-      }
-      case "repasse_parceiros":
-        lines.push(
-          [
-            `${row.protocolo || "-"} / ${formatDate(row.data)}`,
-            row.repasse_pago ? "Pago" : "Pendente",
-            `${parceiroNome || "-"} / ${motoristaNome || "-"}`,
-            (data.waypointsMap.get(row.id) || [])
-              .map((wp) => wp.label)
-              .filter(Boolean)
-              .join(" -> ") || "-",
-            vehicleMap.get(row.veiculo_id || "") || "-",
-            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
-          ].join(";"),
-        );
-        break;
       case "performance": {
         const bruto = Number(row.valor_bruto || 0);
         const lucro = Number(row.lucro || 0);
@@ -1425,9 +1390,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
 
   const fileNameMap: Record<ReportTemplate, string> = {
     medicao_cliente: "medicao-cliente",
-    repasse_autonomos: "repasse-autonomos",
-    repasse_internos: "repasse-internos",
-    repasse_parceiros: "repasse-parceiros",
+    repasse_motorista: "repasse-motoristas",
     resumo_motoristas: "resumo-motoristas",
     performance: "performance-financeira",
     liberadas_faturamento: "liberadas-faturamento",
@@ -1446,9 +1409,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
 
 const XLSX_FILE_NAME_MAP: Record<ReportTemplate, string> = {
   medicao_cliente: "medicao-cliente",
-  repasse_autonomos: "repasse-autonomos",
-  repasse_internos: "repasse-internos",
-  repasse_parceiros: "repasse-parceiros",
+  repasse_motorista: "repasse-motoristas",
   resumo_motoristas: "resumo-motoristas",
   performance: "performance-financeira",
   liberadas_faturamento: "liberadas-faturamento",
@@ -1473,12 +1434,8 @@ async function generateXlsx(
 
   if (template === "medicao_cliente") {
     await buildMedicaoClienteSheet(workbook, data, filters);
-  } else if (
-    template === "repasse_autonomos" ||
-    template === "repasse_internos" ||
-    template === "repasse_parceiros"
-  ) {
-    buildRepasseSheet(workbook, data, template, filters);
+  } else if (template === "repasse_motorista") {
+    buildRepasseSheet(workbook, data, filters);
   } else if (template === "resumo_motoristas") {
     buildResumoMotoristasSheet(workbook, data, filters);
   } else {
@@ -1731,46 +1688,52 @@ async function buildMedicaoClienteSheet(
 }
 
 /**
- * Planilha estilizada para os templates de Repasse (Autônomos, Internos
- * e Parceiros). Layout espelhado na Medição para Cliente:
+ * Planilha estilizada do relatório único de Repasse a Motoristas (unifica
+ * os antigos Autônomos/Internos/Parceiros). Layout espelhado na Medição
+ * para Cliente:
  *  - Linha 1: título mesclado em azul marinho
  *  - Linha 2: subtítulo mesclado em azul claro com período + total de OS
  *  - Linha 3: cabeçalho azul forte com fonte branca em maiúsculas
  *  - Linhas 4+: dados das OS com bordas finas, zebra striping e valor em R$
  *  - Última linha: TOTAL em negrito com soma dos valores
  *
- * Colunas:
- *  - Parceiros: DATA | PROTOCOLO GEOLOG | STATUS | PARCEIRO | MOTORISTA | TRAJETO | VEÍCULO | VALOR
- *  - Autônomos/Internos: DATA | PROTOCOLO GEOLOG | STATUS | MOTORISTA | TRAJETO | VEÍCULO | VALOR
+ * Colunas: DATA | PROTOCOLO GEOLOG | STATUS | TIPO | PARCEIRO | MOTORISTA |
+ * TRAJETO | VEÍCULO | VALOR. A coluna TIPO mostra a classificação de cada
+ * OS individualmente (Autônomo/Interno/Parceiro/Freelance), já que o
+ * mesmo motorista pode ter OS de tipos diferentes no período.
  */
 function buildRepasseSheet(
   workbook: ExcelJS.Workbook,
   data: ReportData,
-  template: "repasse_autonomos" | "repasse_internos" | "repasse_parceiros",
   filters: FinanceFilters,
 ): void {
-  const isParceiros = template === "repasse_parceiros";
-  const sheetNameMap = {
-    repasse_autonomos: "Repasse Autônomos",
-    repasse_internos: "Repasse Internos",
-    repasse_parceiros: "Repasse Parceiros",
-  } as const;
-  const sheet = workbook.addWorksheet(sheetNameMap[template], {
+  const sheet = workbook.addWorksheet("Repasse a Motoristas", {
     views: [{ state: "frozen", ySplit: 3 }],
   });
 
+  // Determina se a coluna PARCEIRO deve aparecer. Só é omitida quando
+  // o filtro é por um motorista autônomo/interno específico (sem
+  // parceiro associado). Em todos os outros casos (Todos, parceiro
+  // específico, ou motorista de parceiro), a coluna aparece.
+  const showParceiroCol = (() => {
+    if (!filters.driverId || filters.parceiroId) return true;
+    const driverDetail = data.driverDetailMap.get(filters.driverId);
+    return (
+      driverDetail?.parceiro_id !== null &&
+      driverDetail?.parceiro_id !== undefined
+    );
+  })();
+
   // Larguras dinâmicas para colunas de texto longo
-  const maxParceiroLen = isParceiros
-    ? data.rows.reduce((max, row) => {
-        const driver = row.driver_id
-          ? data.driverDetailMap.get(row.driver_id)
-          : undefined;
-        const txt = driver?.parceiro_id
-          ? data.parceiroMap.get(driver.parceiro_id) || "-"
-          : "-";
-        return txt.length > max ? txt.length : max;
-      }, "PARCEIRO".length)
-    : 0;
+  const maxParceiroLen = data.rows.reduce((max, row) => {
+    const driver = row.driver_id
+      ? data.driverDetailMap.get(row.driver_id)
+      : undefined;
+    const txt = driver?.parceiro_id
+      ? data.parceiroMap.get(driver.parceiro_id) || "-"
+      : "-";
+    return txt.length > max ? txt.length : max;
+  }, "PARCEIRO".length);
 
   const maxMotoristaLen = data.rows.reduce((max, row) => {
     const txt =
@@ -1783,68 +1746,46 @@ function buildRepasseSheet(
     return txt.length > max ? txt.length : max;
   }, "VEÍCULO USADO".length);
 
-  const columns = isParceiros
-    ? [
-        { header: "DATA", key: "data", width: 12 },
-        { header: "PROTOCOLO GEOLOG", key: "protocolo", width: 20 },
-        { header: "STATUS", key: "status", width: 14 },
-        {
-          header: "PARCEIRO",
-          key: "parceiro",
-          width: Math.max(maxParceiroLen + 2, 14),
-        },
-        {
-          header: "MOTORISTA",
-          key: "motorista",
-          width: Math.max(maxMotoristaLen + 2, 14),
-        },
-        { header: "TRAJETO REALIZADO", key: "trajeto", width: 80 },
-        {
-          header: "VEÍCULO USADO",
-          key: "veiculo",
-          width: Math.max(maxVeiculoLen + 2, 14),
-        },
-        { header: "VALOR", key: "valor", width: 16 },
-      ]
-    : [
-        { header: "DATA", key: "data", width: 12 },
-        { header: "PROTOCOLO GEOLOG", key: "protocolo", width: 20 },
-        { header: "STATUS", key: "status", width: 14 },
-        {
-          header: "MOTORISTA",
-          key: "motorista",
-          width: Math.max(maxMotoristaLen + 2, 14),
-        },
-        { header: "TRAJETO REALIZADO", key: "trajeto", width: 80 },
-        {
-          header: "VEÍCULO USADO",
-          key: "veiculo",
-          width: Math.max(maxVeiculoLen + 2, 14),
-        },
-        { header: "VALOR", key: "valor", width: 16 },
-      ];
+  const columns = [
+    { header: "DATA", key: "data", width: 12 },
+    { header: "PROTOCOLO GEOLOG", key: "protocolo", width: 20 },
+    { header: "STATUS", key: "status", width: 14 },
+    { header: "TIPO", key: "tipo", width: 14 },
+    ...(showParceiroCol
+      ? [
+          {
+            header: "PARCEIRO",
+            key: "parceiro",
+            width: Math.max(maxParceiroLen + 2, 14),
+          },
+        ]
+      : []),
+    {
+      header: "MOTORISTA",
+      key: "motorista",
+      width: Math.max(maxMotoristaLen + 2, 14),
+    },
+    { header: "TRAJETO REALIZADO", key: "trajeto", width: 80 },
+    {
+      header: "VEÍCULO USADO",
+      key: "veiculo",
+      width: Math.max(maxVeiculoLen + 2, 14),
+    },
+    { header: "VALOR", key: "valor", width: 16 },
+  ];
   sheet.columns = columns;
 
   const lastColLetter = sheet.getColumn(columns.length).letter;
 
   // ── Linha 1: Título principal ────────────────────────────────────
-  // Só mostra o nome do destinatário quando um específico foi selecionado
-  // no filtro. Sem filtro, é um relatório geral.
-  const labelMap = {
-    repasse_autonomos: "REPASSE A AUTÔNOMOS",
-    repasse_internos: "REPASSE A INTERNOS",
-    repasse_parceiros: "REPASSE A PARCEIROS",
-  } as const;
-
+  // Mostra o nome do motorista/parceiro filtrado. Sem filtro, é geral.
   let titleText: string;
-  if (isParceiros) {
-    titleText = filters.parceiroId
-      ? `${labelMap[template]} – ${(data.parceiroMap.get(filters.parceiroId) || "GERAL").toUpperCase()}`
-      : `RELATÓRIO GERAL DE ${labelMap[template]}`;
+  if (filters.driverId) {
+    titleText = `REPASSE A MOTORISTAS – ${(data.driverMap.get(filters.driverId) || "GERAL").toUpperCase()}`;
+  } else if (filters.parceiroId) {
+    titleText = `REPASSE A MOTORISTAS – ${(data.parceiroMap.get(filters.parceiroId) || "GERAL").toUpperCase()}`;
   } else {
-    titleText = filters.driverId
-      ? `${labelMap[template]} – ${(data.driverMap.get(filters.driverId) || "GERAL").toUpperCase()}`
-      : `RELATÓRIO GERAL DE ${labelMap[template]}`;
+    titleText = "RELATÓRIO GERAL DE REPASSE A MOTORISTAS";
   }
 
   const titleRow = sheet.getRow(1);
@@ -1903,10 +1844,16 @@ function buildRepasseSheet(
     right: { style: "thin", color: { argb: "FFCBD5E1" } },
   };
 
+  // Mapeia keys para índices reais (depende de showParceiroCol)
+  const colIndexMap: Record<string, number> = {};
+  columns.forEach((col, idx) => {
+    colIndexMap[col.key] = idx + 1;
+  });
+
   // Índice da coluna de VALOR (última). TRAJETO REALIZADO fica em linha
   // única (sem wrapText), igual ao TRECHO da Medição para Cliente — o
   // usuário amplia a coluna manualmente ou clica na célula para ver tudo.
-  const valorColIdx = columns.length;
+  const valorColIdx = colIndexMap["valor"];
 
   let totalValor = 0;
   data.rows.forEach((row, idx) => {
@@ -1917,30 +1864,25 @@ function buildRepasseSheet(
     const driver = row.driver_id
       ? data.driverDetailMap.get(row.driver_id)
       : undefined;
-    const parceiroNomeLinha = isParceiros
-      ? driver?.parceiro_id
-        ? data.parceiroMap.get(driver.parceiro_id) || "-"
-        : "-"
-      : "";
+    const parceiroNomeLinha = driver?.parceiro_id
+      ? data.parceiroMap.get(driver.parceiro_id) || "-"
+      : "-";
     const motoristaNome =
       data.driverMap.get(row.driver_id || "") || row.motorista || "-";
     const waypoints = data.waypointsMap.get(row.id) || [];
     const trajetoList = waypoints.map((wp) => wp.label).filter(Boolean);
     const placaModelo = data.vehicleMap.get(row.veiculo_id || "") || "-";
 
-    excelRow.getCell(1).value = formatDate(row.data);
-    excelRow.getCell(2).value = row.protocolo || "-";
-    excelRow.getCell(3).value = row.repasse_pago ? "Pago" : "Pendente";
-    if (isParceiros) {
-      excelRow.getCell(4).value = parceiroNomeLinha;
-      excelRow.getCell(5).value = motoristaNome;
-      excelRow.getCell(6).value = trajetoList.join(" -> ") || "-";
-      excelRow.getCell(7).value = placaModelo;
-    } else {
-      excelRow.getCell(4).value = motoristaNome;
-      excelRow.getCell(5).value = trajetoList.join(" -> ") || "-";
-      excelRow.getCell(6).value = placaModelo;
+    excelRow.getCell(colIndexMap["data"]).value = formatDate(row.data);
+    excelRow.getCell(colIndexMap["protocolo"]).value = row.protocolo || "-";
+    excelRow.getCell(colIndexMap["status"]).value = row.repasse_pago ? "Pago" : "Pendente";
+    excelRow.getCell(colIndexMap["tipo"]).value = getRowVinculoTipo(row, driver);
+    if (showParceiroCol) {
+      excelRow.getCell(colIndexMap["parceiro"]).value = parceiroNomeLinha;
     }
+    excelRow.getCell(colIndexMap["motorista"]).value = motoristaNome;
+    excelRow.getCell(colIndexMap["trajeto"]).value = trajetoList.join(" -> ") || "-";
+    excelRow.getCell(colIndexMap["veiculo"]).value = placaModelo;
 
     const valor = calcEffectiveCustoValue(row);
     const isento = row.isento_custo;
@@ -2363,12 +2305,11 @@ function buildGenericSheet(
       "Valor Bruto",
       "Status",
     ],
-    repasse_autonomos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
-    repasse_internos: ["Protocolo/Data", "Trajeto", "Status", "Valor"],
-    repasse_parceiros: [
+    repasse_motorista: [
       "Data",
       "Protocolo",
       "Status",
+      "Tipo",
       "Parceiro",
       "Motorista",
       "Trajeto realizado",
@@ -2472,25 +2413,16 @@ function buildGenericSheet(
         );
         rowData[headers[10]] = row.status_financeiro || "Pendente";
         break;
-      case "repasse_autonomos":
-      case "repasse_internos":
-        rowData[headers[0]] = `${row.protocolo || "-"} / ${formatDate(row.data)}`;
-        rowData[headers[1]] = trajeto || "-";
-        rowData[headers[2]] = row.repasse_pago ? "Pago" : "Pendente";
-        rowData[headers[3]] = formatCurrencyOrIsento(
-          calcEffectiveCustoValue(row),
-          row.isento_custo,
-        );
-        break;
-      case "repasse_parceiros":
+      case "repasse_motorista":
         rowData[headers[0]] = formatDate(row.data);
         rowData[headers[1]] = row.protocolo || "-";
         rowData[headers[2]] = row.repasse_pago ? "Pago" : "Pendente";
-        rowData[headers[3]] = parceiroNome || "-";
-        rowData[headers[4]] = motoristaNome || "-";
-        rowData[headers[5]] = trajeto || "-";
-        rowData[headers[6]] = data.vehicleMap.get(row.veiculo_id || "") || "-";
-        rowData[headers[7]] = formatCurrencyOrIsento(
+        rowData[headers[3]] = getRowVinculoTipo(row, driver);
+        rowData[headers[4]] = parceiroNome || "-";
+        rowData[headers[5]] = motoristaNome || "-";
+        rowData[headers[6]] = trajeto || "-";
+        rowData[headers[7]] = data.vehicleMap.get(row.veiculo_id || "") || "-";
+        rowData[headers[8]] = formatCurrencyOrIsento(
           calcEffectiveCustoValue(row),
           row.isento_custo,
         );
@@ -2585,9 +2517,7 @@ async function generatePdf(
 
   const titleMap: Record<ReportTemplate, string> = {
     medicao_cliente: "RELATÓRIO DE MEDIÇÃO",
-    repasse_autonomos: "REPASSE A AUTÔNOMOS",
-    repasse_internos: "REPASSE A INTERNOS",
-    repasse_parceiros: "REPASSE A PARCEIROS",
+    repasse_motorista: "REPASSE A MOTORISTAS",
     resumo_motoristas: "RESUMO GERAL DE MOTORISTAS",
     performance: "PERFORMANCE FINANCEIRA",
     liberadas_faturamento: "LIBERADAS PARA FATURAMENTO",
@@ -3522,7 +3452,7 @@ async function generatePdf(
         emphasis: true,
       },
     ],
-    repasse_autonomos: [
+    repasse_motorista: [
       {
         title: "Serviços Executados",
         value: String(data.summary.totalOS),
@@ -3533,49 +3463,9 @@ async function generatePdf(
       },
       {
         title: "Valor Total",
-        value: formatCurrency(data.summary.totalCustoAutonomos),
-        subtitle: "Repasses previstos",
-        iconType: "money",
-        tone: "cyan",
-        emphasis: true,
-      },
-      {
-        title: "Já Pago",
-        value: formatCurrency(data.summary.totalPagoAutonomos),
-        subtitle: "Repasses quitados",
-        iconType: "check",
-        tone: "emerald",
-      },
-      {
-        title: "Pendente",
         value: formatCurrency(
-          data.summary.totalCustoAutonomos - data.summary.totalPagoAutonomos,
+          data.summary.totalCustoAutonomos + data.summary.totalCustoParceiros,
         ),
-        subtitle: "Saldo em aberto",
-        iconType: "document",
-        tone: "amber",
-        emphasis: true,
-      },
-      {
-        title: "Itinerários",
-        value: String(data.summary.totalWaypoints),
-        subtitle: "Total de waypoints",
-        iconType: "route",
-        tone: "teal",
-      },
-    ],
-    repasse_internos: [
-      {
-        title: "Serviços Executados",
-        value: String(data.summary.totalOS),
-        subtitle: "Volume total de ordens",
-        iconType: "document",
-        tone: "blue",
-        emphasis: true,
-      },
-      {
-        title: "Valor Total",
-        value: formatCurrency(data.summary.totalCustoAutonomos),
         subtitle: "Repasses previstos",
         iconType: "money",
         tone: "cyan",
@@ -3583,49 +3473,9 @@ async function generatePdf(
       },
       {
         title: "Já Pago",
-        value: formatCurrency(data.summary.totalPagoAutonomos),
-        subtitle: "Repasses quitados",
-        iconType: "check",
-        tone: "emerald",
-      },
-      {
-        title: "Pendente",
         value: formatCurrency(
-          data.summary.totalCustoAutonomos - data.summary.totalPagoAutonomos,
+          data.summary.totalPagoAutonomos + data.summary.totalPagoParceiros,
         ),
-        subtitle: "Saldo em aberto",
-        iconType: "document",
-        tone: "amber",
-        emphasis: true,
-      },
-      {
-        title: "Itinerários",
-        value: String(data.summary.totalWaypoints),
-        subtitle: "Total de waypoints",
-        iconType: "route",
-        tone: "teal",
-      },
-    ],
-    repasse_parceiros: [
-      {
-        title: "Serviços Executados",
-        value: String(data.summary.totalOS),
-        subtitle: "Volume total de ordens",
-        iconType: "document",
-        tone: "blue",
-        emphasis: true,
-      },
-      {
-        title: "Valor Total",
-        value: formatCurrency(data.summary.totalCustoParceiros),
-        subtitle: "Repasses previstos",
-        iconType: "money",
-        tone: "cyan",
-        emphasis: true,
-      },
-      {
-        title: "Já Pago",
-        value: formatCurrency(data.summary.totalPagoParceiros),
         subtitle: "Repasses quitados",
         iconType: "check",
         tone: "emerald",
@@ -3633,7 +3483,10 @@ async function generatePdf(
       {
         title: "Pendente",
         value: formatCurrency(
-          data.summary.totalCustoParceiros - data.summary.totalPagoParceiros,
+          data.summary.totalCustoAutonomos +
+            data.summary.totalCustoParceiros -
+            data.summary.totalPagoAutonomos -
+            data.summary.totalPagoParceiros,
         ),
         subtitle: "Saldo em aberto",
         iconType: "document",
@@ -3808,33 +3661,16 @@ async function generatePdf(
       { label: "Trajeto Realizado", width: 210, key: "trajeto" },
       { label: "Valor", width: 88, key: "valor" },
     ],
-    repasse_autonomos: [
-      { label: "Data", width: 70, key: "data" },
-      { label: "Protocolo Geolog", width: 90, key: "protocolo" },
-      { label: "Status", width: 80, key: "status" },
-      { label: "Motorista", width: 200, key: "motorista" },
-      { label: "Trajeto realizado", width: 230, key: "trajeto" },
-      { label: "Veículo usado", width: 100, key: "veiculo" },
-      { label: "Valor", width: 88, key: "custo" },
-    ],
-    repasse_internos: [
-      { label: "Data", width: 70, key: "data" },
-      { label: "Protocolo Geolog", width: 90, key: "protocolo" },
-      { label: "Status", width: 80, key: "status" },
-      { label: "Motorista", width: 200, key: "motorista" },
-      { label: "Trajeto realizado", width: 230, key: "trajeto" },
-      { label: "Veículo usado", width: 100, key: "veiculo" },
-      { label: "Valor", width: 88, key: "custo" },
-    ],
-    repasse_parceiros: [
-      { label: "Data", width: 70, key: "data" },
-      { label: "Protocolo Geolog", width: 90, key: "protocolo" },
-      { label: "Status", width: 70, key: "status" },
-      { label: "Parceiro", width: 160, key: "parceiro" },
-      { label: "Motorista", width: 150, key: "motorista" },
-      { label: "Trajeto realizado", width: 200, key: "trajeto" },
-      { label: "Veículo usado", width: 90, key: "veiculo" },
-      { label: "Valor", width: 78, key: "custo" },
+    repasse_motorista: [
+      { label: "Data", width: 50, key: "data" },
+      { label: "Protocolo Geolog", width: 75, key: "protocolo" },
+      { label: "Status", width: 55, key: "status" },
+      { label: "Tipo", width: 50, key: "tipo" },
+      { label: "Parceiro", width: 100, key: "parceiro" },
+      { label: "Motorista", width: 125, key: "motorista" },
+      { label: "Trajeto realizado", width: 173, key: "trajeto" },
+      { label: "Veículo usado", width: 75, key: "veiculo" },
+      { label: "Valor", width: 75, key: "custo" },
     ],
     performance: [
       { label: "Protocolo", width: 80, key: "protocolo" },
@@ -3876,7 +3712,38 @@ async function generatePdf(
   };
 
   // Build pages
-  const headers = tableHeadersMap[template];
+  // Para repasse_motorista: a coluna "Parceiro" só aparece quando o
+  // relatório inclui parceiros — ou seja, quando o filtro é por parceiro
+  // ou quando é "Todos" (sem filtro de motorista individual). Se o
+  // filtro é por um motorista autônomo/interno específico, a coluna é
+  // omitida e sua largura é redistribuída para as demais colunas para
+  // preencher 100% da área da tabela.
+  let headers = tableHeadersMap[template];
+  if (
+    template === "repasse_motorista" &&
+    filters.driverId &&
+    !filters.parceiroId
+  ) {
+    const driverDetail = filters.driverId
+      ? data.driverDetailMap.get(filters.driverId)
+      : undefined;
+    const isParceiroDriver =
+      driverDetail?.parceiro_id !== null &&
+      driverDetail?.parceiro_id !== undefined;
+    if (!isParceiroDriver) {
+      // Remove a coluna "parceiro" e redistribui seus 100px:
+      // +10 Protocolo, +25 Motorista, +55 Trajeto, +10 Veículo
+      headers = headers
+        .filter((h) => h.key !== "parceiro")
+        .map((h) => {
+          if (h.key === "protocolo") return { ...h, width: h.width + 10 };
+          if (h.key === "motorista") return { ...h, width: h.width + 25 };
+          if (h.key === "trajeto") return { ...h, width: h.width + 55 };
+          if (h.key === "veiculo") return { ...h, width: h.width + 10 };
+          return h;
+        });
+    }
+  }
   const boxes = summaryBoxes[template];
 
   let page = pdfDoc.addPage([pageWidth, pageHeight]);
@@ -3887,25 +3754,18 @@ async function generatePdf(
   // Draw summary boxes (4 per row)
   if (
     template === "medicao_cliente" ||
-    template === "repasse_autonomos" ||
-    template === "repasse_parceiros" ||
-    template === "repasse_internos" ||
+    template === "repasse_motorista" ||
     template === "resumo_motoristas"
   ) {
     const isMedicao = template === "medicao_cliente";
-    const isParceiros = template === "repasse_parceiros";
-    const isInternos = template === "repasse_internos";
+    const isRepasseMotorista = template === "repasse_motorista";
     const isResumo = template === "resumo_motoristas";
     // Add title
     const titleText = isMedicao
       ? "RELATÓRIO DE MEDIÇÃO"
-      : isParceiros
-        ? "RELATÓRIO DE REPASSE A PARCEIROS"
-        : isInternos
-          ? "RELATÓRIO DE REPASSE A INTERNOS"
-          : isResumo
-            ? "RESUMO GERAL DE MOTORISTAS"
-            : "RELATÓRIO DE REPASSE A AUTÔNOMOS";
+      : isResumo
+        ? "RESUMO GERAL DE MOTORISTAS"
+        : "RELATÓRIO DE REPASSE A MOTORISTAS";
 
     const titleWidth = regularFont.widthOfTextAtSize(titleText, 10);
     page.drawText(titleText, {
@@ -3926,22 +3786,21 @@ async function generatePdf(
           ? data.clienteMap.get(selectedClientId) || "GERAL"
           : "GERAL",
       );
-    } else if (isParceiros) {
-      displayName = filters.parceiroId
-        ? sanitizePdfText(
-            data.parceiroMap.get(filters.parceiroId) || "GERAL",
-          )
-        : "";
+    } else if (isRepasseMotorista) {
+      // Prioriza o motorista específico; se só o parceiro foi filtrado
+      // (todos os motoristas dele), mostra o nome do parceiro.
+      displayName = filters.driverId
+        ? sanitizePdfText(data.driverMap.get(filters.driverId) || "GERAL")
+        : filters.parceiroId
+          ? sanitizePdfText(
+              data.parceiroMap.get(filters.parceiroId) || "GERAL",
+            )
+          : "";
     } else if (isResumo) {
       // Resumo geral não tem filtro de entidade — sempre "GERAL"
       displayName = "";
     } else {
-      // Autônomos e Internos
-      displayName = filters.driverId
-        ? sanitizePdfText(
-            data.driverMap.get(filters.driverId) || "GERAL",
-          )
-        : "";
+      displayName = "";
     }
 
     // Sem filtro: título "RELATÓRIO GERAL DE ..." centralizado.
@@ -3949,9 +3808,7 @@ async function generatePdf(
     if (!displayName || displayName === "GERAL" || displayName === "") {
       const generalTitleMap = {
         medicao_cliente: "RELATÓRIO GERAL DE MEDIÇÃO",
-        repasse_autonomos: "RELATÓRIO GERAL DE REPASSE A AUTÔNOMOS",
-        repasse_internos: "RELATÓRIO GERAL DE REPASSE A INTERNOS",
-        repasse_parceiros: "RELATÓRIO GERAL DE REPASSE A PARCEIROS",
+        repasse_motorista: "RELATÓRIO GERAL DE REPASSE A MOTORISTAS",
         resumo_motoristas: "RESUMO GERAL DE MOTORISTAS",
       } as const;
       const generalTitle =
@@ -4316,13 +4173,18 @@ async function generatePdf(
           size = 7;
           break;
         case "trajeto":
-          if (template === "repasse_autonomos" || template === "repasse_internos") {
+          if (template === "repasse_motorista") {
             // routeSegments will be set below; text is left empty
             size = 6.5;
           } else {
             text = sanitizePdfText(trajetoList.join(" -> "));
             size = 7;
           }
+          break;
+        case "tipo":
+          text = getRowVinculoTipo(row, driver);
+          font = boldFont;
+          size = 8;
           break;
         case "cliente": {
           const lines = [truncateText(sanitizePdfText(clienteNome), 35)];
@@ -4335,11 +4197,7 @@ async function generatePdf(
         case "motorista":
           text = truncateText(
             sanitizePdfText(motoristaNome),
-            template === "repasse_autonomos" ||
-              template === "repasse_internos" ||
-              template === "repasse_parceiros"
-              ? 40
-              : 25,
+            template === "repasse_motorista" ? 40 : 25,
           );
           break;
         case "data":
@@ -4361,9 +4219,7 @@ async function generatePdf(
           font = boldFont;
           color = row.isento_custo
             ? c.textMedium
-            : template === "repasse_autonomos" ||
-                template === "repasse_parceiros" ||
-                template === "repasse_internos"
+            : template === "repasse_motorista"
               ? c.accentGreen
               : c.accentRed;
           break;
@@ -4384,11 +4240,7 @@ async function generatePdf(
           break;
         }
         case "status":
-          if (
-            template === "repasse_autonomos" ||
-            template === "repasse_parceiros" ||
-            template === "repasse_internos"
-          ) {
+          if (template === "repasse_motorista") {
             text = row.repasse_pago ? "Pago" : "Pendente";
             font = boldFont;
             color = row.repasse_pago ? c.accentGreen : c.accentRed;
@@ -4447,10 +4299,7 @@ async function generatePdf(
       const lineH = size + 2;
       const maxW = h.width - 10;
       const align =
-        h.key === "custo" &&
-        (template === "repasse_autonomos" ||
-          template === "repasse_parceiros" ||
-          template === "repasse_internos")
+        h.key === "custo" && template === "repasse_motorista"
           ? "left"
           : h.key === "valor" && template === "medicao_cliente"
             ? "left"
@@ -4458,14 +4307,11 @@ async function generatePdf(
               ? "right"
               : "left";
 
-      // Build structured route segments for trajeto (medicao_cliente, repasse_autonomos & repasse_parceiros)
+      // Build structured route segments for trajeto (medicao_cliente & repasse_motorista)
       let routeSegments: RouteSegment[] | undefined;
       if (
         h.key === "trajeto" &&
-        (template === "repasse_autonomos" ||
-          template === "medicao_cliente" ||
-          template === "repasse_parceiros" ||
-          template === "repasse_internos")
+        (template === "repasse_motorista" || template === "medicao_cliente")
       ) {
         routeSegments = [];
 
@@ -4511,22 +4357,17 @@ async function generatePdf(
                   : "parada";
             const label = sanitizePdfText(wp.label) || "Endereco nao informado";
             const text =
-              template === "medicao_cliente"
-                ? truncateText(label, 30)
-                : template === "repasse_autonomos" ||
-                    template === "repasse_internos"
-                  ? truncateText(label, 55)
-                  : label;
+              template === "medicao_cliente" ? truncateText(label, 30) : label;
             routeSegments.push({
               type,
               text,
               wrappedLines:
-                template === "repasse_parceiros"
+                template === "repasse_motorista"
                   ? wrapTextToLines(
                       text,
                       size,
                       regularFont,
-                      Math.max(120, h.width - 65),
+                      Math.max(60, h.width - 55),
                     )
                   : undefined,
             });
@@ -4826,9 +4667,7 @@ async function generatePdf(
   const pdfBytes = await pdfDoc.save();
   const fileNameMap: Record<ReportTemplate, string> = {
     medicao_cliente: "medicao-cliente",
-    repasse_autonomos: "repasse-autonomos",
-    repasse_internos: "repasse-internos",
-    repasse_parceiros: "repasse-parceiros",
+    repasse_motorista: "repasse-motoristas",
     resumo_motoristas: "resumo-motoristas",
     performance: "performance-financeira",
     liberadas_faturamento: "liberadas-faturamento",
@@ -4906,7 +4745,7 @@ async function handleReportRequest(
     }
 
     if (format === "csv") {
-      return generateCsv(data, template);
+      return generateCsv(data, template, filters);
     }
 
     if (format === "xlsx") {
