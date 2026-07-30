@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Rocket,
+  ClipboardList,
 } from "lucide-react";
 import GeologDateInput from "@/components/ui/GeologDateInput";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
@@ -33,6 +34,7 @@ export type ReportTemplate =
   | "repasse_autonomos"
   | "repasse_parceiros"
   | "repasse_internos"
+  | "resumo_motoristas"
   | "performance"
   | "liberadas_faturamento"
   | "pendentes_repasse";
@@ -91,6 +93,7 @@ const TEMPLATE_ICONS: Record<ReportTemplate, React.ReactNode> = {
   repasse_autonomos: <Wallet size={18} className="text-amber-500" />,
   repasse_parceiros: <Handshake size={18} className="text-teal-500" />,
   repasse_internos: <Building2 size={18} className="text-blue-500" />,
+  resumo_motoristas: <ClipboardList size={18} className="text-purple-500" />,
   performance: <TrendingUp size={18} className="text-emerald-500" />,
   liberadas_faturamento: <CheckCircle2 size={18} className="text-blue-500" />,
   pendentes_repasse: <Clock size={18} className="text-orange-500" />,
@@ -125,6 +128,13 @@ const TEMPLATES: TemplateConfig[] = [
     description: "OS executadas por motoristas internos com valores a repassar",
     category: "motorista",
     extraFilters: ["driverId"],
+  },
+  {
+    id: "resumo_motoristas",
+    label: "Resumo Geral de Motoristas",
+    description:
+      "Consolidado por motorista/parceiro: serviços realizados, pagos, pendentes e valores totais",
+    category: "motorista",
   },
   {
     id: "performance",
@@ -313,6 +323,7 @@ export default function RelatorioModal({
       selectedTemplate === "repasse_autonomos" ||
       selectedTemplate === "repasse_internos" ||
       selectedTemplate === "repasse_parceiros" ||
+      selectedTemplate === "resumo_motoristas" ||
       selectedTemplate === "performance" ||
       selectedTemplate === "liberadas_faturamento" ||
       selectedTemplate === "pendentes_repasse");

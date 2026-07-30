@@ -269,6 +269,7 @@ export type ReportTemplate =
   | "repasse_autonomos"
   | "repasse_internos"
   | "repasse_parceiros"
+  | "resumo_motoristas"
   | "performance"
   | "liberadas_faturamento"
   | "pendentes_repasse";
@@ -663,6 +664,11 @@ async function fetchReportData(
       query = query.eq("status_operacional", "Finalizado");
     } else if (template === "repasse_internos") {
       query = query.eq("status_operacional", "Finalizado");
+    } else if (template === "resumo_motoristas") {
+      // Resumo geral: todas as OS finalizadas no período, de todos os
+      // motoristas (autônomos, internos e parceiros). A consolidação por
+      // motorista acontece depois, no gerador do relatório.
+      query = query.eq("status_operacional", "Finalizado");
     } else {
       if (statusOperacional)
         query = query.eq("status_operacional", statusOperacional);
@@ -922,6 +928,14 @@ async function fetchReportData(
     });
   } else if (template === "pendentes_repasse") {
     rows = rows.filter((row) => !row.isento_custo);
+  } else if (template === "resumo_motoristas") {
+    // Resumo geral: inclui todas as OS finalizadas que tenham um driver
+    // associado (autônomos, internos, parceiros e freelance). Exclui
+    // isentas de custo. A consolidação por motorista acontece no gerador.
+    rows = rows.filter((row) => {
+      if (row.isento_custo) return false;
+      return Boolean(row.driver_id);
+    });
   }
 
   const summary = computeSummary(rows, driverDetailMap, waypointsMap);
@@ -1088,6 +1102,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
     clienteMap,
     centroCustoMap,
     driverMap,
+    driverDetailMap,
     parceiroMap,
     vehicleMap,
   } = data;
@@ -1143,10 +1158,119 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
       "Custo",
       "Status",
     ],
+    resumo_motoristas: [
+      "Motorista/Parceiro",
+      "Tipo",
+      "Parceiro",
+      "Serviços Realizados",
+      "Já Pagos",
+      "Pendentes",
+      "Valor Total",
+      "Valor Pago",
+      "Valor Pendente",
+    ],
   };
 
   const headers = headersMap[template];
   const lines: string[] = [headers.join(";")];
+
+  // Resumo consolidado por motorista — estrutura diferente das demais
+  // (uma linha por motorista, não por OS).
+  if (template === "resumo_motoristas") {
+    type CsvSummary = {
+      nome: string;
+      tipo: string;
+      parceiroNome: string;
+      servicos: number;
+      pagos: number;
+      pendentes: number;
+      valorTotal: number;
+      valorPago: number;
+      valorPendente: number;
+    };
+    const csvDriverMap = new Map<string, CsvSummary>();
+    for (const row of rows) {
+      if (!row.driver_id) continue;
+      const driverDetail = driverDetailMap.get(row.driver_id);
+      const nome =
+        driverMap.get(row.driver_id) || row.motorista || "Desconhecido";
+      let tipo = "Autônomo";
+      if (row.tipo === "freelance") tipo = "Freelance";
+      else if (driverDetail?.parceiro_id) tipo = "Parceiro";
+      else if (driverDetail?.vinculo_tipo === "interno") tipo = "Interno";
+      const parceiroNome = driverDetail?.parceiro_id
+        ? parceiroMap.get(driverDetail.parceiro_id) || ""
+        : "";
+
+      let entry = csvDriverMap.get(row.driver_id);
+      if (!entry) {
+        entry = {
+          nome,
+          tipo,
+          parceiroNome,
+          servicos: 0,
+          pagos: 0,
+          pendentes: 0,
+          valorTotal: 0,
+          valorPago: 0,
+          valorPendente: 0,
+        };
+        csvDriverMap.set(row.driver_id, entry);
+      }
+      const custo = calcEffectiveCustoValue(row);
+      entry.servicos++;
+      entry.valorTotal += custo;
+      if (row.repasse_pago) {
+        entry.pagos++;
+        entry.valorPago += custo;
+      } else {
+        entry.pendentes++;
+        entry.valorPendente += custo;
+      }
+    }
+    const csvSummaries = Array.from(csvDriverMap.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR"),
+    );
+    let csvTotalServicos = 0;
+    let csvTotalPagos = 0;
+    let csvTotalPendentes = 0;
+    let csvTotalValor = 0;
+    let csvTotalPago = 0;
+    let csvTotalPendente = 0;
+    for (const s of csvSummaries) {
+      lines.push(
+        [
+          s.nome,
+          s.tipo,
+          s.parceiroNome || "-",
+          String(s.servicos),
+          String(s.pagos),
+          String(s.pendentes),
+          formatCurrency(s.valorTotal),
+          formatCurrency(s.valorPago),
+          formatCurrency(s.valorPendente),
+        ].join(";"),
+      );
+      csvTotalServicos += s.servicos;
+      csvTotalPagos += s.pagos;
+      csvTotalPendentes += s.pendentes;
+      csvTotalValor += s.valorTotal;
+      csvTotalPago += s.valorPago;
+      csvTotalPendente += s.valorPendente;
+    }
+    lines.push("");
+    lines.push(`TOTAL; ; ;${csvTotalServicos};${csvTotalPagos};${csvTotalPendentes};${formatCurrency(csvTotalValor)};${formatCurrency(csvTotalPago)};${formatCurrency(csvTotalPendente)}`);
+
+    const csvContent = lines.join("\n");
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode("\uFEFF" + csvContent);
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="resumo-motoristas-${data.periodLabel.replace(/\s/g, "_")}.csv"`,
+      },
+    });
+  }
 
   rows.forEach((row) => {
     const clienteNome = clienteMap.get(row.cliente_id || "") || "-";
@@ -1304,6 +1428,7 @@ function generateCsv(data: ReportData, template: ReportTemplate): Response {
     repasse_autonomos: "repasse-autonomos",
     repasse_internos: "repasse-internos",
     repasse_parceiros: "repasse-parceiros",
+    resumo_motoristas: "resumo-motoristas",
     performance: "performance-financeira",
     liberadas_faturamento: "liberadas-faturamento",
     pendentes_repasse: "pendentes-repasse",
@@ -1324,6 +1449,7 @@ const XLSX_FILE_NAME_MAP: Record<ReportTemplate, string> = {
   repasse_autonomos: "repasse-autonomos",
   repasse_internos: "repasse-internos",
   repasse_parceiros: "repasse-parceiros",
+  resumo_motoristas: "resumo-motoristas",
   performance: "performance-financeira",
   liberadas_faturamento: "liberadas-faturamento",
   pendentes_repasse: "pendentes-repasse",
@@ -1353,6 +1479,8 @@ async function generateXlsx(
     template === "repasse_parceiros"
   ) {
     buildRepasseSheet(workbook, data, template, filters);
+  } else if (template === "resumo_motoristas") {
+    buildResumoMotoristasSheet(workbook, data, filters);
   } else {
     buildGenericSheet(workbook, data, template);
   }
@@ -1907,6 +2035,310 @@ function buildRepasseSheet(
 }
 
 /**
+ * Planilha estilizada do Resumo Geral de Motoristas.
+ * Consolida todas as OS do período por motorista/parceiro, mostrando
+ * uma linha por motorista com: nome, tipo, serviços realizados, pagos,
+ * pendentes e valores totais.
+ *
+ * Layout espelhado nos demais relatórios estilizados:
+ *  - Linha 1: título "RESUMO GERAL DE MOTORISTAS"
+ *  - Linha 2: subtítulo com período + total de motoristas
+ *  - Linha 3: cabeçalho azul forte
+ *  - Linhas 4+: dados consolidados por motorista
+ *  - Última linha: TOTAL
+ */
+function buildResumoMotoristasSheet(
+  workbook: ExcelJS.Workbook,
+  data: ReportData,
+  _filters: FinanceFilters,
+): void {
+  const sheet = workbook.addWorksheet("Resumo Motoristas", {
+    views: [{ state: "frozen", ySplit: 3 }],
+  });
+
+  // Consolida por driver_id
+  type DriverSummary = {
+    driverId: string;
+    nome: string;
+    tipo: string; // "Autônomo", "Interno", "Parceiro", "Freelance"
+    parceiroNome: string;
+    servicos: number;
+    pagos: number;
+    pendentes: number;
+    valorTotal: number;
+    valorPago: number;
+    valorPendente: number;
+  };
+
+  const driverMap = new Map<string, DriverSummary>();
+
+  for (const row of data.rows) {
+    if (!row.driver_id) continue;
+    const driverDetail = data.driverDetailMap.get(row.driver_id);
+    const nome =
+      data.driverMap.get(row.driver_id) || row.motorista || "Desconhecido";
+
+    let tipo = "Autônomo";
+    if (row.tipo === "freelance") {
+      tipo = "Freelance";
+    } else if (driverDetail?.parceiro_id) {
+      tipo = "Parceiro";
+    } else if (driverDetail?.vinculo_tipo === "interno") {
+      tipo = "Interno";
+    }
+
+    const parceiroNome = driverDetail?.parceiro_id
+      ? data.parceiroMap.get(driverDetail.parceiro_id) || ""
+      : "";
+
+    let entry = driverMap.get(row.driver_id);
+    if (!entry) {
+      entry = {
+        driverId: row.driver_id,
+        nome,
+        tipo,
+        parceiroNome,
+        servicos: 0,
+        pagos: 0,
+        pendentes: 0,
+        valorTotal: 0,
+        valorPago: 0,
+        valorPendente: 0,
+      };
+      driverMap.set(row.driver_id, entry);
+    }
+
+    const custo = calcEffectiveCustoValue(row);
+    entry.servicos++;
+    entry.valorTotal += custo;
+    if (row.repasse_pago) {
+      entry.pagos++;
+      entry.valorPago += custo;
+    } else {
+      entry.pendentes++;
+      entry.valorPendente += custo;
+    }
+  }
+
+  const summaries = Array.from(driverMap.values()).sort((a, b) =>
+    a.nome.localeCompare(b.nome, "pt-BR"),
+  );
+
+  // Larguras dinâmicas
+  const maxNomeLen = summaries.reduce(
+    (max, s) => (s.nome.length > max ? s.nome.length : max),
+    "MOTORISTA / PARCEIRO".length,
+  );
+  const maxParceiroLen = summaries.reduce(
+    (max, s) => (s.parceiroNome.length > max ? s.parceiroNome.length : max),
+    "PARCEIRO".length,
+  );
+
+  const columns = [
+    { header: "MOTORISTA / PARCEIRO", key: "nome", width: Math.max(maxNomeLen + 2, 22) },
+    { header: "TIPO", key: "tipo", width: 14 },
+    { header: "PARCEIRO", key: "parceiro", width: Math.max(maxParceiroLen + 2, 14) },
+    { header: "SERVIÇOS REALIZADOS", key: "servicos", width: 22 },
+    { header: "JÁ PAGOS", key: "pagos", width: 14 },
+    { header: "PENDENTES", key: "pendentes", width: 14 },
+    { header: "VALOR TOTAL", key: "valorTotal", width: 18 },
+    { header: "VALOR PAGO", key: "valorPago", width: 18 },
+    { header: "VALOR PENDENTE", key: "valorPendente", width: 18 },
+  ];
+  sheet.columns = columns;
+  const lastColLetter = sheet.getColumn(columns.length).letter;
+
+  // ── Linha 1: Título ──────────────────────────────────────────────
+  const titleRow = sheet.getRow(1);
+  titleRow.height = 28;
+  const titleCell = titleRow.getCell(1);
+  titleCell.value = "RESUMO GERAL DE MOTORISTAS";
+  sheet.mergeCells(`A1:${lastColLetter}1`);
+  titleCell.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
+  titleCell.alignment = { vertical: "middle", horizontal: "center" };
+  titleCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF1E3A8A" },
+  };
+
+  // ── Linha 2: Subtítulo ───────────────────────────────────────────
+  const subtitleRow = sheet.getRow(2);
+  subtitleRow.height = 20;
+  const subtitleCell = subtitleRow.getCell(1);
+  subtitleCell.value = `Período: ${data.periodLabel}  |  Total de Motoristas: ${summaries.length}  |  Total de OS: ${data.summary.totalOS}`;
+  sheet.mergeCells(`A2:${lastColLetter}2`);
+  subtitleCell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
+  subtitleCell.alignment = { vertical: "middle", horizontal: "center" };
+  subtitleCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF3B82F6" },
+  };
+
+  // ── Linha 3: Cabeçalho ───────────────────────────────────────────
+  const headerRow = sheet.getRow(3);
+  headerRow.height = 22;
+  columns.forEach((col, idx) => {
+    const cell = headerRow.getCell(idx + 1);
+    cell.value = col.header;
+    cell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1E40AF" },
+    };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFFFFFFF" } },
+      bottom: { style: "thin", color: { argb: "FFFFFFFF" } },
+      left: { style: "thin", color: { argb: "FFFFFFFF" } },
+      right: { style: "thin", color: { argb: "FFFFFFFF" } },
+    };
+  });
+
+  // ── Linhas de dados ──────────────────────────────────────────────
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: "thin", color: { argb: "FFCBD5E1" } },
+    bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+    left: { style: "thin", color: { argb: "FFCBD5E1" } },
+    right: { style: "thin", color: { argb: "FFCBD5E1" } },
+  };
+
+  const numFmt = '"R$" #,##0.00';
+  let totalServicos = 0;
+  let totalPagos = 0;
+  let totalPendentes = 0;
+  let totalValorTotal = 0;
+  let totalValorPago = 0;
+  let totalValorPendente = 0;
+
+  summaries.forEach((s, idx) => {
+    const rowNumber = idx + 4;
+    const excelRow = sheet.getRow(rowNumber);
+    excelRow.height = 20;
+
+    excelRow.getCell(1).value = s.nome;
+    excelRow.getCell(2).value = s.tipo;
+    excelRow.getCell(3).value = s.parceiroNome || "-";
+    excelRow.getCell(4).value = s.servicos;
+    excelRow.getCell(5).value = s.pagos;
+    excelRow.getCell(6).value = s.pendentes;
+    excelRow.getCell(7).value = s.valorTotal;
+    excelRow.getCell(8).value = s.valorPago;
+    excelRow.getCell(9).value = s.valorPendente;
+
+    // Formatação numérica
+    [7, 8, 9].forEach((c) => {
+      const cell = excelRow.getCell(c);
+      cell.numFmt = numFmt;
+      cell.alignment = { horizontal: "right", vertical: "middle" };
+    });
+    [4, 5, 6].forEach((c) => {
+      excelRow.getCell(c).alignment = { horizontal: "center", vertical: "middle" };
+    });
+
+    // Estilo geral
+    for (let c = 1; c <= columns.length; c++) {
+      const cell = excelRow.getCell(c);
+      cell.border = thinBorder;
+      cell.font = { size: 10, color: { argb: "FF1F2937" } };
+      if (!cell.alignment) {
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+      }
+    }
+
+    // Zebra (não aplica nas colunas de valor, que têm cor própria)
+    if (idx % 2 === 1) {
+      for (let c = 1; c <= 6; c++) {
+        excelRow.getCell(c).fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF1F5F9" },
+        };
+      }
+    }
+
+    // Cores pastel nas colunas de valor
+    // Col 7 = VALOR TOTAL (azul pastel)
+    excelRow.getCell(7).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFDBEAFE" },
+    };
+    // Col 8 = VALOR PAGO (verde pastel)
+    excelRow.getCell(8).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFD1FAE5" },
+    };
+    // Col 9 = VALOR PENDENTE (vermelho pastel)
+    excelRow.getCell(9).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFEE2E2" },
+    };
+
+    totalServicos += s.servicos;
+    totalPagos += s.pagos;
+    totalPendentes += s.pendentes;
+    totalValorTotal += s.valorTotal;
+    totalValorPago += s.valorPago;
+    totalValorPendente += s.valorPendente;
+  });
+
+  // ── Linha de TOTAL ───────────────────────────────────────────────
+  const totalRowNumber = summaries.length + 4;
+  const totalRow = sheet.getRow(totalRowNumber);
+  totalRow.height = 24;
+  // Mescla A:C (nome + tipo + parceiro)
+  sheet.mergeCells(`A${totalRowNumber}:C${totalRowNumber}`);
+  const totalLabelCell = totalRow.getCell(1);
+  totalLabelCell.value = "TOTAL";
+  totalLabelCell.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } };
+  totalLabelCell.alignment = { vertical: "middle", horizontal: "right" };
+  totalLabelCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF1E3A8A" },
+  };
+
+  totalRow.getCell(4).value = totalServicos;
+  totalRow.getCell(5).value = totalPagos;
+  totalRow.getCell(6).value = totalPendentes;
+  totalRow.getCell(7).value = totalValorTotal;
+  totalRow.getCell(8).value = totalValorPago;
+  totalRow.getCell(9).value = totalValorPendente;
+
+  [4, 5, 6].forEach((c) => {
+    const cell = totalRow.getCell(c);
+    cell.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+  });
+  [7, 8, 9].forEach((c) => {
+    const cell = totalRow.getCell(c);
+    cell.numFmt = numFmt;
+    cell.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } };
+    cell.alignment = { horizontal: "right", vertical: "middle" };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+  });
+
+  for (let c = 1; c <= columns.length; c++) {
+    totalRow.getCell(c).border = {
+      top: { style: "medium", color: { argb: "FFFFFFFF" } },
+      bottom: { style: "medium", color: { argb: "FFFFFFFF" } },
+      left: { style: "thin", color: { argb: "FFFFFFFF" } },
+      right: { style: "thin", color: { argb: "FFFFFFFF" } },
+    };
+  }
+
+  sheet.pageSetup.fitToPage = true;
+  sheet.pageSetup.fitToWidth = 1;
+  sheet.pageSetup.fitToHeight = 0;
+}
+
+/**
  * Planilha genérica (sem estilização avançada) para os demais templates.
  * Reaproveita as colunas já definidas no gerador de CSV.
  */
@@ -1969,6 +2401,17 @@ function buildGenericSheet(
       "Motorista/Parceiro",
       "Custo",
       "Status",
+    ],
+    resumo_motoristas: [
+      "Motorista/Parceiro",
+      "Tipo",
+      "Parceiro",
+      "Serviços Realizados",
+      "Já Pagos",
+      "Pendentes",
+      "Valor Total",
+      "Valor Pago",
+      "Valor Pendente",
     ],
   };
 
@@ -2145,6 +2588,7 @@ async function generatePdf(
     repasse_autonomos: "REPASSE A AUTÔNOMOS",
     repasse_internos: "REPASSE A INTERNOS",
     repasse_parceiros: "REPASSE A PARCEIROS",
+    resumo_motoristas: "RESUMO GERAL DE MOTORISTAS",
     performance: "PERFORMANCE FINANCEIRA",
     liberadas_faturamento: "LIBERADAS PARA FATURAMENTO",
     pendentes_repasse: "PENDENTES DE REPASSE",
@@ -2962,8 +3406,16 @@ async function generatePdf(
 
     let x = margin + 8;
     headers.forEach((header) => {
+      const align = header.align || "left";
+      const textWidth = boldFont.widthOfTextAtSize(header.label, 9);
+      const drawX =
+        align === "right"
+          ? x + header.width - 4 - textWidth
+          : align === "center"
+            ? x + (header.width - textWidth) / 2 - 4
+            : x;
       currentPage.drawText(header.label, {
-        x,
+        x: drawX,
         y: y + 12,
         size: 9,
         font: boldFont,
@@ -3286,12 +3738,66 @@ async function generatePdf(
         emphasis: true,
       },
     ],
+    resumo_motoristas: [
+      {
+        title: "Total de Motoristas",
+        value: String(
+          new Set(data.rows.map((r) => r.driver_id).filter(Boolean)).size,
+        ),
+        subtitle: "Motoristas distintos no período",
+        iconType: "people",
+        tone: "blue",
+        emphasis: true,
+      },
+      {
+        title: "Serviços Realizados",
+        value: String(data.summary.totalOS),
+        subtitle: "Volume total de ordens",
+        iconType: "document",
+        tone: "cyan",
+        emphasis: true,
+      },
+      {
+        title: "Valor Total",
+        value: formatCurrency(
+          data.summary.totalCustoAutonomos +
+            data.summary.totalCustoParceiros,
+        ),
+        subtitle: "Repasses previstos",
+        iconType: "money",
+        tone: "emerald",
+        emphasis: true,
+      },
+      {
+        title: "Já Pago",
+        value: formatCurrency(
+          data.summary.totalPagoAutonomos +
+            data.summary.totalPagoParceiros,
+        ),
+        subtitle: "Repasses quitados",
+        iconType: "check",
+        tone: "teal",
+      },
+      {
+        title: "Pendente",
+        value: formatCurrency(
+          data.summary.totalCustoAutonomos +
+            data.summary.totalCustoParceiros -
+            data.summary.totalPagoAutonomos -
+            data.summary.totalPagoParceiros,
+        ),
+        subtitle: "Saldo em aberto",
+        iconType: "document",
+        tone: "amber",
+        emphasis: true,
+      },
+    ],
   };
 
   // Table headers per template
   const tableHeadersMap: Record<
     ReportTemplate,
-    Array<{ label: string; width: number; key: string }>
+    Array<{ label: string; width: number; key: string; align?: string }>
   > = {
     medicao_cliente: [
       { label: "Protocolo/Data", width: 80, key: "protocolo_data" },
@@ -3303,25 +3809,31 @@ async function generatePdf(
       { label: "Valor", width: 88, key: "valor" },
     ],
     repasse_autonomos: [
-      { label: "Protocolo/Data", width: 100, key: "protocolo_data" },
-      { label: "Status", width: 90, key: "status" },
-      { label: "Trajeto realizado", width: 360, key: "trajeto" },
-      { label: "Veículo usado", width: 140, key: "veiculo" },
+      { label: "Data", width: 70, key: "data" },
+      { label: "Protocolo Geolog", width: 90, key: "protocolo" },
+      { label: "Status", width: 80, key: "status" },
+      { label: "Motorista", width: 200, key: "motorista" },
+      { label: "Trajeto realizado", width: 230, key: "trajeto" },
+      { label: "Veículo usado", width: 100, key: "veiculo" },
       { label: "Valor", width: 88, key: "custo" },
     ],
     repasse_internos: [
-      { label: "Protocolo/Data", width: 100, key: "protocolo_data" },
-      { label: "Status", width: 90, key: "status" },
-      { label: "Trajeto realizado", width: 360, key: "trajeto" },
-      { label: "Veículo usado", width: 140, key: "veiculo" },
+      { label: "Data", width: 70, key: "data" },
+      { label: "Protocolo Geolog", width: 90, key: "protocolo" },
+      { label: "Status", width: 80, key: "status" },
+      { label: "Motorista", width: 200, key: "motorista" },
+      { label: "Trajeto realizado", width: 230, key: "trajeto" },
+      { label: "Veículo usado", width: 100, key: "veiculo" },
       { label: "Valor", width: 88, key: "custo" },
     ],
     repasse_parceiros: [
-      { label: "Protocolo/Data", width: 100, key: "protocolo_data" },
-      { label: "Status", width: 80, key: "status" },
-      { label: "Parceiro/Motorista", width: 170, key: "parceiro_motorista" },
-      { label: "Trajeto realizado", width: 250, key: "trajeto" },
-      { label: "Veículo usado", width: 100, key: "veiculo" },
+      { label: "Data", width: 70, key: "data" },
+      { label: "Protocolo Geolog", width: 90, key: "protocolo" },
+      { label: "Status", width: 70, key: "status" },
+      { label: "Parceiro", width: 160, key: "parceiro" },
+      { label: "Motorista", width: 150, key: "motorista" },
+      { label: "Trajeto realizado", width: 200, key: "trajeto" },
+      { label: "Veículo usado", width: 90, key: "veiculo" },
       { label: "Valor", width: 78, key: "custo" },
     ],
     performance: [
@@ -3351,6 +3863,16 @@ async function generatePdf(
       { label: "Custo", width: 120, key: "custo" },
       { label: "Status Fin.", width: 100, key: "status" },
     ],
+    resumo_motoristas: [
+      { label: "Motorista/Parceiro", width: 180, key: "nome", align: "left" },
+      { label: "Tipo", width: 75, key: "tipo", align: "center" },
+      { label: "Serviços", width: 65, key: "servicos", align: "center" },
+      { label: "Pagos", width: 55, key: "pagos", align: "center" },
+      { label: "Pendentes", width: 65, key: "pendentes", align: "center" },
+      { label: "Valor Total", width: 95, key: "valorTotal", align: "right" },
+      { label: "Valor Pago", width: 95, key: "valorPago", align: "right" },
+      { label: "Valor Pendente", width: 105, key: "valorPendente", align: "right" },
+    ],
   };
 
   // Build pages
@@ -3367,11 +3889,13 @@ async function generatePdf(
     template === "medicao_cliente" ||
     template === "repasse_autonomos" ||
     template === "repasse_parceiros" ||
-    template === "repasse_internos"
+    template === "repasse_internos" ||
+    template === "resumo_motoristas"
   ) {
     const isMedicao = template === "medicao_cliente";
     const isParceiros = template === "repasse_parceiros";
     const isInternos = template === "repasse_internos";
+    const isResumo = template === "resumo_motoristas";
     // Add title
     const titleText = isMedicao
       ? "RELATÓRIO DE MEDIÇÃO"
@@ -3379,7 +3903,9 @@ async function generatePdf(
         ? "RELATÓRIO DE REPASSE A PARCEIROS"
         : isInternos
           ? "RELATÓRIO DE REPASSE A INTERNOS"
-          : "RELATÓRIO DE MEDIÇÃO PARA MOTORISTA";
+          : isResumo
+            ? "RESUMO GERAL DE MOTORISTAS"
+            : "RELATÓRIO DE REPASSE A AUTÔNOMOS";
 
     const titleWidth = regularFont.widthOfTextAtSize(titleText, 10);
     page.drawText(titleText, {
@@ -3390,42 +3916,68 @@ async function generatePdf(
       color: rgb(0.5, 0.5, 0.5),
     });
 
-    let displayName = "GERAL";
+    // Nome do destinatário: só mostra quando há filtro específico.
+    // Sem filtro, exibe "RELATÓRIO GERAL DE ..." (igual ao Excel).
+    let displayName: string;
     if (isMedicao) {
-      const selectedClientId = data.rows[0]?.cliente_id;
+      const selectedClientId = filters.clienteId || data.rows[0]?.cliente_id;
       displayName = sanitizePdfText(
         selectedClientId
           ? data.clienteMap.get(selectedClientId) || "GERAL"
           : "GERAL",
       );
     } else if (isParceiros) {
-      const firstRow = data.rows[0];
-      if (firstRow?.driver_id) {
-        const driver = data.driverDetailMap.get(firstRow.driver_id);
-        if (driver?.parceiro_id) {
-          const parceiroNome = data.parceiroMap.get(driver.parceiro_id);
-          if (parceiroNome) {
-            displayName = sanitizePdfText(parceiroNome);
-          }
-        }
-      }
+      displayName = filters.parceiroId
+        ? sanitizePdfText(
+            data.parceiroMap.get(filters.parceiroId) || "GERAL",
+          )
+        : "";
+    } else if (isResumo) {
+      // Resumo geral não tem filtro de entidade — sempre "GERAL"
+      displayName = "";
     } else {
-      const selectedDriverId = filters.driverId || data.rows[0]?.driver_id;
-      displayName = sanitizePdfText(
-        selectedDriverId
-          ? data.driverMap.get(selectedDriverId) || "MOTORISTA GERAL"
-          : "MOTORISTA GERAL",
-      );
+      // Autônomos e Internos
+      displayName = filters.driverId
+        ? sanitizePdfText(
+            data.driverMap.get(filters.driverId) || "GERAL",
+          )
+        : "";
     }
 
-    const nameWidth = boldFont.widthOfTextAtSize(displayName.toUpperCase(), 18);
-    page.drawText(displayName.toUpperCase(), {
-      x: (pageWidth - nameWidth) / 2 + 10,
-      y: pageHeight - 190,
-      size: 18,
-      font: boldFont,
-      color: rgb(0.05, 0.12, 0.23), // Very dark navy blue
-    });
+    // Sem filtro: título "RELATÓRIO GERAL DE ..." centralizado.
+    // Com filtro: nome do destinatário em destaque.
+    if (!displayName || displayName === "GERAL" || displayName === "") {
+      const generalTitleMap = {
+        medicao_cliente: "RELATÓRIO GERAL DE MEDIÇÃO",
+        repasse_autonomos: "RELATÓRIO GERAL DE REPASSE A AUTÔNOMOS",
+        repasse_internos: "RELATÓRIO GERAL DE REPASSE A INTERNOS",
+        repasse_parceiros: "RELATÓRIO GERAL DE REPASSE A PARCEIROS",
+        resumo_motoristas: "RESUMO GERAL DE MOTORISTAS",
+      } as const;
+      const generalTitle =
+        generalTitleMap[template as keyof typeof generalTitleMap] ||
+        "RELATÓRIO GERAL";
+      const generalWidth = boldFont.widthOfTextAtSize(generalTitle, 14);
+      page.drawText(generalTitle, {
+        x: (pageWidth - generalWidth) / 2 + 10,
+        y: pageHeight - 190,
+        size: 14,
+        font: boldFont,
+        color: rgb(0.05, 0.12, 0.23),
+      });
+    } else {
+      const nameWidth = boldFont.widthOfTextAtSize(
+        displayName.toUpperCase(),
+        18,
+      );
+      page.drawText(displayName.toUpperCase(), {
+        x: (pageWidth - nameWidth) / 2 + 10,
+        y: pageHeight - 190,
+        size: 18,
+        font: boldFont,
+        color: rgb(0.05, 0.12, 0.23),
+      });
+    }
 
     const cardGap = 16;
     const cardWidth = (pageWidth - margin * 2 - cardGap * 2) / 3;
@@ -3512,6 +4064,176 @@ async function generatePdf(
   // We leave a small padding between header and first row.
   currentY -= 4;
 
+  // Resumo consolidado por motorista — uma linha por motorista, não por OS.
+  if (template === "resumo_motoristas") {
+    type PdfSummary = {
+      nome: string;
+      tipo: string;
+      servicos: number;
+      pagos: number;
+      pendentes: number;
+      valorTotal: number;
+      valorPago: number;
+      valorPendente: number;
+    };
+    const pdfDriverMap = new Map<string, PdfSummary>();
+    for (const row of data.rows) {
+      if (!row.driver_id) continue;
+      const driverDetail = data.driverDetailMap.get(row.driver_id);
+      const nome =
+        data.driverMap.get(row.driver_id) || row.motorista || "Desconhecido";
+      let tipo = "Autônomo";
+      if (row.tipo === "freelance") tipo = "Freelance";
+      else if (driverDetail?.parceiro_id) tipo = "Parceiro";
+      else if (driverDetail?.vinculo_tipo === "interno") tipo = "Interno";
+
+      let entry = pdfDriverMap.get(row.driver_id);
+      if (!entry) {
+        entry = {
+          nome,
+          tipo,
+          servicos: 0,
+          pagos: 0,
+          pendentes: 0,
+          valorTotal: 0,
+          valorPago: 0,
+          valorPendente: 0,
+        };
+        pdfDriverMap.set(row.driver_id, entry);
+      }
+      const custo = calcEffectiveCustoValue(row);
+      entry.servicos++;
+      entry.valorTotal += custo;
+      if (row.repasse_pago) {
+        entry.pagos++;
+        entry.valorPago += custo;
+      } else {
+        entry.pendentes++;
+        entry.valorPendente += custo;
+      }
+    }
+    const pdfSummaries = Array.from(pdfDriverMap.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR"),
+    );
+
+    let pdfTotalServicos = 0;
+    let pdfTotalPagos = 0;
+    let pdfTotalPendentes = 0;
+    let pdfTotalValor = 0;
+    let pdfTotalPago = 0;
+    let pdfTotalPendente = 0;
+
+    pdfSummaries.forEach((s, idx) => {
+      const rowHeight = 28;
+      if (currentY - rowHeight < margin + 20) {
+        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        drawHeader(page);
+        currentY = pageHeight - 170;
+        drawTableHeader(page, currentY, headers);
+        currentY -= 4;
+      }
+
+      const isEven = idx % 2 === 0;
+      currentY -= rowHeight;
+      (page as PDFPage).drawRectangle({
+        x: margin,
+        y: currentY,
+        width: pageWidth - margin * 2,
+        height: rowHeight,
+        color: isEven ? c.tableZebra : c.tableWhite,
+      });
+
+      const cellValues: Array<{ text: string; align: "left" | "right" | "center"; bold: boolean }> = [
+        { text: truncateText(sanitizePdfText(s.nome), 35), align: "left", bold: true },
+        { text: s.tipo, align: "center", bold: false },
+        { text: String(s.servicos), align: "center", bold: false },
+        { text: String(s.pagos), align: "center", bold: false },
+        { text: String(s.pendentes), align: "center", bold: false },
+        { text: formatCurrency(s.valorTotal), align: "right", bold: true },
+        { text: formatCurrency(s.valorPago), align: "right", bold: false },
+        { text: formatCurrency(s.valorPendente), align: "right", bold: false },
+      ];
+
+      let x = margin + 8;
+      for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        const cv = cellValues[i];
+        const font = cv.bold ? boldFont : regularFont;
+        const drawX =
+          cv.align === "right"
+            ? x + h.width - 4 - font.widthOfTextAtSize(cv.text, 9)
+            : cv.align === "center"
+              ? x + (h.width - font.widthOfTextAtSize(cv.text, 9)) / 2 - 4
+              : x;
+        (page as PDFPage).drawText(cv.text, {
+          x: drawX,
+          y: currentY + rowHeight / 2 - 4,
+          size: 9,
+          font,
+          color: cv.bold ? c.accentGreen : c.textDark,
+        });
+        x += h.width;
+      }
+
+      pdfTotalServicos += s.servicos;
+      pdfTotalPagos += s.pagos;
+      pdfTotalPendentes += s.pendentes;
+      pdfTotalValor += s.valorTotal;
+      pdfTotalPago += s.valorPago;
+      pdfTotalPendente += s.valorPendente;
+    });
+
+    // Linha de TOTAL
+    const totalRowHeight = 30;
+    if (currentY - totalRowHeight < margin + 20) {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      drawHeader(page);
+      currentY = pageHeight - 170;
+      drawTableHeader(page, currentY, headers);
+      currentY -= 4;
+    }
+    currentY -= totalRowHeight;
+    (page as PDFPage).drawRectangle({
+      x: margin,
+      y: currentY,
+      width: pageWidth - margin * 2,
+      height: totalRowHeight,
+      color: rgb(0.05, 0.12, 0.23),
+    });
+    const totalCellValues: Array<{ text: string; align: "left" | "right" | "center" }> = [
+      { text: "TOTAL", align: "left" },
+      { text: "", align: "center" },
+      { text: String(pdfTotalServicos), align: "center" },
+      { text: String(pdfTotalPagos), align: "center" },
+      { text: String(pdfTotalPendentes), align: "center" },
+      { text: formatCurrency(pdfTotalValor), align: "right" },
+      { text: formatCurrency(pdfTotalPago), align: "right" },
+      { text: formatCurrency(pdfTotalPendente), align: "right" },
+    ];
+    let tx = margin + 8;
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i];
+      const cv = totalCellValues[i];
+      if (!cv.text) {
+        tx += h.width;
+        continue;
+      }
+      const drawX =
+        cv.align === "right"
+          ? tx + h.width - 4 - boldFont.widthOfTextAtSize(cv.text, 10)
+          : cv.align === "center"
+            ? tx + (h.width - boldFont.widthOfTextAtSize(cv.text, 10)) / 2 - 4
+            : tx;
+      (page as PDFPage).drawText(cv.text, {
+        x: drawX,
+        y: currentY + totalRowHeight / 2 - 4,
+        size: 10,
+        font: boldFont,
+        color: rgb(1, 1, 1),
+      });
+      tx += h.width;
+    }
+  } else {
   data.rows.forEach((row: FinanceRow, index: number) => {
     const isMedicaoCliente = template === "medicao_cliente";
     const baseRowHeight = isMedicaoCliente ? 45 : 36;
@@ -3611,7 +4333,14 @@ async function generatePdf(
           break;
         }
         case "motorista":
-          text = truncateText(sanitizePdfText(motoristaNome), 25);
+          text = truncateText(
+            sanitizePdfText(motoristaNome),
+            template === "repasse_autonomos" ||
+              template === "repasse_internos" ||
+              template === "repasse_parceiros"
+              ? 40
+              : 25,
+          );
           break;
         case "data":
           text = formatDate(row.data);
@@ -3683,7 +4412,7 @@ async function generatePdf(
           color = row.repasse_pago ? c.accentGreen : c.accentRed;
           break;
         case "parceiro":
-          text = sanitizePdfText(parceiroNome);
+          text = truncateText(sanitizePdfText(parceiroNome), 35);
           break;
         case "destinatario": {
           const isParceiro =
@@ -4086,6 +4815,7 @@ async function generatePdf(
       x += h.width;
     }
   });
+  } // fim do else (não resumo_motoristas)
 
   // Draw footers
   const totalPages = pdfDoc.getPageCount();
@@ -4099,6 +4829,7 @@ async function generatePdf(
     repasse_autonomos: "repasse-autonomos",
     repasse_internos: "repasse-internos",
     repasse_parceiros: "repasse-parceiros",
+    resumo_motoristas: "resumo-motoristas",
     performance: "performance-financeira",
     liberadas_faturamento: "liberadas-faturamento",
     pendentes_repasse: "pendentes-repasse",
