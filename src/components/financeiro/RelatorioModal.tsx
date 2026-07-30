@@ -37,7 +37,7 @@ export type ReportTemplate =
   | "liberadas_faturamento"
   | "pendentes_repasse";
 
-export type ReportFormat = "pdf" | "csv";
+export type ReportFormat = "pdf" | "csv" | "xlsx";
 
 type ReportCategory = "cliente" | "interno" | "motorista";
 
@@ -918,9 +918,9 @@ export default function RelatorioModal({
               PDF
             </button>
             <button
-              onClick={() => setFormat("csv")}
+              onClick={() => setFormat("xlsx")}
               className={`cursor-pointer flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm font-black transition-all ${
-                format === "csv"
+                format === "xlsx"
                   ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
                   : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
               }`}

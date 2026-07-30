@@ -685,7 +685,12 @@ export function useFinanceiroPage(): FinanceiroPageState {
         const url = window.URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
-        const ext = payload.format === "csv" ? "csv" : "pdf";
+        const ext =
+          payload.format === "csv"
+            ? "csv"
+            : payload.format === "xlsx"
+              ? "xlsx"
+              : "pdf";
         const fileName = `relatorio-${payload.template}-${payload.dataInicio}-ate-${payload.dataFim}.${ext}`;
         anchor.download = fileName;
         document.body.appendChild(anchor);
