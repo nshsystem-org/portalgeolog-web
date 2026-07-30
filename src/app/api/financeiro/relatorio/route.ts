@@ -1398,7 +1398,7 @@ async function buildMedicaoClienteSheet(
 
   const columns = [
     { header: "DATA", key: "data", width: 12 },
-    { header: "PROTOCOLO", key: "protocolo", width: 13 },
+    { header: "PROTOCOLO GEOLOG", key: "protocolo", width: 20 },
     { header: "OS DO CLIENTE", key: "os_cliente", width: 20 },
     { header: "CENTRO DE CUSTO", key: "centro_custo", width: 32 },
     {
