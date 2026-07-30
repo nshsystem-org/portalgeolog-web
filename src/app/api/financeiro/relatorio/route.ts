@@ -1423,7 +1423,7 @@ async function buildMedicaoClienteSheet(
   const titleRow = sheet.getRow(1);
   titleRow.height = 28;
   const titleCell = titleRow.getCell(1);
-  titleCell.value = `MEDIÇÃO ${clienteNome.toUpperCase()} – ${data.periodLabel.toUpperCase()}`;
+  titleCell.value = `MEDIÇÃO ${clienteNome.toUpperCase()}`;
   sheet.mergeCells(`A1:${lastColLetter}1`);
   titleCell.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
   titleCell.alignment = { vertical: "middle", horizontal: "center" };
