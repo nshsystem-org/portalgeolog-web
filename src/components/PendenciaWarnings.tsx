@@ -77,6 +77,12 @@ function rowToItem(row: SystemPendenciaRow): PendenciaItem {
   };
 }
 
+// Data de corte: pendências de OS (sem_valor/atrasada) anteriores a esta data
+// não entram no contador nem na lista da topbar. Permanecem no banco e marcadas
+// na OS ao abrir, apenas não somam no botão "Avisos de Pendências".
+// Rascunhos e docagens não são afetados (usam age_days, não data).
+const PENDENCIA_CUTOFF_DATE = "2026-06-01";
+
 // Busca todas as pendências da tabela system_pendencias via Supabase (RLS: read all).
 // Filtra rascunhos pelo usuário logado; demais categorias são globais.
 async function fetchSystemPendencias(userId?: string): Promise<PendenciaItem[]> {
@@ -86,9 +92,15 @@ async function fetchSystemPendencias(userId?: string): Promise<PendenciaItem[]> 
     .select("id, source_type, source_id, motivo, protocolo, os_number, cliente_nome, data, user_id, age_days, itinerary_index");
   if (error) throw error;
   const rows = (data || []) as unknown as SystemPendenciaRow[];
-  // Rascunhos são pessoais: só mostra os do próprio usuário
+  // Rascunhos são pessoais: só mostra os do próprio usuário.
+  // sem_valor/atrasada: só conta a partir de PENDENCIA_CUTOFF_DATE.
   return rows
     .filter((r) => r.motivo !== "rascunho" || !r.user_id || r.user_id === userId)
+    .filter(
+      (r) =>
+        (r.motivo !== "sem_valor" && r.motivo !== "atrasada") ||
+        (r.data ?? "") >= PENDENCIA_CUTOFF_DATE,
+    )
     .map(rowToItem);
 }
 

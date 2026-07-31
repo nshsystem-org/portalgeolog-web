@@ -18,6 +18,8 @@ import {
   parseHoraExtraMinutes,
   calcHoraExtraCliente,
   calcHoraExtraMotorista,
+  calcBilledMinutes,
+  formatBilledHours,
   getNextDay,
 } from "@/lib/financeiro";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
@@ -1889,11 +1891,53 @@ function buildRepasseSheet(
     const valorCell = excelRow.getCell(valorColIdx);
     if (isento) {
       valorCell.value = "Isento";
-      valorCell.alignment = { horizontal: "center" };
+      valorCell.alignment = { horizontal: "center", vertical: "middle" };
     } else {
-      valorCell.value = valor;
-      valorCell.numFmt = '"R$" #,##0.00';
-      valorCell.alignment = { horizontal: "right" };
+      // Tags de NO-SHOW e/ou Hora Extra abaixo do valor, espelhando o PDF.
+      const tags: string[] = [];
+      if (row.no_show) {
+        tags.push(`NO-SHOW (${row.no_show_percentual ?? 100}%)`);
+      }
+      const heBilledMinutes = calcBilledMinutes(
+        parseHoraExtraMinutes(row.hora_extra),
+      );
+      if (heBilledMinutes > 0) {
+        tags.push(`H.EXTRA (${formatBilledHours(heBilledMinutes)})`);
+      }
+      if (tags.length > 0) {
+        // RichText: valor em negrito/verde + tags em cinza/vermelho
+        valorCell.value = {
+          richText: [
+            {
+              text: formatCurrency(valor),
+              font: { bold: true, size: 10, color: { argb: "FF1F7A4D" } },
+            },
+            ...tags.map((tag, i) => ({
+              text: `${i === 0 ? "\n" : "\n"}${tag}`,
+              font: {
+                size: 8,
+                color: {
+                  argb: tag.startsWith("NO-SHOW")
+                    ? "FFB91C1C"
+                    : "FF4B5563",
+                },
+                bold: tag.startsWith("H.EXTRA"),
+              },
+            })),
+          ],
+        };
+        valorCell.alignment = {
+          horizontal: "right",
+          vertical: "top",
+          wrapText: true,
+        };
+        // Aumenta a altura da linha para acomodar as tags
+        excelRow.height = Math.max(excelRow.height || 18, 18 + tags.length * 12);
+      } else {
+        valorCell.value = valor;
+        valorCell.numFmt = '"R$" #,##0.00';
+        valorCell.alignment = { horizontal: "right", vertical: "middle" };
+      }
       totalValor += valor;
     }
 
@@ -1901,6 +1945,11 @@ function buildRepasseSheet(
     for (let c = 1; c <= columns.length; c++) {
       const cell = excelRow.getCell(c);
       cell.border = thinBorder;
+      // Pula font/alignment da célula VALOR quando ela já tem richText
+      // (valor + tags NO-SHOW/H.EXTRA) — o estilo foi definido acima.
+      if (c === valorColIdx && cell.value && typeof cell.value === "object" && "richText" in cell.value) {
+        continue;
+      }
       if (!cell.font) {
         cell.font = { size: 10, color: { argb: "FF1F2937" } };
       } else {
@@ -4137,6 +4186,7 @@ async function generatePdf(
       lineHeight: number;
       align: "left" | "right";
       routeSegments?: RouteSegment[];
+      custoTagLines?: string[];
     }> = [];
 
     let maxContentHeight = baseRowHeight;
@@ -4195,10 +4245,13 @@ async function generatePdf(
           break;
         }
         case "motorista":
-          text = truncateText(
-            sanitizePdfText(motoristaNome),
-            template === "repasse_motorista" ? 40 : 25,
-          );
+          // No repasse_motorista o texto quebra em múltiplas linhas (wrap),
+          // então não truncamos — preservamos o nome completo. Nos demais
+          // templates mantemos o truncate em linha única.
+          text =
+            template === "repasse_motorista"
+              ? sanitizePdfText(motoristaNome) || "-"
+              : truncateText(sanitizePdfText(motoristaNome), 25);
           break;
         case "data":
           text = formatDate(row.data);
@@ -4264,7 +4317,9 @@ async function generatePdf(
           color = row.repasse_pago ? c.accentGreen : c.accentRed;
           break;
         case "parceiro":
-          text = truncateText(sanitizePdfText(parceiroNome), 35);
+          // No repasse_motorista o texto quebra em múltiplas linhas (wrap),
+          // então não truncamos — preservamos o nome completo do parceiro.
+          text = sanitizePdfText(parceiroNome) || "-";
           break;
         case "destinatario": {
           const isParceiro =
@@ -4279,7 +4334,12 @@ async function generatePdf(
           } else {
             const parts = vehText.split(" - ", 2);
             const placaPart = parts[0] || "-";
-            const modeloPart = parts[1] ? truncateText(parts[1], 22) : "";
+            // No repasse_motorista o modelo quebra em múltiplas linhas (wrap),
+            // então não truncamos. Nos demais templates mantemos o truncate.
+            const modeloPart =
+              parts[1] && template !== "repasse_motorista"
+                ? truncateText(parts[1], 22)
+                : parts[1] || "";
             text = modeloPart ? `${placaPart}\n${modeloPart}` : placaPart;
           }
           size = 8;
@@ -4295,7 +4355,9 @@ async function generatePdf(
         h.key === "passageiros" ||
         h.key === "trajeto" ||
         h.key === "parceiro_motorista" ||
-        h.key === "veiculo";
+        h.key === "veiculo" ||
+        (template === "repasse_motorista" &&
+          (h.key === "parceiro" || h.key === "motorista"));
       const lineH = size + 2;
       const maxW = h.width - 10;
       const align =
@@ -4385,6 +4447,17 @@ async function generatePdf(
           return acc + lineCount * lineHeight;
         }, 10);
         maxContentHeight = Math.max(maxContentHeight, segH);
+      } else if (h.key === "veiculo" && template === "repasse_motorista") {
+        // Cálculo preciso considerando wrap de placa e modelo
+        const [placaLine = "-", modeloLine = ""] = text.split("\n");
+        const placaLines = wrapTextToLines(placaLine, 10, boldFont, maxW);
+        const modeloLines = modeloLine
+          ? wrapTextToLines(modeloLine, 9, regularFont, maxW)
+          : [];
+        const veicH =
+          placaLines.length * 12 +
+          (modeloLines.length > 0 ? 4 + modeloLines.length * 11 : 0);
+        maxContentHeight = Math.max(maxContentHeight, veicH + 10);
       } else if (isMultiLine) {
         const contentHeight = calculateMultiLineHeight(
           text,
@@ -4399,6 +4472,37 @@ async function generatePdf(
         maxContentHeight = Math.max(maxContentHeight, lines * lineH + 10);
       }
 
+      // Indica NO-SHOW e/ou Hora Extra abaixo do valor de repasse, exibindo
+      // o percentual/tempo aplicado (ex: "NO-SHOW (50%)", "H.EXTRA (01:30)").
+      let custoTagLines: string[] | undefined;
+      if (
+        h.key === "custo" &&
+        template === "repasse_motorista" &&
+        !row.isento_custo
+      ) {
+        const tagSize = 6.5;
+        const tags: string[] = [];
+        if (row.no_show) {
+          tags.push(`NO-SHOW (${row.no_show_percentual ?? 100}%)`);
+        }
+        const heBilledMinutes = calcBilledMinutes(
+          parseHoraExtraMinutes(row.hora_extra),
+        );
+        if (heBilledMinutes > 0) {
+          tags.push(`H.EXTRA (${formatBilledHours(heBilledMinutes)})`);
+        }
+        if (tags.length > 0) {
+          custoTagLines = tags.flatMap((tag) =>
+            wrapTextToLines(tag, tagSize, regularFont, maxW),
+          );
+          const tagsHeight = custoTagLines.length * (tagSize + 2);
+          maxContentHeight = Math.max(
+            maxContentHeight,
+            size + 3 + tagsHeight + 10,
+          );
+        }
+      }
+
       cellData.push({
         text,
         font,
@@ -4409,6 +4513,7 @@ async function generatePdf(
         lineHeight: lineH,
         align,
         routeSegments,
+        custoTagLines,
       });
     }
 
@@ -4602,27 +4707,119 @@ async function generatePdf(
         const placaSize = 10;
         const modeloSize = 9;
         const gap = 4;
-        const centerY = currentY + rowHeight / 2;
-        const placaY = modeloLine
-          ? centerY + gap / 2 + modeloSize / 2
-          : centerY;
-        const modeloY = modeloLine ? centerY - gap / 2 - placaSize / 2 : 0;
+        const placaLines = wrapTextToLines(placaLine, placaSize, boldFont, cell.maxWidth);
+        const modeloLines = modeloLine
+          ? wrapTextToLines(modeloLine, modeloSize, regularFont, cell.maxWidth)
+          : [];
+        const placaStep = placaSize + 2;
+        const modeloStep = modeloSize + 2;
+        const totalH =
+          placaLines.length * placaStep +
+          (modeloLines.length > 0 ? gap + modeloLines.length * modeloStep : 0);
+        let vY = currentY + rowHeight - 8;
 
-        (page as PDFPage).drawText(placaLine, {
-          x,
-          y: placaY,
-          size: placaSize,
-          font: boldFont,
+        // Se o conteúdo cabe, centraliza verticalmente; senão, começa no topo.
+        if (totalH < rowHeight - 10) {
+          vY = currentY + (rowHeight + totalH) / 2 - 4;
+        }
+
+        for (const line of placaLines) {
+          (page as PDFPage).drawText(line, {
+            x,
+            y: vY,
+            size: placaSize,
+            font: boldFont,
+            color: cell.color,
+          });
+          vY -= placaStep;
+        }
+        if (modeloLines.length > 0) {
+          vY -= gap;
+          for (const line of modeloLines) {
+            (page as PDFPage).drawText(line, {
+              x,
+              y: vY,
+              size: modeloSize,
+              font: regularFont,
+              color: c.textMedium,
+            });
+            vY -= modeloStep;
+          }
+        }
+      } else if (
+        h.key === "custo" &&
+        cell.custoTagLines &&
+        cell.custoTagLines.length > 0
+      ) {
+        const tagSize = 6.5;
+        const tagStep = tagSize + 2;
+        const tagColors: Record<string, RGB> = {
+          "NO-SHOW": c.accentRed,
+          "H.EXTRA": rgb(0.30, 0.34, 0.40),
+        };
+        const valueY = currentY + rowHeight - cell.size - 2;
+        const valueDrawX =
+          cell.align === "right"
+            ? x +
+              h.width -
+              8 -
+              cell.font.widthOfTextAtSize(cell.text, cell.size)
+            : x;
+
+        (page as PDFPage).drawText(cell.text, {
+          x: valueDrawX,
+          y: valueY,
+          size: cell.size,
+          font: cell.font,
           color: cell.color,
         });
-        if (modeloLine) {
-          (page as PDFPage).drawText(modeloLine, {
-            x,
-            y: modeloY,
-            size: modeloSize,
-            font: regularFont,
-            color: c.textMedium,
-          });
+
+        let tagY = valueY - tagStep - 2;
+        for (const line of cell.custoTagLines) {
+          const isNoShow = line.startsWith("NO-SHOW");
+          const tagColor = isNoShow ? tagColors["NO-SHOW"] : tagColors["H.EXTRA"];
+          const tagDrawX =
+            cell.align === "right"
+              ? x + h.width - 8 - regularFont.widthOfTextAtSize(line, tagSize)
+              : x;
+          if (isNoShow) {
+            (page as PDFPage).drawText(line, {
+              x: tagDrawX,
+              y: tagY,
+              size: tagSize,
+              font: regularFont,
+              color: tagColor,
+            });
+          } else {
+            // H.EXTRA: "H.EXTRA " em regular + "(HH:mm)" em bold, ambos cinza escuro
+            const match = line.match(/^(H\.EXTRA\s*)(\(\d{2}:\d{2}\).*)$/);
+            if (match) {
+              const [, prefix, suffix] = match;
+              (page as PDFPage).drawText(prefix, {
+                x: tagDrawX,
+                y: tagY,
+                size: tagSize,
+                font: regularFont,
+                color: tagColor,
+              });
+              (page as PDFPage).drawText(suffix, {
+                x: tagDrawX + regularFont.widthOfTextAtSize(prefix, tagSize),
+                y: tagY,
+                size: tagSize,
+                font: boldFont,
+                color: tagColor,
+              });
+            } else {
+              (page as PDFPage).drawText(line, {
+                x: tagDrawX,
+                y: tagY,
+                size: tagSize,
+                font: regularFont,
+                color: tagColor,
+              });
+            }
+          }
+          tagY -= tagStep;
         }
       } else if (cell.isMultiLine) {
         drawMultiLineText(
