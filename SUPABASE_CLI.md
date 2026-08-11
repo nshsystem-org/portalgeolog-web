@@ -8,7 +8,7 @@ O projeto já está configurado com:
 
 - CLI versão 2.98.2
 - Projeto linkado: `portalgeolog-web` (hzpgfapvjwqtjclriisz)
-- Credenciais configuradas em `.env.local` e `.env`
+- Credenciais configuradas em `.env`
 
 ## Comandos Disponíveis
 

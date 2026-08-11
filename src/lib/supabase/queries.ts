@@ -202,6 +202,11 @@ const buildOSUpdateLogContext = (
         previousOS.obsFinanceiras || "",
         osData.obsFinanceiras || "",
       ],
+      [
+        "Conta de Caixa",
+        previousOS.caixaContaId || null,
+        osData.caixaContaId || null,
+      ],
     ];
 
     for (const [label, prev, next] of simpleFields) {
@@ -552,6 +557,7 @@ type OSRow = {
   repasse_pago: boolean | null;
   isento_valor_bruto: boolean | null;
   isento_custo: boolean | null;
+  caixa_conta_id: string | null;
 };
 type FinanceAttachmentRow = {
   id: string;
@@ -733,6 +739,7 @@ const mapOSRecord = (
     financeiroFaturadoEm: o.financeiro_faturado_em ?? undefined,
     financeiroRecebidoEm: o.financeiro_recebido_em ?? undefined,
     repassePago: o.repasse_pago ?? undefined,
+    caixaContaId: o.caixa_conta_id ?? null,
     isentoValorBruto: Boolean(o.isento_valor_bruto),
     isentoCusto: Boolean(o.isento_custo),
     financeiroAnexos: (o.os_financeiro_anexos || []).map((anexo) => ({
@@ -1315,6 +1322,7 @@ const OS_SELECT_COLUMNS = [
   "tipo",
   "isento_valor_bruto",
   "isento_custo",
+  "caixa_conta_id",
 ].join(",");
 
 export async function fetchOSList(): Promise<OrderService[]> {
@@ -1842,6 +1850,7 @@ export async function insertOS(osData: OSInput): Promise<OrderService> {
     tipo: (osData as OSInput & { tipo?: OrderService["tipo"] }).tipo ?? "os",
     isento_valor_bruto: Boolean(osData.isentoValorBruto),
     isento_custo: Boolean(osData.isentoCusto),
+    caixa_conta_id: osData.caixaContaId || "",
   };
 
   const waypointsPayload = waypoints.map((wp) => ({
@@ -2012,6 +2021,7 @@ export async function updateOSInDB(
       "os",
     isento_valor_bruto: Boolean(osData.isentoValorBruto),
     isento_custo: Boolean(osData.isentoCusto),
+    caixa_conta_id: osData.caixaContaId || "",
   };
 
   const waypointsPayload = waypoints.map((wp) => ({

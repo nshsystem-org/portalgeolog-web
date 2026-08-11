@@ -5,10 +5,10 @@ import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 
 const projectRoot = process.cwd();
-const envProductionPath = path.join(projectRoot, ".env.production");
+const envPath = path.join(projectRoot, ".env");
 
-if (existsSync(envProductionPath)) {
-  dotenv.config({ path: envProductionPath });
+if (existsSync(envPath)) {
+  dotenv.config({ path: envPath });
 }
 
 dotenv.config();

@@ -160,6 +160,7 @@ export interface OrderService {
   tipo?: "os" | "freelance" | "rascunho";
   arquivado?: boolean;
   repassePago?: boolean;
+  caixaContaId?: string | null;
 }
 
 export interface OSStatus {

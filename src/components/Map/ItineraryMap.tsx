@@ -1,5 +1,7 @@
 "use client";
 
+/// <reference types="google.maps" />
+
 import { useMemo, useRef, useEffect, useState } from "react";
 import { MapPin } from "lucide-react";
 import { useGoogleMaps } from "@/hooks/useGoogleMaps";
@@ -266,7 +268,7 @@ export default function ItineraryMap({
         travelMode: google.maps.TravelMode.DRIVING,
         optimizeWaypoints: false,
       })
-      .then((result) => {
+      .then((result: google.maps.DirectionsResult) => {
         // Constroi uma unica Polyline com o overview_path do resultado.
         const path = result.routes[0].overview_path;
 
@@ -363,7 +365,7 @@ export default function ItineraryMap({
           Token Google Maps nao configurado
         </p>
         <p className="text-[10px] font-medium text-amber-500/70">
-          Adicione NEXT_PUBLIC_GOOGLE_MAPS_API_KEY no .env.local
+          Adicione NEXT_PUBLIC_GOOGLE_MAPS_API_KEY no .env
         </p>
       </div>
     );

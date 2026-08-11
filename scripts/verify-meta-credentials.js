@@ -206,7 +206,7 @@ async function testMessage() {
 
   if (!phoneOk || !businessOk) {
     console.log(
-      "\n❌ Verificação falhou. Corrija as credenciais no .env.production",
+      "\n❌ Verificação falhou. Corrija as credenciais no .env",
     );
     console.log("\n📖 Guia de correção:");
     console.log(
@@ -215,7 +215,7 @@ async function testMessage() {
     console.log("2. Selecione sua conta WhatsApp Business");
     console.log("3. Copie o WABA ID da URL (waba_id=XXXXXXXX)");
     console.log('4. Vá em "Números de telefone" e copie o Phone Number ID');
-    console.log("5. Atualize o .env.production com os valores corretos");
+    console.log("5. Atualize o .env com os valores corretos");
     process.exit(1);
   }
 

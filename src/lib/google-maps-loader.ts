@@ -1,3 +1,5 @@
+/// <reference types="google.maps" />
+
 // Helper para carregar a Google Maps JavaScript API uma unica vez.
 // Usa @googlemaps/js-api-loader (loader oficial do Google) com a nova
 // API funcional (setOptions + importLibrary), garantindo que o script
@@ -35,7 +37,7 @@ function ensureOptions(): void {
   if (optionsSet) return;
   if (!GOOGLE_MAPS_API_KEY) {
     throw new Error(
-      "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY nao configurado. Adicione em .env.local.",
+      "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY nao configurado. Adicione em .env.",
     );
   }
   setOptions({

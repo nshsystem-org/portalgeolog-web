@@ -216,6 +216,7 @@ type OSFormData = {
   valorBruto: number | null;
   custo: number | null;
   obsFinanceiras: string;
+  caixaContaId: string;
   waypoints: FormWaypoint[];
 };
 
@@ -647,6 +648,9 @@ export default function OSOperationalPage() {
   const [docagemInstances, setDocagemInstances] = useState<DocagemInstance[]>(
     [],
   );
+  const [caixaContas, setCaixaContas] = useState<
+    Array<{ id: string; nome: string; tipo: string; ativa: boolean | null }>
+  >([]);
   const [docagemPendentesGlobal, setDocagemPendentesGlobal] = useState<
     DocagemInstance[]
   >([]);
@@ -842,6 +846,20 @@ export default function OSOperationalPage() {
       window.removeEventListener("os-search-protocolo", handleSearchProtocol);
     };
   }, [osTable]);
+
+  // Carregar contas de caixa ativas para o seletor no Resumo Financeiro
+  useEffect(() => {
+    const fetchCaixaContas = async () => {
+      const { data, error } = await supabase
+        .from("caixa_contas")
+        .select("id, nome, tipo, ativa")
+        .eq("ativa", true)
+        .order("is_default", { ascending: false })
+        .order("nome");
+      if (!error && data) setCaixaContas(data as typeof caixaContas);
+    };
+    void fetchCaixaContas();
+  }, [supabase]);
 
   // Carregar flags globais de notificacao (app_settings) na montagem + Realtime
   useEffect(() => {
@@ -2341,6 +2359,7 @@ export default function OSOperationalPage() {
     valorBruto: null,
     custo: null,
     obsFinanceiras: "",
+    caixaContaId: "",
     waypoints: [
       {
         id: createWaypointId(),
@@ -2439,6 +2458,7 @@ export default function OSOperationalPage() {
       valorBruto: osItem.valorBruto,
       custo: osItem.custo,
       obsFinanceiras: osItem.obsFinanceiras || "",
+      caixaContaId: osItem.caixaContaId || "",
       waypoints: hydratedWaypoints,
     };
 
@@ -8382,6 +8402,30 @@ export default function OSOperationalPage() {
                           />
                         </div>
                       </div>
+
+                      {caixaContas.length > 0 && (
+                        <div className="flex flex-col gap-2 w-full sm:w-[200px]">
+                          <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
+                            Conta de Caixa
+                          </label>
+                          <select
+                            name="caixaContaId"
+                            value={formData.caixaContaId}
+                            onChange={handleInputChange}
+                            className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-sm text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm cursor-pointer"
+                          >
+                            <option value="">Padrão (auto)</option>
+                            {caixaContas.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.nome}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] font-medium text-slate-400 ml-1">
+                            Destino dos lançamentos de recebimento/repasse
+                          </p>
+                        </div>
+                      )}
 
                       <div
                         className={`flex items-end gap-6 pt-4 px-6 pb-8 rounded-[1.5rem] border transition-all duration-300 mb-[-2rem] ${formData.noShow ? "bg-red-50 border-red-200 shadow-sm" : "border-transparent"}`}

@@ -493,7 +493,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
       await financeTable.refresh();
       await loadStats();
       toast.success(
-        `Repasse em lote registrado: ${result.count} OS (${formatCurrency(result.totalValue)})`,
+        `Repasse em lote registrado: ${result.count} OS (${formatCurrency(result.totalValue)}). Lançamentos de saída criados no Fluxo de Caixa.`,
       );
       setRepasseLoteTarget(null);
     } catch (error) {
@@ -516,7 +516,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
       await registrarRepasse(repasseTarget.id);
       await financeTable.refresh();
       await loadStats();
-      toast.success("Repasse registrado com sucesso.");
+      toast.success("Repasse registrado. Lançamento de saída criado no Fluxo de Caixa.");
       setRepasseTarget(null);
     } catch (error) {
       toast.error(
@@ -664,7 +664,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
         observacao: recebimentoObservacao,
       } as ConfirmarRecebimentoPayload);
 
-      toast.success("Valor marcado como recebido.");
+      toast.success("Valor marcado como recebido. Lançamento de entrada criado no Fluxo de Caixa.");
       closeActionModal();
       await financeTable.refresh();
     } catch (error) {

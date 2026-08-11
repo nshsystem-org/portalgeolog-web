@@ -5,8 +5,8 @@
 # Depois execute: sb-start, sb-status, sb-db-pull, etc.
 
 # Carregar variáveis de ambiente
-if [ -f .env.local ]; then
-    export $(cat .env.local | grep -v '^#' | xargs)
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
 fi
 
 # Desenvolvimento Local

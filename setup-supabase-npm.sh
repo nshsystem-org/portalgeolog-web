@@ -36,10 +36,10 @@ read -p "URL do Supabase (ex: https://xxxxxx.supabase.co): " SUPABASE_URL
 read -p "NEXT_PUBLIC_SUPABASE_ANON_KEY: " ANON_KEY
 read -p "SUPABASE_SERVICE_ROLE_KEY: " SERVICE_ROLE_KEY
 
-# Cria arquivo .env.local
+# Cria arquivo .env
 echo ""
-echo "=== Criando arquivo .env.local ==="
-cat > .env.local << EOF
+echo "=== Criando arquivo .env ==="
+cat > .env << EOF
 # Supabase Configuration
 # Find these at: https://supabase.com/dashboard/project/_/settings/api
 
@@ -49,7 +49,7 @@ SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY
 SUPABASE_DB_URL=$SUPABASE_URL
 EOF
 
-echo "✅ Arquivo .env.local criado!"
+echo "✅ Arquivo .env criado!"
 
 # Tenta fazer link com o projeto remoto
 if [ -n "$SUPABASE_URL" ]; then

@@ -26,6 +26,7 @@ Sempre verifique o `package.json` antes de executar, mas prefira estes padrões:
 - **NÃO FAÇA PUSH** sem autorização explícita do usuário.
 - **NÃO FAÇA DEPLOY** (incluindo `wrangler deploy`, `npm run deploy` ou `npm run publish:app-version`) sem autorização explícita do usuário.
 - **Regra de Ouro:** build, lint, commit, push e deploy só podem ocorrer quando eu pedir explicitamente no chat; na dúvida, pare e aguarde confirmação.
+- **Canal de execução GitHub:** Qualquer operação remota no GitHub (push, PR, issue, review, branch, comentário) DEVE ser feita via `github-mcp-server` (ver seção 9). Não use `gh` CLI nem `git push` direto quando houver tool MCP equivalente. O MCP é o canal, não a autorização — a regra de ouro acima continua valendo.
 
 ### 🧪 Testes (Protocolo de Validação)
 
@@ -207,7 +208,7 @@ O sistema utiliza uma arquitetura baseada em banco de dados para notificações,
 
 ### Comunicação (Resend)
 
-- **Key Management:** A `RESEND_API_KEY` deve residir apenas no `.env.local`. Nunca exponha essa chave no cliente.
+- **Key Management:** A `RESEND_API_KEY` deve residir apenas no `.env`. Nunca exponha essa chave no cliente.
 - **E-mails Transacionais:** Use templates HTML profissionais para boas-vindas, redefinição de senha e alertas críticos.
 - **Atomicidade:** Sempre que criar um usuário no Auth, registre-o simultaneamente na tabela `user_roles` e dispare o e-mail de boas-vindas com as credenciais.
 
@@ -289,7 +290,7 @@ Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir
 3. **Validar e Atualizar Secrets:**
    - Listar secrets do Worker: `wrangler secret list --config wrangler.workers.toml`
    - Testar cada secret obrigatório usando o client do Supabase (para `SUPABASE_SERVICE_ROLE_KEY`) ou curl simples (para outros)
-   - Se algum secret falhar na validação, re-enviar automaticamente do `.env.production`:
+   - Se algum secret falhar na validação, re-enviar automaticamente do `.env`:
      - `SUPABASE_SERVICE_ROLE_KEY` - testar com query simples ao Supabase
      - `RESEND_API_KEY` - validar formato
      - `META_WHATSAPP_ACCESS_TOKEN` - validar formato
@@ -354,6 +355,42 @@ O agente possui acesso aos seguintes MCP servers para operações diretas:
   - `mcp0_migrate_pages_to_workers_guide` - Guia de migração Pages → Workers
 - **Quando usar:** SEMPRE que houver dúvidas sobre deploy, configuração ou features do Cloudflare.
 
+### GitHub MCP (`github-mcp-server`)
+
+- **Usar para:** QUALQUER operação no GitHub — commits remotos, push, pull requests, issues, reviews, branches, comentários, reactions, busca de código/PRs/issues.
+- **Server:** `github-mcp-server` (configurado via URL `https://api.githubcopilot.com/mcp`).
+- **Ferramentas principais:**
+  - `create_pull_request` - Abrir PR (sempre busque template em `.github/PULL_REQUEST_TEMPLATE` antes)
+  - `search_pull_requests` / `search_issues` / `search_code` / `search_repositories` - Buscas direcionadas
+  - `list_pulls` / `list_issues` - Listagens amplas com paginação (5-10 itens/batch)
+  - `pull_request_review_write` (method `create` → `add_comment_to_pending_review` → `submit_pending`) - Fluxo de review com comentários linha-a-linha
+  - `add_issue_comment` - Comentar em issue/PR (não usar para review comments)
+  - `add_reply_to_pull_request_comment` - Responder a comentário de review
+  - `get_me` - Sempre chamar PRIMEIRO para entender permissões/contexto do usuário
+  - `list_branches` / `get_branch` / `create_branch` - Gerenciamento de branches
+  - `create_or_update_file` - Commit de arquivo único via API (quando apropriado)
+- **Padrões obrigatórios:**
+  1. **Chamar `get_me` primeiro** em qualquer sessão que envolva GitHub, para confirmar o usuário autenticado (`git-portalgeolog`).
+  2. **`search_*` antes de `create_*`**: buscar issues/PRs duplicados antes de criar.
+  3. **Paginação**: batches de 5-10 itens; usar `minimal_output: true` quando o conteúdo completo não for necessário.
+  4. **Sort em `search_*`**: passar `sort` e `order` como parâmetros separados, nunca como prefixo `sort:` na query string. A query deve conter apenas critérios (ex: `org:google language:python`).
+  5. **Issues**: usar `list_issue_types` primeiro em organizações para usar os issue types corretos; sempre definir `state_reason` ao fechar.
+  6. **PR template**: antes de criar PR, buscar `pull_request_template.md` ou `.github/PULL_REQUEST_TEMPLATE` e usar o conteúdo para estruturar a descrição.
+  7. **Reviews complexos**: criar pending review → adicionar comentários → submit. NÃO submeter review inline com comentários linha-a-linha.
+  8. **Contexto do repo**: owner=`nshsystem-org`, repo=`portalgeolog-web` (a menos que explicitamente informado outro).
+
+### Git MCP local (`git`)
+
+- **Usar para:** Operações de git LOCAL (status, log, diff, commit, branch) quando o `github-mcp-server` não cobrir.
+- **Server:** `git` (stdio via `uvx --with "mcp<2" mcp-server-git --repository <repo>`).
+- **IMPORTANTE - Pin de versão:** O `mcp` SDK 2.0.0 quebrou a API `list_tools` usada pelo `mcp-server-git`. A config DEVE incluir `--with "mcp<2"` nos args do `uvx`, senão o servidor crasha com `AttributeError: 'Server' object has no attribute 'list_tools'` e o handshake `initialize` falha com "connection closed".
+- **Caminho do repo:** O `--repository` DEVE apontar para `/home/hodu/Projetos/portalgeolog/portalgeolog-web` (NÃO para o pai `/home/hodu/Projetos/portalgeolog`, que é um repo vazio sem commits).
+- **Quando usar:** Operações de leitura local (status, log, diff, blame) e commit local. Para push e operações remotas, prefira `github-mcp-server`.
+
 ### Regra Obrigatória
 
-**Antes de sugerir qualquer solução envolvendo Supabase ou Cloudflare, o agente DEVE primeiro consultar os MCPs disponíveis.** Não faça suposições sobre schema ou configuração.
+**Antes de sugerir qualquer solução envolvendo Supabase, Cloudflare ou GitHub, o agente DEVE primeiro consultar os MCPs disponíveis.** Não faça suposições sobre schema, configuração ou estado do repositório remoto.
+
+**QUALQUER operação no GitHub (commit remoto, push, PR, issue, review, branch, comentário) DEVE ser feita via `github-mcp-server`, nunca via `git` CLI direto nem `gh` CLI quando houver tool MCP equivalente.** Isso garante rastreabilidade, tratamento de erros consistente e evita problemas de credencial/auth. Exceção: `git` CLI local para diff/status/log quando mais rápido, e `gh` CLI apenas como fallback se o MCP estiver indisponível (informe o usuário).
+
+**Lembrete de política:** Mesmo via MCP, commit/push/PR/merge SÓ ocorrem com autorização explícita do usuário no chat (ver seção 1 — "Git & Commits (PRIORIDADE ABSOLUTA)"). O MCP é o canal de execução, não uma autorização.

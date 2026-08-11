@@ -6,8 +6,8 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Ler .env.production
-const envPath = join(__dirname, "..", ".env.production");
+// Ler .env
+const envPath = join(__dirname, "..", ".env");
 const envContent = readFileSync(envPath, "utf-8");
 const env = Object.fromEntries(
   envContent

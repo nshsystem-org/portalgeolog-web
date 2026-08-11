@@ -6,7 +6,7 @@
 
 - Versão: 2.98.2
 - Projeto linkado: hzpgfapvjwqtjclriisz
-- Credenciais em `.env.local` e `.env`
+- Credenciais em `.env`
 
 ✅ **Scripts npm configurados:**
 
@@ -46,6 +46,6 @@ sb-db-pull
 
 1. **Testar CLI:** Execute `npx supabase status`
 2. **Testar db:** Execute `npx supabase db pull`
-3. **Ver variáveis:** `grep SUPABASE .env.local`
+3. **Ver variáveis:** `grep SUPABASE .env`
 
 Todos os comandos estão funcionando - a CLI está pronta para uso!

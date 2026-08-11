@@ -6,9 +6,9 @@
 echo "=== Conectando ao Supabase ==="
 
 # Verifica se as variáveis estão definidas
-if [ -f ".env.local" ]; then
-    echo "Carregando variáveis de .env.local..."
-    export $(cat .env.local | grep -v '^#' | xargs)
+if [ -f ".env" ]; then
+    echo "Carregando variáveis de .env..."
+    export $(cat .env | grep -v '^#' | xargs)
 fi
 
 # Testa a conexão

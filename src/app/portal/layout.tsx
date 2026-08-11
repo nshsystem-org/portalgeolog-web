@@ -42,6 +42,7 @@ import {
   Send,
   Flag,
   Navigation,
+  Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
@@ -164,14 +165,17 @@ export default function DashboardLayout({
 
       switch (page) {
         case "financeiro":
+        case "caixa": {
           const financeiroPerms =
             (specificPermissions.financeiro as Record<string, unknown>) || {};
           // Se existir bloco de permissões do financeiro, ele passa a ser a fonte de verdade.
+          // O caixa reutiliza o mesmo perfil de acesso do financeiro.
           if (Object.keys(financeiroPerms).length > 0) {
             return financeiroPerms.page_access === true;
           }
           // Sem bloco específico, mantém o acesso baseado na categoria.
           return profile.categoria === "financeiro";
+        }
         default:
           return true;
       }
@@ -187,6 +191,13 @@ export default function DashboardLayout({
     if (pathname === "/portal/financeiro" && !hasPageAccess("financeiro")) {
       toast.warning(
         "Você não tem acesso à página financeira. Redirecionando...",
+      );
+      router.push("/portal/dashboard");
+    }
+    // Mesma proteção para a página de caixa (mesmo perfil de acesso).
+    if (pathname === "/portal/caixa" && !hasPageAccess("caixa")) {
+      toast.warning(
+        "Você não tem acesso ao caixa. Redirecionando...",
       );
       router.push("/portal/dashboard");
     }
@@ -337,6 +348,15 @@ export default function DashboardLayout({
               collapsed={collapsed}
             />
           )}
+          {hasPageAccess("caixa") && (
+            <NavLink
+              href="/portal/caixa"
+              icon={<Wallet />}
+              label="Fluxo de Caixa"
+              active={pathname === "/portal/caixa"}
+              collapsed={collapsed}
+            />
+          )}
           <NavLink
             href="/portal/motoristas"
             icon={<Users />}
@@ -419,7 +439,9 @@ export default function DashboardLayout({
                   ? "Portal Geolog"
                   : pathname.includes("/financeiro")
                     ? "Gestão Financeira"
-                    : "Gestão Operacional"}
+                    : pathname.includes("/caixa")
+                      ? "Gestão Financeira"
+                      : "Gestão Operacional"}
               </span>
               <div className="flex items-baseline gap-4">
                 <h1
@@ -435,7 +457,9 @@ export default function DashboardLayout({
                       ? "Status Operacional"
                       : pathname.includes("/financeiro")
                         ? "Medição de Faturamento"
-                        : pathname.split("/").pop()?.replace("-", " ")}
+                        : pathname.includes("/caixa")
+                          ? "Fluxo de Caixa"
+                          : pathname.split("/").pop()?.replace("-", " ")}
                 </h1>
                 <span
                   className="hidden xl:block text-slate-400 text-sm font-bold border-l border-slate-200 pl-4 antialiased"

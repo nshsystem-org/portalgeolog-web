@@ -119,6 +119,12 @@ interface GeologSearchableSelectProps {
   asyncDebounceMs?: number;
   asyncPlaceholder?: string;
   onClear?: () => void;
+  /**
+   * Oculta o avatar/círculo de placeholder no trigger para selects
+   * que representam categorias simples (sem foto/ícone específico).
+   * Os ícones explícitos (icon) e fotos (photoUrl) ainda são exibidos.
+   */
+  hideTriggerAvatar?: boolean;
 }
 
 export default function GeologSearchableSelect({
@@ -142,6 +148,7 @@ export default function GeologSearchableSelect({
   asyncDebounceMs = 300,
   asyncPlaceholder = "Digite para buscar...",
   onClear,
+  hideTriggerAvatar = false,
 }: GeologSearchableSelectProps) {
   const isAsync = Boolean(onSearch);
   const [isOpen, setIsOpen] = useState(false);
@@ -469,7 +476,7 @@ export default function GeologSearchableSelect({
               size="xs"
               withNegativeMargin
             />
-          ) : selectedOption ? (
+          ) : selectedOption && !hideTriggerAvatar ? (
             <div className={`w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 ${hideTriggerBorder ? "" : "border-2 border-slate-200"}`}>
               <User size={15} className="text-slate-400" />
             </div>

@@ -35,9 +35,9 @@ echo "\n=== Configurando credenciais do Supabase ==="
 read -p "URL do Supabase (ex: https://xxxxxx.supabase.co): " SUPABASE_URL
 read -p "Service Role Key: " SUPABASE_SERVICE_ROLE_KEY
 
-# Cria arquivo .env.local
-echo "\n=== Criando arquivo .env.local ==="
-cat > .env.local << EOF
+# Cria arquivo .env
+echo "\n=== Criando arquivo .env ==="
+cat > .env << EOF
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=$SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY= # Seu anon key
@@ -45,7 +45,7 @@ SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
 SUPABASE_DB_URL=$SUPABASE_URL
 EOF
 
-echo "✅ Arquivo .env.local criado!"
+echo "✅ Arquivo .env criado!"
 
 # Linka o projeto local ao Supabase remoto
 echo "\n=== Linkando projeto ao Supabase ==="

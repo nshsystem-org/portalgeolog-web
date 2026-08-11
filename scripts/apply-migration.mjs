@@ -7,8 +7,8 @@ import { dirname, join } from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Ler variáveis de ambiente do .env.production
-const envPath = join(__dirname, "..", ".env.production");
+// Ler variáveis de ambiente do .env
+const envPath = join(__dirname, "..", ".env");
 const envContent = readFileSync(envPath, "utf-8");
 const env = Object.fromEntries(
   envContent
@@ -25,7 +25,7 @@ const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !serviceRoleKey) {
   console.error(
-    "❌ Erro: NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não encontrados no .env.production",
+    "❌ Erro: NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não encontrados no .env",
   );
   process.exit(1);
 }
