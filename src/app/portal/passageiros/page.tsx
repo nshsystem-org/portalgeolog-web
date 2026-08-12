@@ -11,7 +11,6 @@ import {
   Phone,
   MapPin,
   Layers,
-  IdCard,
   PlusCircle,
 } from "lucide-react";
 import {
@@ -33,7 +32,6 @@ import { formatBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
 interface NewPassengerForm {
   nomeCompleto: string;
   celular: string;
-  cpf?: string;
   enderecos: Array<Omit<PassageiroEndereco, "id">>;
 }
 
@@ -46,7 +44,6 @@ const initialEndereco = {
 const initialForm: NewPassengerForm = {
   nomeCompleto: "",
   celular: "",
-  cpf: "",
   enderecos: [{ ...initialEndereco }],
 };
 
@@ -99,14 +96,6 @@ export default function PassageirosPage() {
     }));
   };
 
-  const formatCPF = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 11);
-    return digits
-      .replace(/(\d{3})(\d)/, "$1.$2")
-      .replace(/(\d{3})(\d)/, "$1.$2")
-      .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-  };
-
   const formatPhone = (value: string) => {
     if (isEstrangeiro) {
       return value.replace(/\D/g, "").slice(0, 15);
@@ -129,18 +118,10 @@ export default function PassageirosPage() {
       return;
     }
 
-    // Validar CPF (opcional, mas se preenchido precisa ter 11 dígitos)
-    const cpfDigits = formData.cpf?.replace(/\D/g, "") || "";
-    if (cpfDigits.length > 0 && cpfDigits.length !== 11) {
-      toast.error("CPF deve conter exatamente 11 dígitos.");
-      return;
-    }
-
     try {
       await addPassageiro({
         nomeCompleto: formData.nomeCompleto.trim().toUpperCase(),
         celular: formatPhone(formData.celular),
-        cpf: formData.cpf?.trim(),
         enderecos: formData.enderecos
           .filter(
             (endereco) =>
@@ -181,17 +162,10 @@ export default function PassageirosPage() {
       return;
     }
 
-    const cpfDigits = formData.cpf?.replace(/\D/g, "") || "";
-    if (cpfDigits.length > 0 && cpfDigits.length !== 11) {
-      toast.error("CPF deve conter exatamente 11 dígitos.");
-      return;
-    }
-
     try {
       await updatePassageiro(selectedPassenger.id, {
         nomeCompleto: formData.nomeCompleto.trim().toUpperCase(),
         celular: formatPhone(formData.celular),
-        cpf: formData.cpf?.trim(),
         enderecos: formData.enderecos
           .filter(
             (endereco) =>
@@ -231,10 +205,6 @@ export default function PassageirosPage() {
     value: string,
   ) => {
     let formattedValue = value;
-
-    if (field === "cpf") {
-      formattedValue = formatCPF(value);
-    }
 
     if (field === "celular") {
       formattedValue = formatPhone(value);
@@ -304,12 +274,6 @@ export default function PassageirosPage() {
                       {formatPhone(item.celular)}
                     </span>
                   </div>
-                  {item.cpf && (
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <IdCard size={14} className="text-blue-500" />
-                      <span className="font-medium">{item.cpf}</span>
-                    </div>
-                  )}
                 </div>
               );
             },
@@ -373,7 +337,6 @@ export default function PassageirosPage() {
                 setFormData({
                   nomeCompleto: item.nomeCompleto,
                   celular: formatPhone(item.celular),
-                  cpf: item.cpf || "",
                   enderecos: item.enderecos.map((e) => ({
                     rotulo: e.rotulo,
                     enderecoCompleto: e.enderecoCompleto,
@@ -416,7 +379,7 @@ export default function PassageirosPage() {
             },
           },
         ]}
-        searchPlaceholder="Buscar por nome ou CPF"
+        searchPlaceholder="Buscar por nome ou celular"
         emptyMessage="Nenhum passageiro encontrado."
         emptyIcon={<UserSquare2 size={48} />}
       />
@@ -496,21 +459,6 @@ export default function PassageirosPage() {
                       value={formData.celular}
                       onChange={(event) =>
                         handleInputChange("celular", event.target.value)
-                      }
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="space-y-2 flex-[0.7]">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      CPF
-                    </label>
-                    <input
-                      placeholder="000.000.000-00"
-                      value={formData.cpf}
-                      onChange={(event) =>
-                        handleInputChange("cpf", event.target.value)
                       }
                       className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                     />
@@ -679,14 +627,6 @@ export default function PassageirosPage() {
                     {formatPhone(selectedPassenger.celular)}
                   </p>
                 </div>
-                <div>
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">
-                    CPF
-                  </label>
-                  <p className="text-base font-bold text-slate-800 mt-1">
-                    {selectedPassenger.cpf || "Não informado"}
-                  </p>
-                </div>
               </div>
             </div>
 
@@ -800,21 +740,6 @@ export default function PassageirosPage() {
                       value={formData.celular}
                       onChange={(event) =>
                         handleInputChange("celular", event.target.value)
-                      }
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="space-y-2 flex-[0.7]">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      CPF
-                    </label>
-                    <input
-                      placeholder="000.000.000-00"
-                      value={formData.cpf}
-                      onChange={(event) =>
-                        handleInputChange("cpf", event.target.value)
                       }
                       className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                     />

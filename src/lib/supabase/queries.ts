@@ -432,8 +432,8 @@ const normalizePagination = (page = 1, pageSize = 10) => {
 };
 
 const PASSAGEIRO_SELECT_COLUMNS =
-  "id, nome_completo, celular, cpf, passageiro_enderecos(id, rotulo, endereco_completo, referencia)";
-const PASSAGEIRO_PAGE_SELECT_COLUMNS = "id, nome_completo, celular, cpf";
+  "id, nome_completo, celular, passageiro_enderecos(id, rotulo, endereco_completo, referencia)";
+const PASSAGEIRO_PAGE_SELECT_COLUMNS = "id, nome_completo, celular";
 const DRIVER_SELECT_COLUMNS =
   "id, name, cpf, cnh, phone, status, created_at, vinculo_tipo, parceiro_id, avatar_url, driver_vehicles(id, vehicle_id, vehicle:veiculos(id, placa, modelo, marca, tipo)), driver_documents(id)";
 const DRIVER_PAGE_SELECT_COLUMNS =
@@ -499,7 +499,6 @@ type PassageiroRow = {
   id: string;
   nome_completo: string;
   celular: string | null;
-  cpf: string | null;
 };
 type PassageiroEnderecoRow = {
   id: string;
@@ -982,7 +981,6 @@ export async function fetchPassageiros(): Promise<Passageiro[]> {
       id: String(p.id),
       nomeCompleto: String(p.nome_completo),
       celular: p.celular ? String(p.celular) : "",
-      cpf: p.cpf ? String(p.cpf) : undefined,
       enderecos: (
         (p.passageiro_enderecos || []) as Record<string, unknown>[]
       ).map((e) => ({
@@ -1005,9 +1003,8 @@ export async function insertPassageiro(
     .insert({
       nome_completo: upperText(input.nomeCompleto),
       celular,
-      cpf: input.cpf ? trimText(input.cpf) : null,
     })
-    .select("id, nome_completo, celular, cpf")
+    .select("id, nome_completo, celular")
     .single();
 
   if (passError) throw passError;
@@ -1043,7 +1040,6 @@ export async function insertPassageiro(
     id: passRow.id,
     nomeCompleto: passRow.nome_completo,
     celular: passRow.celular || "",
-    cpf: passRow.cpf || undefined,
     enderecos,
   };
 }
@@ -1066,7 +1062,6 @@ export async function updatePassageiroInDB(
       p_passageiro_id: id,
       p_nome_completo: upperText(input.nomeCompleto),
       p_celular: celular,
-      p_cpf: input.cpf ? trimText(input.cpf) : null,
       p_enderecos: enderecosPayload,
     },
   );
@@ -1076,7 +1071,7 @@ export async function updatePassageiroInDB(
   // Buscar dados atualizados
   const { data: passRow, error: passError } = await getSupabase()
     .from("passageiros")
-    .select("id, nome_completo, celular, cpf")
+    .select("id, nome_completo, celular")
     .eq("id", id)
     .single();
 
@@ -1099,7 +1094,6 @@ export async function updatePassageiroInDB(
     id: passRow.id,
     nomeCompleto: passRow.nome_completo,
     celular: passRow.celular || "",
-    cpf: passRow.cpf || undefined,
     enderecos,
   };
 }
@@ -1132,7 +1126,7 @@ export async function fetchPassageirosPage({
 
     if (likeTerm) {
       query = query.or(
-        `nome_completo.ilike.${likeTerm},celular.ilike.${likeTerm},cpf.ilike.${likeTerm}`,
+        `nome_completo.ilike.${likeTerm},celular.ilike.${likeTerm}`,
       );
     }
 
@@ -1157,7 +1151,6 @@ export async function fetchPassageirosPage({
         id: p.id,
         nomeCompleto: p.nome_completo,
         celular: p.celular || "",
-        cpf: p.cpf || undefined,
         enderecos: endRaw
           .filter((e) => e.passageiro_id === p.id)
           .map((e) => ({
@@ -1196,7 +1189,6 @@ export async function fetchPassageirosByIds(
       id: String(p.id),
       nomeCompleto: String(p.nome_completo),
       celular: p.celular ? String(p.celular) : "",
-      cpf: p.cpf ? String(p.cpf) : undefined,
       enderecos: (
         (p.passageiro_enderecos || []) as Record<string, unknown>[]
       ).map((e) => ({
