@@ -575,9 +575,11 @@ export async function processDriverAccept(
 
   // Registrar log driver_accept → trigger gera notificação no sino
   try {
-    await (getAdmin().from("os_logs") as unknown as {
-      insert: (values: Record<string, unknown>) => Promise<unknown>;
-    }).insert({
+    await (
+      getAdmin().from("os_logs") as unknown as {
+        insert: (values: Record<string, unknown>) => Promise<unknown>;
+      }
+    ).insert({
       os_id: osId,
       type: "driver_accept",
       actor_name: os.motorista || "Motorista",
@@ -590,7 +592,10 @@ export async function processDriverAccept(
       },
     });
   } catch (logErr) {
-    console.error("[driver-accept] Erro ao registrar log driver_accept:", logErr);
+    console.error(
+      "[driver-accept] Erro ao registrar log driver_accept:",
+      logErr,
+    );
   }
 
   // Enviar mensagem de confirmação

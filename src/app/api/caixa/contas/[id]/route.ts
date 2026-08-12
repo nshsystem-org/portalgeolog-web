@@ -87,7 +87,8 @@ export async function PATCH(
     const conta = mapCaixaContaRow(data as CaixaContaRow);
     return NextResponse.json({ conta });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

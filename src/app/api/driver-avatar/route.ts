@@ -27,7 +27,9 @@ async function createAuthClient() {
     getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     {
       cookies: {
-        getAll() { return cookieStore.getAll(); },
+        getAll() {
+          return cookieStore.getAll();
+        },
         setAll() {},
       },
     },
@@ -49,7 +51,10 @@ function getStorageObjectPath(avatarUrl: string): string | null {
 export async function POST(request: Request) {
   try {
     const authClient = await createAuthClient();
-    const { data: { user }, error: userError } = await authClient.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
@@ -62,13 +67,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Arquivo inválido" }, { status: 400 });
     }
     if (typeof driverId !== "string" || !driverId) {
-      return NextResponse.json({ error: "driverId obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "driverId obrigatório" },
+        { status: 400 },
+      );
     }
     if (!file.type.startsWith("image/")) {
-      return NextResponse.json({ error: "Selecione uma imagem válida" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Selecione uma imagem válida" },
+        { status: 400 },
+      );
     }
     if (file.size > 2 * 1024 * 1024) {
-      return NextResponse.json({ error: "Imagem muito grande. Máximo 2MB." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Imagem muito grande. Máximo 2MB." },
+        { status: 400 },
+      );
     }
 
     const adminClient = createAdminClient();
@@ -117,7 +131,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, publicUrl });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -125,7 +140,10 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const authClient = await createAuthClient();
-    const { data: { user }, error: userError } = await authClient.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
@@ -133,7 +151,10 @@ export async function DELETE(request: Request) {
     const { searchParams } = new URL(request.url);
     const driverId = searchParams.get("driverId");
     if (!driverId) {
-      return NextResponse.json({ error: "driverId obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "driverId obrigatório" },
+        { status: 400 },
+      );
     }
 
     const adminClient = createAdminClient();
@@ -161,7 +182,8 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

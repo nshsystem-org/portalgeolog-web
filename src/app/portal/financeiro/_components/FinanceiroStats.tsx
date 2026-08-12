@@ -174,8 +174,7 @@ export function FinanceiroStats({
   };
 
   // Cards focados no motorista (Option A)
-  const totalRepasse =
-    stats.totalCustoAutonomos + stats.totalCustoParceiros;
+  const totalRepasse = stats.totalCustoAutonomos + stats.totalCustoParceiros;
   const totalPago = stats.totalPagoAutonomos + stats.totalPagoParceiros;
   const aReceber = totalRepasse - totalPago;
 

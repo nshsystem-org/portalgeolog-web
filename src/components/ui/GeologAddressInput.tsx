@@ -126,9 +126,7 @@ export default function GeologAddressInput({
     return match ? match[1] : null;
   };
 
-  const searchAddressGoogle = async (
-    query: string,
-  ): Promise<Suggestion[]> => {
+  const searchAddressGoogle = async (query: string): Promise<Suggestion[]> => {
     if (!google) return [];
 
     const autocompleteService = new google.maps.places.AutocompleteService();
@@ -160,8 +158,7 @@ export default function GeologAddressInput({
       // (sem numeracao na base), injeta o numero na sugestao — igual ao
       // Google Maps. Na selecao, tentamos geocodificar o numero exato.
       const isStreetWithNumber =
-        houseNumber !== null &&
-        (item.types || []).includes("route");
+        houseNumber !== null && (item.types || []).includes("route");
       const mainName = isStreetWithNumber
         ? `${rawName}, ${houseNumber}`
         : rawName;
@@ -205,7 +202,8 @@ export default function GeologAddressInput({
             placeId,
             fields: ["geometry.location"],
             sessionToken:
-              sessionToken instanceof google.maps.places.AutocompleteSessionToken
+              sessionToken instanceof
+              google.maps.places.AutocompleteSessionToken
                 ? sessionToken
                 : undefined,
             language: "pt-BR",

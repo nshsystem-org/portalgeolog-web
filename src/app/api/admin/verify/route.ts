@@ -58,10 +58,7 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as VerifyBody;
   } catch {
-    return NextResponse.json(
-      { error: "Payload inválido." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Payload inválido." }, { status: 400 });
   }
 
   const password = body.password?.trim();
@@ -109,10 +106,7 @@ export async function POST(request: Request) {
     });
 
   if (signInErr || !signInData.user) {
-    return NextResponse.json(
-      { error: "Senha incorreta." },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Senha incorreta." }, { status: 403 });
   }
 
   // 3. Confirma role administrador (service role bypassa RLS).

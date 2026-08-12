@@ -123,7 +123,9 @@ export function useAppVersion() {
       const toastId = "app-version-update";
 
       const renderToast = (secs: number) => {
-        const progress = ((AUTO_RELOAD_DELAY / 1000 - secs) / (AUTO_RELOAD_DELAY / 1000)) * 100;
+        const progress =
+          ((AUTO_RELOAD_DELAY / 1000 - secs) / (AUTO_RELOAD_DELAY / 1000)) *
+          100;
 
         toast.custom(
           () => (
@@ -141,7 +143,10 @@ export function useAppVersion() {
                     <div className="relative shrink-0">
                       <div className="absolute inset-0 rounded-2xl bg-blue-100 animate-ping opacity-60" />
                       <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                        <RefreshCw className="w-6 h-6 text-white animate-spin" style={{ animationDuration: "2s" }} />
+                        <RefreshCw
+                          className="w-6 h-6 text-white animate-spin"
+                          style={{ animationDuration: "2s" }}
+                        />
                       </div>
                     </div>
 
@@ -157,7 +162,10 @@ export function useAppVersion() {
                         {userNameRef.current ? (
                           <>
                             Uma nova versão está disponível para você,{" "}
-                            <span className="font-black text-slate-800">{userNameRef.current}</span>!
+                            <span className="font-black text-slate-800">
+                              {userNameRef.current}
+                            </span>
+                            !
                           </>
                         ) : (
                           "Uma nova versão está disponível para você!"
@@ -165,7 +173,9 @@ export function useAppVersion() {
                       </p>
                       <p className="mt-2 text-xs text-slate-400 font-bold">
                         Recarregando automaticamente em{" "}
-                        <span className="text-blue-600 font-black tabular-nums">{secs}s</span>
+                        <span className="text-blue-600 font-black tabular-nums">
+                          {secs}s
+                        </span>
                       </p>
 
                       {/* Botões */}

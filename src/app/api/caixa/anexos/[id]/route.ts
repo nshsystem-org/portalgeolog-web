@@ -59,7 +59,8 @@ export async function GET(
 
     return NextResponse.json({ signedUrl: signed.signedUrl });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

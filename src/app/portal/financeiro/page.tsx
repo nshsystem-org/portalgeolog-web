@@ -88,7 +88,8 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         driverTipoFilter={page.driverTipoFilter}
         onDriverTipoChange={page.setDriverTipoFilter}
         pendingRepasseValue={
-          (page.stats.totalCustoAutonomos - page.stats.totalPagoAutonomos) +
+          page.stats.totalCustoAutonomos -
+          page.stats.totalPagoAutonomos +
           (page.stats.totalCustoParceiros - page.stats.totalPagoParceiros)
         }
         repassePeriodStart={page.dataInicio}

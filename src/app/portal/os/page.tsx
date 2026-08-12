@@ -57,10 +57,8 @@ import {
   LayoutGrid,
   CalendarDays,
   Trash2,
-  Mail,
   Smartphone,
   Bell,
-  Send,
   Filter,
   FilterX,
   Link,
@@ -142,10 +140,9 @@ import { toast } from "sonner";
 import RequiredAsterisk from "@/components/ui/RequiredAsterisk";
 import GeologAddressInput from "@/components/ui/GeologAddressInput";
 import dynamic from "next/dynamic";
-const ItineraryMap = dynamic(
-  () => import("@/components/Map/ItineraryMap"),
-  { ssr: false },
-);
+const ItineraryMap = dynamic(() => import("@/components/Map/ItineraryMap"), {
+  ssr: false,
+});
 import OSCalendar from "@/components/OS/OSCalendar";
 import { useConfirm } from "@/hooks/useConfirm";
 import { BASE_URL } from "@/lib/constants";
@@ -866,8 +863,7 @@ export default function OSOperationalPage() {
         .eq("ativa", true)
         .order("is_default", { ascending: false })
         .order("nome");
-      if (!error && data)
-        setCaixaContas(data as unknown as typeof caixaContas);
+      if (!error && data) setCaixaContas(data as unknown as typeof caixaContas);
     };
     void fetchCaixaContas();
   }, [supabase]);
@@ -2974,13 +2970,11 @@ export default function OSOperationalPage() {
     osData: OrderService,
     passenger: {
       nome: string;
-      email: string;
       celular: string;
-      hasEmail: boolean;
       hasPhone: boolean;
       solicitanteId: string;
     },
-    type: "email" | "whatsapp" | "both",
+    type: "whatsapp",
   ) => {
     try {
       const acceptUrl = `${BASE_URL}/a/p`;
@@ -3007,7 +3001,6 @@ export default function OSOperationalPage() {
         },
         body: JSON.stringify({
           type,
-          passengerEmail: passenger.hasEmail ? passenger.email : undefined,
           passengerPhone: passenger.hasPhone ? passenger.celular : undefined,
           passengerName: passenger.nome,
           osProtocol: osData.protocolo,
@@ -3034,12 +3027,10 @@ export default function OSOperationalPage() {
 
   const handleNotifyPassenger = async (
     passengerKey: string,
-    type: "email" | "whatsapp" | "both",
+    type: "whatsapp",
     passenger: {
       nome: string;
-      email: string;
       celular: string;
-      hasEmail: boolean;
       hasPhone: boolean;
       solicitanteId: string;
       waypointIndex: number;
@@ -3072,7 +3063,6 @@ export default function OSOperationalPage() {
         },
         body: JSON.stringify({
           type,
-          passengerEmail: passenger.hasEmail ? passenger.email : undefined,
           passengerPhone: passenger.hasPhone ? passenger.celular : undefined,
           passengerName: passenger.nome,
           osProtocol: viewingOS.protocolo,
@@ -3701,7 +3691,6 @@ export default function OSOperationalPage() {
     rotulo: "RESIDENCIAL",
     referencia: "",
     enderecoCompleto: "",
-    notificar: "Sim",
   };
   const [quickPassengerForm, setQuickPassengerForm] = useState(
     initialQuickPassengerForm,
@@ -3893,13 +3882,9 @@ export default function OSOperationalPage() {
           waypointLabel: waypoint.label,
           nome: passengerRecord?.nomeCompleto || "Passageiro não identificado",
           celular: passengerRecord?.celular || "Não informado",
-          email: passengerRecord?.email || "Não informado",
           endereco:
             passengerRecord?.enderecos?.[0]?.enderecoCompleto ||
             "Não informado",
-          hasEmail: Boolean(
-            passengerRecord?.email && passengerRecord.email.trim() !== "",
-          ),
           hasPhone: Boolean(
             passengerRecord?.celular &&
             passengerRecord.celular.replace(/\D/g, "").length > 0,
@@ -5082,7 +5067,6 @@ export default function OSOperationalPage() {
       const novoPassageiro = await addPassageiro({
         nomeCompleto: trimmedNome.toUpperCase(),
         celular: normalizeBrazilPhone(quickPassengerForm.celular),
-        notificar: quickPassengerForm.notificar === "Sim",
         enderecos,
       });
 
@@ -5155,9 +5139,7 @@ export default function OSOperationalPage() {
                   latestOS,
                   {
                     nome: passRecord.nomeCompleto,
-                    email: passRecord.email || "",
                     celular: passRecord.celular,
-                    hasEmail: !!passRecord.email,
                     hasPhone: true,
                     solicitanteId: p.solicitanteId,
                   },
@@ -7857,452 +7839,494 @@ export default function OSOperationalPage() {
                         >
                           <SortableContext
                             items={it.waypointIndices.map(
-                              (idx) => formData.waypoints[idx].id ?? `wp-${idx}`,
+                              (idx) =>
+                                formData.waypoints[idx].id ?? `wp-${idx}`,
                             )}
                             strategy={verticalListSortingStrategy}
                           >
-                        {it.waypointIndices.map((index, relIdx) => {
-                          const waypoint = formData.waypoints[index];
-                          const isOrigin = relIdx === 0;
-                          const isDestination =
-                            relIdx === it.waypointIndices.length - 1;
-                          const hasPassengers =
-                            (waypoint.passengers?.length || 0) > 0;
-                          const destinationPassengerLineEnd =
-                            destinationPassengerLineEnds[index];
-                          const stopLabel = isOrigin
-                            ? "ORIGEM"
-                            : isDestination
-                              ? "DESTINO FINAL"
-                              : `${relIdx}ª PARADA`;
-                          const sortableId = waypoint.id ?? `wp-${index}`;
+                            {it.waypointIndices.map((index, relIdx) => {
+                              const waypoint = formData.waypoints[index];
+                              const isOrigin = relIdx === 0;
+                              const isDestination =
+                                relIdx === it.waypointIndices.length - 1;
+                              const hasPassengers =
+                                (waypoint.passengers?.length || 0) > 0;
+                              const destinationPassengerLineEnd =
+                                destinationPassengerLineEnds[index];
+                              const stopLabel = isOrigin
+                                ? "ORIGEM"
+                                : isDestination
+                                  ? "DESTINO FINAL"
+                                  : `${relIdx}ª PARADA`;
+                              const sortableId = waypoint.id ?? `wp-${index}`;
 
-                          return (
-                            <SortableWaypointItem
-                              key={sortableId}
-                              id={sortableId}
-                            >
-                              {({
-                                attributes,
-                                listeners,
-                                setActivatorNodeRef,
-                                isDragging,
-                              }) => (
-                            <div
-                              ref={(el) => {
-                                waypointTimelineRefs.current[index] = el;
-                              }}
-                              className={`relative group ${isDragging ? "shadow-lg" : ""}`}
-                            >
-                              {!isDestination &&
-                                index < formData.waypoints.length - 1 && (
-                                  <div className="absolute -left-[1.125rem] top-8 -bottom-6 w-0.5 bg-slate-300" />
-                                )}
-                              {isDestination && hasPassengers && (
-                                <div
-                                  className="absolute -left-[1.125rem] top-8 w-0.5 bg-slate-300"
-                                  style={{
-                                    height:
-                                      destinationPassengerLineEnd !== undefined
-                                        ? `${destinationPassengerLineEnd}px`
-                                        : `calc(100% - ${waypoint.passengers.length === 1 ? "94px" : waypoint.passengers.length === 2 ? "70px" : waypoint.passengers.length === 3 ? "82px" : "94px"})`,
-                                  }}
-                                />
-                              )}
-                              {/* Timeline Dot (Círculo) */}
-                              <div
-                                className={`absolute -left-[1.625rem] top-2 w-4 h-4 rounded-full border-4 border-white shadow-sm ring-2 z-10 ${isOrigin ? "bg-emerald-500 ring-emerald-100" : isDestination ? "bg-blue-600 ring-blue-100" : "bg-slate-400 ring-slate-100"}`}
-                              />
-
-                              <div className="flex items-start gap-4">
-                                <div className="flex-1 space-y-4">
-                                  <div className="space-y-4">
-                                    <div className="flex-1 space-y-3">
-                                      <div className="flex items-center justify-between ml-1 mb-2">
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            type="button"
-                                            ref={setActivatorNodeRef}
-                                            {...attributes}
-                                            {...listeners}
-                                            className="flex items-center justify-center w-6 h-6 rounded-lg text-slate-300 opacity-0 group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-500 transition-all cursor-grab active:cursor-grabbing touch-none"
-                                            title="Arrastar para reordenar"
-                                          >
-                                            <GripVertical size={16} />
-                                          </button>
-                                          <label className="text-[10px] font-black uppercase tracking-[0.25em]">
-                                            <div
-                                              className={`inline-flex items-stretch rounded-xl overflow-hidden shadow-sm border text-[10px] md:text-[11px] ${isOrigin ? "bg-emerald-500 border-emerald-400 text-white" : isDestination ? "bg-blue-600 border-blue-500 text-white" : "bg-slate-100 border-slate-200 text-slate-600"}`}
-                                            >
-                                              <span
-                                                className={`px-3 py-1.5 flex items-center justify-center ${isOrigin ? "bg-emerald-600" : isDestination ? "bg-blue-700" : "bg-slate-200 text-slate-700"}`}
-                                              >
-                                                {isOrigin ? (
-                                                  <MapPin size={14} />
-                                                ) : isDestination ? (
-                                                  <Flag size={14} />
-                                                ) : (
-                                                  <Circle size={14} />
-                                                )}
-                                              </span>
-                                              <span className="px-4 py-1.5 font-black tracking-wide text-[11px]">
-                                                {stopLabel}
-                                              </span>
-                                            </div>
-                                          </label>
-                                        </div>
-                                        {isOrigin && (
-                                          <div className="flex items-center gap-3">
-                                            {/* Toggle Mapa */}
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleToggleMap(it.index)
-                                              }
-                                              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                                                waypoint.useMap !== false
-                                                  ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                                              }`}
-                                              title={
-                                                waypoint.useMap !== false
-                                                  ? "Mapa ativado neste ciclo"
-                                                  : "Mapa desativado neste ciclo"
-                                              }
-                                            >
-                                              <MapIcon size={14} />
-                                            </button>
-                                            <div className="flex items-center gap-1.5">
-                                              <Calendar
-                                                size={14}
-                                                className="text-slate-400"
-                                              />
-                                              <input
-                                                type="text"
-                                                value={waypoint.data ?? ""}
-                                                onChange={(e) =>
-                                                  handleWaypointDataChange(
-                                                    index,
-                                                    e.target.value,
-                                                  )
-                                                }
-                                                onBlur={() =>
-                                                  handleWaypointDataBlur(index)
-                                                }
-                                                placeholder="DD/MM/AAAA"
-                                                maxLength={10}
-                                                className="w-[9rem] px-2 py-[5px] bg-white border border-slate-200 rounded-lg text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all tracking-wider font-mono"
-                                              />
-                                            </div>
-                                            <div className="flex items-center gap-1.5">
-                                              <Clock
-                                                size={16}
-                                                className="text-slate-400"
-                                              />
-                                              <input
-                                                type="text"
-                                                value={
-                                                  waypoint.hora
-                                                    ? waypoint.hora.slice(0, 5)
-                                                    : ""
-                                                }
-                                                onChange={(e) =>
-                                                  handleWaypointHoraChange(
-                                                    index,
-                                                    e.target.value,
-                                                  )
-                                                }
-                                                placeholder="HH:MM"
-                                                maxLength={5}
-                                                className="w-[6rem] px-2 py-[5px] bg-white border border-slate-200 rounded-lg text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all tracking-wider font-mono"
-                                              />
-                                            </div>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleAddWaypoint(it.index)
-                                              }
-                                              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-xl text-sm font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm cursor-pointer"
-                                            >
-                                              <Plus size={16} /> Parada
-                                            </button>
-                                            {it.index !== 0 && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleRemoveItinerary(
-                                                    it.index,
-                                                  )
-                                                }
-                                                className="flex items-center justify-center px-2 py-1.5 bg-red-100 text-red-500 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-red-200 transition-all shadow-sm cursor-pointer"
-                                                title="Remover itinerário/retorno"
-                                              >
-                                                <Minus size={16} />
-                                              </button>
-                                            )}
-                                          </div>
+                              return (
+                                <SortableWaypointItem
+                                  key={sortableId}
+                                  id={sortableId}
+                                >
+                                  {({
+                                    attributes,
+                                    listeners,
+                                    setActivatorNodeRef,
+                                    isDragging,
+                                  }) => (
+                                    <div
+                                      ref={(el) => {
+                                        waypointTimelineRefs.current[index] =
+                                          el;
+                                      }}
+                                      className={`relative group ${isDragging ? "shadow-lg" : ""}`}
+                                    >
+                                      {!isDestination &&
+                                        index <
+                                          formData.waypoints.length - 1 && (
+                                          <div className="absolute -left-[1.125rem] top-8 -bottom-6 w-0.5 bg-slate-300" />
                                         )}
-                                      </div>
-                                      <div className="relative">
-                                        {waypoint.useMap !== false ? (
-                                          <GeologAddressInput
-                                            label=""
-                                            value={waypoint.label}
-                                            onChange={(val, coords) =>
-                                              handleWaypointChange(
-                                                index,
-                                                val,
-                                                coords ?? undefined,
-                                              )
-                                            }
-                                            placeholder={
-                                              isOrigin
-                                                ? "Ex: Hotel H/Niterói"
-                                                : "Próximo destino..."
-                                            }
-                                            required
-                                          rightSlot={
-                                            <>
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  toggleWaypointComment(
-                                                    sortableId,
-                                                  )
-                                                }
-                                                className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[sortableId] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
-                                                title="Adicionar observação"
-                                              >
-                                                <MessageSquareMore size={16} />
-                                                {waypoint.comment.trim() && (
-                                                  <>
-                                                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-ping"></span>
-                                                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></span>
-                                                  </>
-                                                )}
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleAddPassenger(index)
-                                                }
-                                                className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all flex items-center justify-center shadow-sm border border-blue-100 cursor-pointer"
-                                                title="Adicionar Passageiro"
-                                              >
-                                                <Plus size={18} />
-                                              </button>
-                                              {formData.waypoints.length > 2 &&
-                                                !isOrigin &&
-                                                !isDestination && (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                      handleRemoveWaypoint(index)
-                                                    }
-                                                    className="p-2 bg-red-50 text-red-400 rounded-lg hover:bg-red-100 transition-all flex items-center justify-center shadow-sm border border-red-100 cursor-pointer"
-                                                    title="Remover Parada"
-                                                  >
-                                                    <X size={18} />
-                                                  </button>
-                                                )}
-                                            </>
-                                          }
+                                      {isDestination && hasPassengers && (
+                                        <div
+                                          className="absolute -left-[1.125rem] top-8 w-0.5 bg-slate-300"
+                                          style={{
+                                            height:
+                                              destinationPassengerLineEnd !==
+                                              undefined
+                                                ? `${destinationPassengerLineEnd}px`
+                                                : `calc(100% - ${waypoint.passengers.length === 1 ? "94px" : waypoint.passengers.length === 2 ? "70px" : waypoint.passengers.length === 3 ? "82px" : "94px"})`,
+                                          }}
                                         />
-                                        ) : (
-                                          <div className="relative">
-                                            <input
-                                              type="text"
-                                              value={waypoint.label}
-                                              onChange={(e) =>
-                                                handleWaypointChange(
-                                                  index,
-                                                  e.target.value,
-                                                  null,
-                                                )
-                                              }
-                                              placeholder={
-                                                isOrigin
-                                                  ? "Ex: Hotel H/Niterói"
-                                                  : "Próximo destino..."
-                                              }
-                                              className="w-full px-4 py-3 pr-32 bg-white border-2 border-slate-200 rounded-2xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                                              required
-                                            />
-                                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  toggleWaypointComment(
-                                                    sortableId,
-                                                  )
-                                                }
-                                                className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[sortableId] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
-                                                title="Adicionar observação"
-                                              >
-                                                <MessageSquareMore size={16} />
-                                                {waypoint.comment.trim() && (
-                                                  <>
-                                                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-ping"></span>
-                                                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></span>
-                                                  </>
-                                                )}
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleAddPassenger(index)
-                                                }
-                                                className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all flex items-center justify-center shadow-sm border border-blue-100 cursor-pointer"
-                                                title="Adicionar Passageiro"
-                                              >
-                                                <Plus size={18} />
-                                              </button>
-                                              {formData.waypoints.length > 2 &&
-                                                !isOrigin &&
-                                                !isDestination && (
+                                      )}
+                                      {/* Timeline Dot (Círculo) */}
+                                      <div
+                                        className={`absolute -left-[1.625rem] top-2 w-4 h-4 rounded-full border-4 border-white shadow-sm ring-2 z-10 ${isOrigin ? "bg-emerald-500 ring-emerald-100" : isDestination ? "bg-blue-600 ring-blue-100" : "bg-slate-400 ring-slate-100"}`}
+                                      />
+
+                                      <div className="flex items-start gap-4">
+                                        <div className="flex-1 space-y-4">
+                                          <div className="space-y-4">
+                                            <div className="flex-1 space-y-3">
+                                              <div className="flex items-center justify-between ml-1 mb-2">
+                                                <div className="flex items-center gap-2">
                                                   <button
                                                     type="button"
-                                                    onClick={() =>
-                                                      handleRemoveWaypoint(index)
-                                                    }
-                                                    className="p-2 bg-red-50 text-red-400 rounded-lg hover:bg-red-100 transition-all flex items-center justify-center shadow-sm border border-red-100 cursor-pointer"
-                                                    title="Remover Parada"
+                                                    ref={setActivatorNodeRef}
+                                                    {...attributes}
+                                                    {...listeners}
+                                                    className="flex items-center justify-center w-6 h-6 rounded-lg text-slate-300 opacity-0 group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-500 transition-all cursor-grab active:cursor-grabbing touch-none"
+                                                    title="Arrastar para reordenar"
                                                   >
-                                                    <X size={18} />
+                                                    <GripVertical size={16} />
                                                   </button>
-                                                )}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                      {openWaypointComments[sortableId] && (
-                                        <div className="mt-3 ml-12">
-                                          <textarea
-                                            value={waypoint.comment}
-                                            onChange={(e) =>
-                                              handleWaypointCommentChange(
-                                                index,
-                                                e.target.value,
-                                              )
-                                            }
-                                            rows={2}
-                                            placeholder="Ex: aguardar na portaria, desembarque pela lateral..."
-                                            className="waypoint-observation w-full resize-none rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 outline-none transition-all shadow-sm"
-                                          />
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Linhas de Passageiros */}
-                                  {waypoint.passengers &&
-                                    waypoint.passengers.length > 0 && (
-                                      <div className="mt-4 border-t border-dashed border-slate-200">
-                                        {waypoint.passengers.map(
-                                          (passenger, passengerIndex) => (
-                                            <div
-                                              key={passenger.id}
-                                              className={`relative flex items-center gap-4 group/pass ${passengerIndex === 0 ? "mt-6" : "mt-5"} ${passengerIndex === waypoint.passengers.length - 1 ? "mb-10" : "mb-5"}`}
-                                            >
-                                              {/* Linha horizontal da trilha - começa na linha vertical */}
-                                              <div
-                                                data-passenger-line
-                                                className="absolute -left-[1.125rem] top-1/2 -translate-y-1/2 w-12 h-0.5 bg-slate-300 z-10"
-                                              />
-
-                                              {/* Trilhas de passageiro (quadrado) - no final da linha */}
-                                              <div
-                                                className={`absolute left-[1.375rem] top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm border-4 border-white shadow-sm ring-2 z-20 ${isOrigin ? "bg-emerald-500 ring-emerald-100" : isDestination ? "bg-blue-600 ring-blue-100" : "bg-slate-400 ring-slate-100"}`}
-                                              />
-
-                                              <div className="flex-1 flex items-center gap-3 ml-8">
-                                                <div className="w-3/5 ml-6">
-                                                  <div className="flex items-center gap-3">
-                                                    <div className="flex-1">
-                                                      <GeologSearchableSelect
-                                                        label=""
-                                                        placeholder="Selecione o passageiro..."
-                                                        onSearch={
-                                                          searchPassageiros
-                                                        }
-                                                        selectedOption={getPassengerOption(
-                                                          passenger.solicitanteId ||
-                                                            "",
+                                                  <label className="text-[10px] font-black uppercase tracking-[0.25em]">
+                                                    <div
+                                                      className={`inline-flex items-stretch rounded-xl overflow-hidden shadow-sm border text-[10px] md:text-[11px] ${isOrigin ? "bg-emerald-500 border-emerald-400 text-white" : isDestination ? "bg-blue-600 border-blue-500 text-white" : "bg-slate-100 border-slate-200 text-slate-600"}`}
+                                                    >
+                                                      <span
+                                                        className={`px-3 py-1.5 flex items-center justify-center ${isOrigin ? "bg-emerald-600" : isDestination ? "bg-blue-700" : "bg-slate-200 text-slate-700"}`}
+                                                      >
+                                                        {isOrigin ? (
+                                                          <MapPin size={14} />
+                                                        ) : isDestination ? (
+                                                          <Flag size={14} />
+                                                        ) : (
+                                                          <Circle size={14} />
                                                         )}
+                                                      </span>
+                                                      <span className="px-4 py-1.5 font-black tracking-wide text-[11px]">
+                                                        {stopLabel}
+                                                      </span>
+                                                    </div>
+                                                  </label>
+                                                </div>
+                                                {isOrigin && (
+                                                  <div className="flex items-center gap-3">
+                                                    {/* Toggle Mapa */}
+                                                    <button
+                                                      type="button"
+                                                      onClick={() =>
+                                                        handleToggleMap(
+                                                          it.index,
+                                                        )
+                                                      }
+                                                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                                                        waypoint.useMap !==
+                                                        false
+                                                          ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                                          : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                                      }`}
+                                                      title={
+                                                        waypoint.useMap !==
+                                                        false
+                                                          ? "Mapa ativado neste ciclo"
+                                                          : "Mapa desativado neste ciclo"
+                                                      }
+                                                    >
+                                                      <MapIcon size={14} />
+                                                    </button>
+                                                    <div className="flex items-center gap-1.5">
+                                                      <Calendar
+                                                        size={14}
+                                                        className="text-slate-400"
+                                                      />
+                                                      <input
+                                                        type="text"
                                                         value={
-                                                          passenger.solicitanteId ||
-                                                          ""
+                                                          waypoint.data ?? ""
                                                         }
-                                                        onChange={(val) =>
-                                                          handlePassengerChange(
+                                                        onChange={(e) =>
+                                                          handleWaypointDataChange(
                                                             index,
-                                                            passenger.id,
-                                                            val,
+                                                            e.target.value,
                                                           )
                                                         }
+                                                        onBlur={() =>
+                                                          handleWaypointDataBlur(
+                                                            index,
+                                                          )
+                                                        }
+                                                        placeholder="DD/MM/AAAA"
+                                                        maxLength={10}
+                                                        className="w-[9rem] px-2 py-[5px] bg-white border border-slate-200 rounded-lg text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all tracking-wider font-mono"
                                                       />
                                                     </div>
-                                                    <div className="flex items-center justify-center h-[56px]">
+                                                    <div className="flex items-center gap-1.5">
+                                                      <Clock
+                                                        size={16}
+                                                        className="text-slate-400"
+                                                      />
+                                                      <input
+                                                        type="text"
+                                                        value={
+                                                          waypoint.hora
+                                                            ? waypoint.hora.slice(
+                                                                0,
+                                                                5,
+                                                              )
+                                                            : ""
+                                                        }
+                                                        onChange={(e) =>
+                                                          handleWaypointHoraChange(
+                                                            index,
+                                                            e.target.value,
+                                                          )
+                                                        }
+                                                        placeholder="HH:MM"
+                                                        maxLength={5}
+                                                        className="w-[6rem] px-2 py-[5px] bg-white border border-slate-200 rounded-lg text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-all tracking-wider font-mono"
+                                                      />
+                                                    </div>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() =>
+                                                        handleAddWaypoint(
+                                                          it.index,
+                                                        )
+                                                      }
+                                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-xl text-sm font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm cursor-pointer"
+                                                    >
+                                                      <Plus size={16} /> Parada
+                                                    </button>
+                                                    {it.index !== 0 && (
                                                       <button
                                                         type="button"
                                                         onClick={() =>
-                                                          openQuickPassengerModal(
-                                                            index,
-                                                            passenger.id,
+                                                          handleRemoveItinerary(
+                                                            it.index,
                                                           )
                                                         }
-                                                        className="p-3 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 transition-all opacity-0 group-hover/pass:opacity-100 flex items-center justify-center shadow-sm border border-blue-200 cursor-pointer"
-                                                        style={{
-                                                          marginBottom: "-5px",
-                                                        }}
-                                                        title="Cadastrar passageiro"
+                                                        className="flex items-center justify-center px-2 py-1.5 bg-red-100 text-red-500 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-red-200 transition-all shadow-sm cursor-pointer"
+                                                        title="Remover itinerário/retorno"
                                                       >
-                                                        <PlusCircle size={18} />
+                                                        <Minus size={16} />
                                                       </button>
-                                                    </div>
+                                                    )}
                                                   </div>
-                                                </div>
-                                                <div className="flex items-center justify-center h-[56px]">
-                                                  <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                      handleRemovePassenger(
+                                                )}
+                                              </div>
+                                              <div className="relative">
+                                                {waypoint.useMap !== false ? (
+                                                  <GeologAddressInput
+                                                    label=""
+                                                    value={waypoint.label}
+                                                    onChange={(val, coords) =>
+                                                      handleWaypointChange(
                                                         index,
-                                                        passenger.id,
+                                                        val,
+                                                        coords ?? undefined,
                                                       )
                                                     }
-                                                    className="p-3 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover/pass:opacity-100 cursor-pointer"
-                                                    style={{
-                                                      marginBottom: "-5px",
-                                                    }}
-                                                    title="Remover Passageiro"
-                                                  >
-                                                    <X size={18} />
-                                                  </button>
-                                                </div>
+                                                    placeholder={
+                                                      isOrigin
+                                                        ? "Ex: Hotel H/Niterói"
+                                                        : "Próximo destino..."
+                                                    }
+                                                    required
+                                                    rightSlot={
+                                                      <>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() =>
+                                                            toggleWaypointComment(
+                                                              sortableId,
+                                                            )
+                                                          }
+                                                          className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[sortableId] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
+                                                          title="Adicionar observação"
+                                                        >
+                                                          <MessageSquareMore
+                                                            size={16}
+                                                          />
+                                                          {waypoint.comment.trim() && (
+                                                            <>
+                                                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-ping"></span>
+                                                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></span>
+                                                            </>
+                                                          )}
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() =>
+                                                            handleAddPassenger(
+                                                              index,
+                                                            )
+                                                          }
+                                                          className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all flex items-center justify-center shadow-sm border border-blue-100 cursor-pointer"
+                                                          title="Adicionar Passageiro"
+                                                        >
+                                                          <Plus size={18} />
+                                                        </button>
+                                                        {formData.waypoints
+                                                          .length > 2 &&
+                                                          !isOrigin &&
+                                                          !isDestination && (
+                                                            <button
+                                                              type="button"
+                                                              onClick={() =>
+                                                                handleRemoveWaypoint(
+                                                                  index,
+                                                                )
+                                                              }
+                                                              className="p-2 bg-red-50 text-red-400 rounded-lg hover:bg-red-100 transition-all flex items-center justify-center shadow-sm border border-red-100 cursor-pointer"
+                                                              title="Remover Parada"
+                                                            >
+                                                              <X size={18} />
+                                                            </button>
+                                                          )}
+                                                      </>
+                                                    }
+                                                  />
+                                                ) : (
+                                                  <div className="relative">
+                                                    <input
+                                                      type="text"
+                                                      value={waypoint.label}
+                                                      onChange={(e) =>
+                                                        handleWaypointChange(
+                                                          index,
+                                                          e.target.value,
+                                                          null,
+                                                        )
+                                                      }
+                                                      placeholder={
+                                                        isOrigin
+                                                          ? "Ex: Hotel H/Niterói"
+                                                          : "Próximo destino..."
+                                                      }
+                                                      className="w-full px-4 py-3 pr-32 bg-white border-2 border-slate-200 rounded-2xl text-base font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                                                      required
+                                                    />
+                                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                          toggleWaypointComment(
+                                                            sortableId,
+                                                          )
+                                                        }
+                                                        className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all cursor-pointer ${openWaypointComments[sortableId] || waypoint.comment.trim() ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-110 active:scale-95" : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600"}`}
+                                                        title="Adicionar observação"
+                                                      >
+                                                        <MessageSquareMore
+                                                          size={16}
+                                                        />
+                                                        {waypoint.comment.trim() && (
+                                                          <>
+                                                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-ping"></span>
+                                                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></span>
+                                                          </>
+                                                        )}
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                          handleAddPassenger(
+                                                            index,
+                                                          )
+                                                        }
+                                                        className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all flex items-center justify-center shadow-sm border border-blue-100 cursor-pointer"
+                                                        title="Adicionar Passageiro"
+                                                      >
+                                                        <Plus size={18} />
+                                                      </button>
+                                                      {formData.waypoints
+                                                        .length > 2 &&
+                                                        !isOrigin &&
+                                                        !isDestination && (
+                                                          <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                              handleRemoveWaypoint(
+                                                                index,
+                                                              )
+                                                            }
+                                                            className="p-2 bg-red-50 text-red-400 rounded-lg hover:bg-red-100 transition-all flex items-center justify-center shadow-sm border border-red-100 cursor-pointer"
+                                                            title="Remover Parada"
+                                                          >
+                                                            <X size={18} />
+                                                          </button>
+                                                        )}
+                                                    </div>
+                                                  </div>
+                                                )}
                                               </div>
+                                              {openWaypointComments[
+                                                sortableId
+                                              ] && (
+                                                <div className="mt-3 ml-12">
+                                                  <textarea
+                                                    value={waypoint.comment}
+                                                    onChange={(e) =>
+                                                      handleWaypointCommentChange(
+                                                        index,
+                                                        e.target.value,
+                                                      )
+                                                    }
+                                                    rows={2}
+                                                    placeholder="Ex: aguardar na portaria, desembarque pela lateral..."
+                                                    className="waypoint-observation w-full resize-none rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 outline-none transition-all shadow-sm"
+                                                  />
+                                                </div>
+                                              )}
                                             </div>
-                                          ),
-                                        )}
+                                          </div>
+
+                                          {/* Linhas de Passageiros */}
+                                          {waypoint.passengers &&
+                                            waypoint.passengers.length > 0 && (
+                                              <div className="mt-4 border-t border-dashed border-slate-200">
+                                                {waypoint.passengers.map(
+                                                  (
+                                                    passenger,
+                                                    passengerIndex,
+                                                  ) => (
+                                                    <div
+                                                      key={passenger.id}
+                                                      className={`relative flex items-center gap-4 group/pass ${passengerIndex === 0 ? "mt-6" : "mt-5"} ${passengerIndex === waypoint.passengers.length - 1 ? "mb-10" : "mb-5"}`}
+                                                    >
+                                                      {/* Linha horizontal da trilha - começa na linha vertical */}
+                                                      <div
+                                                        data-passenger-line
+                                                        className="absolute -left-[1.125rem] top-1/2 -translate-y-1/2 w-12 h-0.5 bg-slate-300 z-10"
+                                                      />
+
+                                                      {/* Trilhas de passageiro (quadrado) - no final da linha */}
+                                                      <div
+                                                        className={`absolute left-[1.375rem] top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm border-4 border-white shadow-sm ring-2 z-20 ${isOrigin ? "bg-emerald-500 ring-emerald-100" : isDestination ? "bg-blue-600 ring-blue-100" : "bg-slate-400 ring-slate-100"}`}
+                                                      />
+
+                                                      <div className="flex-1 flex items-center gap-3 ml-8">
+                                                        <div className="w-3/5 ml-6">
+                                                          <div className="flex items-center gap-3">
+                                                            <div className="flex-1">
+                                                              <GeologSearchableSelect
+                                                                label=""
+                                                                placeholder="Selecione o passageiro..."
+                                                                onSearch={
+                                                                  searchPassageiros
+                                                                }
+                                                                selectedOption={getPassengerOption(
+                                                                  passenger.solicitanteId ||
+                                                                    "",
+                                                                )}
+                                                                value={
+                                                                  passenger.solicitanteId ||
+                                                                  ""
+                                                                }
+                                                                onChange={(
+                                                                  val,
+                                                                ) =>
+                                                                  handlePassengerChange(
+                                                                    index,
+                                                                    passenger.id,
+                                                                    val,
+                                                                  )
+                                                                }
+                                                              />
+                                                            </div>
+                                                            <div className="flex items-center justify-center h-[56px]">
+                                                              <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                  openQuickPassengerModal(
+                                                                    index,
+                                                                    passenger.id,
+                                                                  )
+                                                                }
+                                                                className="p-3 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 transition-all opacity-0 group-hover/pass:opacity-100 flex items-center justify-center shadow-sm border border-blue-200 cursor-pointer"
+                                                                style={{
+                                                                  marginBottom:
+                                                                    "-5px",
+                                                                }}
+                                                                title="Cadastrar passageiro"
+                                                              >
+                                                                <PlusCircle
+                                                                  size={18}
+                                                                />
+                                                              </button>
+                                                            </div>
+                                                          </div>
+                                                        </div>
+                                                        <div className="flex items-center justify-center h-[56px]">
+                                                          <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                              handleRemovePassenger(
+                                                                index,
+                                                                passenger.id,
+                                                              )
+                                                            }
+                                                            className="p-3 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover/pass:opacity-100 cursor-pointer"
+                                                            style={{
+                                                              marginBottom:
+                                                                "-5px",
+                                                            }}
+                                                            title="Remover Passageiro"
+                                                          >
+                                                            <X size={18} />
+                                                          </button>
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  ),
+                                                )}
+                                              </div>
+                                            )}
+                                        </div>
                                       </div>
-                                    )}
-                                </div>
-                              </div>
-                            </div>
-                              )}
-                            </SortableWaypointItem>
-                          );
-                        })}
+                                    </div>
+                                  )}
+                                </SortableWaypointItem>
+                              );
+                            })}
                           </SortableContext>
                         </DndContext>
-                      {/* Mapa do itinerário/retorno - só aparece se o mapa estiver ativo no ciclo */}
-                      {it.waypoints[0]?.useMap !== false && (
-                        <ItineraryMap
-                          waypoints={it.waypoints}
-                          waypointIndices={it.waypointIndices}
-                          onWaypointDrag={handleWaypointDrag}
-                        />
-                      )}
+                        {/* Mapa do itinerário/retorno - só aparece se o mapa estiver ativo no ciclo */}
+                        {it.waypoints[0]?.useMap !== false && (
+                          <ItineraryMap
+                            waypoints={it.waypoints}
+                            waypointIndices={it.waypointIndices}
+                            onWaypointDrag={handleWaypointDrag}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -8339,9 +8363,15 @@ export default function OSOperationalPage() {
                               } as React.ChangeEvent<HTMLInputElement>)
                             }
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${formData.isentoValorBruto ? "bg-violet-600" : "bg-slate-200"}`}
-                            title={formData.isentoValorBruto ? "Isento ativo — clique para desativar" : "Marcar como isento"}
+                            title={
+                              formData.isentoValorBruto
+                                ? "Isento ativo — clique para desativar"
+                                : "Marcar como isento"
+                            }
                           >
-                            <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${formData.isentoValorBruto ? "translate-x-4" : "translate-x-0.5"}`} />
+                            <span
+                              className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${formData.isentoValorBruto ? "translate-x-4" : "translate-x-0.5"}`}
+                            />
                           </button>
                         </div>
                         <div className="relative">
@@ -8350,7 +8380,11 @@ export default function OSOperationalPage() {
                             name="valorBruto"
                             step="0.01"
                             disabled={formData.isentoValorBruto}
-                            value={formData.isentoValorBruto ? "" : (formData.valorBruto ?? "")}
+                            value={
+                              formData.isentoValorBruto
+                                ? ""
+                                : (formData.valorBruto ?? "")
+                            }
                             onChange={handleInputChange}
                             className={`w-full border-2 px-4 h-[58px] rounded-xl font-bold text-lg outline-none tabular-nums transition-all shadow-sm ${formData.isentoValorBruto ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed" : "bg-slate-50 border-slate-200 text-blue-700 focus:bg-white focus:border-blue-600"}`}
                           />
@@ -8380,9 +8414,15 @@ export default function OSOperationalPage() {
                               } as React.ChangeEvent<HTMLInputElement>)
                             }
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${formData.isentoCusto ? "bg-violet-600" : "bg-slate-200"}`}
-                            title={formData.isentoCusto ? "Isento ativo — clique para desativar" : "Marcar como isento"}
+                            title={
+                              formData.isentoCusto
+                                ? "Isento ativo — clique para desativar"
+                                : "Marcar como isento"
+                            }
                           >
-                            <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${formData.isentoCusto ? "translate-x-4" : "translate-x-0.5"}`} />
+                            <span
+                              className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${formData.isentoCusto ? "translate-x-4" : "translate-x-0.5"}`}
+                            />
                           </button>
                         </div>
                         <div className="relative">
@@ -8391,7 +8431,9 @@ export default function OSOperationalPage() {
                             name="custo"
                             step="0.01"
                             disabled={formData.isentoCusto}
-                            value={formData.isentoCusto ? "" : (formData.custo ?? "")}
+                            value={
+                              formData.isentoCusto ? "" : (formData.custo ?? "")
+                            }
                             onChange={handleInputChange}
                             className={`w-full border-2 px-4 h-[58px] rounded-xl font-bold text-lg outline-none tabular-nums transition-all shadow-sm ${formData.isentoCusto ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed" : "bg-slate-50 border-slate-200 text-red-500 focus:bg-white focus:border-red-300"}`}
                           />
@@ -9125,7 +9167,7 @@ export default function OSOperationalPage() {
                 />
                 <FormErrorMessage message={quickPassengerErrors.nomeCompleto} />
               </div>
-              <div className="space-y-2 md:col-span-6">
+              <div className="space-y-2 md:col-span-13">
                 <div className="flex justify-between items-center">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
                     Celular <RequiredAsterisk />
@@ -9171,24 +9213,6 @@ export default function OSOperationalPage() {
                   }
                 />
                 <FormErrorMessage message={quickPassengerErrors.celular} />
-              </div>
-              <div className="space-y-2 md:col-span-5">
-                <GeologSearchableSelect
-                  label="Notificar"
-                  options={[
-                    { id: "Sim", nome: "Sim" },
-                    { id: "Não", nome: "Não" },
-                  ]}
-                  value={quickPassengerForm.notificar}
-                  onChange={(value) =>
-                    setQuickPassengerForm((prev) => ({
-                      ...prev,
-                      notificar: value,
-                    }))
-                  }
-                  required
-                  disableSearch
-                />
               </div>
             </div>
 
@@ -10739,9 +10763,6 @@ export default function OSOperationalPage() {
                                     <p className="text-sm font-bold text-slate-800">
                                       {passenger.nome}
                                     </p>
-                                    <p className="text-xs font-semibold text-slate-400 mt-0.5">
-                                      {passenger.email}
-                                    </p>
                                   </div>
                                 </div>
                               </td>
@@ -10823,26 +10844,6 @@ export default function OSOperationalPage() {
                                             <Bell size={12} />
                                             Notificar passageiro
                                           </p>
-                                          {passenger.hasEmail && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleNotifyPassenger(
-                                                  passenger.key,
-                                                  "email",
-                                                  passenger,
-                                                )
-                                              }
-                                              disabled={!!notifyLoadingKey}
-                                              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
-                                            >
-                                              <Mail size={14} />
-                                              {notifyLoadingKey ===
-                                              passenger.key
-                                                ? "Enviando..."
-                                                : "Por e-mail"}
-                                            </button>
-                                          )}
                                           {passenger.hasPhone && (
                                             <button
                                               type="button"
@@ -10863,27 +10864,6 @@ export default function OSOperationalPage() {
                                                 : "Por celular"}
                                             </button>
                                           )}
-                                          {passenger.hasEmail &&
-                                            passenger.hasPhone && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleNotifyPassenger(
-                                                    passenger.key,
-                                                    "both",
-                                                    passenger,
-                                                  )
-                                                }
-                                                disabled={!!notifyLoadingKey}
-                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
-                                              >
-                                                <Send size={14} />
-                                                {notifyLoadingKey ===
-                                                passenger.key
-                                                  ? "Enviando..."
-                                                  : "Ambos"}
-                                              </button>
-                                            )}
                                         </div>
                                       )}
                                   </div>
@@ -14356,4 +14336,3 @@ function DocagemFinanceiroSection({
     </div>
   );
 }
-

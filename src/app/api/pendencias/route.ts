@@ -90,9 +90,10 @@ interface DocagemRow {
 function checkSemValor(row: OSRow): boolean {
   if (row.status_operacional !== "Finalizado") return false;
   const vBruto =
-    typeof row.valor_bruto === "string" ? Number(row.valor_bruto) : row.valor_bruto;
-  const vCusto =
-    typeof row.custo === "string" ? Number(row.custo) : row.custo;
+    typeof row.valor_bruto === "string"
+      ? Number(row.valor_bruto)
+      : row.valor_bruto;
+  const vCusto = typeof row.custo === "string" ? Number(row.custo) : row.custo;
   const faltaVB =
     !row.isento_valor_bruto &&
     (vBruto === null || vBruto === undefined || vBruto === 0);
@@ -114,7 +115,8 @@ function checkAtrasada(
   if (row.arquivado) return false;
   if (row.tipo === "rascunho") return false;
   const status = row.status_operacional;
-  if (!status || status === "Cancelado" || status === "Finalizado") return false;
+  if (!status || status === "Cancelado" || status === "Finalizado")
+    return false;
   if (!row.data) return false;
 
   const parts = row.data.split("-").map(Number);
@@ -181,7 +183,10 @@ export async function GET(request: Request): Promise<NextResponse> {
         .range(from, to);
       if (error) {
         console.error("[api/pendencias] erro ao buscar OS:", error);
-        return NextResponse.json({ error: "Erro ao buscar OS" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Erro ao buscar OS" },
+          { status: 500 },
+        );
       }
       const rows = (data || []) as unknown as OSRow[];
       if (rows.length === 0) {
@@ -241,7 +246,8 @@ export async function GET(request: Request): Promise<NextResponse> {
           id: row.id,
           protocolo: row.protocolo || "",
           os: row.os_number || "",
-          clienteNome: clienteMap.get(row.cliente_id ?? "") || "Cliente não informado",
+          clienteNome:
+            clienteMap.get(row.cliente_id ?? "") || "Cliente não informado",
           data: row.data || "",
           motivo: "rascunho",
           tipo: "rascunho",
@@ -259,7 +265,8 @@ export async function GET(request: Request): Promise<NextResponse> {
           id: row.id,
           protocolo: row.protocolo || "",
           os: row.os_number || "",
-          clienteNome: clienteMap.get(row.cliente_id ?? "") || "Cliente não informado",
+          clienteNome:
+            clienteMap.get(row.cliente_id ?? "") || "Cliente não informado",
           data: row.data || "",
           motivo: "sem_valor",
           tipo: (row.tipo as "os" | "freelance") || "os",
@@ -270,7 +277,8 @@ export async function GET(request: Request): Promise<NextResponse> {
           id: row.id,
           protocolo: row.protocolo || "",
           os: row.os_number || "",
-          clienteNome: clienteMap.get(row.cliente_id ?? "") || "Cliente não informado",
+          clienteNome:
+            clienteMap.get(row.cliente_id ?? "") || "Cliente não informado",
           data: row.data || "",
           motivo: "atrasada",
           tipo: (row.tipo as "os" | "freelance") || "os",

@@ -196,9 +196,7 @@ export default function DashboardLayout({
     }
     // Mesma proteção para a página de caixa (mesmo perfil de acesso).
     if (pathname === "/portal/caixa" && !hasPageAccess("caixa")) {
-      toast.warning(
-        "Você não tem acesso ao caixa. Redirecionando...",
-      );
+      toast.warning("Você não tem acesso ao caixa. Redirecionando...");
       router.push("/portal/dashboard");
     }
   }, [profile, loading, pathname, router, hasPageAccess]);
@@ -548,7 +546,9 @@ export default function DashboardLayout({
                     ) : presenceUsers.length === 0 ? (
                       <div className="p-8 text-center text-slate-400">
                         <Users size={32} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-base">Nenhum funcionário encontrado</p>
+                        <p className="text-base">
+                          Nenhum funcionário encontrado
+                        </p>
                       </div>
                     ) : (
                       presenceUsers.map((u) => (
@@ -815,24 +815,24 @@ export default function DashboardLayout({
                                                     "Novo Centro de Custo"
                                                   ? "criou um novo Centro de Custo"
                                                   : isDriverNotify
-                                                  ? "enviou uma mensagem de serviço para o motorista"
-                                                  : isDriverDelivered
-                                                    ? "recebeu a mensagem com sucesso"
-                                                    : isDriverViewDetails
-                                                      ? notifCycleDesc
-                                                        ? "visualizou os detalhes do atendimento"
-                                                        : "visualizou os detalhes do atendimento"
-                                                      : isDriverStart
+                                                    ? "enviou uma mensagem de serviço para o motorista"
+                                                    : isDriverDelivered
+                                                      ? "recebeu a mensagem com sucesso"
+                                                      : isDriverViewDetails
                                                         ? notifCycleDesc
-                                                          ? "iniciou a rota do"
-                                                          : "iniciou a rota"
-                                                        : isDriverFinish
+                                                          ? "visualizou os detalhes do atendimento"
+                                                          : "visualizou os detalhes do atendimento"
+                                                        : isDriverStart
                                                           ? notifCycleDesc
-                                                            ? "finalizou a rota do"
-                                                            : "finalizou a rota"
-                                                          : isDriverUpdate
-                                                            ? notification.message
-                                                            : notification.title.toLowerCase();
+                                                            ? "iniciou a rota do"
+                                                            : "iniciou a rota"
+                                                          : isDriverFinish
+                                                            ? notifCycleDesc
+                                                              ? "finalizou a rota do"
+                                                              : "finalizou a rota"
+                                                            : isDriverUpdate
+                                                              ? notification.message
+                                                              : notification.title.toLowerCase();
 
                         const renderActionContent = () => {
                           const kmText = (() => {

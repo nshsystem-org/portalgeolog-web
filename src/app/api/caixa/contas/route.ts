@@ -28,10 +28,12 @@ export async function GET() {
 
     if (error) throw error;
 
-    const contas = (data as CaixaContaRow[] | null)?.map(mapCaixaContaRow) ?? [];
+    const contas =
+      (data as CaixaContaRow[] | null)?.map(mapCaixaContaRow) ?? [];
     return NextResponse.json({ contas });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -56,7 +58,10 @@ export async function POST(request: Request) {
 
     const nome = String(body.nome || "").trim();
     if (!nome) {
-      return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Nome é obrigatório" },
+        { status: 400 },
+      );
     }
     const tipo = String(body.tipo || "caixa").trim();
     if (!["caixa", "banco", "pix", "carteira"].includes(tipo)) {
@@ -98,7 +103,8 @@ export async function POST(request: Request) {
     const conta = mapCaixaContaRow(data as CaixaContaRow);
     return NextResponse.json({ conta }, { status: 201 });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

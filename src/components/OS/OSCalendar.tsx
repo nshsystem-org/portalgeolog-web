@@ -1293,10 +1293,7 @@ export default function OSCalendar({
         // Atrasada/não iniciada → checa pelo datetime do itinerário
         if (
           props.kind !== "rascunho" &&
-          isOsAtrasadaOuNaoIniciada(
-            os,
-            props.displayDateTime ?? undefined,
-          )
+          isOsAtrasadaOuNaoIniciada(os, props.displayDateTime ?? undefined)
         ) {
           return true;
         }
@@ -1317,7 +1314,15 @@ export default function OSCalendar({
     }
 
     return derivedEvents;
-  }, [osList, docagemInstances, clientes, now, currentView, docagemListFilter, currentUserId]);
+  }, [
+    osList,
+    docagemInstances,
+    clientes,
+    now,
+    currentView,
+    docagemListFilter,
+    currentUserId,
+  ]);
 
   // Hover expandir coluna no modo semana
   // O FullCalendar renderiza DUAS tabelas separadas: header e body.
@@ -2042,12 +2047,18 @@ export default function OSCalendar({
                   key={opt.key}
                   onClick={() => onFilterChange?.(opt.key)}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap ${
-                    active ? opt.activeClass : `text-slate-500 ${opt.inactiveHover}`
+                    active
+                      ? opt.activeClass
+                      : `text-slate-500 ${opt.inactiveHover}`
                   }`}
                 >
                   <Icon
                     size={14}
-                    className={active ? (opt.activeIconClass ?? "text-white") : opt.inactiveIconClass}
+                    className={
+                      active
+                        ? (opt.activeIconClass ?? "text-white")
+                        : opt.inactiveIconClass
+                    }
                   />
                   {opt.label}
                 </button>

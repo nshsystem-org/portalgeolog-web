@@ -246,7 +246,9 @@ export default function MotoristasPage() {
     useState<Driver | null>(null);
   const [viewingDriver, setViewingDriver] = useState<Driver | null>(null);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
-  const [editingDriverAvatarUrl, setEditingDriverAvatarUrl] = useState<string | null>(null);
+  const [editingDriverAvatarUrl, setEditingDriverAvatarUrl] = useState<
+    string | null
+  >(null);
   const [blockingOS, setBlockingOS] = useState<OrderService | null>(null);
   const [isLoadingBlockingOS, setIsLoadingBlockingOS] = useState(false);
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
@@ -335,7 +337,9 @@ export default function MotoristasPage() {
   }));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [driverAvatarFile, setDriverAvatarFile] = useState<File | null>(null);
-  const [driverAvatarPreview, setDriverAvatarPreview] = useState<string | null>(null);
+  const [driverAvatarPreview, setDriverAvatarPreview] = useState<string | null>(
+    null,
+  );
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [vehiclesUnavailable, setVehiclesUnavailable] = useState(false);
@@ -526,7 +530,10 @@ export default function MotoristasPage() {
         if (blockingOSData && blockingOSData.length > 0) {
           toast(
             <div className="flex items-start gap-3">
-              <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+              <AlertCircle
+                className="text-amber-600 flex-shrink-0 mt-0.5"
+                size={20}
+              />
               <div className="flex-1">
                 <p className="font-semibold text-slate-800 mb-1">
                   Veículo em uso
@@ -1163,9 +1170,15 @@ export default function MotoristasPage() {
           const avatarForm = new FormData();
           avatarForm.append("file", driverAvatarFile);
           avatarForm.append("driverId", data.id);
-          const avatarRes = await fetch("/api/driver-avatar", { method: "POST", body: avatarForm });
+          const avatarRes = await fetch("/api/driver-avatar", {
+            method: "POST",
+            body: avatarForm,
+          });
           if (!avatarRes.ok) {
-            console.warn("[driver-avatar] Upload falhou:", await avatarRes.text());
+            console.warn(
+              "[driver-avatar] Upload falhou:",
+              await avatarRes.text(),
+            );
           }
         } catch (avatarErr) {
           console.warn("[driver-avatar] Erro no upload:", avatarErr);
@@ -1316,7 +1329,10 @@ export default function MotoristasPage() {
         if (blockingOS && blockingOS.length > 0) {
           toast(
             <div className="flex items-start gap-3">
-              <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+              <AlertCircle
+                className="text-amber-600 flex-shrink-0 mt-0.5"
+                size={20}
+              />
               <div className="flex-1">
                 <p className="font-semibold text-slate-800 mb-1">
                   Veículo em uso
@@ -1375,7 +1391,10 @@ export default function MotoristasPage() {
             { method: "DELETE" },
           );
           if (!avatarRes.ok) {
-            console.warn("[driver-avatar] Delete falhou:", await avatarRes.text());
+            console.warn(
+              "[driver-avatar] Delete falhou:",
+              await avatarRes.text(),
+            );
           }
         } catch (avatarErr) {
           console.warn("[driver-avatar] Erro no delete:", avatarErr);
@@ -1388,9 +1407,15 @@ export default function MotoristasPage() {
           const avatarForm = new FormData();
           avatarForm.append("file", driverAvatarFile);
           avatarForm.append("driverId", editingDriver.id);
-          const avatarRes = await fetch("/api/driver-avatar", { method: "POST", body: avatarForm });
+          const avatarRes = await fetch("/api/driver-avatar", {
+            method: "POST",
+            body: avatarForm,
+          });
           if (!avatarRes.ok) {
-            console.warn("[driver-avatar] Upload falhou:", await avatarRes.text());
+            console.warn(
+              "[driver-avatar] Upload falhou:",
+              await avatarRes.text(),
+            );
           }
         } catch (avatarErr) {
           console.warn("[driver-avatar] Erro no upload:", avatarErr);
@@ -1717,7 +1742,9 @@ export default function MotoristasPage() {
               <div className="flex items-center gap-3">
                 {item.avatar_url ? (
                   <img
-                    src={getThumbnailUrl(item.avatar_url, 100) || item.avatar_url}
+                    src={
+                      getThumbnailUrl(item.avatar_url, 100) || item.avatar_url
+                    }
                     alt={item.name}
                     className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm flex-shrink-0"
                   />
@@ -1968,7 +1995,9 @@ export default function MotoristasPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const input = document.getElementById("driver-avatar-input-create");
+                        const input = document.getElementById(
+                          "driver-avatar-input-create",
+                        );
                         if (input) input.click();
                       }}
                       className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-blue-700 transition-colors cursor-pointer"
@@ -2029,8 +2058,7 @@ export default function MotoristasPage() {
                 {/* Tipo */}
                 <div className="space-y-2 w-full md:w-40">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1 mt-[3px]">
-                    Tipo{" "}
-                    <span className="text-rose-300 text-base">*</span>
+                    Tipo <span className="text-rose-300 text-base">*</span>
                   </label>
                   <GeologSearchableSelect
                     options={tipoDocumentoOptions}
@@ -2604,7 +2632,9 @@ export default function MotoristasPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const input = document.getElementById("driver-avatar-input-edit");
+                        const input = document.getElementById(
+                          "driver-avatar-input-edit",
+                        );
                         if (input) input.click();
                       }}
                       className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-blue-700 transition-colors cursor-pointer"
@@ -2666,8 +2696,7 @@ export default function MotoristasPage() {
                 {/* Tipo */}
                 <div className="space-y-2 w-full md:w-40">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1 mt-[3px]">
-                    Tipo{" "}
-                    <span className="text-rose-300 text-base">*</span>
+                    Tipo <span className="text-rose-300 text-base">*</span>
                   </label>
                   <GeologSearchableSelect
                     options={tipoDocumentoOptions}
@@ -3465,7 +3494,9 @@ export default function MotoristasPage() {
         >
           <div className="flex flex-col items-center justify-center py-12">
             <Loader2 className="animate-spin text-blue-600 mb-4" size={48} />
-            <p className="text-slate-600">Buscando detalhes do atendimento...</p>
+            <p className="text-slate-600">
+              Buscando detalhes do atendimento...
+            </p>
           </div>
         </StandardModal>
       )}
@@ -3541,15 +3572,18 @@ export default function MotoristasPage() {
             {/* Ação sugerida */}
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <div className="flex items-start gap-3">
-                <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+                <AlertCircle
+                  className="text-amber-600 flex-shrink-0 mt-0.5"
+                  size={20}
+                />
                 <div>
                   <p className="font-semibold text-amber-900 mb-1">
                     Ação necessária
                   </p>
                   <p className="text-sm text-amber-800">
-                    Para desvincular o veículo deste motorista, você precisa primeiro
-                    finalizar ou cancelar este atendimento, ou alterar o veículo
-                    vinculado a ele.
+                    Para desvincular o veículo deste motorista, você precisa
+                    primeiro finalizar ou cancelar este atendimento, ou alterar
+                    o veículo vinculado a ele.
                   </p>
                 </div>
               </div>
@@ -3565,7 +3599,10 @@ export default function MotoristasPage() {
               </button>
               <button
                 onClick={() => {
-                  window.open(`/portal/os?open_os_protocolo=${blockingOS.protocolo || blockingOS.os}`, "_blank");
+                  window.open(
+                    `/portal/os?open_os_protocolo=${blockingOS.protocolo || blockingOS.os}`,
+                    "_blank",
+                  );
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
               >

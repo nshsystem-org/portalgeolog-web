@@ -192,15 +192,17 @@ export const normalizeToInputDate = (value: Date): string => {
 // Labels / constantes de exibição
 // =============================================================================
 
-export const CATEGORIAS_ENTRADA: ReadonlyArray<{ value: string; label: string }> =
-  [
-    { value: "recebimento_cliente", label: "Recebimento de Cliente" },
-    { value: "repasse_recebido", label: "Repasse Recebido" },
-    { value: "estorno", label: "Estorno" },
-    { value: "rendimento", label: "Rendimento / Juros" },
-    { value: "emprestimo", label: "Empréstimo / Aporte" },
-    { value: "outros", label: "Outros" },
-  ];
+export const CATEGORIAS_ENTRADA: ReadonlyArray<{
+  value: string;
+  label: string;
+}> = [
+  { value: "recebimento_cliente", label: "Recebimento de Cliente" },
+  { value: "repasse_recebido", label: "Repasse Recebido" },
+  { value: "estorno", label: "Estorno" },
+  { value: "rendimento", label: "Rendimento / Juros" },
+  { value: "emprestimo", label: "Empréstimo / Aporte" },
+  { value: "outros", label: "Outros" },
+];
 
 export const CATEGORIAS_SAIDA: ReadonlyArray<{ value: string; label: string }> =
   [
@@ -230,13 +232,15 @@ export const FORMAS_PAGAMENTO: ReadonlyArray<{
   { value: "outro", label: "Outro" },
 ];
 
-export const TIPOS_CONTA: ReadonlyArray<{ value: CaixaContaTipo; label: string }> =
-  [
-    { value: "caixa", label: "Caixa" },
-    { value: "banco", label: "Banco" },
-    { value: "pix", label: "Pix" },
-    { value: "carteira", label: "Carteira" },
-  ];
+export const TIPOS_CONTA: ReadonlyArray<{
+  value: CaixaContaTipo;
+  label: string;
+}> = [
+  { value: "caixa", label: "Caixa" },
+  { value: "banco", label: "Banco" },
+  { value: "pix", label: "Pix" },
+  { value: "carteira", label: "Carteira" },
+];
 
 export const labelOf = <T extends string>(
   list: ReadonlyArray<{ value: T; label: string }>,
@@ -258,13 +262,17 @@ export const labelCategoria = (
   return categoria;
 };
 
-export const labelFormaPagamento = (forma: CaixaFormaPagamento | string | null | undefined): string =>
-  labelOf(FORMAS_PAGAMENTO, forma);
+export const labelFormaPagamento = (
+  forma: CaixaFormaPagamento | string | null | undefined,
+): string => labelOf(FORMAS_PAGAMENTO, forma);
 
-export const labelTipoConta = (tipo: CaixaContaTipo | string | null | undefined): string =>
-  labelOf(TIPOS_CONTA, tipo);
+export const labelTipoConta = (
+  tipo: CaixaContaTipo | string | null | undefined,
+): string => labelOf(TIPOS_CONTA, tipo);
 
-export const labelOrigem = (origem: CaixaLancamentoOrigem | string | null | undefined): string => {
+export const labelOrigem = (
+  origem: CaixaLancamentoOrigem | string | null | undefined,
+): string => {
   switch (origem) {
     case "os_recebimento":
       return "Recebimento de OS";

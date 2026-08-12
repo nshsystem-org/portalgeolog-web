@@ -205,9 +205,7 @@ async function testMessage() {
   const businessOk = await verifyBusinessAccount();
 
   if (!phoneOk || !businessOk) {
-    console.log(
-      "\n❌ Verificação falhou. Corrija as credenciais no .env",
-    );
+    console.log("\n❌ Verificação falhou. Corrija as credenciais no .env");
     console.log("\n📖 Guia de correção:");
     console.log(
       "1. Acesse: https://business.facebook.com/settings/whatsapp-business-accounts",

@@ -166,7 +166,10 @@ async function hasFinanceAccess(userId: string): Promise<boolean> {
   if (data.categoria === "administrador" || data.categoria === "financeiro") {
     return true;
   }
-  const permissions = data.specific_permissions as Record<string, unknown> | null;
+  const permissions = data.specific_permissions as Record<
+    string,
+    unknown
+  > | null;
   const financePermissions = permissions?.financeiro as
     | Record<string, unknown>
     | undefined;
@@ -203,7 +206,8 @@ export async function GET(request: Request) {
       centerName: batch.centerName,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -231,7 +235,8 @@ export async function POST(request: Request) {
     }
 
     const fileValue = formData.get("file");
-    const file = fileValue instanceof File && fileValue.size > 0 ? fileValue : null;
+    const file =
+      fileValue instanceof File && fileValue.size > 0 ? fileValue : null;
     const tipoDocumento =
       String(formData.get("tipoDocumento") || "nota_fiscal").trim() ||
       "nota_fiscal";
@@ -396,7 +401,8 @@ export async function POST(request: Request) {
       totalValue: updatedTotalValue,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -441,9 +441,7 @@ export function useCaixaPage(): CaixaPageState {
     async (conta: CaixaConta): Promise<void> => {
       try {
         await updateConta(conta.id, { ativa: !conta.ativa });
-        toast.success(
-          conta.ativa ? "Conta desativada." : "Conta ativada.",
-        );
+        toast.success(conta.ativa ? "Conta desativada." : "Conta ativada.");
         await loadContas();
       } catch (error) {
         const message =
@@ -462,7 +460,9 @@ export function useCaixaPage(): CaixaPageState {
         await loadContas();
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Erro ao definir conta padrão.";
+          error instanceof Error
+            ? error.message
+            : "Erro ao definir conta padrão.";
         toast.error(message);
       }
     },
@@ -487,7 +487,9 @@ export function useCaixaPage(): CaixaPageState {
         await Promise.all([lancamentosTable.refresh(), loadContas()]);
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Erro ao excluir lançamento.";
+          error instanceof Error
+            ? error.message
+            : "Erro ao excluir lançamento.";
         toast.error(message);
       }
     },

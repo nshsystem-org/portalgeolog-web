@@ -39,7 +39,9 @@ async function callRpc<T>(
   timeoutMs = 5000,
 ): Promise<SupabaseResult<T>> {
   return withTimeout<SupabaseResult<T>>(
-    supabase.rpc(fnName, args as never) as unknown as PromiseLike<SupabaseResult<T>>,
+    supabase.rpc(fnName, args as never) as unknown as PromiseLike<
+      SupabaseResult<T>
+    >,
     timeoutMs,
   );
 }
@@ -55,10 +57,18 @@ export async function checkRateLimit(
   maxPerMinute: number = 10,
 ): Promise<{ allowed: boolean; count: number; resetAt: string }> {
   try {
-    const { data, error } = await callRpc<{ allowed: boolean; count: number; resetAt: string }>(
+    const { data, error } = await callRpc<{
+      allowed: boolean;
+      count: number;
+      resetAt: string;
+    }>(
       supabase,
       "check_rate_limit",
-      { p_phone: phone, p_event_type: eventType, p_max_per_minute: maxPerMinute },
+      {
+        p_phone: phone,
+        p_event_type: eventType,
+        p_max_per_minute: maxPerMinute,
+      },
       3000,
     );
 
@@ -67,7 +77,9 @@ export async function checkRateLimit(
       return { allowed: true, count: 0, resetAt: new Date().toISOString() };
     }
 
-    return data ?? { allowed: true, count: 0, resetAt: new Date().toISOString() };
+    return (
+      data ?? { allowed: true, count: 0, resetAt: new Date().toISOString() }
+    );
   } catch (err) {
     console.error("[webhook-helpers] Timeout ao verificar rate limit:", err);
     return { allowed: true, count: 0, resetAt: new Date().toISOString() };
@@ -105,7 +117,10 @@ export async function recordMetric(
       .then((result) => {
         const r = result as SupabaseResult<unknown>;
         if (r.error) {
-          console.error("[webhook-helpers] Erro ao registrar métrica:", r.error);
+          console.error(
+            "[webhook-helpers] Erro ao registrar métrica:",
+            r.error,
+          );
         }
       });
   } catch (err) {
@@ -393,11 +408,16 @@ export async function validateVehicleKm(
     );
 
     if (error) {
-      console.error("[webhook-helpers] Erro ao validar odômetro do veículo:", error);
+      console.error(
+        "[webhook-helpers] Erro ao validar odômetro do veículo:",
+        error,
+      );
       return { success: false, error: error.message };
     }
 
-    return data ?? { success: false, error: "No data returned from odometer RPC" };
+    return (
+      data ?? { success: false, error: "No data returned from odometer RPC" }
+    );
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error("[webhook-helpers] Timeout ao validar odômetro:", err);

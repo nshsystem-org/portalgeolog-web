@@ -134,33 +134,27 @@ export const TAG_CATEGORY_STYLES: Record<
   { badge: string; icon: string }
 > = {
   action: {
-    badge:
-      "bg-amber-50 text-amber-700 border-amber-100",
+    badge: "bg-amber-50 text-amber-700 border-amber-100",
     icon: "RefreshCw",
   },
   cycle: {
-    badge:
-      "bg-indigo-50 text-indigo-700 border-indigo-100",
+    badge: "bg-indigo-50 text-indigo-700 border-indigo-100",
     icon: "Route",
   },
   state: {
-    badge:
-      "bg-slate-50 text-slate-600 border-slate-200",
+    badge: "bg-slate-50 text-slate-600 border-slate-200",
     icon: "Activity",
   },
   field: {
-    badge:
-      "bg-blue-50 text-blue-700 border-blue-100",
+    badge: "bg-blue-50 text-blue-700 border-blue-100",
     icon: "Edit3",
   },
   km: {
-    badge:
-      "bg-orange-50 text-orange-700 border-orange-100",
+    badge: "bg-orange-50 text-orange-700 border-orange-100",
     icon: "Gauge",
   },
   section: {
-    badge:
-      "bg-purple-50 text-purple-700 border-purple-100",
+    badge: "bg-purple-50 text-purple-700 border-purple-100",
     icon: "Layers",
   },
 };

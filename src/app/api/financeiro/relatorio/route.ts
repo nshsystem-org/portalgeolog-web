@@ -265,7 +265,6 @@ const LOGO_BASE64 =
   "7VZUpVlV1aOhYLCmv7+/tr6+ocXV1R04jSmeVTorS9bpkCQIrNFoFFmWEyilDCK9rL0+X9Dr84UAnF7r" +
   "hHN0js7ROTpH5+gcnaNzdI7O0Q9N/w9RVIBz9/dJxQAAAABJRU5ErkJggg==";
 
-
 export type ReportTemplate =
   | "medicao_cliente"
   | "repasse_motorista"
@@ -434,7 +433,9 @@ function calcEffectiveClientValue(row: FinanceRow): number {
  */
 function calcEffectiveCustoValue(row: FinanceRow): number {
   const vCusto = Number(row.custo || 0);
-  const heMotorista = calcHoraExtraMotorista(parseHoraExtraMinutes(row.hora_extra));
+  const heMotorista = calcHoraExtraMotorista(
+    parseHoraExtraMinutes(row.hora_extra),
+  );
   const total = vCusto + heMotorista;
   if (row.no_show) {
     const fator = (row.no_show_percentual ?? 100) / 100;
@@ -750,13 +751,17 @@ async function fetchReportData(
       await Promise.all([
         clientIds.length > 0
           ? adminClient.from("clientes").select("id, nome").in("id", clientIds)
-          : Promise.resolve({ data: [] as Array<{ id: string; nome: string }> }),
+          : Promise.resolve({
+              data: [] as Array<{ id: string; nome: string }>,
+            }),
         centerIds.length > 0
           ? adminClient
               .from("centros_custo")
               .select("id, nome")
               .in("id", centerIds)
-          : Promise.resolve({ data: [] as Array<{ id: string; nome: string }> }),
+          : Promise.resolve({
+              data: [] as Array<{ id: string; nome: string }>,
+            }),
         driverIds.length > 0
           ? adminClient
               .from("drivers")
@@ -768,7 +773,9 @@ async function fetchReportData(
               .from("veiculos")
               .select("id, placa, modelo")
               .in("id", vehicleIds)
-          : Promise.resolve({ data: [] as Array<{ id: string; placa: string; modelo: string }> }),
+          : Promise.resolve({
+              data: [] as Array<{ id: string; placa: string; modelo: string }>,
+            }),
       ]);
 
     const driverParceiroIds = (driversRes.data || [])
@@ -825,7 +832,15 @@ async function fetchReportData(
       const passData = await fetchInChunks<{
         id: string;
         nome_completo: string;
-      }>(adminClient, "passageiros", "id", passengerIds, "id, nome_completo", undefined, FETCH_CHUNK);
+      }>(
+        adminClient,
+        "passageiros",
+        "id",
+        passengerIds,
+        "id, nome_completo",
+        undefined,
+        FETCH_CHUNK,
+      );
       passData.forEach((p: { id: string; nome_completo: string }) => {
         passengerNamesMap.set(p.id, p.nome_completo);
       });
@@ -1253,7 +1268,9 @@ function generateCsv(
       csvTotalPendente += s.valorPendente;
     }
     lines.push("");
-    lines.push(`TOTAL; ; ;${csvTotalServicos};${csvTotalPagos};${csvTotalPendentes};${formatCurrency(csvTotalValor)};${formatCurrency(csvTotalPago)};${formatCurrency(csvTotalPendente)}`);
+    lines.push(
+      `TOTAL; ; ;${csvTotalServicos};${csvTotalPagos};${csvTotalPendentes};${formatCurrency(csvTotalValor)};${formatCurrency(csvTotalPago)};${formatCurrency(csvTotalPendente)}`,
+    );
 
     const csvContent = lines.join("\n");
     const encoder = new TextEncoder();
@@ -1304,7 +1321,10 @@ function generateCsv(
             passageiros,
             trajeto,
             motoristaNome,
-            formatCurrencyOrIsento(calcEffectiveClientValue(row), row.isento_valor_bruto),
+            formatCurrencyOrIsento(
+              calcEffectiveClientValue(row),
+              row.isento_valor_bruto,
+            ),
             row.status_financeiro || "Pendente",
           ].join(";"),
         );
@@ -1325,7 +1345,10 @@ function generateCsv(
           motoristaNome || "-",
           trajeto || "-",
           vehicleMap.get(row.veiculo_id || "") || "-",
-          formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
+          formatCurrencyOrIsento(
+            calcEffectiveCustoValue(row),
+            row.isento_custo,
+          ),
         ];
         lines.push(csvRow.join(";"));
         break;
@@ -1341,7 +1364,10 @@ function generateCsv(
             formatDate(row.data),
             clienteNome,
             formatCurrencyOrIsento(bruto, row.isento_valor_bruto),
-            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
+            formatCurrencyOrIsento(
+              calcEffectiveCustoValue(row),
+              row.isento_custo,
+            ),
             formatCurrency(Number(row.imposto || 0)),
             formatCurrency(lucro),
             `${margem}%`,
@@ -1357,7 +1383,10 @@ function generateCsv(
             formatDate(row.data),
             clienteNome,
             motoristaNome,
-            formatCurrencyOrIsento(Number(row.valor_bruto || 0), row.isento_valor_bruto),
+            formatCurrencyOrIsento(
+              Number(row.valor_bruto || 0),
+              row.isento_valor_bruto,
+            ),
           ].join(";"),
         );
         break;
@@ -1371,7 +1400,10 @@ function generateCsv(
             row.os_number || "-",
             formatDate(row.data),
             nomeDestinatario,
-            formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo),
+            formatCurrencyOrIsento(
+              calcEffectiveCustoValue(row),
+              row.isento_custo,
+            ),
             row.status_financeiro || "Pendente",
           ].join(";"),
         );
@@ -1738,8 +1770,7 @@ function buildRepasseSheet(
   }, "PARCEIRO".length);
 
   const maxMotoristaLen = data.rows.reduce((max, row) => {
-    const txt =
-      data.driverMap.get(row.driver_id || "") || row.motorista || "-";
+    const txt = data.driverMap.get(row.driver_id || "") || row.motorista || "-";
     return txt.length > max ? txt.length : max;
   }, "MOTORISTA".length);
 
@@ -1877,13 +1908,19 @@ function buildRepasseSheet(
 
     excelRow.getCell(colIndexMap["data"]).value = formatDate(row.data);
     excelRow.getCell(colIndexMap["protocolo"]).value = row.protocolo || "-";
-    excelRow.getCell(colIndexMap["status"]).value = row.repasse_pago ? "Pago" : "Pendente";
-    excelRow.getCell(colIndexMap["tipo"]).value = getRowVinculoTipo(row, driver);
+    excelRow.getCell(colIndexMap["status"]).value = row.repasse_pago
+      ? "Pago"
+      : "Pendente";
+    excelRow.getCell(colIndexMap["tipo"]).value = getRowVinculoTipo(
+      row,
+      driver,
+    );
     if (showParceiroCol) {
       excelRow.getCell(colIndexMap["parceiro"]).value = parceiroNomeLinha;
     }
     excelRow.getCell(colIndexMap["motorista"]).value = motoristaNome;
-    excelRow.getCell(colIndexMap["trajeto"]).value = trajetoList.join(" -> ") || "-";
+    excelRow.getCell(colIndexMap["trajeto"]).value =
+      trajetoList.join(" -> ") || "-";
     excelRow.getCell(colIndexMap["veiculo"]).value = placaModelo;
 
     const valor = calcEffectiveCustoValue(row);
@@ -1917,9 +1954,7 @@ function buildRepasseSheet(
               font: {
                 size: 8,
                 color: {
-                  argb: tag.startsWith("NO-SHOW")
-                    ? "FFB91C1C"
-                    : "FF4B5563",
+                  argb: tag.startsWith("NO-SHOW") ? "FFB91C1C" : "FF4B5563",
                 },
                 bold: tag.startsWith("H.EXTRA"),
               },
@@ -1932,7 +1967,10 @@ function buildRepasseSheet(
           wrapText: true,
         };
         // Aumenta a altura da linha para acomodar as tags
-        excelRow.height = Math.max(excelRow.height || 18, 18 + tags.length * 12);
+        excelRow.height = Math.max(
+          excelRow.height || 18,
+          18 + tags.length * 12,
+        );
       } else {
         valorCell.value = valor;
         valorCell.numFmt = '"R$" #,##0.00';
@@ -1947,7 +1985,12 @@ function buildRepasseSheet(
       cell.border = thinBorder;
       // Pula font/alignment da célula VALOR quando ela já tem richText
       // (valor + tags NO-SHOW/H.EXTRA) — o estilo foi definido acima.
-      if (c === valorColIdx && cell.value && typeof cell.value === "object" && "richText" in cell.value) {
+      if (
+        c === valorColIdx &&
+        cell.value &&
+        typeof cell.value === "object" &&
+        "richText" in cell.value
+      ) {
         continue;
       }
       if (!cell.font) {
@@ -2126,9 +2169,17 @@ function buildResumoMotoristasSheet(
   );
 
   const columns = [
-    { header: "MOTORISTA / PARCEIRO", key: "nome", width: Math.max(maxNomeLen + 2, 22) },
+    {
+      header: "MOTORISTA / PARCEIRO",
+      key: "nome",
+      width: Math.max(maxNomeLen + 2, 22),
+    },
     { header: "TIPO", key: "tipo", width: 14 },
-    { header: "PARCEIRO", key: "parceiro", width: Math.max(maxParceiroLen + 2, 14) },
+    {
+      header: "PARCEIRO",
+      key: "parceiro",
+      width: Math.max(maxParceiroLen + 2, 14),
+    },
     { header: "SERVIÇOS REALIZADOS", key: "servicos", width: 22 },
     { header: "JÁ PAGOS", key: "pagos", width: 14 },
     { header: "PENDENTES", key: "pendentes", width: 14 },
@@ -2226,7 +2277,10 @@ function buildResumoMotoristasSheet(
       cell.alignment = { horizontal: "right", vertical: "middle" };
     });
     [4, 5, 6].forEach((c) => {
-      excelRow.getCell(c).alignment = { horizontal: "center", vertical: "middle" };
+      excelRow.getCell(c).alignment = {
+        horizontal: "center",
+        vertical: "middle",
+      };
     });
 
     // Estilo geral
@@ -2305,14 +2359,22 @@ function buildResumoMotoristasSheet(
     const cell = totalRow.getCell(c);
     cell.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } };
     cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1E3A8A" },
+    };
   });
   [7, 8, 9].forEach((c) => {
     const cell = totalRow.getCell(c);
     cell.numFmt = numFmt;
     cell.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } };
     cell.alignment = { horizontal: "right", vertical: "middle" };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1E3A8A" },
+    };
   });
 
   for (let c = 1; c <= columns.length; c++) {
@@ -3662,8 +3724,7 @@ async function generatePdf(
       {
         title: "Valor Total",
         value: formatCurrency(
-          data.summary.totalCustoAutonomos +
-            data.summary.totalCustoParceiros,
+          data.summary.totalCustoAutonomos + data.summary.totalCustoParceiros,
         ),
         subtitle: "Repasses previstos",
         iconType: "money",
@@ -3673,8 +3734,7 @@ async function generatePdf(
       {
         title: "Já Pago",
         value: formatCurrency(
-          data.summary.totalPagoAutonomos +
-            data.summary.totalPagoParceiros,
+          data.summary.totalPagoAutonomos + data.summary.totalPagoParceiros,
         ),
         subtitle: "Repasses quitados",
         iconType: "check",
@@ -3756,7 +3816,12 @@ async function generatePdf(
       { label: "Pendentes", width: 65, key: "pendentes", align: "center" },
       { label: "Valor Total", width: 95, key: "valorTotal", align: "right" },
       { label: "Valor Pago", width: 95, key: "valorPago", align: "right" },
-      { label: "Valor Pendente", width: 105, key: "valorPendente", align: "right" },
+      {
+        label: "Valor Pendente",
+        width: 105,
+        key: "valorPendente",
+        align: "right",
+      },
     ],
   };
 
@@ -3841,9 +3906,7 @@ async function generatePdf(
       displayName = filters.driverId
         ? sanitizePdfText(data.driverMap.get(filters.driverId) || "GERAL")
         : filters.parceiroId
-          ? sanitizePdfText(
-              data.parceiroMap.get(filters.parceiroId) || "GERAL",
-            )
+          ? sanitizePdfText(data.parceiroMap.get(filters.parceiroId) || "GERAL")
           : "";
     } else if (isResumo) {
       // Resumo geral não tem filtro de entidade — sempre "GERAL"
@@ -4049,8 +4112,16 @@ async function generatePdf(
         color: isEven ? c.tableZebra : c.tableWhite,
       });
 
-      const cellValues: Array<{ text: string; align: "left" | "right" | "center"; bold: boolean }> = [
-        { text: truncateText(sanitizePdfText(s.nome), 35), align: "left", bold: true },
+      const cellValues: Array<{
+        text: string;
+        align: "left" | "right" | "center";
+        bold: boolean;
+      }> = [
+        {
+          text: truncateText(sanitizePdfText(s.nome), 35),
+          align: "left",
+          bold: true,
+        },
         { text: s.tipo, align: "center", bold: false },
         { text: String(s.servicos), align: "center", bold: false },
         { text: String(s.pagos), align: "center", bold: false },
@@ -4106,7 +4177,10 @@ async function generatePdf(
       height: totalRowHeight,
       color: rgb(0.05, 0.12, 0.23),
     });
-    const totalCellValues: Array<{ text: string; align: "left" | "right" | "center" }> = [
+    const totalCellValues: Array<{
+      text: string;
+      align: "left" | "right" | "center";
+    }> = [
       { text: "TOTAL", align: "left" },
       { text: "", align: "center" },
       { text: String(pdfTotalServicos), align: "center" },
@@ -4140,676 +4214,670 @@ async function generatePdf(
       tx += h.width;
     }
   } else {
-  data.rows.forEach((row: FinanceRow, index: number) => {
-    const isMedicaoCliente = template === "medicao_cliente";
-    const baseRowHeight = isMedicaoCliente ? 45 : 36;
+    data.rows.forEach((row: FinanceRow, index: number) => {
+      const isMedicaoCliente = template === "medicao_cliente";
+      const baseRowHeight = isMedicaoCliente ? 45 : 36;
 
-    // Fetch related data
-    const clienteNome = data.clienteMap.get(row.cliente_id || "") || "-";
-    const centroCustoNome =
-      data.centroCustoMap.get(row.centro_custo_id || "") || "";
-    const motoristaNome =
-      data.driverMap.get(row.driver_id || "") || row.motorista || "-";
-    const waypoints = data.waypointsMap.get(row.id) || [];
-    const passageirosList = Array.from(
-      new Set(
-        waypoints
-          .flatMap((wp) => wp.passengers?.map((p) => p.nome))
-          .filter(Boolean),
-      ),
-    ) as string[];
-    const trajetoList = waypoints.map((wp) => wp.label).filter(Boolean);
+      // Fetch related data
+      const clienteNome = data.clienteMap.get(row.cliente_id || "") || "-";
+      const centroCustoNome =
+        data.centroCustoMap.get(row.centro_custo_id || "") || "";
+      const motoristaNome =
+        data.driverMap.get(row.driver_id || "") || row.motorista || "-";
+      const waypoints = data.waypointsMap.get(row.id) || [];
+      const passageirosList = Array.from(
+        new Set(
+          waypoints
+            .flatMap((wp) => wp.passengers?.map((p) => p.nome))
+            .filter(Boolean),
+        ),
+      ) as string[];
+      const trajetoList = waypoints.map((wp) => wp.label).filter(Boolean);
 
-    const driver = row.driver_id
-      ? data.driverDetailMap.get(row.driver_id)
-      : undefined;
-    const parceiroNome = driver?.parceiro_id
-      ? data.parceiroMap.get(driver.parceiro_id) || "-"
-      : "";
-    const veiculoNome = data.vehicleMap.get(row.veiculo_id || "") || "-";
-    const status = row.status_financeiro || "Pendente";
+      const driver = row.driver_id
+        ? data.driverDetailMap.get(row.driver_id)
+        : undefined;
+      const parceiroNome = driver?.parceiro_id
+        ? data.parceiroMap.get(driver.parceiro_id) || "-"
+        : "";
+      const veiculoNome = data.vehicleMap.get(row.veiculo_id || "") || "-";
+      const status = row.status_financeiro || "Pendente";
 
-    // First pass: compute all cell texts and measure heights
-    type RouteSegment = {
-      type: "header" | "origem" | "parada" | "destino";
-      text: string;
-      dateTime?: string;
-      wrappedLines?: string[];
-    };
-    const cellData: Array<{
-      text: string;
-      font: PDFFont;
-      color: RGB;
-      size: number;
-      isMultiLine: boolean;
-      maxWidth: number;
-      lineHeight: number;
-      align: "left" | "right";
-      routeSegments?: RouteSegment[];
-      custoTagLines?: string[];
-    }> = [];
+      // First pass: compute all cell texts and measure heights
+      type RouteSegment = {
+        type: "header" | "origem" | "parada" | "destino";
+        text: string;
+        dateTime?: string;
+        wrappedLines?: string[];
+      };
+      const cellData: Array<{
+        text: string;
+        font: PDFFont;
+        color: RGB;
+        size: number;
+        isMultiLine: boolean;
+        maxWidth: number;
+        lineHeight: number;
+        align: "left" | "right";
+        routeSegments?: RouteSegment[];
+        custoTagLines?: string[];
+      }> = [];
 
-    let maxContentHeight = baseRowHeight;
+      let maxContentHeight = baseRowHeight;
 
-    for (const h of headers) {
-      let text = "";
-      let font = regularFont;
-      let color = c.textDark;
-      let size = 9;
+      for (const h of headers) {
+        let text = "";
+        let font = regularFont;
+        let color = c.textDark;
+        let size = 9;
 
-      switch (h.key) {
-        case "protocolo_data":
-          text = `${sanitizePdfText(row.protocolo) || "-"}\n${formatDate(row.data)}`;
-          size = 8;
-          break;
-        case "protocolo":
-          text = sanitizePdfText(row.protocolo) || "-";
-          break;
-        case "os":
-          text = sanitizePdfText(row.os_number) || "-";
-          size = 8;
-          font = boldFont;
-          break;
-        case "centro_custo":
-          text = sanitizePdfText(centroCustoNome) || "-";
-          size = 8;
-          break;
-        case "solicitante":
-          text = sanitizePdfText(row.solicitante) || "-";
-          size = 8;
-          break;
-        case "passageiros":
-          text = sanitizePdfText(passageirosList.join(", "));
-          size = 7;
-          break;
-        case "trajeto":
-          if (template === "repasse_motorista") {
-            // routeSegments will be set below; text is left empty
-            size = 6.5;
-          } else {
-            text = sanitizePdfText(trajetoList.join(" -> "));
+        switch (h.key) {
+          case "protocolo_data":
+            text = `${sanitizePdfText(row.protocolo) || "-"}\n${formatDate(row.data)}`;
+            size = 8;
+            break;
+          case "protocolo":
+            text = sanitizePdfText(row.protocolo) || "-";
+            break;
+          case "os":
+            text = sanitizePdfText(row.os_number) || "-";
+            size = 8;
+            font = boldFont;
+            break;
+          case "centro_custo":
+            text = sanitizePdfText(centroCustoNome) || "-";
+            size = 8;
+            break;
+          case "solicitante":
+            text = sanitizePdfText(row.solicitante) || "-";
+            size = 8;
+            break;
+          case "passageiros":
+            text = sanitizePdfText(passageirosList.join(", "));
             size = 7;
+            break;
+          case "trajeto":
+            if (template === "repasse_motorista") {
+              // routeSegments will be set below; text is left empty
+              size = 6.5;
+            } else {
+              text = sanitizePdfText(trajetoList.join(" -> "));
+              size = 7;
+            }
+            break;
+          case "tipo":
+            text = getRowVinculoTipo(row, driver);
+            font = boldFont;
+            size = 8;
+            break;
+          case "cliente": {
+            const lines = [truncateText(sanitizePdfText(clienteNome), 35)];
+            if (centroCustoNome)
+              lines.push(truncateText(sanitizePdfText(centroCustoNome), 35));
+            text = lines.join("\n");
+            if (lines.length > 1) size = 8;
+            break;
           }
-          break;
-        case "tipo":
-          text = getRowVinculoTipo(row, driver);
-          font = boldFont;
-          size = 8;
-          break;
-        case "cliente": {
-          const lines = [truncateText(sanitizePdfText(clienteNome), 35)];
-          if (centroCustoNome)
-            lines.push(truncateText(sanitizePdfText(centroCustoNome), 35));
-          text = lines.join("\n");
-          if (lines.length > 1) size = 8;
-          break;
-        }
-        case "motorista":
-          // No repasse_motorista o texto quebra em múltiplas linhas (wrap),
-          // então não truncamos — preservamos o nome completo. Nos demais
-          // templates mantemos o truncate em linha única.
-          text =
-            template === "repasse_motorista"
-              ? sanitizePdfText(motoristaNome) || "-"
-              : truncateText(sanitizePdfText(motoristaNome), 25);
-          break;
-        case "data":
-          text = formatDate(row.data);
-          break;
-        case "valor":
-        case "bruto":
-          text = formatCurrencyOrIsento(
-            template === "medicao_cliente"
-              ? calcEffectiveClientValue(row)
-              : Number(row.valor_bruto || 0),
-            row.isento_valor_bruto,
-          );
-          font = boldFont;
-          color = row.isento_valor_bruto ? c.textMedium : c.accentGreen;
-          break;
-        case "custo":
-          text = formatCurrencyOrIsento(calcEffectiveCustoValue(row), row.isento_custo);
-          font = boldFont;
-          color = row.isento_custo
-            ? c.textMedium
-            : template === "repasse_motorista"
-              ? c.accentGreen
-              : c.accentRed;
-          break;
-        case "imposto":
-          text = formatCurrency(Number(row.imposto || 0));
-          break;
-        case "lucro": {
-          const l = Number(row.lucro || 0);
-          text = formatCurrency(l);
-          color = l >= 0 ? c.accentGreen : c.accentRed;
-          font = boldFont;
-          break;
-        }
-        case "margem": {
-          const bruto = Number(row.valor_bruto || 0);
-          const lucro = Number(row.lucro || 0);
-          text = bruto > 0 ? `${((lucro / bruto) * 100).toFixed(1)}%` : "0%";
-          break;
-        }
-        case "status":
-          if (template === "repasse_motorista") {
-            text = row.repasse_pago ? "Pago" : "Pendente";
+          case "motorista":
+            // No repasse_motorista o texto quebra em múltiplas linhas (wrap),
+            // então não truncamos — preservamos o nome completo. Nos demais
+            // templates mantemos o truncate em linha única.
+            text =
+              template === "repasse_motorista"
+                ? sanitizePdfText(motoristaNome) || "-"
+                : truncateText(sanitizePdfText(motoristaNome), 25);
+            break;
+          case "data":
+            text = formatDate(row.data);
+            break;
+          case "valor":
+          case "bruto":
+            text = formatCurrencyOrIsento(
+              template === "medicao_cliente"
+                ? calcEffectiveClientValue(row)
+                : Number(row.valor_bruto || 0),
+              row.isento_valor_bruto,
+            );
+            font = boldFont;
+            color = row.isento_valor_bruto ? c.textMedium : c.accentGreen;
+            break;
+          case "custo":
+            text = formatCurrencyOrIsento(
+              calcEffectiveCustoValue(row),
+              row.isento_custo,
+            );
+            font = boldFont;
+            color = row.isento_custo
+              ? c.textMedium
+              : template === "repasse_motorista"
+                ? c.accentGreen
+                : c.accentRed;
+            break;
+          case "imposto":
+            text = formatCurrency(Number(row.imposto || 0));
+            break;
+          case "lucro": {
+            const l = Number(row.lucro || 0);
+            text = formatCurrency(l);
+            color = l >= 0 ? c.accentGreen : c.accentRed;
+            font = boldFont;
+            break;
+          }
+          case "margem": {
+            const bruto = Number(row.valor_bruto || 0);
+            const lucro = Number(row.lucro || 0);
+            text = bruto > 0 ? `${((lucro / bruto) * 100).toFixed(1)}%` : "0%";
+            break;
+          }
+          case "status":
+            if (template === "repasse_motorista") {
+              text = row.repasse_pago ? "Pago" : "Pendente";
+              font = boldFont;
+              color = row.repasse_pago ? c.accentGreen : c.accentRed;
+            } else {
+              text = status;
+              font = boldFont;
+              color = status === "Recebido" ? c.accentGreen : c.textDark;
+            }
+            break;
+          case "parceiro_motorista": {
+            const partnerLine = sanitizePdfText(parceiroNome) || "-";
+            const driverLine = sanitizePdfText(motoristaNome) || "-";
+            text = `${partnerLine}\n${driverLine}`;
+            font = boldFont;
+            size = 10;
+            break;
+          }
+          case "pago":
+            text = row.repasse_pago ? "Sim" : "Não";
             font = boldFont;
             color = row.repasse_pago ? c.accentGreen : c.accentRed;
-          } else {
-            text = status;
-            font = boldFont;
-            color = status === "Recebido" ? c.accentGreen : c.textDark;
+            break;
+          case "parceiro":
+            // No repasse_motorista o texto quebra em múltiplas linhas (wrap),
+            // então não truncamos — preservamos o nome completo do parceiro.
+            text = sanitizePdfText(parceiroNome) || "-";
+            break;
+          case "destinatario": {
+            const isParceiro =
+              driver?.parceiro_id !== null && driver?.parceiro_id !== undefined;
+            text = sanitizePdfText(isParceiro ? parceiroNome : motoristaNome);
+            break;
           }
-          break;
-        case "parceiro_motorista": {
-          const partnerLine = sanitizePdfText(parceiroNome) || "-";
-          const driverLine = sanitizePdfText(motoristaNome) || "-";
-          text = `${partnerLine}\n${driverLine}`;
-          font = boldFont;
-          size = 10;
-          break;
-        }
-        case "pago":
-          text = row.repasse_pago ? "Sim" : "Não";
-          font = boldFont;
-          color = row.repasse_pago ? c.accentGreen : c.accentRed;
-          break;
-        case "parceiro":
-          // No repasse_motorista o texto quebra em múltiplas linhas (wrap),
-          // então não truncamos — preservamos o nome completo do parceiro.
-          text = sanitizePdfText(parceiroNome) || "-";
-          break;
-        case "destinatario": {
-          const isParceiro =
-            driver?.parceiro_id !== null && driver?.parceiro_id !== undefined;
-          text = sanitizePdfText(isParceiro ? parceiroNome : motoristaNome);
-          break;
-        }
-        case "veiculo": {
-          const vehText = sanitizePdfText(veiculoNome);
-          if (vehText === "-") {
-            text = "-";
-          } else {
-            const parts = vehText.split(" - ", 2);
-            const placaPart = parts[0] || "-";
-            // No repasse_motorista o modelo quebra em múltiplas linhas (wrap),
-            // então não truncamos. Nos demais templates mantemos o truncate.
-            const modeloPart =
-              parts[1] && template !== "repasse_motorista"
-                ? truncateText(parts[1], 22)
-                : parts[1] || "";
-            text = modeloPart ? `${placaPart}\n${modeloPart}` : placaPart;
+          case "veiculo": {
+            const vehText = sanitizePdfText(veiculoNome);
+            if (vehText === "-") {
+              text = "-";
+            } else {
+              const parts = vehText.split(" - ", 2);
+              const placaPart = parts[0] || "-";
+              // No repasse_motorista o modelo quebra em múltiplas linhas (wrap),
+              // então não truncamos. Nos demais templates mantemos o truncate.
+              const modeloPart =
+                parts[1] && template !== "repasse_motorista"
+                  ? truncateText(parts[1], 22)
+                  : parts[1] || "";
+              text = modeloPart ? `${placaPart}\n${modeloPart}` : placaPart;
+            }
+            size = 8;
+            break;
           }
-          size = 8;
-          break;
         }
-      }
 
-      const isMultiLine =
-        h.key === "protocolo_data" ||
-        h.key === "os" ||
-        h.key === "centro_custo" ||
-        h.key === "solicitante" ||
-        h.key === "passageiros" ||
-        h.key === "trajeto" ||
-        h.key === "parceiro_motorista" ||
-        h.key === "veiculo" ||
-        (template === "repasse_motorista" &&
-          (h.key === "parceiro" || h.key === "motorista"));
-      const lineH = size + 2;
-      const maxW = h.width - 10;
-      const align =
-        h.key === "custo" && template === "repasse_motorista"
-          ? "left"
-          : h.key === "valor" && template === "medicao_cliente"
+        const isMultiLine =
+          h.key === "protocolo_data" ||
+          h.key === "os" ||
+          h.key === "centro_custo" ||
+          h.key === "solicitante" ||
+          h.key === "passageiros" ||
+          h.key === "trajeto" ||
+          h.key === "parceiro_motorista" ||
+          h.key === "veiculo" ||
+          (template === "repasse_motorista" &&
+            (h.key === "parceiro" || h.key === "motorista"));
+        const lineH = size + 2;
+        const maxW = h.width - 10;
+        const align =
+          h.key === "custo" && template === "repasse_motorista"
             ? "left"
-            : h.key === "valor" || h.key === "bruto" || h.key === "custo"
-              ? "right"
-              : "left";
+            : h.key === "valor" && template === "medicao_cliente"
+              ? "left"
+              : h.key === "valor" || h.key === "bruto" || h.key === "custo"
+                ? "right"
+                : "left";
 
-      // Build structured route segments for trajeto (medicao_cliente & repasse_motorista)
-      let routeSegments: RouteSegment[] | undefined;
-      if (
-        h.key === "trajeto" &&
-        (template === "repasse_motorista" || template === "medicao_cliente")
-      ) {
-        routeSegments = [];
+        // Build structured route segments for trajeto (medicao_cliente & repasse_motorista)
+        let routeSegments: RouteSegment[] | undefined;
+        if (
+          h.key === "trajeto" &&
+          (template === "repasse_motorista" || template === "medicao_cliente")
+        ) {
+          routeSegments = [];
 
-        // Group waypoints by itinerary_index
-        const itineraryGroups = new Map<number, ReportWaypoint[]>();
-        for (const wp of waypoints) {
-          const idx = wp.itinerary_index ?? 0;
-          if (!itineraryGroups.has(idx)) itineraryGroups.set(idx, []);
-          itineraryGroups.get(idx)!.push(wp);
-        }
-        const sortedIndices = Array.from(itineraryGroups.keys()).sort(
-          (a, b) => a - b,
-        );
-        const hasMultiple = sortedIndices.length > 1;
-
-        for (let gi = 0; gi < sortedIndices.length; gi++) {
-          const group = itineraryGroups.get(sortedIndices[gi])!;
-
-          // Section header when there are multiple itineraries
-          if (hasMultiple) {
-            const headerLabel =
-              gi === 0
-                ? `ITINERÁRIO ${gi + 1}`
-                : `RETORNO / ITINERÁRIO ${gi + 1}`;
-            const headerDateTime = formatDateTime(
-              group[0]?.data,
-              group[0]?.hora,
-            );
-            routeSegments.push({
-              type: "header",
-              text: headerLabel,
-              dateTime: headerDateTime !== "-" ? headerDateTime : undefined,
-            });
+          // Group waypoints by itinerary_index
+          const itineraryGroups = new Map<number, ReportWaypoint[]>();
+          for (const wp of waypoints) {
+            const idx = wp.itinerary_index ?? 0;
+            if (!itineraryGroups.has(idx)) itineraryGroups.set(idx, []);
+            itineraryGroups.get(idx)!.push(wp);
           }
-
-          for (let i = 0; i < group.length; i++) {
-            const wp = group[i];
-            const type: RouteSegment["type"] =
-              i === 0
-                ? "origem"
-                : i === group.length - 1
-                  ? "destino"
-                  : "parada";
-            const label = sanitizePdfText(wp.label) || "Endereco nao informado";
-            const text =
-              template === "medicao_cliente" ? truncateText(label, 30) : label;
-            routeSegments.push({
-              type,
-              text,
-              wrappedLines:
-                template === "repasse_motorista"
-                  ? wrapTextToLines(
-                      text,
-                      size,
-                      regularFont,
-                      Math.max(60, h.width - 55),
-                    )
-                  : undefined,
-            });
-          }
-        }
-
-        if (routeSegments.length === 0) {
-          routeSegments.push({ type: "origem", text: "-" });
-        }
-
-        // height: header lines are shorter (size+5) to create whitespace between itineraries
-        const segH = routeSegments.reduce((acc, seg) => {
-          const lineCount = seg.wrappedLines?.length ?? 1;
-          const lineHeight = seg.type === "header" ? size + 5 : size + 3;
-          return acc + lineCount * lineHeight;
-        }, 10);
-        maxContentHeight = Math.max(maxContentHeight, segH);
-      } else if (h.key === "veiculo" && template === "repasse_motorista") {
-        // Cálculo preciso considerando wrap de placa e modelo
-        const [placaLine = "-", modeloLine = ""] = text.split("\n");
-        const placaLines = wrapTextToLines(placaLine, 10, boldFont, maxW);
-        const modeloLines = modeloLine
-          ? wrapTextToLines(modeloLine, 9, regularFont, maxW)
-          : [];
-        const veicH =
-          placaLines.length * 12 +
-          (modeloLines.length > 0 ? 4 + modeloLines.length * 11 : 0);
-        maxContentHeight = Math.max(maxContentHeight, veicH + 10);
-      } else if (isMultiLine) {
-        const contentHeight = calculateMultiLineHeight(
-          text,
-          size,
-          font,
-          maxW,
-          lineH,
-        );
-        maxContentHeight = Math.max(maxContentHeight, contentHeight + 10);
-      } else if (text.includes("\n")) {
-        const lines = text.split("\n").length;
-        maxContentHeight = Math.max(maxContentHeight, lines * lineH + 10);
-      }
-
-      // Indica NO-SHOW e/ou Hora Extra abaixo do valor de repasse, exibindo
-      // o percentual/tempo aplicado (ex: "NO-SHOW (50%)", "H.EXTRA (01:30)").
-      let custoTagLines: string[] | undefined;
-      if (
-        h.key === "custo" &&
-        template === "repasse_motorista" &&
-        !row.isento_custo
-      ) {
-        const tagSize = 6.5;
-        const tags: string[] = [];
-        if (row.no_show) {
-          tags.push(`NO-SHOW (${row.no_show_percentual ?? 100}%)`);
-        }
-        const heBilledMinutes = calcBilledMinutes(
-          parseHoraExtraMinutes(row.hora_extra),
-        );
-        if (heBilledMinutes > 0) {
-          tags.push(`H.EXTRA (${formatBilledHours(heBilledMinutes)})`);
-        }
-        if (tags.length > 0) {
-          custoTagLines = tags.flatMap((tag) =>
-            wrapTextToLines(tag, tagSize, regularFont, maxW),
+          const sortedIndices = Array.from(itineraryGroups.keys()).sort(
+            (a, b) => a - b,
           );
-          const tagsHeight = custoTagLines.length * (tagSize + 2);
-          maxContentHeight = Math.max(
-            maxContentHeight,
-            size + 3 + tagsHeight + 10,
-          );
-        }
-      }
+          const hasMultiple = sortedIndices.length > 1;
 
-      cellData.push({
-        text,
-        font,
-        color,
-        size,
-        isMultiLine,
-        maxWidth: maxW,
-        lineHeight: lineH,
-        align,
-        routeSegments,
-        custoTagLines,
-      });
-    }
+          for (let gi = 0; gi < sortedIndices.length; gi++) {
+            const group = itineraryGroups.get(sortedIndices[gi])!;
 
-    const rowHeight = maxContentHeight;
-
-    // Check pagination
-    if (currentY - rowHeight < margin + 20) {
-      page = pdfDoc.addPage([pageWidth, pageHeight]);
-      drawHeader(page);
-      currentY = pageHeight - 170;
-      drawTableHeader(page, currentY, headers);
-      currentY -= 4;
-    }
-
-    const isEven = index % 2 === 0;
-    currentY -= rowHeight;
-
-    (page as PDFPage).drawRectangle({
-      x: margin,
-      y: currentY,
-      width: pageWidth - margin * 2,
-      height: rowHeight,
-      color: isEven ? c.tableZebra : c.tableWhite,
-    });
-
-    let x = margin + 8;
-    for (let i = 0; i < headers.length; i++) {
-      const h = headers[i];
-      const cell = cellData[i];
-
-      if (h.key === "trajeto" && cell.routeSegments) {
-        const segColors: Record<string, RGB> = {
-          origem: rgb(0.08, 0.48, 0.28),
-          parada: rgb(0.56, 0.62, 0.72),
-          destino: rgb(0.16, 0.42, 0.78),
-        };
-        const segLabels: Record<string, string> = {
-          origem: "ORIGEM: ",
-          parada: "PARADA: ",
-          destino: "DESTINO: ",
-        };
-        const segSize = cell.size;
-        let segY = currentY + rowHeight - 9;
-
-        for (const seg of cell.routeSegments) {
-          if (seg.type === "header") {
-            // Section label with blank line before the next itinerary
-            (page as PDFPage).drawText(seg.text, {
-              x: x + 2,
-              y: segY - 1,
-              size: segSize - 1,
-              font: boldFont,
-              color: rgb(0.88, 0.53, 0.12),
-            });
-            if (seg.dateTime) {
-              const labelWidth = boldFont.widthOfTextAtSize(
-                seg.text,
-                segSize - 1,
+            // Section header when there are multiple itineraries
+            if (hasMultiple) {
+              const headerLabel =
+                gi === 0
+                  ? `ITINERÁRIO ${gi + 1}`
+                  : `RETORNO / ITINERÁRIO ${gi + 1}`;
+              const headerDateTime = formatDateTime(
+                group[0]?.data,
+                group[0]?.hora,
               );
-              const dash = " - ";
-              const dashWidth = boldFont.widthOfTextAtSize(dash, segSize - 1);
-              (page as PDFPage).drawText(dash, {
-                x: x + 2 + labelWidth,
+              routeSegments.push({
+                type: "header",
+                text: headerLabel,
+                dateTime: headerDateTime !== "-" ? headerDateTime : undefined,
+              });
+            }
+
+            for (let i = 0; i < group.length; i++) {
+              const wp = group[i];
+              const type: RouteSegment["type"] =
+                i === 0
+                  ? "origem"
+                  : i === group.length - 1
+                    ? "destino"
+                    : "parada";
+              const label =
+                sanitizePdfText(wp.label) || "Endereco nao informado";
+              const text =
+                template === "medicao_cliente"
+                  ? truncateText(label, 30)
+                  : label;
+              routeSegments.push({
+                type,
+                text,
+                wrappedLines:
+                  template === "repasse_motorista"
+                    ? wrapTextToLines(
+                        text,
+                        size,
+                        regularFont,
+                        Math.max(60, h.width - 55),
+                      )
+                    : undefined,
+              });
+            }
+          }
+
+          if (routeSegments.length === 0) {
+            routeSegments.push({ type: "origem", text: "-" });
+          }
+
+          // height: header lines are shorter (size+5) to create whitespace between itineraries
+          const segH = routeSegments.reduce((acc, seg) => {
+            const lineCount = seg.wrappedLines?.length ?? 1;
+            const lineHeight = seg.type === "header" ? size + 5 : size + 3;
+            return acc + lineCount * lineHeight;
+          }, 10);
+          maxContentHeight = Math.max(maxContentHeight, segH);
+        } else if (h.key === "veiculo" && template === "repasse_motorista") {
+          // Cálculo preciso considerando wrap de placa e modelo
+          const [placaLine = "-", modeloLine = ""] = text.split("\n");
+          const placaLines = wrapTextToLines(placaLine, 10, boldFont, maxW);
+          const modeloLines = modeloLine
+            ? wrapTextToLines(modeloLine, 9, regularFont, maxW)
+            : [];
+          const veicH =
+            placaLines.length * 12 +
+            (modeloLines.length > 0 ? 4 + modeloLines.length * 11 : 0);
+          maxContentHeight = Math.max(maxContentHeight, veicH + 10);
+        } else if (isMultiLine) {
+          const contentHeight = calculateMultiLineHeight(
+            text,
+            size,
+            font,
+            maxW,
+            lineH,
+          );
+          maxContentHeight = Math.max(maxContentHeight, contentHeight + 10);
+        } else if (text.includes("\n")) {
+          const lines = text.split("\n").length;
+          maxContentHeight = Math.max(maxContentHeight, lines * lineH + 10);
+        }
+
+        // Indica NO-SHOW e/ou Hora Extra abaixo do valor de repasse, exibindo
+        // o percentual/tempo aplicado (ex: "NO-SHOW (50%)", "H.EXTRA (01:30)").
+        let custoTagLines: string[] | undefined;
+        if (
+          h.key === "custo" &&
+          template === "repasse_motorista" &&
+          !row.isento_custo
+        ) {
+          const tagSize = 6.5;
+          const tags: string[] = [];
+          if (row.no_show) {
+            tags.push(`NO-SHOW (${row.no_show_percentual ?? 100}%)`);
+          }
+          const heBilledMinutes = calcBilledMinutes(
+            parseHoraExtraMinutes(row.hora_extra),
+          );
+          if (heBilledMinutes > 0) {
+            tags.push(`H.EXTRA (${formatBilledHours(heBilledMinutes)})`);
+          }
+          if (tags.length > 0) {
+            custoTagLines = tags.flatMap((tag) =>
+              wrapTextToLines(tag, tagSize, regularFont, maxW),
+            );
+            const tagsHeight = custoTagLines.length * (tagSize + 2);
+            maxContentHeight = Math.max(
+              maxContentHeight,
+              size + 3 + tagsHeight + 10,
+            );
+          }
+        }
+
+        cellData.push({
+          text,
+          font,
+          color,
+          size,
+          isMultiLine,
+          maxWidth: maxW,
+          lineHeight: lineH,
+          align,
+          routeSegments,
+          custoTagLines,
+        });
+      }
+
+      const rowHeight = maxContentHeight;
+
+      // Check pagination
+      if (currentY - rowHeight < margin + 20) {
+        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        drawHeader(page);
+        currentY = pageHeight - 170;
+        drawTableHeader(page, currentY, headers);
+        currentY -= 4;
+      }
+
+      const isEven = index % 2 === 0;
+      currentY -= rowHeight;
+
+      (page as PDFPage).drawRectangle({
+        x: margin,
+        y: currentY,
+        width: pageWidth - margin * 2,
+        height: rowHeight,
+        color: isEven ? c.tableZebra : c.tableWhite,
+      });
+
+      let x = margin + 8;
+      for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        const cell = cellData[i];
+
+        if (h.key === "trajeto" && cell.routeSegments) {
+          const segColors: Record<string, RGB> = {
+            origem: rgb(0.08, 0.48, 0.28),
+            parada: rgb(0.56, 0.62, 0.72),
+            destino: rgb(0.16, 0.42, 0.78),
+          };
+          const segLabels: Record<string, string> = {
+            origem: "ORIGEM: ",
+            parada: "PARADA: ",
+            destino: "DESTINO: ",
+          };
+          const segSize = cell.size;
+          let segY = currentY + rowHeight - 9;
+
+          for (const seg of cell.routeSegments) {
+            if (seg.type === "header") {
+              // Section label with blank line before the next itinerary
+              (page as PDFPage).drawText(seg.text, {
+                x: x + 2,
                 y: segY - 1,
                 size: segSize - 1,
                 font: boldFont,
-                color: c.textMedium,
+                color: rgb(0.88, 0.53, 0.12),
               });
-              const dateSize = segSize + 1;
-              (page as PDFPage).drawText(seg.dateTime, {
-                x: x + 2 + labelWidth + dashWidth,
-                y: segY - 1,
-                size: dateSize,
-                font: regularFont,
-                color: c.textMedium,
-              });
-              segY -= segSize + 5;
-            } else {
-              segY -= segSize + 5;
-            }
-          } else {
-            const col = segColors[seg.type];
-            const lbl = segLabels[seg.type];
-            const lblWidth = boldFont.widthOfTextAtSize(lbl, segSize - 0.5);
-            const lines = seg.wrappedLines || [seg.text];
-            const lineStep = segSize + 2;
-
-            lines.forEach((line, lineIndex) => {
-              const lineY = segY - lineIndex * lineStep;
-
-              if (lineIndex === 0) {
-                // bullet circle
-                (page as PDFPage).drawEllipse({
-                  x: x + 3,
-                  y: lineY + segSize * 0.3,
-                  xScale: 2.5,
-                  yScale: 2.5,
-                  color: col,
-                });
-                // label
-                (page as PDFPage).drawText(lbl, {
-                  x: x + 8,
-                  y: lineY,
-                  size: segSize - 0.5,
+              if (seg.dateTime) {
+                const labelWidth = boldFont.widthOfTextAtSize(
+                  seg.text,
+                  segSize - 1,
+                );
+                const dash = " - ";
+                const dashWidth = boldFont.widthOfTextAtSize(dash, segSize - 1);
+                (page as PDFPage).drawText(dash, {
+                  x: x + 2 + labelWidth,
+                  y: segY - 1,
+                  size: segSize - 1,
                   font: boldFont,
-                  color: col,
+                  color: c.textMedium,
                 });
+                const dateSize = segSize + 1;
+                (page as PDFPage).drawText(seg.dateTime, {
+                  x: x + 2 + labelWidth + dashWidth,
+                  y: segY - 1,
+                  size: dateSize,
+                  font: regularFont,
+                  color: c.textMedium,
+                });
+                segY -= segSize + 5;
+              } else {
+                segY -= segSize + 5;
               }
+            } else {
+              const col = segColors[seg.type];
+              const lbl = segLabels[seg.type];
+              const lblWidth = boldFont.widthOfTextAtSize(lbl, segSize - 0.5);
+              const lines = seg.wrappedLines || [seg.text];
+              const lineStep = segSize + 2;
 
-              // address
-              (page as PDFPage).drawText(line, {
-                x: x + 12 + lblWidth,
-                y: lineY,
-                size: segSize,
-                font: regularFont,
-                color: c.textDark,
+              lines.forEach((line, lineIndex) => {
+                const lineY = segY - lineIndex * lineStep;
+
+                if (lineIndex === 0) {
+                  // bullet circle
+                  (page as PDFPage).drawEllipse({
+                    x: x + 3,
+                    y: lineY + segSize * 0.3,
+                    xScale: 2.5,
+                    yScale: 2.5,
+                    color: col,
+                  });
+                  // label
+                  (page as PDFPage).drawText(lbl, {
+                    x: x + 8,
+                    y: lineY,
+                    size: segSize - 0.5,
+                    font: boldFont,
+                    color: col,
+                  });
+                }
+
+                // address
+                (page as PDFPage).drawText(line, {
+                  x: x + 12 + lblWidth,
+                  y: lineY,
+                  size: segSize,
+                  font: regularFont,
+                  color: c.textDark,
+                });
               });
-            });
-            segY -= lines.length * lineStep + (seg.type === "destino" ? 7 : 3);
+              segY -=
+                lines.length * lineStep + (seg.type === "destino" ? 7 : 3);
+            }
           }
-        }
-      } else if (h.key === "protocolo_data") {
-        const [protocolLine = "-", dateLine = ""] = cell.text.split("\n");
-        const protocolSize = 10;
-        const dateSize = 9;
-        const protocolY = currentY + rowHeight - 10;
-        const dateY = protocolY - 15;
+        } else if (h.key === "protocolo_data") {
+          const [protocolLine = "-", dateLine = ""] = cell.text.split("\n");
+          const protocolSize = 10;
+          const dateSize = 9;
+          const protocolY = currentY + rowHeight - 10;
+          const dateY = protocolY - 15;
 
-        (page as PDFPage).drawText(protocolLine, {
-          x,
-          y: protocolY,
-          size: protocolSize,
-          font: boldFont,
-          color: cell.color,
-        });
-        if (dateLine) {
-          (page as PDFPage).drawText(dateLine, {
+          (page as PDFPage).drawText(protocolLine, {
             x,
-            y: dateY,
-            size: dateSize,
-            font: regularFont,
-            color: c.textMedium,
-          });
-        }
-      } else if (h.key === "parceiro_motorista") {
-        const [partnerLine = "-", driverLine = "-"] = cell.text.split("\n");
-        const partnerSize = 10;
-        const driverSize = 8.5;
-        const gap = 4;
-        const partnerLines = wrapTextToLines(
-          partnerLine,
-          partnerSize,
-          boldFont,
-          cell.maxWidth,
-        );
-        const driverLines = wrapTextToLines(
-          driverLine,
-          driverSize,
-          regularFont,
-          cell.maxWidth,
-        );
-        const partnerStep = partnerSize + 2;
-        const driverStep = driverSize + 2;
-        let currentTextY = currentY + rowHeight - 10;
-
-        partnerLines.forEach((line) => {
-          (page as PDFPage).drawText(line, {
-            x,
-            y: currentTextY,
-            size: partnerSize,
+            y: protocolY,
+            size: protocolSize,
             font: boldFont,
             color: cell.color,
           });
-          currentTextY -= partnerStep;
-        });
-
-        currentTextY -= gap;
-
-        driverLines.forEach((line) => {
-          (page as PDFPage).drawText(line, {
-            x,
-            y: currentTextY,
-            size: driverSize,
-            font: regularFont,
-            color: c.textMedium,
-          });
-          currentTextY -= driverStep;
-        });
-      } else if (h.key === "veiculo") {
-        const [placaLine = "-", modeloLine = ""] = cell.text.split("\n");
-        const placaSize = 10;
-        const modeloSize = 9;
-        const gap = 4;
-        const placaLines = wrapTextToLines(placaLine, placaSize, boldFont, cell.maxWidth);
-        const modeloLines = modeloLine
-          ? wrapTextToLines(modeloLine, modeloSize, regularFont, cell.maxWidth)
-          : [];
-        const placaStep = placaSize + 2;
-        const modeloStep = modeloSize + 2;
-        const totalH =
-          placaLines.length * placaStep +
-          (modeloLines.length > 0 ? gap + modeloLines.length * modeloStep : 0);
-        let vY = currentY + rowHeight - 8;
-
-        // Se o conteúdo cabe, centraliza verticalmente; senão, começa no topo.
-        if (totalH < rowHeight - 10) {
-          vY = currentY + (rowHeight + totalH) / 2 - 4;
-        }
-
-        for (const line of placaLines) {
-          (page as PDFPage).drawText(line, {
-            x,
-            y: vY,
-            size: placaSize,
-            font: boldFont,
-            color: cell.color,
-          });
-          vY -= placaStep;
-        }
-        if (modeloLines.length > 0) {
-          vY -= gap;
-          for (const line of modeloLines) {
-            (page as PDFPage).drawText(line, {
+          if (dateLine) {
+            (page as PDFPage).drawText(dateLine, {
               x,
-              y: vY,
-              size: modeloSize,
+              y: dateY,
+              size: dateSize,
               font: regularFont,
               color: c.textMedium,
             });
-            vY -= modeloStep;
           }
-        }
-      } else if (
-        h.key === "custo" &&
-        cell.custoTagLines &&
-        cell.custoTagLines.length > 0
-      ) {
-        const tagSize = 6.5;
-        const tagStep = tagSize + 2;
-        const tagColors: Record<string, RGB> = {
-          "NO-SHOW": c.accentRed,
-          "H.EXTRA": rgb(0.30, 0.34, 0.40),
-        };
-        const valueY = currentY + rowHeight - cell.size - 2;
-        const valueDrawX =
-          cell.align === "right"
-            ? x +
-              h.width -
-              8 -
-              cell.font.widthOfTextAtSize(cell.text, cell.size)
-            : x;
+        } else if (h.key === "parceiro_motorista") {
+          const [partnerLine = "-", driverLine = "-"] = cell.text.split("\n");
+          const partnerSize = 10;
+          const driverSize = 8.5;
+          const gap = 4;
+          const partnerLines = wrapTextToLines(
+            partnerLine,
+            partnerSize,
+            boldFont,
+            cell.maxWidth,
+          );
+          const driverLines = wrapTextToLines(
+            driverLine,
+            driverSize,
+            regularFont,
+            cell.maxWidth,
+          );
+          const partnerStep = partnerSize + 2;
+          const driverStep = driverSize + 2;
+          let currentTextY = currentY + rowHeight - 10;
 
-        (page as PDFPage).drawText(cell.text, {
-          x: valueDrawX,
-          y: valueY,
-          size: cell.size,
-          font: cell.font,
-          color: cell.color,
-        });
-
-        let tagY = valueY - tagStep - 2;
-        for (const line of cell.custoTagLines) {
-          const isNoShow = line.startsWith("NO-SHOW");
-          const tagColor = isNoShow ? tagColors["NO-SHOW"] : tagColors["H.EXTRA"];
-          const tagDrawX =
-            cell.align === "right"
-              ? x + h.width - 8 - regularFont.widthOfTextAtSize(line, tagSize)
-              : x;
-          if (isNoShow) {
+          partnerLines.forEach((line) => {
             (page as PDFPage).drawText(line, {
-              x: tagDrawX,
-              y: tagY,
-              size: tagSize,
-              font: regularFont,
-              color: tagColor,
+              x,
+              y: currentTextY,
+              size: partnerSize,
+              font: boldFont,
+              color: cell.color,
             });
-          } else {
-            // H.EXTRA: "H.EXTRA " em regular + "(HH:mm)" em bold, ambos cinza escuro
-            const match = line.match(/^(H\.EXTRA\s*)(\(\d{2}:\d{2}\).*)$/);
-            if (match) {
-              const [, prefix, suffix] = match;
-              (page as PDFPage).drawText(prefix, {
-                x: tagDrawX,
-                y: tagY,
-                size: tagSize,
+            currentTextY -= partnerStep;
+          });
+
+          currentTextY -= gap;
+
+          driverLines.forEach((line) => {
+            (page as PDFPage).drawText(line, {
+              x,
+              y: currentTextY,
+              size: driverSize,
+              font: regularFont,
+              color: c.textMedium,
+            });
+            currentTextY -= driverStep;
+          });
+        } else if (h.key === "veiculo") {
+          const [placaLine = "-", modeloLine = ""] = cell.text.split("\n");
+          const placaSize = 10;
+          const modeloSize = 9;
+          const gap = 4;
+          const placaLines = wrapTextToLines(
+            placaLine,
+            placaSize,
+            boldFont,
+            cell.maxWidth,
+          );
+          const modeloLines = modeloLine
+            ? wrapTextToLines(
+                modeloLine,
+                modeloSize,
+                regularFont,
+                cell.maxWidth,
+              )
+            : [];
+          const placaStep = placaSize + 2;
+          const modeloStep = modeloSize + 2;
+          const totalH =
+            placaLines.length * placaStep +
+            (modeloLines.length > 0
+              ? gap + modeloLines.length * modeloStep
+              : 0);
+          let vY = currentY + rowHeight - 8;
+
+          // Se o conteúdo cabe, centraliza verticalmente; senão, começa no topo.
+          if (totalH < rowHeight - 10) {
+            vY = currentY + (rowHeight + totalH) / 2 - 4;
+          }
+
+          for (const line of placaLines) {
+            (page as PDFPage).drawText(line, {
+              x,
+              y: vY,
+              size: placaSize,
+              font: boldFont,
+              color: cell.color,
+            });
+            vY -= placaStep;
+          }
+          if (modeloLines.length > 0) {
+            vY -= gap;
+            for (const line of modeloLines) {
+              (page as PDFPage).drawText(line, {
+                x,
+                y: vY,
+                size: modeloSize,
                 font: regularFont,
-                color: tagColor,
+                color: c.textMedium,
               });
-              (page as PDFPage).drawText(suffix, {
-                x: tagDrawX + regularFont.widthOfTextAtSize(prefix, tagSize),
-                y: tagY,
-                size: tagSize,
-                font: boldFont,
-                color: tagColor,
-              });
-            } else {
+              vY -= modeloStep;
+            }
+          }
+        } else if (
+          h.key === "custo" &&
+          cell.custoTagLines &&
+          cell.custoTagLines.length > 0
+        ) {
+          const tagSize = 6.5;
+          const tagStep = tagSize + 2;
+          const tagColors: Record<string, RGB> = {
+            "NO-SHOW": c.accentRed,
+            "H.EXTRA": rgb(0.3, 0.34, 0.4),
+          };
+          const valueY = currentY + rowHeight - cell.size - 2;
+          const valueDrawX =
+            cell.align === "right"
+              ? x +
+                h.width -
+                8 -
+                cell.font.widthOfTextAtSize(cell.text, cell.size)
+              : x;
+
+          (page as PDFPage).drawText(cell.text, {
+            x: valueDrawX,
+            y: valueY,
+            size: cell.size,
+            font: cell.font,
+            color: cell.color,
+          });
+
+          let tagY = valueY - tagStep - 2;
+          for (const line of cell.custoTagLines) {
+            const isNoShow = line.startsWith("NO-SHOW");
+            const tagColor = isNoShow
+              ? tagColors["NO-SHOW"]
+              : tagColors["H.EXTRA"];
+            const tagDrawX =
+              cell.align === "right"
+                ? x + h.width - 8 - regularFont.widthOfTextAtSize(line, tagSize)
+                : x;
+            if (isNoShow) {
               (page as PDFPage).drawText(line, {
                 x: tagDrawX,
                 y: tagY,
@@ -4817,42 +4885,69 @@ async function generatePdf(
                 font: regularFont,
                 color: tagColor,
               });
+            } else {
+              // H.EXTRA: "H.EXTRA " em regular + "(HH:mm)" em bold, ambos cinza escuro
+              const match = line.match(/^(H\.EXTRA\s*)(\(\d{2}:\d{2}\).*)$/);
+              if (match) {
+                const [, prefix, suffix] = match;
+                (page as PDFPage).drawText(prefix, {
+                  x: tagDrawX,
+                  y: tagY,
+                  size: tagSize,
+                  font: regularFont,
+                  color: tagColor,
+                });
+                (page as PDFPage).drawText(suffix, {
+                  x: tagDrawX + regularFont.widthOfTextAtSize(prefix, tagSize),
+                  y: tagY,
+                  size: tagSize,
+                  font: boldFont,
+                  color: tagColor,
+                });
+              } else {
+                (page as PDFPage).drawText(line, {
+                  x: tagDrawX,
+                  y: tagY,
+                  size: tagSize,
+                  font: regularFont,
+                  color: tagColor,
+                });
+              }
             }
+            tagY -= tagStep;
           }
-          tagY -= tagStep;
+        } else if (cell.isMultiLine) {
+          drawMultiLineText(
+            page as PDFPage,
+            cell.text,
+            x,
+            currentY + rowHeight - 8,
+            cell.size,
+            cell.font,
+            cell.color,
+            cell.maxWidth,
+            cell.lineHeight,
+          );
+        } else {
+          const drawX =
+            cell.align === "right"
+              ? x +
+                h.width -
+                8 -
+                cell.font.widthOfTextAtSize(cell.text, cell.size)
+              : x;
+          (page as PDFPage).drawText(cell.text, {
+            x: drawX,
+            y: currentY + rowHeight / 2 - cell.size / 2,
+            size: cell.size,
+            font: cell.font,
+            color: cell.color,
+          });
         }
-      } else if (cell.isMultiLine) {
-        drawMultiLineText(
-          page as PDFPage,
-          cell.text,
-          x,
-          currentY + rowHeight - 8,
-          cell.size,
-          cell.font,
-          cell.color,
-          cell.maxWidth,
-          cell.lineHeight,
-        );
-      } else {
-        const drawX =
-          cell.align === "right"
-            ? x +
-              h.width -
-              8 -
-              cell.font.widthOfTextAtSize(cell.text, cell.size)
-            : x;
-        (page as PDFPage).drawText(cell.text, {
-          x: drawX,
-          y: currentY + rowHeight / 2 - cell.size / 2,
-          size: cell.size,
-          font: cell.font,
-          color: cell.color,
-        });
-      }
 
-      x += h.width;
-    }
-  });
+        x += h.width;
+      }
+    });
   } // fim do else (não resumo_motoristas)
 
   // Draw footers

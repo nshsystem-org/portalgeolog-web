@@ -140,7 +140,9 @@ export async function previewFaturamentoLote(
     | null;
 
   if (!response.ok || !body) {
-    throw new Error(body?.error || "Falha ao visualizar o faturamento em lote.");
+    throw new Error(
+      body?.error || "Falha ao visualizar o faturamento em lote.",
+    );
   }
   return body;
 }

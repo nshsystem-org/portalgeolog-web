@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  createAdminClient,
-  getAuthUser,
-  hasCaixaAccess,
-} from "../_shared";
+import { createAdminClient, getAuthUser, hasCaixaAccess } from "../_shared";
 
 export const runtime = "edge";
 
@@ -53,9 +49,11 @@ export async function GET(request: Request) {
 
     // Query base para o período + filtros
     const buildQuery = () => {
-      let query = adminClient.from("caixa_lancamentos").select(
-        "id, tipo, valor, conta_id, conta:caixa_contas(id, nome, tipo, saldo_inicial, ativa)",
-      );
+      let query = adminClient
+        .from("caixa_lancamentos")
+        .select(
+          "id, tipo, valor, conta_id, conta:caixa_contas(id, nome, tipo, saldo_inicial, ativa)",
+        );
       if (q.dataInicio) query = query.gte("data", q.dataInicio);
       if (q.dataFim) query = query.lte("data", q.dataFim);
       if (q.contaId) query = query.eq("conta_id", q.contaId);
@@ -63,7 +61,8 @@ export async function GET(request: Request) {
         query = query.eq("tipo", q.tipo);
       }
       if (q.categoria) query = query.eq("categoria", q.categoria);
-      if (q.formaPagamento) query = query.eq("forma_pagamento", q.formaPagamento);
+      if (q.formaPagamento)
+        query = query.eq("forma_pagamento", q.formaPagamento);
       if (q.clienteId) query = query.eq("cliente_id", q.clienteId);
       if (q.parceiroId) query = query.eq("parceiro_id", q.parceiroId);
       if (q.driverId) query = query.eq("driver_id", q.driverId);
@@ -75,21 +74,21 @@ export async function GET(request: Request) {
     const { data: periodRows, error: periodError } = await buildQuery();
     if (periodError) throw periodError;
 
-    const rows = ((periodRows ?? []) as unknown as Array<{
-      id: string;
-      tipo: string;
-      valor: number | string | null;
-      conta_id: string;
-      conta:
-        | {
-            id: string;
-            nome: string;
-            tipo: string;
-            saldo_inicial: number | string | null;
-            ativa: boolean | null;
-          }
-        | null;
-    }>).map((row) => ({
+    const rows = (
+      (periodRows ?? []) as unknown as Array<{
+        id: string;
+        tipo: string;
+        valor: number | string | null;
+        conta_id: string;
+        conta: {
+          id: string;
+          nome: string;
+          tipo: string;
+          saldo_inicial: number | string | null;
+          ativa: boolean | null;
+        } | null;
+      }>
+    ).map((row) => ({
       ...row,
       // Supabase returns joins as arrays; normalize to single object.
       conta: Array.isArray(row.conta) ? row.conta[0] : row.conta,
@@ -133,13 +132,14 @@ export async function GET(request: Request) {
       .eq("ativa", true);
     if (contasError) throw contasError;
 
-    const contasList = (contas as Array<{
-      id: string;
-      nome: string;
-      tipo: string;
-      saldo_atual: number | string | null;
-      ativa: boolean | null;
-    }>) ?? [];
+    const contasList =
+      (contas as Array<{
+        id: string;
+        nome: string;
+        tipo: string;
+        saldo_atual: number | string | null;
+        ativa: boolean | null;
+      }>) ?? [];
 
     const saldosPorConta = contasList.map((c) => ({
       contaId: c.id,
@@ -161,7 +161,8 @@ export async function GET(request: Request) {
       saldosPorConta,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

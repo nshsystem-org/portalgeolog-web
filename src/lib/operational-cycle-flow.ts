@@ -136,27 +136,24 @@ export async function sendNextOperationalCycleFlow(
   },
 ): Promise<SendNextOperationalCycleFlowResult> {
   try {
-    const [
-      { data: osData },
-      { data: waypointsData },
-      cyclesResult,
-    ] = await Promise.all([
-      client
-        .from("ordens_servico")
-        .select(
-          "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id, driver_id",
-        )
-        .eq("id", options.osId)
-        .maybeSingle(),
-      client
-        .from("os_waypoints")
-        .select("id, label, comment, itinerary_index, hora, data, position")
-        .eq("ordem_servico_id", options.osId)
-        .order("position"),
-      options.cycles
-        ? Promise.resolve({ cycles: options.cycles })
-        : loadOperationalCycleContextForOS(client, options.osId, null),
-    ]);
+    const [{ data: osData }, { data: waypointsData }, cyclesResult] =
+      await Promise.all([
+        client
+          .from("ordens_servico")
+          .select(
+            "protocolo, os_number, data, hora, motorista, cliente_id, solicitante, centro_custo, veiculo_id, driver_id",
+          )
+          .eq("id", options.osId)
+          .maybeSingle(),
+        client
+          .from("os_waypoints")
+          .select("id, label, comment, itinerary_index, hora, data, position")
+          .eq("ordem_servico_id", options.osId)
+          .order("position"),
+        options.cycles
+          ? Promise.resolve({ cycles: options.cycles })
+          : loadOperationalCycleContextForOS(client, options.osId, null),
+      ]);
 
     const osRecord = osData as NextCycleOSRecord | null;
     if (!osRecord) {
@@ -217,10 +214,13 @@ export async function sendNextOperationalCycleFlow(
     }
 
     const cycleWaypoints = (waypointsData || []).filter(
-      (wp: NextCycleWaypointRow) => Number(wp.itinerary_index ?? 0) === options.targetCycleIndex,
+      (wp: NextCycleWaypointRow) =>
+        Number(wp.itinerary_index ?? 0) === options.targetCycleIndex,
     );
 
-    const waypointIds = cycleWaypoints.map((wp: NextCycleWaypointRow) => String(wp.id));
+    const waypointIds = cycleWaypoints.map((wp: NextCycleWaypointRow) =>
+      String(wp.id),
+    );
 
     let paxRows: Record<string, unknown>[] = [];
     if (waypointIds.length > 0) {
@@ -251,10 +251,12 @@ export async function sendNextOperationalCycleFlow(
       );
     }
 
-    const passageiros = (passageirosData || []).map((p: Record<string, unknown>) => ({
-      nome: String(p.nome_completo || ""),
-      celular: String(p.celular || ""),
-    }));
+    const passageiros = (passageirosData || []).map(
+      (p: Record<string, unknown>) => ({
+        nome: String(p.nome_completo || ""),
+        celular: String(p.celular || ""),
+      }),
+    );
 
     const itineraryGroups = new Map<
       number,
@@ -262,7 +264,8 @@ export async function sendNextOperationalCycleFlow(
     >();
 
     cycleWaypoints.forEach((wp: NextCycleWaypointRow) => {
-      const idx = typeof wp.itinerary_index === "number" ? wp.itinerary_index : 0;
+      const idx =
+        typeof wp.itinerary_index === "number" ? wp.itinerary_index : 0;
 
       if (!itineraryGroups.has(idx)) {
         itineraryGroups.set(idx, {
@@ -303,9 +306,10 @@ export async function sendNextOperationalCycleFlow(
 
         const kind = index < 0 ? "return" : "itinerary";
         const ordinal = kind === "return" ? Math.abs(index) : index + 1;
-        const title = kind === "return"
-          ? `🔄 *${ordinal} Retorno*`
-          : `📍 *${ordinal} Itinerário*`;
+        const title =
+          kind === "return"
+            ? `🔄 *${ordinal} Retorno*`
+            : `📍 *${ordinal} Itinerário*`;
         const firstWp = cycleWaypoints.find(
           (w: NextCycleWaypointRow) => w.itinerary_index === index,
         );
@@ -368,7 +372,10 @@ export async function sendNextOperationalCycleFlow(
       driverPhone,
     };
   } catch (error) {
-    console.error("[operational-cycle-flow] Erro ao preparar próximo ciclo:", error);
+    console.error(
+      "[operational-cycle-flow] Erro ao preparar próximo ciclo:",
+      error,
+    );
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),

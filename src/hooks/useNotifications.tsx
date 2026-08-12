@@ -666,7 +666,9 @@ export function useNotifications(options?: {
 
   const systemNotifications = useMemo(
     () =>
-      notifications.filter((n) => n.category !== "motorista" && !isPendenciaAlert(n)),
+      notifications.filter(
+        (n) => n.category !== "motorista" && !isPendenciaAlert(n),
+      ),
     [notifications],
   );
   const driverNotifications = useMemo(

@@ -53,7 +53,8 @@ function buildFiltersQuery(
   if (filters.contaId) params.set("contaId", filters.contaId);
   if (filters.tipo) params.set("tipo", filters.tipo);
   if (filters.categoria) params.set("categoria", filters.categoria);
-  if (filters.formaPagamento) params.set("formaPagamento", filters.formaPagamento);
+  if (filters.formaPagamento)
+    params.set("formaPagamento", filters.formaPagamento);
   if (filters.clienteId) params.set("clienteId", filters.clienteId);
   if (filters.parceiroId) params.set("parceiroId", filters.parceiroId);
   if (filters.driverId) params.set("driverId", filters.driverId);
@@ -70,7 +71,10 @@ function buildFiltersQuery(
 
 export async function listContas(): Promise<CaixaConta[]> {
   const response = await fetch("/api/caixa/contas", { credentials: "include" });
-  const body = (await parseJson(response)) as { error?: string; contas?: CaixaConta[] };
+  const body = (await parseJson(response)) as {
+    error?: string;
+    contas?: CaixaConta[];
+  };
   if (!response.ok) {
     throw new Error(body.error || "Falha ao carregar contas.");
   }
@@ -124,10 +128,9 @@ export async function listLancamentos(
   filters: CaixaQueryFilters,
 ): Promise<PaginatedResult<CaixaLancamento>> {
   const params = buildFiltersQuery(new URLSearchParams(), filters);
-  const response = await fetch(
-    `/api/caixa/lancamentos?${params.toString()}`,
-    { credentials: "include" },
-  );
+  const response = await fetch(`/api/caixa/lancamentos?${params.toString()}`, {
+    credentials: "include",
+  });
   const body = (await parseJson(response)) as {
     error?: string;
     items?: CaixaLancamento[];
@@ -193,14 +196,20 @@ export async function updateLancamento(
   const formData = new FormData();
   if (updates.contaId) formData.append("contaId", updates.contaId);
   if (updates.tipo) formData.append("tipo", updates.tipo);
-  if (typeof updates.valor === "number") formData.append("valor", String(updates.valor));
+  if (typeof updates.valor === "number")
+    formData.append("valor", String(updates.valor));
   if (updates.data) formData.append("data", updates.data);
-  if (updates.descricao !== undefined) formData.append("descricao", updates.descricao);
+  if (updates.descricao !== undefined)
+    formData.append("descricao", updates.descricao);
   if (updates.categoria) formData.append("categoria", updates.categoria);
-  if (updates.formaPagamento) formData.append("formaPagamento", updates.formaPagamento);
-  if (updates.clienteId !== undefined) formData.append("clienteId", updates.clienteId || "");
-  if (updates.parceiroId !== undefined) formData.append("parceiroId", updates.parceiroId || "");
-  if (updates.driverId !== undefined) formData.append("driverId", updates.driverId || "");
+  if (updates.formaPagamento)
+    formData.append("formaPagamento", updates.formaPagamento);
+  if (updates.clienteId !== undefined)
+    formData.append("clienteId", updates.clienteId || "");
+  if (updates.parceiroId !== undefined)
+    formData.append("parceiroId", updates.parceiroId || "");
+  if (updates.driverId !== undefined)
+    formData.append("driverId", updates.driverId || "");
   if (updates.file) formData.append("file", updates.file);
 
   const response = await fetch(`/api/caixa/lancamentos/${id}`, {
@@ -240,7 +249,9 @@ export async function getCaixaStats(
   const response = await fetch(`/api/caixa/stats?${params.toString()}`, {
     credentials: "include",
   });
-  const body = (await parseJson(response)) as CaixaOverview & { error?: string };
+  const body = (await parseJson(response)) as CaixaOverview & {
+    error?: string;
+  };
   if (!response.ok) {
     throw new Error(body.error || "Falha ao carregar totais do caixa.");
   }

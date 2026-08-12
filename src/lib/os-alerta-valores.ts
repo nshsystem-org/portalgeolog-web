@@ -127,8 +127,7 @@ export async function getFinalizadasSemValor(): Promise<OSAlertaItem[]> {
         typeof r.valor_bruto === "string"
           ? Number(r.valor_bruto)
           : r.valor_bruto;
-      const vCusto =
-        typeof r.custo === "string" ? Number(r.custo) : r.custo;
+      const vCusto = typeof r.custo === "string" ? Number(r.custo) : r.custo;
 
       const isentoVB = Boolean(r.isento_valor_bruto);
       const isentoC = Boolean(r.isento_custo);
@@ -140,13 +139,14 @@ export async function getFinalizadasSemValor(): Promise<OSAlertaItem[]> {
         data: r.data,
         hora: r.hora,
         cliente_nome: r.cliente_id
-          ? clienteMap.get(r.cliente_id) ?? null
+          ? (clienteMap.get(r.cliente_id) ?? null)
           : null,
         motorista: r.motorista,
         valor_bruto: vBruto,
         custo: vCusto,
         falta_valor_bruto:
-          !isentoVB && (vBruto === null || vBruto === undefined || vBruto === 0),
+          !isentoVB &&
+          (vBruto === null || vBruto === undefined || vBruto === 0),
         falta_custo:
           !isentoC && (vCusto === null || vCusto === undefined || vCusto === 0),
       };
@@ -310,8 +310,7 @@ export async function sendAlertaValoresEmail(): Promise<{
   })
     .format(geracao)
     .replace(/[^0-9]/g, "");
-  const turno =
-    Number(horaBRT) < 12 ? "Aviso Matinal" : "Aviso Vespertino";
+  const turno = Number(horaBRT) < 12 ? "Aviso Matinal" : "Aviso Vespertino";
 
   const subject =
     itens.length === 0

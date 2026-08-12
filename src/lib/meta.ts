@@ -113,7 +113,11 @@ async function fetchMetaApiWithRetry(
       lastError = apiError?.message ?? `HTTP ${response.status}`;
 
       // 4xx client errors (exceto 429) não têm retry — payload inválido é permanente
-      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+      if (
+        response.status >= 400 &&
+        response.status < 500 &&
+        response.status !== 429
+      ) {
         console.error(
           `[Meta API] ${logContext} - Erro não-retryable (${response.status}):`,
           lastError,

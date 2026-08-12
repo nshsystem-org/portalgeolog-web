@@ -10,11 +10,18 @@ export interface ChatTranslations {
     chat_title: string;
     conversations_title: string;
     conversation_title: string;
+    new_conversation_button: string;
   };
   conversation_list: {
     no_conversations: string;
     unread_messages: string;
     unread_messages_plural: string;
+    just_now: string;
+    no_messages_preview: string;
+    you: string;
+    sent_image: string;
+    sent_file: string;
+    liked_message: string;
   };
   message_list: {
     no_messages: string;

@@ -319,7 +319,10 @@ export default function OSPickerPanel({
   const visibleOsList = useMemo(() => {
     const expectedStatus = STATUS_FILTER_LABEL[statusFilter];
     return osList.filter((os) => {
-      if (statusFilter !== "all" && getFinanceDisplayStatus(os) !== expectedStatus)
+      if (
+        statusFilter !== "all" &&
+        getFinanceDisplayStatus(os) !== expectedStatus
+      )
         return false;
       if (!defaultDataInicio || !defaultDataFim) return true;
       if (!os.data) return false;
@@ -401,7 +404,10 @@ export default function OSPickerPanel({
     }
     osList.forEach((item) => {
       if (selectedSet.has(item.id) && !cache.has(item.id)) {
-        cache.set(item.id, item.isentoValorBruto ? 0 : Number(item.valorBruto || 0));
+        cache.set(
+          item.id,
+          item.isentoValorBruto ? 0 : Number(item.valorBruto || 0),
+        );
       }
     });
     if (onSelectedTotalChange) {
@@ -420,7 +426,10 @@ export default function OSPickerPanel({
         onSelectionChange(selectedIds.filter((existing) => existing !== id));
       } else {
         if (item) {
-          cache.set(id, item.isentoValorBruto ? 0 : Number(item.valorBruto || 0));
+          cache.set(
+            id,
+            item.isentoValorBruto ? 0 : Number(item.valorBruto || 0),
+          );
         }
         onSelectionChange([...selectedIds, id]);
       }
@@ -433,7 +442,10 @@ export default function OSPickerPanel({
     const next = new Set(selectedIds);
     visibleOsList.forEach((item) => {
       next.add(item.id);
-      cache.set(item.id, item.isentoValorBruto ? 0 : Number(item.valorBruto || 0));
+      cache.set(
+        item.id,
+        item.isentoValorBruto ? 0 : Number(item.valorBruto || 0),
+      );
     });
     onSelectionChange(Array.from(next));
   }, [selectedIds, visibleOsList, onSelectionChange]);
@@ -475,13 +487,19 @@ export default function OSPickerPanel({
           {selectionSummaryByMonth.length > 0 ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
               {selectionSummaryByMonth.map((entry, idx) => (
-                <span key={entry.monthKey} className="flex items-stretch gap-3 whitespace-nowrap">
+                <span
+                  key={entry.monthKey}
+                  className="flex items-stretch gap-3 whitespace-nowrap"
+                >
                   {idx > 0 && (
-                    <span className="w-px bg-blue-800/30 mx-1 -my-2" aria-hidden="true" />
+                    <span
+                      className="w-px bg-blue-800/30 mx-1 -my-2"
+                      aria-hidden="true"
+                    />
                   )}
                   <p className="self-center text-base font-black uppercase tracking-widest text-slate-700 flex items-baseline gap-0.5">
                     {(() => {
-                      const [m, y] = entry.label.split(' ');
+                      const [m, y] = entry.label.split(" ");
                       return (
                         <>
                           {m}
@@ -494,13 +512,17 @@ export default function OSPickerPanel({
                   </p>
                   <span className="self-center rounded-full bg-emerald-50 px-3 py-1 text-sm font-black tabular-nums tracking-widest text-emerald-700 ring-1 ring-emerald-200">
                     {(() => {
-                      const allSelected = entry.total !== undefined && entry.selected === entry.total;
+                      const allSelected =
+                        entry.total !== undefined &&
+                        entry.selected === entry.total;
                       const selectedClass = allSelected
                         ? "font-black text-emerald-700"
                         : "font-semibold text-[rgb(87,160,114)]";
                       return (
                         <>
-                          <span className={selectedClass}>{entry.selected}</span>
+                          <span className={selectedClass}>
+                            {entry.selected}
+                          </span>
                           {entry.total !== undefined && (
                             <>
                               <span className="text-[rgb(120,202,152)]">/</span>

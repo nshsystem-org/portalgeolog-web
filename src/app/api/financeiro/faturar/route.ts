@@ -38,7 +38,10 @@ async function hasFinanceAccess(userId: string): Promise<boolean> {
   if (data.categoria === "administrador" || data.categoria === "financeiro") {
     return true;
   }
-  const permissions = data.specific_permissions as Record<string, unknown> | null;
+  const permissions = data.specific_permissions as Record<
+    string,
+    unknown
+  > | null;
   const financePermissions = permissions?.financeiro as
     | Record<string, unknown>
     | undefined;

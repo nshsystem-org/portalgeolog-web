@@ -8,7 +8,6 @@ import {
   Eye,
   Archive,
   X,
-  Mail,
   Phone,
   MapPin,
   Layers,
@@ -23,7 +22,6 @@ import {
 import StandardModal from "@/components/StandardModal";
 import { DataTable } from "@/components/ui/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import { toast } from "sonner";
 import { useConfirm } from "@/hooks/useConfirm";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -34,11 +32,8 @@ import { formatBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
 
 interface NewPassengerForm {
   nomeCompleto: string;
-  email?: string;
   celular: string;
   cpf?: string;
-  notificar: string;
-  genero: string;
   enderecos: Array<Omit<PassageiroEndereco, "id">>;
 }
 
@@ -50,12 +45,9 @@ const initialEndereco = {
 
 const initialForm: NewPassengerForm = {
   nomeCompleto: "",
-  email: "",
   celular: "",
   cpf: "",
   enderecos: [{ ...initialEndereco }],
-  notificar: "Sim",
-  genero: "Sem resposta",
 };
 
 export default function PassageirosPage() {
@@ -126,10 +118,6 @@ export default function PassageirosPage() {
     return value.toUpperCase();
   };
 
-  const formatLowercase = (value: string) => {
-    return value.toLowerCase();
-  };
-
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -151,7 +139,6 @@ export default function PassageirosPage() {
     try {
       await addPassageiro({
         nomeCompleto: formData.nomeCompleto.trim().toUpperCase(),
-        email: formData.email?.trim(),
         celular: formatPhone(formData.celular),
         cpf: formData.cpf?.trim(),
         enderecos: formData.enderecos
@@ -203,7 +190,6 @@ export default function PassageirosPage() {
     try {
       await updatePassageiro(selectedPassenger.id, {
         nomeCompleto: formData.nomeCompleto.trim().toUpperCase(),
-        email: formData.email?.trim(),
         celular: formatPhone(formData.celular),
         cpf: formData.cpf?.trim(),
         enderecos: formData.enderecos
@@ -218,8 +204,6 @@ export default function PassageirosPage() {
             enderecoCompleto: endereco.enderecoCompleto.trim(),
             referencia: endereco.referencia?.trim() || "",
           })),
-        notificar: formData.notificar === "Sim",
-        genero: formData.genero,
       });
 
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -258,10 +242,6 @@ export default function PassageirosPage() {
 
     if (field === "nomeCompleto") {
       formattedValue = formatUppercase(value);
-    }
-
-    if (field === "email") {
-      formattedValue = formatLowercase(value);
     }
 
     setFormData((prev) => ({
@@ -318,12 +298,6 @@ export default function PassageirosPage() {
 
               return (
                 <div className="space-y-2 text-sm">
-                  {item.email && (
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <Mail size={14} className="text-blue-500" />
-                      <span className="font-medium">{item.email}</span>
-                    </div>
-                  )}
                   <div className="flex items-center gap-2 text-slate-600">
                     <Phone size={14} className="text-blue-500" />
                     <span className="font-medium">
@@ -336,27 +310,6 @@ export default function PassageirosPage() {
                       <span className="font-medium">{item.cpf}</span>
                     </div>
                   )}
-                </div>
-              );
-            },
-          },
-          {
-            key: "notificacao",
-            title: "Notificação",
-            render: (value: unknown, item: Passageiro) => {
-              void value;
-
-              if (item.notificar === true) {
-                return (
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs font-black uppercase tracking-wider">
-                    Enviar
-                  </div>
-                );
-              }
-
-              return (
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-black uppercase tracking-wider">
-                  Não enviar
                 </div>
               );
             },
@@ -419,7 +372,6 @@ export default function PassageirosPage() {
                 setSelectedPassenger(item);
                 setFormData({
                   nomeCompleto: item.nomeCompleto,
-                  email: item.email || "",
                   celular: formatPhone(item.celular),
                   cpf: item.cpf || "",
                   enderecos: item.enderecos.map((e) => ({
@@ -427,8 +379,6 @@ export default function PassageirosPage() {
                     enderecoCompleto: e.enderecoCompleto,
                     referencia: e.referencia || "",
                   })),
-                  notificar: item.notificar === true ? "Sim" : "Não",
-                  genero: item.genero || "Sem resposta",
                 });
                 setIsEditModalOpen(true);
               };
@@ -466,7 +416,7 @@ export default function PassageirosPage() {
             },
           },
         ]}
-        searchPlaceholder="Buscar por nome, CPF ou e-mail"
+        searchPlaceholder="Buscar por nome ou CPF"
         emptyMessage="Nenhum passageiro encontrado."
         emptyIcon={<UserSquare2 size={48} />}
       />
@@ -550,41 +500,8 @@ export default function PassageirosPage() {
                       className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                     />
                   </div>
-                  <div
-                    className="space-y-2 flex-[0.8]"
-                    style={{ marginTop: "-4px" }}
-                  >
-                    <GeologSearchableSelect
-                      label="Notificar"
-                      options={[
-                        { id: "Sim", nome: "Sim" },
-                        { id: "Não", nome: "Não" },
-                      ]}
-                      value={formData.notificar}
-                      onChange={(value) =>
-                        setFormData({ ...formData, notificar: value })
-                      }
-                      triggerClassName="mt-1 h-[56px] py-3"
-                      required
-                      disableSearch
-                    />
-                  </div>
                 </div>
                 <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="space-y-2 flex-[1.5]">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      E-mail
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="contato@exemplo.com"
-                      value={formData.email}
-                      onChange={(event) =>
-                        handleInputChange("email", event.target.value)
-                      }
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
                   <div className="space-y-2 flex-[0.7]">
                     <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
                       CPF
@@ -596,22 +513,6 @@ export default function PassageirosPage() {
                         handleInputChange("cpf", event.target.value)
                       }
                       className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-2 flex-[0.8]">
-                    <GeologSearchableSelect
-                      label="Gênero"
-                      options={[
-                        { id: "Masculino", nome: "Masculino" },
-                        { id: "Feminino", nome: "Feminino" },
-                        { id: "Sem resposta", nome: "Sem resposta" },
-                      ]}
-                      value={formData.genero}
-                      onChange={(value) =>
-                        setFormData({ ...formData, genero: value })
-                      }
-                      triggerClassName="mt-1 h-[56px] py-3"
-                      disableSearch
                     />
                   </div>
                 </div>
@@ -780,14 +681,6 @@ export default function PassageirosPage() {
                 </div>
                 <div>
                   <label className="text-xs font-black uppercase tracking-widest text-slate-400">
-                    E-mail
-                  </label>
-                  <p className="text-base font-bold text-slate-800 mt-1">
-                    {selectedPassenger.email || "Não informado"}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">
                     CPF
                   </label>
                   <p className="text-base font-bold text-slate-800 mt-1">
@@ -911,41 +804,8 @@ export default function PassageirosPage() {
                       className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                     />
                   </div>
-                  <div
-                    className="space-y-2 flex-[0.8]"
-                    style={{ marginTop: "-4px" }}
-                  >
-                    <GeologSearchableSelect
-                      label="Notificar"
-                      options={[
-                        { id: "Sim", nome: "Sim" },
-                        { id: "Não", nome: "Não" },
-                      ]}
-                      value={formData.notificar}
-                      onChange={(value) =>
-                        setFormData({ ...formData, notificar: value })
-                      }
-                      triggerClassName="mt-1 h-[56px] py-3"
-                      required
-                      disableSearch
-                    />
-                  </div>
                 </div>
                 <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="space-y-2 flex-[1.5]">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                      E-mail
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="contato@exemplo.com"
-                      value={formData.email}
-                      onChange={(event) =>
-                        handleInputChange("email", event.target.value)
-                      }
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
                   <div className="space-y-2 flex-[0.7]">
                     <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
                       CPF
@@ -957,22 +817,6 @@ export default function PassageirosPage() {
                         handleInputChange("cpf", event.target.value)
                       }
                       className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                    />
-                  </div>
-                  <div className="space-y-2 flex-[0.8]">
-                    <GeologSearchableSelect
-                      label="Gênero"
-                      options={[
-                        { id: "Masculino", nome: "Masculino" },
-                        { id: "Feminino", nome: "Feminino" },
-                        { id: "Sem resposta", nome: "Sem resposta" },
-                      ]}
-                      value={formData.genero}
-                      onChange={(value) =>
-                        setFormData({ ...formData, genero: value })
-                      }
-                      triggerClassName="mt-1 h-[56px] py-3"
-                      disableSearch
                     />
                   </div>
                 </div>

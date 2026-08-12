@@ -160,9 +160,7 @@ export function CaixaTable({
       render: (_value, item) => {
         const isEntrada = item.tipo === "entrada";
         const Icon = isEntrada ? ArrowUpCircle : ArrowDownCircle;
-        const colorClass = isEntrada
-          ? "text-teal-700"
-          : "text-rose-600";
+        const colorClass = isEntrada ? "text-teal-700" : "text-rose-600";
         const sign = isEntrada ? "+" : "-";
         return (
           <div

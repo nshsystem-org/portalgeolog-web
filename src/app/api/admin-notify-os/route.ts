@@ -175,7 +175,7 @@ export async function POST(request: Request) {
           for (const wpPass of wpPassengers as any[]) {
             const { data: passRecord, error: passError } = await supabaseAdmin
               .from("passageiros")
-              .select("*")
+              .select("id, nome_completo, celular")
               .eq("id", wpPass.passageiro_id)
               .maybeSingle();
 

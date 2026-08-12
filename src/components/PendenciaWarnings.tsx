@@ -85,17 +85,23 @@ const PENDENCIA_CUTOFF_DATE = "2026-06-01";
 
 // Busca todas as pendências da tabela system_pendencias via Supabase (RLS: read all).
 // Filtra rascunhos pelo usuário logado; demais categorias são globais.
-async function fetchSystemPendencias(userId?: string): Promise<PendenciaItem[]> {
+async function fetchSystemPendencias(
+  userId?: string,
+): Promise<PendenciaItem[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("system_pendencias")
-    .select("id, source_type, source_id, motivo, protocolo, os_number, cliente_nome, data, user_id, age_days, itinerary_index");
+    .select(
+      "id, source_type, source_id, motivo, protocolo, os_number, cliente_nome, data, user_id, age_days, itinerary_index",
+    );
   if (error) throw error;
   const rows = (data || []) as unknown as SystemPendenciaRow[];
   // Rascunhos são pessoais: só mostra os do próprio usuário.
   // sem_valor/atrasada: só conta a partir de PENDENCIA_CUTOFF_DATE.
   return rows
-    .filter((r) => r.motivo !== "rascunho" || !r.user_id || r.user_id === userId)
+    .filter(
+      (r) => r.motivo !== "rascunho" || !r.user_id || r.user_id === userId,
+    )
     .filter(
       (r) =>
         (r.motivo !== "sem_valor" && r.motivo !== "atrasada") ||
@@ -128,7 +134,8 @@ function carregarVistos(): VistosSet {
     const stored = localStorage.getItem(VISTOS_KEY);
     if (!stored) return new Set();
     const arr = JSON.parse(stored) as unknown;
-    if (Array.isArray(arr)) return new Set(arr.filter((v): v is string => typeof v === "string"));
+    if (Array.isArray(arr))
+      return new Set(arr.filter((v): v is string => typeof v === "string"));
     return new Set();
   } catch {
     return new Set();
@@ -265,24 +272,21 @@ export default function PendenciaWarnings({
   const [loaded, setLoaded] = useState(false);
 
   // Função para recalcular items e counts a partir de fetchSystemPendencias
-  const refreshPendencias = useCallback(
-    async (userId?: string) => {
-      try {
-        const rows = await fetchSystemPendencias(userId);
-        setItems(rows);
-        setCounts({
-          semValor: rows.filter((r) => r.motivo === "sem_valor").length,
-          atrasadas: rows.filter((r) => r.motivo === "atrasada").length,
-          rascunhos: rows.filter((r) => r.motivo === "rascunho").length,
-          docagens: rows.filter((r) => r.motivo === "docagem").length,
-        });
-        setLoaded(true);
-      } catch {
-        setLoaded(true);
-      }
-    },
-    [],
-  );
+  const refreshPendencias = useCallback(async (userId?: string) => {
+    try {
+      const rows = await fetchSystemPendencias(userId);
+      setItems(rows);
+      setCounts({
+        semValor: rows.filter((r) => r.motivo === "sem_valor").length,
+        atrasadas: rows.filter((r) => r.motivo === "atrasada").length,
+        rascunhos: rows.filter((r) => r.motivo === "rascunho").length,
+        docagens: rows.filter((r) => r.motivo === "docagem").length,
+      });
+      setLoaded(true);
+    } catch {
+      setLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
     void refreshPendencias(user?.id);
@@ -585,11 +589,7 @@ export default function PendenciaWarnings({
                       : "Som desativado (clique para ativar)"
                   }
                 >
-                  {soundEnabled ? (
-                    <Volume2 size={16} />
-                  ) : (
-                    <VolumeX size={16} />
-                  )}
+                  {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
                 </button>
                 <button
                   onClick={() => setOpen(false)}
@@ -644,10 +644,7 @@ export default function PendenciaWarnings({
           <div className="max-h-[400px] overflow-y-auto">
             {!hasPendencias ? (
               <div className="p-8 text-center text-slate-400">
-                <AlertTriangle
-                  size={32}
-                  className="mx-auto mb-2 opacity-40"
-                />
+                <AlertTriangle size={32} className="mx-auto mb-2 opacity-40" />
                 <p className="text-base font-bold">
                   Nenhuma pendência encontrada. Ótimo!
                 </p>
@@ -665,7 +662,8 @@ export default function PendenciaWarnings({
                   const cfg = motivoConfig[item.motivo];
                   const MotivoIcon = cfg.icon;
                   const novo = ehNovo(item);
-                  const protocolo = item.protocolo || item.os || item.id.slice(0, 8);
+                  const protocolo =
+                    item.protocolo || item.os || item.id.slice(0, 8);
                   const infoTempo =
                     item.ageDays != null && item.ageDays >= 1
                       ? item.ageDays === 1
@@ -688,7 +686,9 @@ export default function PendenciaWarnings({
                       }`}
                     >
                       {/* Ícone de categoria à esquerda */}
-                      <div className={`shrink-0 w-9 h-9 rounded-xl ${cfg.iconBg} flex items-center justify-center`}>
+                      <div
+                        className={`shrink-0 w-9 h-9 rounded-xl ${cfg.iconBg} flex items-center justify-center`}
+                      >
                         <MotivoIcon size={18} className={cfg.iconColor} />
                       </div>
 
@@ -720,7 +720,9 @@ export default function PendenciaWarnings({
                           {item.clienteNome}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black uppercase tracking-wide ${cfg.iconBg} ${cfg.iconColor} ${cfg.badgeClass}`}>
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black uppercase tracking-wide ${cfg.iconBg} ${cfg.iconColor} ${cfg.badgeClass}`}
+                          >
                             <MotivoIcon size={9} />
                             {cfg.label}
                           </span>
@@ -730,7 +732,9 @@ export default function PendenciaWarnings({
                             </span>
                           )}
                           {/* Badge de tipo na mesma linha do motivo */}
-                          <span className={`ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-black uppercase tracking-wide ${tipoCfg.bg} ${tipoCfg.color}`}>
+                          <span
+                            className={`ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-black uppercase tracking-wide ${tipoCfg.bg} ${tipoCfg.color}`}
+                          >
                             <tipoCfg.icon size={9} />
                             {tipoCfg.label}
                           </span>

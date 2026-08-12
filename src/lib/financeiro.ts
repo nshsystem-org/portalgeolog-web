@@ -27,7 +27,9 @@ export const HORA_EXTRA_TAXA_MOTORISTA = 20;
  * Converte string "HH:mm" em total de minutos.
  * Retorna 0 para strings vazias ou inválidas.
  */
-export const parseHoraExtraMinutes = (horaExtra: string | null | undefined): number => {
+export const parseHoraExtraMinutes = (
+  horaExtra: string | null | undefined,
+): number => {
   if (!horaExtra) return 0;
   const [hStr, mStr] = horaExtra.trim().split(":");
   const h = parseInt(hStr || "0", 10);

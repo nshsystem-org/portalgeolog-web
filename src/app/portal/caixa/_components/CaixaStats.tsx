@@ -29,7 +29,8 @@ const toneMap: Record<CaixaCardTone, string> = {
   emerald: "bg-teal-50/80 border-teal-100 text-teal-500 shadow-teal-100/50",
   rose: "bg-rose-50/80 border-rose-100 text-rose-500 shadow-rose-100/50",
   slate: "bg-slate-50/80 border-slate-200 text-slate-600 shadow-slate-100/50",
-  orange: "bg-orange-50/80 border-orange-100 text-orange-600 shadow-orange-100/50",
+  orange:
+    "bg-orange-50/80 border-orange-100 text-orange-600 shadow-orange-100/50",
 };
 
 const titleColorMap: Record<CaixaCardTone, string> = {
@@ -59,9 +60,7 @@ function CaixaCard({
   return (
     <div className="flex items-start gap-4 rounded-[2rem] border border-slate-200 bg-white p-5 px-7 shadow-xl shadow-slate-200/40 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-200/50">
       <div className={`rounded-2xl border p-3 shadow-sm ${toneMap[tone]}`}>
-        <div className="[&>svg]:h-6 [&>svg]:w-6">
-          {icon}
-        </div>
+        <div className="[&>svg]:h-6 [&>svg]:w-6">{icon}</div>
       </div>
       <div className="min-w-0 flex-1">
         <p

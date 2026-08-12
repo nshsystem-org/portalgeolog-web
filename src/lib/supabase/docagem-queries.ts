@@ -318,7 +318,9 @@ export async function fetchDocagemInstancesByRange({
  * (status pendente ou andamento, data < hoje).
  * Usado pelo sistema de pendências da topbar.
  */
-export async function fetchDocagensNaoFinalizadas(): Promise<DocagemInstance[]> {
+export async function fetchDocagensNaoFinalizadas(): Promise<
+  DocagemInstance[]
+> {
   return withRetry(async () => {
     const hoje = new Date().toISOString().slice(0, 10);
     const { data, error } = await getSupabase()

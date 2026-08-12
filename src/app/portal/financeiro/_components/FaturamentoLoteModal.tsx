@@ -48,7 +48,10 @@ export function FaturamentoLoteModal({
     () =>
       clientes
         .find((cliente) => cliente.id === clienteId)
-        ?.centrosCusto.map((center) => ({ id: center.id, nome: center.nome })) ?? [],
+        ?.centrosCusto.map((center) => ({
+          id: center.id,
+          nome: center.nome,
+        })) ?? [],
     [clienteId, clientes],
   );
 
@@ -273,7 +276,9 @@ export function FaturamentoLoteModal({
             </span>
             <span className="flex min-h-[58px] cursor-pointer items-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 transition-all hover:border-yellow-300 hover:bg-yellow-50/50">
               <Upload size={18} className="shrink-0 text-[rgb(135,138,28)]" />
-              <span className="truncate">{file?.name || "Selecionar PDF ou imagem"}</span>
+              <span className="truncate">
+                {file?.name || "Selecionar PDF ou imagem"}
+              </span>
               <input
                 type="file"
                 accept="application/pdf,image/png,image/jpeg,image/webp"

@@ -211,7 +211,11 @@ export default function ConfigPage() {
       const { error } = await supabase
         .from("app_settings")
         .upsert(
-          { key: "os_reminders_enabled", value: String(value), updated_at: new Date().toISOString() },
+          {
+            key: "os_reminders_enabled",
+            value: String(value),
+            updated_at: new Date().toISOString(),
+          },
           { onConflict: "key" },
         );
       if (error) throw error;
@@ -248,7 +252,11 @@ export default function ConfigPage() {
       const { error } = await supabase
         .from("app_settings")
         .upsert(
-          { key: keyMap[flag], value: String(value), updated_at: new Date().toISOString() },
+          {
+            key: keyMap[flag],
+            value: String(value),
+            updated_at: new Date().toISOString(),
+          },
           { onConflict: "key" },
         );
       if (error) throw error;
@@ -989,7 +997,9 @@ export default function ConfigPage() {
                       <Bell size={26} className="text-violet-600" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-black text-slate-800">Notificações</h2>
+                      <h2 className="text-xl font-black text-slate-800">
+                        Notificações
+                      </h2>
                       <p className="text-sm font-medium text-slate-400">
                         Gerencie o envio automático de avisos via WhatsApp
                       </p>
@@ -1002,15 +1012,19 @@ export default function ConfigPage() {
                   <div className="flex items-start justify-between gap-6">
                     <div className="flex items-start gap-4">
                       <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
-                        <MessageSquareWarning size={20} className="text-amber-500" />
+                        <MessageSquareWarning
+                          size={20}
+                          className="text-amber-500"
+                        />
                       </div>
                       <div>
                         <p className="text-base font-black text-slate-800">
                           Avisos de atraso para motoristas
                         </p>
                         <p className="text-sm font-medium text-slate-400 mt-1 leading-relaxed">
-                          Envia mensagem automática via WhatsApp quando um motorista não inicia
-                          o atendimento no horário previsto (T+5min e T+30min).
+                          Envia mensagem automática via WhatsApp quando um
+                          motorista não inicia o atendimento no horário previsto
+                          (T+5min e T+30min).
                         </p>
                       </div>
                     </div>
@@ -1019,7 +1033,9 @@ export default function ConfigPage() {
                     <button
                       type="button"
                       disabled={isLoadingReminders || isSavingReminders}
-                      onClick={() => void handleToggleReminders(!remindersEnabled)}
+                      onClick={() =>
+                        void handleToggleReminders(!remindersEnabled)
+                      }
                       className={`
                         relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent
                         transition-colors duration-200 ease-in-out focus:outline-none
@@ -1043,9 +1059,10 @@ export default function ConfigPage() {
                     <div
                       className={`
                         flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-bold
-                        ${remindersEnabled
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-slate-100 text-slate-500"
+                        ${
+                          remindersEnabled
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-slate-100 text-slate-500"
                         }
                       `}
                     >
@@ -1077,7 +1094,8 @@ export default function ConfigPage() {
                         Notificações automáticas ao cadastrar OS
                       </p>
                       <p className="text-sm font-medium text-slate-400 mt-0.5 leading-relaxed">
-                        Controla quais destinatários podem ser notificados no modal de nova OS
+                        Controla quais destinatários podem ser notificados no
+                        modal de nova OS
                       </p>
                     </div>
                   </div>
@@ -1093,15 +1111,23 @@ export default function ConfigPage() {
                           Motorista Alocado
                         </p>
                         <p className="text-sm font-medium text-slate-400 mt-1 leading-relaxed">
-                          Permite enviar template do WhatsApp ao motorista ao cadastrar/editar OS.
-                          Quando desativado, o toggle fica bloqueado no modal de notificações.
+                          Permite enviar template do WhatsApp ao motorista ao
+                          cadastrar/editar OS. Quando desativado, o toggle fica
+                          bloqueado no modal de notificações.
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      disabled={isLoadingNotifyFlags || isSavingNotifyFlag === "driver"}
-                      onClick={() => void handleToggleNotifyFlag("driver", !notifyFlags.driver)}
+                      disabled={
+                        isLoadingNotifyFlags || isSavingNotifyFlag === "driver"
+                      }
+                      onClick={() =>
+                        void handleToggleNotifyFlag(
+                          "driver",
+                          !notifyFlags.driver,
+                        )
+                      }
                       className={`
                         relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent
                         transition-colors duration-200 ease-in-out focus:outline-none
@@ -1132,14 +1158,23 @@ export default function ConfigPage() {
                         </p>
                         <p className="text-sm font-medium text-slate-400 mt-1 leading-relaxed">
                           Permite notificar passageiros da rota ao cadastrar OS.
-                          Quando desativado, o toggle fica bloqueado no modal de notificações.
+                          Quando desativado, o toggle fica bloqueado no modal de
+                          notificações.
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      disabled={isLoadingNotifyFlags || isSavingNotifyFlag === "passengers"}
-                      onClick={() => void handleToggleNotifyFlag("passengers", !notifyFlags.passengers)}
+                      disabled={
+                        isLoadingNotifyFlags ||
+                        isSavingNotifyFlag === "passengers"
+                      }
+                      onClick={() =>
+                        void handleToggleNotifyFlag(
+                          "passengers",
+                          !notifyFlags.passengers,
+                        )
+                      }
                       className={`
                         relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent
                         transition-colors duration-200 ease-in-out focus:outline-none
@@ -1169,15 +1204,24 @@ export default function ConfigPage() {
                           Solicitante da Empresa
                         </p>
                         <p className="text-sm font-medium text-slate-400 mt-1 leading-relaxed">
-                          Permite notificar o solicitante da empresa ao cadastrar OS.
-                          Quando desativado, o toggle fica bloqueado no modal de notificações.
+                          Permite notificar o solicitante da empresa ao
+                          cadastrar OS. Quando desativado, o toggle fica
+                          bloqueado no modal de notificações.
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      disabled={isLoadingNotifyFlags || isSavingNotifyFlag === "solicitante"}
-                      onClick={() => void handleToggleNotifyFlag("solicitante", !notifyFlags.solicitante)}
+                      disabled={
+                        isLoadingNotifyFlags ||
+                        isSavingNotifyFlag === "solicitante"
+                      }
+                      onClick={() =>
+                        void handleToggleNotifyFlag(
+                          "solicitante",
+                          !notifyFlags.solicitante,
+                        )
+                      }
                       className={`
                         relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent
                         transition-colors duration-200 ease-in-out focus:outline-none

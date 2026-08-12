@@ -44,7 +44,7 @@ function buildRepasseLoteEmailHTML(data: RepasseLoteEmailData): string {
         ? "Parceiro"
         : data.vinculoTipo === "freelance"
           ? "Freelancer"
-          : (data.vinculoTipo || "—");
+          : data.vinculoTipo || "—";
 
   return `
   <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; overflow: hidden;">

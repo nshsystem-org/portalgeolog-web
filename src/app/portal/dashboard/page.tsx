@@ -124,7 +124,13 @@ function MiniListPanel({
 export default function Dashboard() {
   const { user, profile } = useAuth();
   const { parceiros } = useParceiros();
-  const { drivers, clientes, osCounts, loading: dataLoading, lastOSUpdate } = useData();
+  const {
+    drivers,
+    clientes,
+    osCounts,
+    loading: dataLoading,
+    lastOSUpdate,
+  } = useData();
   const [overviewRows, setOverviewRows] = useState<OrderService[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
 
@@ -389,9 +395,7 @@ function StatCard({
       <div className="relative z-10">
         <div className={`mb-3 flex items-center gap-2 ${iconColor}`}>
           {icon}
-          <p className="text-sm font-bold uppercase tracking-widest">
-            {title}
-          </p>
+          <p className="text-sm font-bold uppercase tracking-widest">{title}</p>
         </div>
         <div className="flex items-end gap-2">
           <p className="text-5xl font-black text-white">{value}</p>
@@ -400,4 +404,3 @@ function StatCard({
     </div>
   );
 }
-

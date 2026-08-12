@@ -95,9 +95,7 @@ export interface VerifiedToken {
 /**
  * Assina e retorna o JWT compacto (header.payload.signature).
  */
-export async function signAdminToken(
-  opts: SignOptions,
-): Promise<string> {
+export async function signAdminToken(opts: SignOptions): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const ttl = opts.ttlSeconds ?? TOKEN_TTL_SECONDS;
   const payload: AdminTokenPayload = {
@@ -127,12 +125,14 @@ export async function signAdminToken(
 /**
  * Verifica assinatura + expiração. Não lança — retorna { valid, reason }.
  */
-export async function verifyAdminToken(
-  token: string,
-): Promise<VerifiedToken> {
+export async function verifyAdminToken(token: string): Promise<VerifiedToken> {
   const parts = token.split(".");
   if (parts.length !== 3) {
-    return { payload: null as unknown as AdminTokenPayload, valid: false, reason: "malformed" };
+    return {
+      payload: null as unknown as AdminTokenPayload,
+      valid: false,
+      reason: "malformed",
+    };
   }
   const [headerB64, payloadB64, sigB64] = parts;
   const signingInput = `${headerB64}.${payloadB64}`;

@@ -469,8 +469,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
   const handleOpenRepasseLote = useCallback((): void => {
     if (!driverId) return;
     const driverName = driverMap.get(driverId) ?? "Motorista";
-    const pendingValue =
-      stats.totalCustoAutonomos - stats.totalPagoAutonomos;
+    const pendingValue = stats.totalCustoAutonomos - stats.totalPagoAutonomos;
     setRepasseLoteTarget({
       driverId,
       driverName,
@@ -523,7 +522,9 @@ export function useFinanceiroPage(): FinanceiroPageState {
       await registrarRepasse(repasseTarget.id);
       await financeTable.refresh();
       await loadStats();
-      toast.success("Repasse registrado. Lançamento de saída criado no Fluxo de Caixa.");
+      toast.success(
+        "Repasse registrado. Lançamento de saída criado no Fluxo de Caixa.",
+      );
       setRepasseTarget(null);
     } catch (error) {
       toast.error(
@@ -605,12 +606,7 @@ export function useFinanceiroPage(): FinanceiroPageState {
     } finally {
       setFaturamentoLoteLoading(false);
     }
-  }, [
-    closeFaturamentoLote,
-    faturamentoLotePayload,
-    financeTable,
-    loadStats,
-  ]);
+  }, [closeFaturamentoLote, faturamentoLotePayload, financeTable, loadStats]);
 
   // Close action modal
   const closeActionModal = useCallback((): void => {
@@ -671,7 +667,9 @@ export function useFinanceiroPage(): FinanceiroPageState {
         observacao: recebimentoObservacao,
       } as ConfirmarRecebimentoPayload);
 
-      toast.success("Valor marcado como recebido. Lançamento de entrada criado no Fluxo de Caixa.");
+      toast.success(
+        "Valor marcado como recebido. Lançamento de entrada criado no Fluxo de Caixa.",
+      );
       closeActionModal();
       await financeTable.refresh();
     } catch (error) {
@@ -688,7 +686,8 @@ export function useFinanceiroPage(): FinanceiroPageState {
     async (payload: ReportPayload): Promise<void> => {
       setReportLoading(true);
       try {
-        const { blob, fileName: serverFileName } = await gerarRelatorio(payload);
+        const { blob, fileName: serverFileName } =
+          await gerarRelatorio(payload);
         const url = window.URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;

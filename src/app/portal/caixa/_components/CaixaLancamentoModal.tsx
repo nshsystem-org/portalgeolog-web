@@ -119,7 +119,9 @@ function CaixaLancamentoForm({
     // Reseta categoria se a atual não pertence à lista do novo tipo
     const lista = next === "entrada" ? CATEGORIAS_ENTRADA : CATEGORIAS_SAIDA;
     if (!lista.some((c) => c.value === categoria)) {
-      setCategoria(next === "entrada" ? "recebimento_cliente" : "repasse_motorista");
+      setCategoria(
+        next === "entrada" ? "recebimento_cliente" : "repasse_motorista",
+      );
     }
   };
 
@@ -175,7 +177,9 @@ function CaixaLancamentoForm({
     <StandardModal
       title={lancamentoEmEdicao ? "Editar Lançamento" : "Novo Lançamento"}
       subtitle="Registre uma entrada ou saída no caixa"
-      icon={isEntrada ? <ArrowUpCircle size={24} /> : <ArrowDownCircle size={24} />}
+      icon={
+        isEntrada ? <ArrowUpCircle size={24} /> : <ArrowDownCircle size={24} />
+      }
       onClose={onClose}
       maxWidthClassName="max-w-4xl"
       bodyClassName="space-y-5 p-6 md:p-8"
@@ -264,7 +268,9 @@ function CaixaLancamentoForm({
           {/* Valor */}
           <div className="space-y-2">
             <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 flex items-center justify-between">
-              <span className="flex items-center gap-1">Valor <RequiredAsterisk /></span>
+              <span className="flex items-center gap-1">
+                Valor <RequiredAsterisk />
+              </span>
               {valor > 0 && (
                 <span className="text-xs font-bold text-emerald-600 normal-case tracking-normal">
                   {formatCurrency(valor)}
@@ -450,7 +456,8 @@ function CaixaLancamentoForm({
         {lancamentoEmEdicao?.anexoPath && !file ? (
           <p className="text-xs font-bold text-slate-500 flex items-center gap-1.5 pt-1">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-            Comprovante atual já anexado. Selecione um novo arquivo para substituir.
+            Comprovante atual já anexado. Selecione um novo arquivo para
+            substituir.
           </p>
         ) : null}
       </div>

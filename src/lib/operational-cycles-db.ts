@@ -260,11 +260,15 @@ export async function updateOperationalCycleForOS(
   const payload: Record<string, unknown> = {};
 
   if (updates.state !== undefined) payload.state = updates.state;
-  if (updates.messageSentAt !== undefined) payload.message_sent_at = updates.messageSentAt;
-  if (updates.messageSentById !== undefined) payload.message_sent_by_id = updates.messageSentById;
-  if (updates.acceptedAt !== undefined) payload.accepted_at = updates.acceptedAt;
+  if (updates.messageSentAt !== undefined)
+    payload.message_sent_at = updates.messageSentAt;
+  if (updates.messageSentById !== undefined)
+    payload.message_sent_by_id = updates.messageSentById;
+  if (updates.acceptedAt !== undefined)
+    payload.accepted_at = updates.acceptedAt;
   if (updates.startedAt !== undefined) payload.started_at = updates.startedAt;
-  if (updates.finishedAt !== undefined) payload.finished_at = updates.finishedAt;
+  if (updates.finishedAt !== undefined)
+    payload.finished_at = updates.finishedAt;
   if (updates.kmInitial !== undefined) payload.km_initial = updates.kmInitial;
   if (updates.kmFinal !== undefined) payload.km_final = updates.kmFinal;
 

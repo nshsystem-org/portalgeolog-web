@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { formatMoneyDisplay, parseMoneyInput, maskMoneyInput } from "@/lib/money";
+import {
+  formatMoneyDisplay,
+  parseMoneyInput,
+  maskMoneyInput,
+} from "@/lib/money";
 
 interface GeologMoneyInputProps {
   label?: string;

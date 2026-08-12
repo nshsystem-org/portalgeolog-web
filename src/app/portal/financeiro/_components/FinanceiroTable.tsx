@@ -56,9 +56,7 @@ function ValorCell({ item }: { item: OrderService }): ReactElement {
   const heMin = parseHoraExtraMinutes(item.horaExtra);
   const heCliente = calcHoraExtraCliente(heMin);
   const heMotorista = calcHoraExtraMotorista(heMin);
-  const noShowFator = item.noShow
-    ? (item.noShowPercentual ?? 100) / 100
-    : 1;
+  const noShowFator = item.noShow ? (item.noShowPercentual ?? 100) / 100 : 1;
   const bruto = item.noShow
     ? (brutoBase + heCliente) * noShowFator
     : brutoBase + heCliente;
@@ -75,7 +73,9 @@ function ValorCell({ item }: { item: OrderService }): ReactElement {
         onClick={() => setExpanded((v) => !v)}
         className="group inline-flex items-center gap-1.5 rounded-lg px-1 py-0.5 transition-colors hover:bg-slate-50 cursor-pointer"
       >
-        <span className={`text-base font-black ${isentoVB ? "text-slate-400" : "text-emerald-600"}`}>
+        <span
+          className={`text-base font-black ${isentoVB ? "text-slate-400" : "text-emerald-600"}`}
+        >
           {isentoVB ? "Isento" : formatCurrency(bruto)}
         </span>
         <ChevronRight
@@ -97,7 +97,9 @@ function ValorCell({ item }: { item: OrderService }): ReactElement {
           <span className="flex items-center justify-end gap-1">
             <TrendingDown size={11} className="shrink-0 text-red-400" />
             <span className="text-slate-400">Repasse</span>
-            <span className={`font-bold ${isentoCusto ? "text-slate-400" : "text-red-500"}`}>
+            <span
+              className={`font-bold ${isentoCusto ? "text-slate-400" : "text-red-500"}`}
+            >
               {isentoCusto ? "Isento" : formatCurrency(custo)}
             </span>
           </span>
@@ -218,10 +220,26 @@ export function FinanceiroTable({
             <div className="w-[180px]">
               <GeologSearchableSelect
                 options={[
-                  { id: "", nome: "Todos", icon: <Users size={15} className="text-slate-400" /> },
-                  { id: "interno", nome: "Internos", icon: <Briefcase size={15} className="text-blue-500" /> },
-                  { id: "autonomo", nome: "Autônomos", icon: <Truck size={15} className="text-amber-500" /> },
-                  { id: "parceiro", nome: "Parceiros", icon: <Handshake size={15} className="text-teal-500" /> },
+                  {
+                    id: "",
+                    nome: "Todos",
+                    icon: <Users size={15} className="text-slate-400" />,
+                  },
+                  {
+                    id: "interno",
+                    nome: "Internos",
+                    icon: <Briefcase size={15} className="text-blue-500" />,
+                  },
+                  {
+                    id: "autonomo",
+                    nome: "Autônomos",
+                    icon: <Truck size={15} className="text-amber-500" />,
+                  },
+                  {
+                    id: "parceiro",
+                    nome: "Parceiros",
+                    icon: <Handshake size={15} className="text-teal-500" />,
+                  },
                 ]}
                 value={driverTipoFilter}
                 onChange={(value) => {
@@ -251,7 +269,10 @@ export function FinanceiroTable({
           </div>
         }
         headerContent={
-          driverId && !statsLoading && pendingRepasseValue > 0 && !bannerDismissed ? (
+          driverId &&
+          !statsLoading &&
+          pendingRepasseValue > 0 &&
+          !bannerDismissed ? (
             <div className="mx-2 mb-2 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3.5">
               <div className="flex items-center gap-3">
                 <div className="rounded-xl bg-amber-100 p-2">
@@ -273,9 +294,13 @@ export function FinanceiroTable({
                             return (
                               <>
                                 {" de "}
-                                <strong style={{ color: "rgb(180, 83, 9)" }}>{fmt(repassePeriodStart)}</strong>
+                                <strong style={{ color: "rgb(180, 83, 9)" }}>
+                                  {fmt(repassePeriodStart)}
+                                </strong>
                                 {" á "}
-                                <strong style={{ color: "rgb(180, 83, 9)" }}>{fmt(repassePeriodEnd)}</strong>
+                                <strong style={{ color: "rgb(180, 83, 9)" }}>
+                                  {fmt(repassePeriodEnd)}
+                                </strong>
                               </>
                             );
                           })()
@@ -374,7 +399,8 @@ export function FinanceiroTable({
                 : undefined;
               const isAutonomoRow = rowDriverVinculo === "autonomo";
               const isParceiroRow = rowDriverVinculo === "parceiro";
-              const showRepasse = isFreelanceRow || isAutonomoRow || isParceiroRow;
+              const showRepasse =
+                isFreelanceRow || isAutonomoRow || isParceiroRow;
 
               return (
                 <div className="max-w-[240px] space-y-1">
@@ -392,9 +418,7 @@ export function FinanceiroTable({
                         <Truck size={12} className="shrink-0 text-slate-400" />
                         <span className="truncate text-slate-400">
                           {partnerName ||
-                            (isAutonomoRow
-                              ? "Autônomo"
-                              : "Interno")}
+                            (isAutonomoRow ? "Autônomo" : "Interno")}
                         </span>
                       </>
                     )}
@@ -523,7 +547,9 @@ export function FinanceiroTable({
                   {openActionMenuId === item.id ? (
                     <ActionMenuPortal
                       isOpen={openActionMenuId === item.id}
-                      getTriggerEl={() => actionMenuRefs.current[item.id] ?? null}
+                      getTriggerEl={() =>
+                        actionMenuRefs.current[item.id] ?? null
+                      }
                       align="right"
                       width={224}
                       panelClassName="rounded-3xl border border-slate-200 bg-white p-2.5 shadow-2xl shadow-slate-200/50"

@@ -178,11 +178,8 @@ export interface OSStatus {
 export interface Passageiro {
   id: string;
   nomeCompleto: string;
-  email?: string;
   celular: string;
   cpf?: string;
-  notificar?: boolean;
-  genero?: string;
   enderecos: PassageiroEndereco[];
 }
 
@@ -208,11 +205,8 @@ export interface PassageiroEndereco {
 
 export interface NovoPassageiroInput {
   nomeCompleto: string;
-  email?: string;
   celular: string;
   cpf?: string;
-  notificar?: boolean;
-  genero?: string;
   enderecos: {
     rotulo?: string;
     enderecoCompleto: string;
@@ -324,9 +318,6 @@ const getPassageiroDuplicateMessage = (error: unknown): string | null => {
   const lower = msg.toLowerCase();
   if (lower.includes("passageiros_celular_unique_normalized")) {
     return "Já existe um passageiro com este celular.";
-  }
-  if (lower.includes("passageiros_email_unique_normalized")) {
-    return "Já existe um passageiro com este e-mail.";
   }
   if (lower.includes("passageiros_cpf_unique_normalized")) {
     return "Já existe um passageiro com este CPF.";

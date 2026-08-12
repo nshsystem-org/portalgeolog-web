@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, ShieldCheck, ArrowLeft, Loader2, Eye, EyeOff } from "lucide-react";
+import {
+  Lock,
+  ShieldCheck,
+  ArrowLeft,
+  Loader2,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
 
@@ -74,8 +81,8 @@ export default function AdminVerifyPage() {
               Verificação de Administrador
             </h1>
             <p className="mt-2 text-sm text-blue-200/60 font-medium leading-relaxed">
-              Esta é uma área protegida. Confirme sua senha para continuar.
-              A sessão expira em 15 minutos por segurança.
+              Esta é uma área protegida. Confirme sua senha para continuar. A
+              sessão expira em 15 minutos por segurança.
             </p>
           </div>
 

@@ -59,7 +59,7 @@ function buildRepasseLoteEmailHTML(data: RepasseLoteEmailData): string {
         ? "Parceiro"
         : data.vinculoTipo === "freelance"
           ? "Freelancer"
-          : (data.vinculoTipo || "—");
+          : data.vinculoTipo || "—";
 
   return `
   <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; overflow: hidden;">
@@ -103,7 +103,9 @@ async function sendRepasseLoteEmail(
 ): Promise<void> {
   const resend = createResendClient();
   if (!resend) {
-    console.warn("[repasse-lote] RESEND_API_KEY não configurada — e-mail não enviado");
+    console.warn(
+      "[repasse-lote] RESEND_API_KEY não configurada — e-mail não enviado",
+    );
     return;
   }
 
@@ -116,7 +118,6 @@ async function sendRepasseLoteEmail(
     html: buildRepasseLoteEmailHTML(data),
   });
 }
-
 
 async function createAuthClient() {
   const cookieStore = await cookies();
@@ -185,7 +186,9 @@ export async function POST(request: Request) {
     // Busca OS elegíveis: motorista no período com repasse pendente
     const { data: osRows, error: osError } = await adminClient
       .from("ordens_servico")
-      .select("id, cliente_id, tipo, custo, no_show, no_show_percentual, hora_extra, isento_custo")
+      .select(
+        "id, cliente_id, tipo, custo, no_show, no_show_percentual, hora_extra, isento_custo",
+      )
       .eq("driver_id", driverId)
       .eq("repasse_pago", false)
       .gte("data", dataInicio)
@@ -222,7 +225,7 @@ export async function POST(request: Request) {
       const heMin = (() => {
         if (!horaExtra) return 0;
         const [hStr, mStr] = horaExtra.trim().split(":");
-        return (parseInt(hStr || "0", 10) * 60) + parseInt(mStr || "0", 10);
+        return parseInt(hStr || "0", 10) * 60 + parseInt(mStr || "0", 10);
       })();
       const heBilled = calcBilledMinutes(heMin);
       const heValue = (heBilled / 60) * HORA_EXTRA_MOTORISTA;
@@ -285,7 +288,10 @@ export async function POST(request: Request) {
         ["contato@geologtransporte.com", "logistica@geologtransporte.com"],
       );
     } catch (emailErr) {
-      console.error("[repasse-lote] Falha ao enviar e-mail de resumo:", emailErr);
+      console.error(
+        "[repasse-lote] Falha ao enviar e-mail de resumo:",
+        emailErr,
+      );
     }
 
     return NextResponse.json({

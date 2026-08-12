@@ -2,7 +2,15 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Search, Plus, User, Loader2, X, Star } from "lucide-react";
+import {
+  ChevronDown,
+  Search,
+  Plus,
+  User,
+  Loader2,
+  X,
+  Star,
+} from "lucide-react";
 import { getThumbnailUrl } from "@/utils/avatar";
 
 function VehiclePlate({
@@ -503,13 +511,17 @@ export default function GeologSearchableSelect({
               withNegativeMargin
             />
           ) : selectedOption && !hideTriggerAvatar ? (
-            <div className={`w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 ${hideTriggerBorder ? "" : "border-2 border-slate-200"}`}>
+            <div
+              className={`w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 ${hideTriggerBorder ? "" : "border-2 border-slate-200"}`}
+            >
               <User size={15} className="text-slate-400" />
             </div>
           ) : null}
           {selectedOption ? (
             <div className="flex items-center gap-2 overflow-hidden flex-1">
-              <span className="font-bold truncate">{selectedOption.nomeNode ?? selectedOption.nome}</span>
+              <span className="font-bold truncate">
+                {selectedOption.nomeNode ?? selectedOption.nome}
+              </span>
               {selectedOption.typeLabel && (
                 <span
                   className={`px-1.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${

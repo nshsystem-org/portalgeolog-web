@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
 import { sendWhatsAppTemplate } from "@/lib/meta";
 import { createClient as createSupabaseAuthClient } from "@/lib/supabase/server";
@@ -37,97 +36,10 @@ type OSPublicRow = {
   os_number: string | null;
 };
 
-type PassengerAddressRow = {
-  rotulo?: string | null;
-  endereco_completo?: string | null;
-  referencia?: string | null;
-};
-
-type PassengerRow = {
-  id: string;
-  nome_completo: string | null;
-  celular: string | null;
-  passageiro_enderecos?: PassengerAddressRow[] | null;
-};
-
-type VehicleRow = {
-  marca: string | null;
-  modelo: string | null;
-  placa: string | null;
-};
-
 type DriverCandidateRow = {
   name: string | null;
   phone: string | null;
 };
-
-type WaypointRow = {
-  id: string;
-  label: string | null;
-  comment: string | null;
-  itinerary_index: number | null;
-  hora: string | null;
-  data: string | null;
-  position: number | null;
-};
-
-type WaypointPassengerRow = {
-  waypoint_id: string;
-};
-
-function numeroParaOrdinal(n: number): string {
-  const unidades = [
-    "",
-    "Primeiro",
-    "Segundo",
-    "Terceiro",
-    "Quarto",
-    "Quinto",
-    "Sexto",
-    "Sétimo",
-    "Oitavo",
-    "Nono",
-  ];
-  const especiais: Record<number, string> = {
-    10: "Décimo",
-    11: "Décimo Primeiro",
-    12: "Décimo Segundo",
-    13: "Décimo Terceiro",
-    14: "Décimo Quarto",
-    15: "Décimo Quinto",
-    16: "Décimo Sexto",
-    17: "Décimo Sétimo",
-    18: "Décimo Oitavo",
-    19: "Décimo Nono",
-  };
-  const dezenas: Record<number, string> = {
-    2: "Vigésimo",
-    3: "Trigésimo",
-    4: "Quadragésimo",
-    5: "Quinquagésimo",
-    6: "Sexagésimo",
-    7: "Septuagésimo",
-    8: "Octogésimo",
-    9: "Nonagésimo",
-  };
-  if (n >= 1 && n <= 9) return unidades[n];
-  if (n >= 10 && n <= 19) return especiais[n] || "";
-  if (n >= 20 && n <= 99) {
-    const d = Math.floor(n / 10);
-    const u = n % 10;
-    const dt = dezenas[d] || "";
-    const ut = u > 0 ? unidades[u] : "";
-    if (dt && ut) return `${dt} ${ut}`;
-    return dt || ut || String(n);
-  }
-  if (n === 100) return "Centésimo";
-  return String(n);
-}
-
-function createResendClient() {
-  const apiKey = process.env.RESEND_API_KEY;
-  return apiKey ? new Resend(apiKey) : null;
-}
 
 export async function POST(request: Request) {
   try {
@@ -148,60 +60,14 @@ export async function POST(request: Request) {
     console.log("[notify-passenger] body:", JSON.stringify(body));
     const {
       type,
-      passengerEmail,
       passengerPhone,
       passengerName,
-      osProtocol,
       osId,
       passageiroId,
       acceptUrl,
     } = body;
 
-    const results: { email?: boolean; whatsapp?: boolean } = {};
-
-    const formatDate = (value?: string | null): string => {
-      if (!value) return "Não informado";
-      if (value.includes("/")) return value;
-      const [year, month, day] = value.split("-");
-      if (year && month && day) {
-        return `${day}/${month}/${year}`;
-      }
-      return value;
-    };
-
-    const formatTime = (value?: string | null): string => {
-      if (!value) return "Não informado";
-      return value.slice(0, 5);
-    };
-
-    const formatDateTime = (
-      date?: string | null,
-      time?: string | null,
-    ): string => {
-      const formattedDate = formatDate(date);
-      const formattedTime = formatTime(time);
-      if (
-        formattedDate === "Não informado" &&
-        formattedTime === "Não informado"
-      ) {
-        return "Não informado";
-      }
-      if (formattedDate === "Não informado") {
-        return formattedTime;
-      }
-      if (formattedTime === "Não informado") {
-        return formattedDate;
-      }
-      return `${formattedDate} - ${formattedTime}`;
-    };
-
-    const buildVehicleLabel = (
-      vehicle: { marca?: string | null; modelo?: string | null } | null,
-    ): string => {
-      if (!vehicle) return "Não informado";
-      const parts = [vehicle.marca, vehicle.modelo].filter(Boolean).map(String);
-      return parts.length > 0 ? parts.join(" ") : "Não informado";
-    };
+    const results: { whatsapp?: boolean } = {};
 
     const normalizeName = (value: string): string =>
       value
@@ -303,57 +169,13 @@ export async function POST(request: Request) {
     console.log("[notify-passenger] confirmationLink:", confirmationLink);
 
     let driverName = "Não informado";
-    let driverPhone = "Não informado";
-    let vehicleLabel = "Não informado";
-    let vehiclePlate = "Não informado";
-    let itinerarySummary = "";
 
     if (osId) {
-      const [
-        { data: osData },
-        { data: passengerData },
-        { data: vehicleData },
-        { data: waypointsData },
-      ] = await Promise.all([
-        admin
-          .from("ordens_servico")
-          .select("id, motorista, veiculo_id, data, hora, protocolo, os_number")
-          .eq("id", osId)
-          .maybeSingle() as Promise<{ data: OSPublicRow | null }>,
-        passageiroId
-          ? (admin
-              .from("passageiros")
-              .select(
-                "id, nome_completo, celular, passageiro_enderecos(id, rotulo, endereco_completo, referencia)",
-              )
-              .eq("id", passageiroId)
-              .maybeSingle() as Promise<{ data: PassengerRow | null }>)
-          : Promise.resolve({ data: null as PassengerRow | null }),
-        admin
-          .from("ordens_servico")
-          .select("veiculo_id")
-          .eq("id", osId)
-          .maybeSingle()
-          .then(
-            async ({
-              data: osVehicle,
-            }: {
-              data: { veiculo_id: string | null } | null;
-            }) => {
-              if (!osVehicle?.veiculo_id) return { data: null };
-              return admin
-                .from("veiculos")
-                .select("marca, modelo, placa")
-                .eq("id", osVehicle.veiculo_id)
-                .maybeSingle() as Promise<{ data: VehicleRow | null }>;
-            },
-          ) as Promise<{ data: VehicleRow | null }>,
-        admin
-          .from("os_waypoints")
-          .select("id, label, comment, itinerary_index, hora, data, position")
-          .eq("ordem_servico_id", osId)
-          .order("position") as Promise<{ data: WaypointRow[] | null }>,
-      ]);
+      const { data: osData } = (await admin
+        .from("ordens_servico")
+        .select("id, motorista, veiculo_id, data, hora, protocolo, os_number")
+        .eq("id", osId)
+        .maybeSingle()) as { data: OSPublicRow | null };
 
       if (osData?.motorista) {
         driverName = osData.motorista;
@@ -376,129 +198,7 @@ export async function POST(request: Request) {
 
         if (matchedDriver) {
           driverName = matchedDriver.name || driverName;
-          driverPhone = matchedDriver.phone || driverPhone;
         }
-      }
-
-      if (vehicleData) {
-        vehicleLabel = buildVehicleLabel(
-          vehicleData as {
-            marca?: string | null;
-            modelo?: string | null;
-          } | null,
-        );
-        vehiclePlate =
-          (vehicleData as { placa?: string | null }).placa || "Não informado";
-      }
-
-      void passengerData;
-
-      const passengerWaypointIds = new Set<string>();
-      if (passageiroId && waypointsData && waypointsData.length > 0) {
-        const { data: wpPassengers } = await (admin
-          .from("os_waypoints_passageiros")
-          .select("waypoint_id")
-          .in(
-            "waypoint_id",
-            waypointsData.map((wp) => wp.id),
-          )
-          .eq("passageiro_id", passageiroId) as Promise<{
-          data: WaypointPassengerRow[] | null;
-        }>);
-
-        (wpPassengers || []).forEach((row: WaypointPassengerRow) => {
-          const id = String(row.waypoint_id || "");
-          if (id) passengerWaypointIds.add(id);
-        });
-      }
-
-      const waypointItineraryMap = new Map<string, number>();
-      const itineraryGroups = new Map<
-        number,
-        {
-          firstIndex: number;
-          waypoints: Array<{
-            id: string;
-            label?: string | null;
-            data?: string | null;
-            hora?: string | null;
-          }>;
-        }
-      >();
-      (waypointsData || []).forEach((waypoint: WaypointRow) => {
-        const itineraryIndex =
-          typeof waypoint.itinerary_index === "number"
-            ? waypoint.itinerary_index
-            : 0;
-        waypointItineraryMap.set(waypoint.id, itineraryIndex);
-        if (!itineraryGroups.has(itineraryIndex)) {
-          itineraryGroups.set(itineraryIndex, {
-            firstIndex: waypoint.position ?? 0,
-            waypoints: [],
-          });
-        }
-        const group = itineraryGroups.get(itineraryIndex);
-        if (!group) return;
-        group.waypoints.push({
-          id: waypoint.id,
-          label: waypoint.label,
-          data: waypoint.data,
-          hora: waypoint.hora,
-        });
-        if (
-          typeof waypoint.position === "number" &&
-          waypoint.position < group.firstIndex
-        ) {
-          group.firstIndex = waypoint.position;
-        }
-      });
-
-      const passengerItineraryIndices = new Set<number>();
-      passengerWaypointIds.forEach((wpId) => {
-        const idx = waypointItineraryMap.get(wpId);
-        if (typeof idx === "number") passengerItineraryIndices.add(idx);
-      });
-
-      const filteredGroups = Array.from(itineraryGroups.entries())
-        .filter(([index]) => passengerItineraryIndices.has(index))
-        .sort((a, b) => a[1].firstIndex - b[1].firstIndex);
-
-      const itineraryLines: string[] = [];
-      filteredGroups.forEach(([index, group]) => {
-        const title =
-          index < 0
-            ? `🔄 *${numeroParaOrdinal(Math.abs(index))} Retorno*`
-            : `✓ *${numeroParaOrdinal(index + 1)} Itinerário*`;
-        const firstWaypoint = group.waypoints[0];
-        const dateTime = formatDateTime(
-          firstWaypoint?.data || osData?.data || null,
-          firstWaypoint?.hora || osData?.hora || null,
-        );
-        itineraryLines.push("────────────────");
-        itineraryLines.push(`${title} — ${dateTime}`);
-
-        group.waypoints.forEach((wp, wpIndex) => {
-          const prefix =
-            wpIndex === 0
-              ? "🟢 *Origem:*"
-              : wpIndex === group.waypoints.length - 1
-                ? "🔵 *Destino Final:*"
-                : `🔘 *Parada ${wpIndex + 1}:*`;
-          const wpDateTime =
-            wp.data || wp.hora ? ` (${formatDateTime(wp.data, wp.hora)})` : "";
-          const marker = passengerWaypointIds.has(wp.id)
-            ? " 📍 (seu endereço)"
-            : "";
-          itineraryLines.push(
-            `   ${prefix}: ${wp.label || "Não informado"}${wpDateTime}${marker}`,
-          );
-        });
-
-        itineraryLines.push("");
-      });
-
-      if (itineraryLines.length > 0) {
-        itinerarySummary = itineraryLines.join("\n");
       }
     }
 
@@ -515,43 +215,19 @@ export async function POST(request: Request) {
     //   );
     // }
 
-    if ((type === "email" || type === "both") && passengerEmail) {
-      const resend = createResendClient();
-      if (resend) {
-        await resend.emails.send({
-          from: "Portal Geolog <suporte@portalgeolog.com.br>",
-          to: passengerEmail,
-          subject: `Revise os dados da sua viagem - ${osProtocol || "N/A"}`,
-          html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; overflow: hidden;">
-            <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-bottom: 1px solid #eee;">
-              <h2 style="margin: 0; color: #0f172a; font-size: 22px;">Portal Geolog</h2>
-            </div>
-            <div style="padding: 30px;">
-              <p style="font-size: 16px; line-height: 1.5;">Olá, <strong>${passengerName || "Passageiro"}</strong>!</p>
-              <p style="font-size: 16px; line-height: 1.5;">Para garantir sua reserva e nos ajudar na organização do trajeto, pedimos que revise os dados da viagem antes de confirmar.</p>
-              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; margin: 20px 0; font-size: 14px; line-height: 1.6;">
-                <p style="margin: 0 0 8px 0;"><strong>Motorista:</strong> ${driverName}</p>
-                <p style="margin: 0 0 8px 0;"><strong>Contato:</strong> ${driverPhone}</p>
-                <p style="margin: 0 0 8px 0;"><strong>Veículo:</strong> ${vehicleLabel}</p>
-                <p style="margin: 0 0 8px 0;"><strong>Placa:</strong> ${vehiclePlate}</p>
-                <p style="margin: 0;"><strong>Itinerários:</strong><br>${String(itinerarySummary).replace(/\n/g, "<br>")}</p>
-              </div>
-              <p style="font-size: 16px; line-height: 1.5;">Clique no botão abaixo para revisar e confirmar sua viagem:</p>
-              <div style="text-align: center; margin: 24px 0;">
-                <a href="${confirmationLink || "#"}" style="display: inline-block; background-color: #16a34a; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold;">Revisar dados da viagem</a>
-              </div>
-              <p style="font-size: 12px; color: #64748b; text-align: center;">Se o botão não funcionar, copie e cole este link:<br>${confirmationLink || "N/A"}</p>
-            </div>
-            <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #eee; font-size: 12px; color: #64748b;">
-              Portal Geolog - Sistema de Gestão de Transporte
-            </div>
-          </div>`,
-        });
-        results.email = true;
-      }
+    // Envio de WhatsApp via Meta API usando template aprovado
+    if (type !== "whatsapp" && type !== "both") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Tipo de notificação "${type}" não suportado. Apenas WhatsApp está disponível.`,
+          results,
+          token,
+        },
+        { status: 400 },
+      );
     }
 
-    // Envio de WhatsApp via Meta API usando template aprovado
     if ((type === "whatsapp" || type === "both") && passengerPhone) {
       const cleanPhone = normalizeBrazilPhone(passengerPhone);
 

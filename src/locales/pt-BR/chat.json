@@ -6,12 +6,19 @@
     "maximize_button": "Maximizar",
     "chat_title": "Chat",
     "conversations_title": "Conversas",
-    "conversation_title": "Conversa"
+    "conversation_title": "Conversa",
+    "new_conversation_button": "Nova conversa"
   },
   "conversation_list": {
     "no_conversations": "Nenhuma conversa ainda",
     "unread_messages": "mensagem",
-    "unread_messages_plural": "mensagens"
+    "unread_messages_plural": "mensagens",
+    "just_now": "agora",
+    "no_messages_preview": "Nenhuma mensagem ainda",
+    "you": "Você",
+    "sent_image": "enviou uma imagem",
+    "sent_file": "enviou um anexo",
+    "liked_message": "curtiu uma mensagem"
   },
   "message_list": {
     "no_messages": "Nenhuma mensagem ainda. Comece a conversar!",

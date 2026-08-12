@@ -97,7 +97,10 @@ export async function POST(request: Request) {
 
     if (!canMark) {
       return NextResponse.json(
-        { error: "Só é possível registrar repasse para autônomos, parceiros ou OS freelance." },
+        {
+          error:
+            "Só é possível registrar repasse para autônomos, parceiros ou OS freelance.",
+        },
         { status: 409 },
       );
     }

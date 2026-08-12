@@ -61,33 +61,42 @@ const CATEGORY_ICONS: Record<ReportCategory, React.ReactNode> = {
 };
 
 // Prédios ao fundo (parallax lento) — silhuetas azul-escuro
-const BUILDINGS_FAR: { w: number; h: number; gap: number; windows: number }[] = [
-  { w: 70, h: 120, gap: 8, windows: 9 },
-  { w: 56, h: 90, gap: 6, windows: 6 },
-  { w: 80, h: 150, gap: 8, windows: 12 },
-  { w: 48, h: 70, gap: 6, windows: 4 },
-  { w: 64, h: 110, gap: 8, windows: 8 },
-  { w: 72, h: 135, gap: 8, windows: 10 },
-  { w: 52, h: 80, gap: 6, windows: 5 },
-  { w: 88, h: 165, gap: 10, windows: 15 },
-  { w: 60, h: 100, gap: 8, windows: 7 },
-  { w: 50, h: 75, gap: 6, windows: 4 },
-];
+const BUILDINGS_FAR: { w: number; h: number; gap: number; windows: number }[] =
+  [
+    { w: 70, h: 120, gap: 8, windows: 9 },
+    { w: 56, h: 90, gap: 6, windows: 6 },
+    { w: 80, h: 150, gap: 8, windows: 12 },
+    { w: 48, h: 70, gap: 6, windows: 4 },
+    { w: 64, h: 110, gap: 8, windows: 8 },
+    { w: 72, h: 135, gap: 8, windows: 10 },
+    { w: 52, h: 80, gap: 6, windows: 5 },
+    { w: 88, h: 165, gap: 10, windows: 15 },
+    { w: 60, h: 100, gap: 8, windows: 7 },
+    { w: 50, h: 75, gap: 6, windows: 4 },
+  ];
 
 // Prédios próximos (parallax rápido) — azul mais saturado
-const BUILDINGS_NEAR: { w: number; h: number; gap: number; windows: number }[] = [
-  { w: 90, h: 130, gap: 10, windows: 12 },
-  { w: 70, h: 95, gap: 8, windows: 8 },
-  { w: 110, h: 170, gap: 12, windows: 20 },
-  { w: 60, h: 80, gap: 8, windows: 5 },
-  { w: 84, h: 120, gap: 10, windows: 12 },
-  { w: 96, h: 150, gap: 10, windows: 16 },
-  { w: 68, h: 90, gap: 8, windows: 6 },
-  { w: 120, h: 185, gap: 12, windows: 24 },
-];
+const BUILDINGS_NEAR: { w: number; h: number; gap: number; windows: number }[] =
+  [
+    { w: 90, h: 130, gap: 10, windows: 12 },
+    { w: 70, h: 95, gap: 8, windows: 8 },
+    { w: 110, h: 170, gap: 12, windows: 20 },
+    { w: 60, h: 80, gap: 8, windows: 5 },
+    { w: 84, h: 120, gap: 10, windows: 12 },
+    { w: 96, h: 150, gap: 10, windows: 16 },
+    { w: 68, h: 90, gap: 8, windows: 6 },
+    { w: 120, h: 185, gap: 12, windows: 24 },
+  ];
 
 // Nuvens drifting ao fundo
-const CLOUDS: { top: number; left: number; w: number; h: number; dur: number; delay: number }[] = [
+const CLOUDS: {
+  top: number;
+  left: number;
+  w: number;
+  h: number;
+  dur: number;
+  delay: number;
+}[] = [
   { top: 8, left: -20, w: 180, h: 50, dur: 60, delay: 0 },
   { top: 18, left: -40, w: 240, h: 60, dur: 80, delay: -20 },
   { top: 5, left: -10, w: 140, h: 40, dur: 70, delay: -45 },
@@ -103,18 +112,50 @@ const ONCOMING_CARS: {
   delay: number;
   scale: number;
 }[] = [
-  { type: "hatchback", color: "#dc2626", border: "#7f1d1d", dur: 7, delay: 0, scale: 1 },
-  { type: "sedan", color: "#16a34a", border: "#14532d", dur: 9, delay: -3, scale: 0.85 },
-  { type: "compact", color: "#eab308", border: "#713f12", dur: 8, delay: -5, scale: 0.9 },
-  { type: "suv", color: "#0891b2", border: "#164e63", dur: 10, delay: -1.5, scale: 0.8 },
-  { type: "coupe", color: "#c026d3", border: "#701a75", dur: 8.5, delay: -6.5, scale: 0.95 },
+  {
+    type: "hatchback",
+    color: "#dc2626",
+    border: "#7f1d1d",
+    dur: 7,
+    delay: 0,
+    scale: 1,
+  },
+  {
+    type: "sedan",
+    color: "#16a34a",
+    border: "#14532d",
+    dur: 9,
+    delay: -3,
+    scale: 0.85,
+  },
+  {
+    type: "compact",
+    color: "#eab308",
+    border: "#713f12",
+    dur: 8,
+    delay: -5,
+    scale: 0.9,
+  },
+  {
+    type: "suv",
+    color: "#0891b2",
+    border: "#164e63",
+    dur: 10,
+    delay: -1.5,
+    scale: 0.8,
+  },
+  {
+    type: "coupe",
+    color: "#c026d3",
+    border: "#701a75",
+    dur: 8.5,
+    delay: -6.5,
+    scale: 0.95,
+  },
 ];
 
 // Silhuetas SVG dos carros (96x42, frente à esquerda)
-const CAR_SILHOUETTES: Record<
-  string,
-  { body: string; glass: string }
-> = {
+const CAR_SILHOUETTES: Record<string, { body: string; glass: string }> = {
   // Hatchback (Fiesta) — teto curto, traseira vertical
   hatchback: {
     body: "M 2 36 L 2 28 L 8 26 L 14 22 L 22 16 L 34 13 L 54 13 L 66 17 L 76 24 L 86 30 L 92 33 L 92 36 L 82 36 A 11 11 0 0 0 60 36 L 36 36 A 11 11 0 0 0 14 36 L 2 36 Z",
@@ -272,7 +313,8 @@ export default function RelatorioModal({
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplate | "">(
     "",
   );
-  const [selectedCategory, setSelectedCategory] = useState<ReportCategory>("cliente");
+  const [selectedCategory, setSelectedCategory] =
+    useState<ReportCategory>("cliente");
   const [format, setFormat] = useState<ReportFormat>("pdf");
   const [dataInicio, setDataInicio] = useState(defaultDataInicio);
   const [dataFim, setDataFim] = useState(defaultDataFim);
@@ -449,8 +491,7 @@ export default function RelatorioModal({
       clienteId: selectedTemplate === "medicao_cliente" ? clienteId : undefined,
       parceiroId:
         selectedTemplate === "repasse_motorista" ? parceiroId : undefined,
-      driverId:
-        selectedTemplate === "repasse_motorista" ? driverId : undefined,
+      driverId: selectedTemplate === "repasse_motorista" ? driverId : undefined,
       repasseStatusFilter: isRepasseTemplate ? repasseStatusFilter : undefined,
       selectionMode: selectionEnabled && selectionMode,
       selectedOsIds:
@@ -487,98 +528,97 @@ export default function RelatorioModal({
   // permanece na posição original (após a seleção da entidade).
   const periodSection = (
     <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
-      <div className={`p-5 rounded-3xl border space-y-4 ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex items-end gap-2 max-w-[360px]">
-          <div className="flex-1 min-w-0">
-            <GeologDateInput
-              label="De"
-              value={dataInicio}
-              onChange={setDataInicio}
-              labelClassName="text-emerald-600 font-bold"
-              inputClassName={
-                selectionMode
-                  ? "!bg-white/80 !border-slate-300"
-                  : "!border-slate-300"
-              }
-            />
+      <div
+        className={`p-5 rounded-3xl border space-y-4 ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}
+      >
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex items-end gap-2 max-w-[360px]">
+            <div className="flex-1 min-w-0">
+              <GeologDateInput
+                label="De"
+                value={dataInicio}
+                onChange={setDataInicio}
+                labelClassName="text-emerald-600 font-bold"
+                inputClassName={
+                  selectionMode
+                    ? "!bg-white/80 !border-slate-300"
+                    : "!border-slate-300"
+                }
+              />
+            </div>
+            <div className="mb-3.5 flex items-center justify-center">
+              <ArrowRight size={16} className="text-slate-400 animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <GeologDateInput
+                label="Até"
+                value={dataFim}
+                onChange={setDataFim}
+                labelClassName="text-blue-600 font-bold"
+                inputClassName={
+                  selectionMode
+                    ? "!bg-white/80 !border-slate-300"
+                    : "!border-slate-300"
+                }
+              />
+            </div>
           </div>
-          <div className="mb-3.5 flex items-center justify-center">
-            <ArrowRight
-              size={16}
-              className="text-slate-400 animate-pulse"
-            />
-          </div>
-          <div className="flex-1 min-w-0">
-            <GeologDateInput
-              label="Até"
-              value={dataFim}
-              onChange={setDataFim}
-              labelClassName="text-blue-600 font-bold"
-              inputClassName={
-                selectionMode
-                  ? "!bg-white/80 !border-slate-300"
-                  : "!border-slate-300"
-              }
-            />
-          </div>
-        </div>
 
-        {/* Toggle Fixo vs Seleção inline no canto direito.
+          {/* Toggle Fixo vs Seleção inline no canto direito.
             - medicao_cliente: interativo (alterna entre Fixo/Seleção).
             - repasse_*: visível travado em "Fixo" (Seleção desabilitado;
               modo seleção será implementado depois para motoristas). */}
-        {(isMedicaoCliente || isRepasseTemplate) && !selectionMode && (
-          <div className="ml-auto flex rounded-2xl border-2 border-slate-100 bg-white p-1">
-            <button
-              type="button"
-              onClick={() => setSelectionMode(false)}
-              aria-pressed={!selectionMode}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
-                !selectionMode
-                  ? "bg-slate-800 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-700"
-              }`}
-            >
-              <Calendar size={16} />
-              Fixo
-            </button>
-            <button
-              type="button"
-              onClick={
-                isRepasseTemplate
-                  ? undefined
-                  : () => {
-                      setSelectionMode(true);
-                      setIsConfigCollapsed(true);
-                    }
-              }
-              disabled={isRepasseTemplate}
-              aria-pressed={selectionMode}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all ${
-                isRepasseTemplate
-                  ? "cursor-not-allowed text-slate-300"
-                  : selectionMode
-                    ? "bg-blue-600 text-white shadow-sm cursor-pointer"
-                    : "text-slate-400 hover:text-slate-700 cursor-pointer"
-              }`}
-            >
-              <ListChecks size={16} />
-              Seleção
-            </button>
+          {(isMedicaoCliente || isRepasseTemplate) && !selectionMode && (
+            <div className="ml-auto flex rounded-2xl border-2 border-slate-100 bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setSelectionMode(false)}
+                aria-pressed={!selectionMode}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all cursor-pointer ${
+                  !selectionMode
+                    ? "bg-slate-800 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-700"
+                }`}
+              >
+                <Calendar size={16} />
+                Fixo
+              </button>
+              <button
+                type="button"
+                onClick={
+                  isRepasseTemplate
+                    ? undefined
+                    : () => {
+                        setSelectionMode(true);
+                        setIsConfigCollapsed(true);
+                      }
+                }
+                disabled={isRepasseTemplate}
+                aria-pressed={selectionMode}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black tracking-tight transition-all ${
+                  isRepasseTemplate
+                    ? "cursor-not-allowed text-slate-300"
+                    : selectionMode
+                      ? "bg-blue-600 text-white shadow-sm cursor-pointer"
+                      : "text-slate-400 hover:text-slate-700 cursor-pointer"
+                }`}
+              >
+                <ListChecks size={16} />
+                Seleção
+              </button>
+            </div>
+          )}
+        </div>
+
+        {dateRangeInvalid && (
+          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+            <AlertCircle size={16} className="shrink-0 text-red-500" />
+            <p className="text-xs font-bold text-red-600">
+              A data inicial não pode ser maior que a data final.
+            </p>
           </div>
         )}
       </div>
-
-      {dateRangeInvalid && (
-        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-          <AlertCircle size={16} className="shrink-0 text-red-500" />
-          <p className="text-xs font-bold text-red-600">
-            A data inicial não pode ser maior que a data final.
-          </p>
-        </div>
-      )}
-    </div>
     </div>
   );
 
@@ -587,7 +627,9 @@ export default function RelatorioModal({
     <>
       {/* Template Selection — chips de categoria + cards de relatório */}
       <div className="space-y-3 mt-3 animate-in fade-in slide-in-from-top-4 duration-500">
-        <div className={`p-5 rounded-3xl border space-y-4 ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+        <div
+          className={`p-5 rounded-3xl border space-y-4 ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}
+        >
           {/* Chips de categoria */}
           <div className="relative flex flex-wrap gap-2">
             {(Object.keys(CATEGORY_LABELS) as ReportCategory[]).map((cat) => {
@@ -643,44 +685,46 @@ export default function RelatorioModal({
                   : "contents"
               }`}
             >
-            {TEMPLATES.filter((t) => t.category === selectedCategory).map(
-              (template) => {
-                const isActive = selectedTemplate === template.id;
-                const colors = CATEGORY_COLORS[selectedCategory];
-                return (
-                  <button
-                    key={template.id}
-                    type="button"
-                    onClick={() => setSelectedTemplate(template.id)}
-                    aria-pressed={isActive}
-                    className={`relative flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-all cursor-pointer ${
-                      isActive
-                        ? colors.active
-                        : `border-slate-100 bg-white ${colors.hover}`
-                    }`}
-                  >
-                    <span
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                        isActive ? "bg-white shadow-sm" : "bg-slate-50"
+              {TEMPLATES.filter((t) => t.category === selectedCategory).map(
+                (template) => {
+                  const isActive = selectedTemplate === template.id;
+                  const colors = CATEGORY_COLORS[selectedCategory];
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => setSelectedTemplate(template.id)}
+                      aria-pressed={isActive}
+                      className={`relative flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-all cursor-pointer ${
+                        isActive
+                          ? colors.active
+                          : `border-slate-100 bg-white ${colors.hover}`
                       }`}
                     >
-                      {TEMPLATE_ICONS[template.id]}
-                    </span>
-                    <span className="min-w-0 flex-1 pr-5">
-                      <span className={`block text-sm font-black leading-tight ${isActive ? colors.icon : "text-slate-800"}`}>
-                        {template.label}
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                          isActive ? "bg-white shadow-sm" : "bg-slate-50"
+                        }`}
+                      >
+                        {TEMPLATE_ICONS[template.id]}
                       </span>
-                    </span>
-                    {isActive && (
-                      <CheckCircle
-                        size={18}
-                        className={`absolute right-3 top-1/2 -translate-y-1/2 ${colors.icon}`}
-                      />
-                    )}
-                  </button>
-                );
-              },
-            )}
+                      <span className="min-w-0 flex-1 pr-5">
+                        <span
+                          className={`block text-sm font-black leading-tight ${isActive ? colors.icon : "text-slate-800"}`}
+                        >
+                          {template.label}
+                        </span>
+                      </span>
+                      {isActive && (
+                        <CheckCircle
+                          size={18}
+                          className={`absolute right-3 top-1/2 -translate-y-1/2 ${colors.icon}`}
+                        />
+                      )}
+                    </button>
+                  );
+                },
+              )}
             </div>
           </div>
         </div>
@@ -690,11 +734,12 @@ export default function RelatorioModal({
           após a seleção do template, antes dos filtros de motorista/parceiro. */}
       {isRepasseTemplate && isSelectionStepComplete && periodSection}
 
-
       {/* Cliente Selection (Only for Medição ao Cliente) */}
       {selectedTemplate === "medicao_cliente" && (
         <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-4">
-          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+          <div
+            className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}
+          >
             <GeologSearchableSelect
               options={clientes}
               value={clienteId}
@@ -713,7 +758,9 @@ export default function RelatorioModal({
           um motorista específico dele (opcional). */}
       {selectedTemplate === "repasse_motorista" && (
         <div className="animate-in fade-in slide-in-from-top-4 duration-500 space-y-4">
-          <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+          <div
+            className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}
+          >
             <GeologSearchableSelect
               label="Motorista ou Parceiro"
               options={[
@@ -737,7 +784,9 @@ export default function RelatorioModal({
           </div>
 
           {parceiroId && (
-            <div className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}>
+            <div
+              className={`p-5 rounded-3xl border ${selectionMode ? "bg-white/70 border-blue-100/50" : "bg-slate-50/50 border-slate-100"}`}
+            >
               <div className="flex items-center gap-3">
                 <div className="flex-1">
                   <GeologSearchableSelect
@@ -898,21 +947,22 @@ export default function RelatorioModal({
                 </p>
               )}
             </div>
-
           </div>
-          {showSelectionLayout && pickerMonthLabel && (() => {
-            const [month, year] = pickerMonthLabel.split(' ');
-            return (
-              <p className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
-                <span className="text-base font-black uppercase tracking-widest text-slate-900">
-                  {month}
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-black tracking-wider border border-emerald-200">
-                  {year}
-                </span>
-              </p>
-            );
-          })()}
+          {showSelectionLayout &&
+            pickerMonthLabel &&
+            (() => {
+              const [month, year] = pickerMonthLabel.split(" ");
+              return (
+                <p className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+                  <span className="text-base font-black uppercase tracking-widest text-slate-900">
+                    {month}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-black tracking-wider border border-emerald-200">
+                    {year}
+                  </span>
+                </p>
+              );
+            })()}
           <button
             onClick={loading ? undefined : handleClose}
             disabled={loading}
@@ -1183,7 +1233,14 @@ export default function RelatorioModal({
                   {/* Braços esticados */}
                   <rect x="272" y="72" width="56" height="4" rx="1" />
                   {/* Vãos dos braços (claro) para dar forma de manto */}
-                  <rect x="284" y="76" width="32" height="6" fill="#0f1f3d" opacity="0.5" />
+                  <rect
+                    x="284"
+                    y="76"
+                    width="32"
+                    height="6"
+                    fill="#0f1f3d"
+                    opacity="0.5"
+                  />
                 </g>
               </svg>
             </div>
@@ -1194,7 +1251,11 @@ export default function RelatorioModal({
               style={{ animation: "city-pan-slow 18s linear infinite" }}
             >
               {[0, 1].map((dup) => (
-                <div key={dup} className="flex items-end shrink-0" style={{ width: "max-content" }}>
+                <div
+                  key={dup}
+                  className="flex items-end shrink-0"
+                  style={{ width: "max-content" }}
+                >
                   {BUILDINGS_FAR.map((b, i) => (
                     <div
                       key={`${dup}-${i}`}
@@ -1237,7 +1298,11 @@ export default function RelatorioModal({
               style={{ animation: "city-pan-fast 8s linear infinite" }}
             >
               {[0, 1].map((dup) => (
-                <div key={dup} className="flex items-end shrink-0" style={{ width: "max-content" }}>
+                <div
+                  key={dup}
+                  className="flex items-end shrink-0"
+                  style={{ width: "max-content" }}
+                >
                   {BUILDINGS_NEAR.map((b, i) => (
                     <div
                       key={`${dup}-${i}`}
@@ -1311,7 +1376,11 @@ export default function RelatorioModal({
               >
                 <div
                   className="relative"
-                  style={{ width: 96, height: 42, transform: `scale(${car.scale})` }}
+                  style={{
+                    width: 96,
+                    height: 42,
+                    transform: `scale(${car.scale})`,
+                  }}
                 >
                   {/* Sombra */}
                   <div
@@ -1330,10 +1399,18 @@ export default function RelatorioModal({
                     width="96"
                     height="42"
                     className="absolute inset-0"
-                    style={{ filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))" }}
+                    style={{
+                      filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.4))",
+                    }}
                   >
                     <defs>
-                      <linearGradient id={`carBody-${idx}`} x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient
+                        id={`carBody-${idx}`}
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
                         <stop offset="0%" stopColor={car.color} />
                         <stop offset="100%" stopColor={car.border} />
                       </linearGradient>
@@ -1354,7 +1431,13 @@ export default function RelatorioModal({
                     {/* Farol dianteiro (esquerda — amarelo, virado para a van) */}
                     <circle cx="6" cy="28" r="3" fill="#fef08a" opacity="0.9" />
                     {/* Lanterna traseira (direita — vermelha) */}
-                    <circle cx="88" cy="28" r="2.5" fill="#ef4444" opacity="0.85" />
+                    <circle
+                      cx="88"
+                      cy="28"
+                      r="2.5"
+                      fill="#ef4444"
+                      opacity="0.85"
+                    />
                   </svg>
                   {/* Roda dianteira (esquerda) */}
                   <div
@@ -1415,7 +1498,10 @@ export default function RelatorioModal({
             {/* Van — corpo principal em azul escuro com logo branca na lateral */}
             <div
               className="absolute left-1/2 -translate-x-1/2"
-              style={{ bottom: "20%", animation: "van-bob 1.1s ease-in-out infinite" }}
+              style={{
+                bottom: "20%",
+                animation: "van-bob 1.1s ease-in-out infinite",
+              }}
             >
               <div className="relative" style={{ width: 220, height: 96 }}>
                 {/* Sombra no chão */}
@@ -1434,7 +1520,8 @@ export default function RelatorioModal({
                 <div
                   className="absolute inset-0"
                   style={{
-                    background: "linear-gradient(180deg, #1e3a8a 0%, #0f1f3d 100%)",
+                    background:
+                      "linear-gradient(180deg, #1e3a8a 0%, #0f1f3d 100%)",
                     borderRadius: "18px 26px 10px 10px",
                     border: "1.5px solid #2b4cba",
                     boxShadow:
@@ -1499,12 +1586,19 @@ export default function RelatorioModal({
                     style={{ height: 26, width: "auto" }}
                   />
                   <div className="flex flex-col leading-none">
-                    <span className="text-white font-black tracking-tight" style={{ fontSize: 15 }}>
+                    <span
+                      className="text-white font-black tracking-tight"
+                      style={{ fontSize: 15 }}
+                    >
                       Geolog
                     </span>
                     <span
                       className="text-blue-100/80 font-semibold tracking-wide uppercase"
-                      style={{ fontSize: 7, letterSpacing: "0.08em", marginTop: 3 }}
+                      style={{
+                        fontSize: 7,
+                        letterSpacing: "0.08em",
+                        marginTop: 3,
+                      }}
                     >
                       Transportes Executivo
                     </span>

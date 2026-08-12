@@ -1,9 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
-import {
-  ADMIN_TOKEN_COOKIE,
-  verifyAdminToken,
-} from "@/lib/admin-jwt";
+import { ADMIN_TOKEN_COOKIE, verifyAdminToken } from "@/lib/admin-jwt";
 
 /**
  * Middleware raiz do Next.js.
@@ -49,8 +46,7 @@ export async function middleware(request: NextRequest) {
   };
 
   // 2. Proteção /admin/* (exceto a própria verify e a API de verify).
-  const isAdminRoute =
-    pathname === "/admin" || pathname.startsWith("/admin/");
+  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
   const isAdminVerify = pathname === "/admin/verify";
   const isAdminVerifyApi = pathname === "/api/admin/verify";
 

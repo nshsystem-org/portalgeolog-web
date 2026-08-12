@@ -1,6 +1,11 @@
 "use client";
 
-import React, { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import React, {
+  useEffect,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
 export interface ActionMenuPortalProps {

@@ -347,7 +347,8 @@ export function isFinalizadoSemValor(os: FinalizadoSemValorInput): boolean {
     !os.isentoValorBruto &&
     (vBruto === null || vBruto === undefined || vBruto === 0);
   const faltaCusto =
-    !os.isentoCusto && (vCusto === null || vCusto === undefined || vCusto === 0);
+    !os.isentoCusto &&
+    (vCusto === null || vCusto === undefined || vCusto === 0);
 
   return isFinalizado && (faltaValorBruto || faltaCusto);
 }

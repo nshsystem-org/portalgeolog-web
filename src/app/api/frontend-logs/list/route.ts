@@ -11,7 +11,10 @@ const MAX_LIMIT = 100;
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), MAX_LIMIT);
+    const limit = Math.min(
+      parseInt(searchParams.get("limit") || "50"),
+      MAX_LIMIT,
+    );
     const offset = parseInt(searchParams.get("offset") || "0");
     const level = searchParams.get("level");
     const component = searchParams.get("component");

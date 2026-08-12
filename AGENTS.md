@@ -220,10 +220,10 @@ O sistema utiliza uma arquitetura baseada em banco de dados para notificações,
 
 A máquina possui o `gh` (GitHub CLI) configurado com **duas contas** autenticadas via keyring:
 
-| Conta | Função | Status |
-|---|---|---|
+| Conta              | Função                       | Status             |
+| ------------------ | ---------------------------- | ------------------ |
 | `git-portalgeolog` | Admin da org `nshsystem-org` | **Ativa** (padrão) |
-| `nshsystem` | User individual | Inativa |
+| `nshsystem`        | User individual              | Inativa            |
 
 **Repositório:** `nshsystem-org/portalgeolog-web` (organização, pertence ao `git-portalgeolog` que é admin).
 
@@ -295,9 +295,11 @@ abaixo — nunca `deploy:cf`.
 segredos, então pode sumir/ser resetado. A fonte da verdade versionada é
 `wrangler.workers.toml.example` — se o arquivo real sumir ou estiver
 incorreto, restaure com:
+
 ```bash
 cp wrangler.workers.toml.example wrangler.workers.toml
 ```
+
 O script `scripts/ensure-wrangler-config.mjs` roda automaticamente antes de
 `npm run deploy:workers:versioned` (via `predeploy:workers:versioned`) e
 valida/recria esse arquivo, bloqueando o deploy se `main` não apontar para

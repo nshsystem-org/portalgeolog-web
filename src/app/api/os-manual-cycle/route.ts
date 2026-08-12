@@ -123,7 +123,8 @@ export async function POST(request: Request) {
       km_bypass_odometer?: boolean;
     };
 
-    const { os_id, cycle_index, action, reset_reason, reset_reason_text } = body;
+    const { os_id, cycle_index, action, reset_reason, reset_reason_text } =
+      body;
     const { km_field, km_new_value, km_reason, km_bypass_odometer } = body;
 
     if (!os_id) {
@@ -157,11 +158,11 @@ export async function POST(request: Request) {
         user.email ||
         "Sistema";
 
-      const { data: profile } = await getAdmin()
+      const { data: profile } = (await getAdmin()
         .from("user_roles")
         .select("nome, avatar_url")
         .eq("id", user.id)
-        .maybeSingle() as unknown as {
+        .maybeSingle()) as unknown as {
         data: UserRoleRow | null;
         error: Error | null;
       };
@@ -285,7 +286,11 @@ export async function POST(request: Request) {
           `[os-manual-cycle] Tentativa de finalizar ciclo já em estado "${cycle.state}". Bloqueado.`,
         );
         return NextResponse.json(
-          { success: false, error: "Este ciclo já está finalizado.", already_finished: true },
+          {
+            success: false,
+            error: "Este ciclo já está finalizado.",
+            already_finished: true,
+          },
           { status: 409 },
         );
       }
@@ -300,7 +305,10 @@ export async function POST(request: Request) {
       );
 
       if (rpcError) {
-        console.error("[os-manual-cycle] Erro na RPC finish_cycle_manual:", rpcError);
+        console.error(
+          "[os-manual-cycle] Erro na RPC finish_cycle_manual:",
+          rpcError,
+        );
         return NextResponse.json(
           { success: false, error: "Erro ao finalizar ciclo." },
           { status: 500 },
@@ -317,14 +325,24 @@ export async function POST(request: Request) {
       };
 
       if (!rpcResult.success) {
-        if (rpcResult.already_finished || rpcResult.error === "ALREADY_FINISHED") {
+        if (
+          rpcResult.already_finished ||
+          rpcResult.error === "ALREADY_FINISHED"
+        ) {
           return NextResponse.json(
-            { success: false, error: "Este ciclo já está finalizado.", already_finished: true },
+            {
+              success: false,
+              error: "Este ciclo já está finalizado.",
+              already_finished: true,
+            },
             { status: 409 },
           );
         }
         return NextResponse.json(
-          { success: false, error: rpcResult.error || "Erro ao finalizar ciclo." },
+          {
+            success: false,
+            error: rpcResult.error || "Erro ao finalizar ciclo.",
+          },
           { status: 400 },
         );
       }
@@ -444,7 +462,10 @@ export async function POST(request: Request) {
         // Edição manual de KM sem precisar resetar o ciclo ou reenviar template
         if (!km_field || km_new_value === undefined || km_new_value === null) {
           return NextResponse.json(
-            { success: false, error: "Parâmetros inválidos para edição de KM." },
+            {
+              success: false,
+              error: "Parâmetros inválidos para edição de KM.",
+            },
             { status: 400 },
           );
         }
@@ -456,24 +477,29 @@ export async function POST(request: Request) {
         }
         if (!km_reason || km_reason.trim().length < 3) {
           return NextResponse.json(
-            { success: false, error: "Justificativa obrigatória para edição de KM." },
+            {
+              success: false,
+              error: "Justificativa obrigatória para edição de KM.",
+            },
             { status: 400 },
           );
         }
 
         // Buscar veiculo_id da OS para checar odômetro
-        const { data: osForKm } = await getAdmin()
+        const { data: osForKm } = (await getAdmin()
           .from("ordens_servico")
           .select("veiculo_id")
           .eq("id", os_id)
-          .single() as unknown as { data: { veiculo_id: string | null } | null };
+          .single()) as unknown as {
+          data: { veiculo_id: string | null } | null;
+        };
 
         if (!km_bypass_odometer && osForKm?.veiculo_id) {
-          const { data: odo } = await getAdmin()
+          const { data: odo } = (await getAdmin()
             .from("vehicle_km_odometer")
             .select("last_km")
             .eq("veiculo_id", osForKm.veiculo_id)
-            .maybeSingle() as unknown as { data: { last_km: number } | null };
+            .maybeSingle()) as unknown as { data: { last_km: number } | null };
 
           if (odo && km_new_value <= odo.last_km) {
             return NextResponse.json(
@@ -514,36 +540,30 @@ export async function POST(request: Request) {
         const ordensServicoKmBulk = getAdmin().from(
           "ordens_servico",
         ) as unknown as OrdensServicoUpdateBuilder;
-        await ordensServicoKmBulk
-          .update(ordensServicoUpdate)
-          .eq("id", os_id);
+        await ordensServicoKmBulk.update(ordensServicoUpdate).eq("id", os_id);
 
         // Atualizar odômetro e histórico se não for bypass
         if (osForKm?.veiculo_id) {
-          await getAdmin()
-            .from("vehicle_km_odometer")
-            .upsert(
-              {
-                veiculo_id: osForKm.veiculo_id,
-                last_km: km_new_value,
-                last_km_type: km_field,
-                last_os_id: os_id,
-                last_recorded_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "veiculo_id" },
-            );
-
-          await getAdmin()
-            .from("vehicle_km_history")
-            .insert({
+          await getAdmin().from("vehicle_km_odometer").upsert(
+            {
               veiculo_id: osForKm.veiculo_id,
-              os_id,
-              km_value: km_new_value,
-              km_type: km_field,
-              driver_name: actorName,
-              recorded_via: "manual",
-            });
+              last_km: km_new_value,
+              last_km_type: km_field,
+              last_os_id: os_id,
+              last_recorded_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "veiculo_id" },
+          );
+
+          await getAdmin().from("vehicle_km_history").insert({
+            veiculo_id: osForKm.veiculo_id,
+            os_id,
+            km_value: km_new_value,
+            km_type: km_field,
+            driver_name: actorName,
+            recorded_via: "manual",
+          });
         }
 
         // Log auditoria
@@ -665,9 +685,7 @@ export async function POST(request: Request) {
       // (necessário porque a RPC replace_os_operational_cycles faz DELETE+INSERT
       // e pode não disparar eventos Realtime corretamente)
       await ordensServicoBulk
-        .update(
-          ordensServicoUpdate ?? { updated_at: new Date().toISOString() },
-        )
+        .update(ordensServicoUpdate ?? { updated_at: new Date().toISOString() })
         .eq("id", os_id);
     }
 
@@ -710,7 +728,8 @@ export async function POST(request: Request) {
         rescheduling: "Ciclo revertido — Remarcação/Atraso",
         other: "Ciclo revertido",
       };
-      logDescription = reasonLabels[reset_reason] ?? "Ciclo revertido para pendente";
+      logDescription =
+        reasonLabels[reset_reason] ?? "Ciclo revertido para pendente";
       if (reset_reason === "other" && reset_reason_text) {
         logDescription += `: ${reset_reason_text}`;
       }
@@ -720,7 +739,8 @@ export async function POST(request: Request) {
         revert_to_accept: "Ciclo revertido para aceitação",
         restart_route: "Rota reaberta e reiniciada manualmente",
       };
-      logDescription = actionDescriptions[action] || "Ciclo operacional atualizado";
+      logDescription =
+        actionDescriptions[action] || "Ciclo operacional atualizado";
     }
 
     const { error: logError } = await getAdmin()

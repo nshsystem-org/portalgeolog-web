@@ -100,16 +100,16 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
-    const items =
-      ((data ?? []) as unknown as CaixaLancamentoJoinRow[]).map(
-        mapCaixaLancamentoRow,
-      );
+    const items = ((data ?? []) as unknown as CaixaLancamentoJoinRow[]).map(
+      mapCaixaLancamentoRow,
+    );
     return NextResponse.json({
       items,
       totalCount: count ?? 0,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -131,7 +131,9 @@ export async function POST(request: Request) {
     const dataStr = String(formData.get("data") || "").trim();
     const descricao = String(formData.get("descricao") || "").trim();
     const categoria = String(formData.get("categoria") || "outros").trim();
-    const formaPagamento = String(formData.get("formaPagamento") || "outro").trim();
+    const formaPagamento = String(
+      formData.get("formaPagamento") || "outro",
+    ).trim();
     const clienteId = String(formData.get("clienteId") || "").trim() || null;
     const parceiroId = String(formData.get("parceiroId") || "").trim() || null;
     const driverId = String(formData.get("driverId") || "").trim() || null;
@@ -139,7 +141,10 @@ export async function POST(request: Request) {
     const file = formData.get("file");
 
     if (!contaId) {
-      return NextResponse.json({ error: "contaId é obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "contaId é obrigatório" },
+        { status: 400 },
+      );
     }
     if (!["entrada", "saida"].includes(tipo)) {
       return NextResponse.json({ error: "tipo inválido" }, { status: 400 });
@@ -167,7 +172,10 @@ export async function POST(request: Request) {
       .eq("id", contaId)
       .single();
     if (contaError || !contaRow) {
-      return NextResponse.json({ error: "Conta não encontrada" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Conta não encontrada" },
+        { status: 404 },
+      );
     }
     if (contaRow.ativa === false) {
       return NextResponse.json(
@@ -234,7 +242,8 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ lancamento }, { status: 201 });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    const message =
+      error instanceof Error ? error.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

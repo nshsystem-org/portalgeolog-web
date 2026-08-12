@@ -79,10 +79,7 @@ async function existsRecentAlert(): Promise<boolean> {
     .gte("created_at", twoHoursAgo)
     .limit(1);
   if (error) {
-    console.error(
-      "[cron/pendencias-alert] existsRecentAlert:",
-      error,
-    );
+    console.error("[cron/pendencias-alert] existsRecentAlert:", error);
     return false;
   }
   return (data?.length ?? 0) > 0;
@@ -129,20 +126,20 @@ async function processPendenciasAlert(): Promise<PendenciaCounts> {
       }>;
     }
   ).insert({
-      type: "warning",
-      title: "Pendências do sistema",
-      message,
-      target_audience: "all",
-      target_user_id: null,
-      empresa_id: null,
-      created_by: null,
-      created_by_name: "Sistema",
-      created_by_avatar_url: null,
-      metadata: {
-        kind: "pendencia_alert",
-        counts,
-      },
-    });
+    type: "warning",
+    title: "Pendências do sistema",
+    message,
+    target_audience: "all",
+    target_user_id: null,
+    empresa_id: null,
+    created_by: null,
+    created_by_name: "Sistema",
+    created_by_avatar_url: null,
+    metadata: {
+      kind: "pendencia_alert",
+      counts,
+    },
+  });
 
   if (insertError) {
     console.error(

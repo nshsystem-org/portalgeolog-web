@@ -44,10 +44,15 @@ if (!/^\s*main\s*=\s*["']worker\/index\.js["']/m.test(content)) {
   );
 }
 
-if (!/\[assets\]/.test(content) || !/directory\s*=\s*["']dist\/client["']/.test(content)) {
+if (
+  !/\[assets\]/.test(content) ||
+  !/directory\s*=\s*["']dist\/client["']/.test(content)
+) {
   fail(
-    "wrangler.workers.toml está sem [assets] directory = \"dist/client\" configurado corretamente.",
+    'wrangler.workers.toml está sem [assets] directory = "dist/client" configurado corretamente.',
   );
 }
 
-console.log("✅ wrangler.workers.toml validado (main=worker/index.js, assets=dist/client).");
+console.log(
+  "✅ wrangler.workers.toml validado (main=worker/index.js, assets=dist/client).",
+);

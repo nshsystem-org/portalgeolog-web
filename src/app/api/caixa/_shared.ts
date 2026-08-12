@@ -70,9 +70,10 @@ export async function hasCaixaAccess(userId: string): Promise<boolean> {
   if (row.categoria === "administrador" || row.categoria === "financeiro") {
     return true;
   }
-  const permissions = row.specific_permissions as
-    | Record<string, Record<string, unknown>>
-    | null;
+  const permissions = row.specific_permissions as Record<
+    string,
+    Record<string, unknown>
+  > | null;
   // Reusa o bloco "financeiro" de permissões — caixa compartilha o mesmo perfil.
   const financePermissions = permissions?.financeiro;
   return financePermissions?.page_access === true;
@@ -169,8 +170,8 @@ export const mapCaixaLancamentoRow = (row: CaixaLancamentoJoinRow) => {
       | "os_repasse",
     anexoPath: row.anexo_path,
     contaNome: conta?.nome,
-    contaTipo: (conta?.tipo as "caixa" | "banco" | "pix" | "carteira") ??
-      undefined,
+    contaTipo:
+      (conta?.tipo as "caixa" | "banco" | "pix" | "carteira") ?? undefined,
     clienteNome: cliente?.nome ?? null,
     driverNome: driver?.name ?? null,
     osProtocolo: os?.protocolo ?? null,

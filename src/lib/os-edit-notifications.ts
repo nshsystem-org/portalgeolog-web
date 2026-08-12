@@ -172,7 +172,10 @@ export async function notifyDriverOnOSEdit(
     .in("key", ["os_edit_notify_enabled", "os_reminders_enabled"]);
 
   const flagMap = new Map<string, string>();
-  for (const row of (flagRows || []) as unknown as { key: string; value: string }[]) {
+  for (const row of (flagRows || []) as unknown as {
+    key: string;
+    value: string;
+  }[]) {
     flagMap.set(row.key, row.value);
   }
 

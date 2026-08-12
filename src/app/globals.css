@@ -296,3 +296,109 @@ h6 {
   animation: announcement-shake 1.15s ease-in-out infinite;
   will-change: transform;
 }
+
+/* ===== Chat Widget - Instagram-style notifications ===== */
+
+/* Expanding ring pulse around the floating chat button when there are unread messages */
+@keyframes chat-pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.animate-chat-pulse-ring {
+  animation: chat-pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Soft glow halo for the button when unread > 0 */
+@keyframes chat-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 10px 25px -5px rgba(37, 99, 235, 0.5),
+      0 0 0 0 rgba(59, 130, 246, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 14px 30px -5px rgba(37, 99, 235, 0.6),
+      0 0 0 8px rgba(59, 130, 246, 0);
+  }
+}
+
+.animate-chat-glow {
+  animation: chat-glow 2s ease-in-out infinite;
+}
+
+/* Bounce for the unread badge (Instagram-style) */
+@keyframes chat-badge-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-3px) scale(1.08);
+  }
+  60% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-chat-badge-bounce {
+  animation: chat-badge-bounce 1.8s ease-in-out infinite;
+}
+
+/* Small "live" dot inside the badge, like Instagram's active indicator */
+@keyframes chat-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.animate-chat-dot-pulse {
+  animation: chat-dot-pulse 1.4s ease-in-out infinite;
+}
+
+/* Slide-in + fade for the hover preview tooltip */
+@keyframes chat-preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-chat-preview-in {
+  animation: chat-preview-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Smooth icon swap */
+@keyframes chat-icon-pop {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+.animate-chat-icon-pop {
+  animation: chat-icon-pop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

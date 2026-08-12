@@ -152,7 +152,8 @@ export function CaixaContasModal({
                   ) : null}
                 </div>
                 <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">
-                  {TIPOS_CONTA.find((t) => t.value === conta.tipo)?.label ?? conta.tipo}
+                  {TIPOS_CONTA.find((t) => t.value === conta.tipo)?.label ??
+                    conta.tipo}
                   {" · Saldo inicial "}
                   {formatCurrency(conta.saldoInicial)}
                 </p>
@@ -174,7 +175,11 @@ export function CaixaContasModal({
                   title={conta.ativa ? "Desativar" : "Ativar"}
                   className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
                 >
-                  {conta.ativa ? <CircleSlash size={16} /> : <CheckCircle2 size={16} />}
+                  {conta.ativa ? (
+                    <CircleSlash size={16} />
+                  ) : (
+                    <CheckCircle2 size={16} />
+                  )}
                 </button>
               </div>
             </div>

@@ -73,12 +73,12 @@ export async function POST(request: Request) {
       templateName &&
       INITIAL_ROUTE_TEMPLATES.includes(templateName)
     ) {
-      const { data: cycleRow } = await getAdmin()
+      const { data: cycleRow } = (await getAdmin()
         .from("os_operational_cycles")
         .select("state, started_at")
         .eq("ordem_servico_id", os_id)
         .eq("itinerary_index", cycle_index)
-        .maybeSingle() as unknown as {
+        .maybeSingle()) as unknown as {
         data: { state: string; started_at: string | null } | null;
       };
 
