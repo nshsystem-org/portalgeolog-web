@@ -1,0 +1,48 @@
+# Cloudflare Workers + Assets — config de DEPLOY (TEMPLATE versionado)
+#
+# Este é o único arquivo de referência versionado no git. O arquivo real
+# `wrangler.workers.toml` fica fora do git (.gitignore) para evitar que
+# segredos sejam commitados por engano — mas seu CONTEÚDO deve ser sempre
+# igual a este template (sem segredos: eles vivem em `wrangler secret put`).
+#
+# Se `wrangler.workers.toml` sumir ou for corrompido, recrie com:
+#   cp wrangler.workers.toml.example wrangler.workers.toml
+#
+# NUNCA use `npm run deploy:cf` / `vinext deploy` para produção — esse
+# comando gera um wrangler.json próprio SEM o campo `main` apontando para
+# `worker/index.js` (que tem os cron jobs), resultando em Worker sem
+# handler (404 em todas as rotas). Use sempre:
+#   npm run deploy:workers:versioned
+# ou
+#   npm run build && npx wrangler deploy --config wrangler.workers.toml
+name = "portalgeolog-web"
+main = "worker/index.js"
+workers_dev = true
+compatibility_date = "2025-03-31"
+compatibility_flags = ["nodejs_compat", "nodejs_compat_populate_process_env"]
+
+routes = [
+	{ pattern = "portalgeolog.com.br/*", zone_name = "portalgeolog.com.br" }
+]
+
+[assets]
+directory = "dist/client"
+not_found_handling = "none"
+binding = "ASSETS"
+
+[vars]
+NEXT_PUBLIC_SUPABASE_URL = "https://hzpgfapvjwqtjclriisz.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6cGdmYXB2andxdGpjbHJpaXN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjkzMzksImV4cCI6MjA5MDA0NTMzOX0.bBxEZTNuPuIcXE-eCTewsULdlHyLaoMU3HtqA3qSriA"
+
+# Cron Triggers — mantenha em sincronia com os handlers em worker/index.js
+# Secrets gerenciados via: wrangler secret put NOME --config wrangler.workers.toml
+#   SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY, META_WHATSAPP_ACCESS_TOKEN,
+#   META_PHONE_NUMBER_ID, META_BUSINESS_ACCOUNT_ID, CRON_SECRET
+
+[triggers]
+crons = [
+	"*/1 * * * *",
+	"0 11 * * *",
+	"0 19 * * *",
+	"0 */2 * * *"
+]

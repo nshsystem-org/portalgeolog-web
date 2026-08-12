@@ -281,6 +281,28 @@ O sistema possui um mecanismo de versionamento que força o auto-reload de todos
 - Script: `scripts/publish-app-version.mjs` (publica versão no banco)
 - Migration: `supabase/migrations/20260520000004_app_version_tracking.sql`
 
+### ⛔ NUNCA use `npm run deploy:cf` / `vinext deploy`
+
+`npm run deploy:cf` (que roda `vinext deploy`) gera seu PRÓPRIO `wrangler.json`
+temporário SEM o campo `main` apontando para `worker/index.js`. Isso já
+derrubou produção uma vez: o Worker sobe sem handler e **toda rota retorna
+404**, incluindo `/portal/dashboard`. O script agora está bloqueado
+propositalmente no `package.json` (retorna erro ao ser chamado). Use
+SEMPRE `npm run deploy:workers:versioned` ou o comando manual do passo 4
+abaixo — nunca `deploy:cf`.
+
+`wrangler.workers.toml` é ignorado pelo git (`.gitignore`) para não vazar
+segredos, então pode sumir/ser resetado. A fonte da verdade versionada é
+`wrangler.workers.toml.example` — se o arquivo real sumir ou estiver
+incorreto, restaure com:
+```bash
+cp wrangler.workers.toml.example wrangler.workers.toml
+```
+O script `scripts/ensure-wrangler-config.mjs` roda automaticamente antes de
+`npm run deploy:workers:versioned` (via `predeploy:workers:versioned`) e
+valida/recria esse arquivo, bloqueando o deploy se `main` não apontar para
+`worker/index.js`.
+
 ### Deploy Manual (Fluxo Obrigatório)
 
 Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir este fluxo exato:
@@ -297,7 +319,7 @@ Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir
      - `META_PHONE_NUMBER_ID` - validar formato
      - `META_BUSINESS_ACCOUNT_ID` - validar formato
    - Usar script Python ou Node.js para automatizar o re-envio via `echo "valor" | wrangler secret put NOME --config wrangler.workers.toml`
-4. **Deploy Direto:** Executar `wrangler deploy --config wrangler.workers.toml`
+4. **Deploy Direto:** Validar a config com `node ./scripts/ensure-wrangler-config.mjs` e então executar `wrangler deploy --config wrangler.workers.toml`
 5. **Publicar Versão (OBRIGATÓRIO):** Executar `npm run publish:app-version` para:
    - Inserir nova linha em `app_versions` com hash do commit atual + timestamp
    - Disparar evento Realtime que força reload em todos os usuários conectados
