@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Search, Plus, User, Loader2, X } from "lucide-react";
+import { ChevronDown, Search, Plus, User, Loader2, X, Star } from "lucide-react";
 import { getThumbnailUrl } from "@/utils/avatar";
 
 function VehiclePlate({
@@ -86,6 +86,7 @@ interface Option {
   photoUrl?: string;
   plate?: string;
   icon?: React.ReactNode;
+  isFavorite?: boolean;
 }
 
 interface GeologSearchableSelectProps {
@@ -104,6 +105,11 @@ interface GeologSearchableSelectProps {
   hideDropdownPhotos?: boolean;
   hideTriggerBorder?: boolean;
   dropdownPosition?: "auto" | "down" | "up";
+  /**
+   * Variante de estilo do label. "form" deixa o label no mesmo estilo
+   * dos inputs nativos do formulário (text-slate-800, tracking-tight).
+   */
+  variant?: "default" | "form";
   /**
    * Modo assíncrono: quando fornecido, o dropdown busca opções no servidor
    * (com debounce) em vez de filtrar a lista `options` em memória.
@@ -143,6 +149,7 @@ export default function GeologSearchableSelect({
   hideDropdownPhotos = false,
   hideTriggerBorder = false,
   dropdownPosition = "auto",
+  variant = "default",
   onSearch,
   selectedOption: selectedOptionProp,
   asyncDebounceMs = 300,
@@ -222,7 +229,12 @@ export default function GeologSearchableSelect({
     selectedOptionProp ??
     options.find((opt) => opt.id === value) ??
     (isAsync ? asyncOptions.find((opt) => opt.id === value) : undefined);
-  const triggerPaddingClass = compact ? "px-2 py-1.5" : "px-5 py-4 h-[68px]";
+  const hasCustomHeight = /\bh-/.test(triggerClassName);
+  const triggerPaddingClass = compact
+    ? "px-2 py-1.5"
+    : hasCustomHeight
+      ? "px-5 py-3"
+      : "px-5 py-4 h-[68px]";
   const triggerTextClass = triggerClassName?.includes("text-")
     ? ""
     : compact
@@ -422,6 +434,13 @@ export default function GeologSearchableSelect({
                   {opt.typeLabel}
                 </span>
               )}
+              {opt.isFavorite && (
+                <Star
+                  size={14}
+                  className="flex-shrink-0 fill-amber-400 text-amber-400"
+                  aria-label="Favorito"
+                />
+              )}
             </div>
           ))
         ) : isAsync && isLoading ? (
@@ -444,7 +463,14 @@ export default function GeologSearchableSelect({
     <div className={`group relative ${className}`} ref={wrapperRef}>
       {(label || required) && (
         <label
-          className={`font-black uppercase text-slate-400 tracking-[0.25em] ml-1 ${compact ? "text-[10px]" : "text-[11px]"} flex items-center gap-1 mb-2`}
+          className={`
+            flex items-center gap-1 mb-2
+            ${
+              variant === "form"
+                ? "text-sm font-bold text-slate-800 uppercase tracking-tight ml-1"
+                : `font-black uppercase text-slate-400 tracking-[0.2em] ml-1 ${compact ? "text-[11px]" : "text-[13px]"}`
+            }
+          `}
         >
           {label}
           {required && <span className="text-rose-300 text-base">*</span>}
@@ -505,6 +531,13 @@ export default function GeologSearchableSelect({
           )}
         </span>
         <div className="flex items-center gap-1">
+          {selectedOption?.isFavorite && (
+            <Star
+              size={16}
+              className="flex-shrink-0 fill-amber-400 text-amber-400"
+              aria-label="Favorito"
+            />
+          )}
           {onClear && value && (
             <button
               type="button"

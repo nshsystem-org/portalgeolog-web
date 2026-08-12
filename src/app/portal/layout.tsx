@@ -517,18 +517,18 @@ export default function DashboardLayout({
                 <div className="absolute right-0 mt-2 w-[380px] bg-white border border-slate-200 rounded-2xl shadow-2xl z-[9999] overflow-hidden">
                   <div className="p-4 border-b border-slate-200">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-black text-slate-800">
+                      <h3 className="font-black text-xl text-slate-800">
                         Funcionários
                       </h3>
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-green-500" />
-                        <span className="text-xs text-slate-500 font-bold">
+                        <span className="text-sm text-slate-500 font-bold">
                           {onlineCount} online
                         </span>
                         {activeNowCount > 0 && (
                           <>
                             <span className="text-slate-300">•</span>
-                            <span className="text-xs text-emerald-600 font-black">
+                            <span className="text-sm text-emerald-600 font-black">
                               {activeNowCount} ativos agora
                             </span>
                           </>
@@ -543,12 +543,12 @@ export default function DashboardLayout({
                           size={32}
                           className="mx-auto mb-2 opacity-50 animate-pulse"
                         />
-                        <p className="text-sm">Carregando...</p>
+                        <p className="text-base">Carregando...</p>
                       </div>
                     ) : presenceUsers.length === 0 ? (
                       <div className="p-8 text-center text-slate-400">
                         <Users size={32} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Nenhum funcionário encontrado</p>
+                        <p className="text-base">Nenhum funcionário encontrado</p>
                       </div>
                     ) : (
                       presenceUsers.map((u) => (
@@ -567,7 +567,7 @@ export default function DashboardLayout({
                                 className="w-10 h-10 rounded-full object-cover border border-slate-200"
                               />
                             ) : (
-                              <span className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xs font-black flex items-center justify-center border border-slate-200">
+                              <span className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white text-lg font-black flex items-center justify-center border border-slate-200">
                                 {u.nome.charAt(0).toUpperCase()}
                               </span>
                             )}
@@ -576,31 +576,31 @@ export default function DashboardLayout({
                             />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-slate-800 truncate">
+                            <p className="text-base font-bold text-slate-800 truncate">
                               {u.nome}
                             </p>
-                            <p className="text-xs text-slate-500 capitalize">
+                            <p className="text-sm text-slate-500 capitalize">
                               {u.categoria}
                             </p>
                           </div>
                           <div className="text-right flex-shrink-0">
                             {u.is_active_now ? (
-                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                              <span className="text-xs font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
                                 Ativo agora
                               </span>
                             ) : u.is_online ? (
-                              <span className="text-[9px] leading-none font-black uppercase tracking-wider text-blue-400 bg-blue-50 px-2 py-1 rounded-full">
+                              <span className="text-xs leading-none font-black uppercase tracking-wider text-blue-400 bg-blue-50 px-2 py-1 rounded-full">
                                 {getPresenceStatusLabel(u)}
                               </span>
                             ) : (
                               <div className="text-right">
-                                <span className="text-[10px] font-bold text-slate-400 block">
+                                <span className="text-xs font-bold text-slate-400 block">
                                   {u.last_seen_at
                                     ? getPresenceTimeAgo(u.last_seen_at)
                                     : "Nunca ativo"}
                                 </span>
                                 {u.last_seen_at && (
-                                  <span className="text-[11px] text-slate-400 block">
+                                  <span className="text-xs text-slate-400 block">
                                     {new Date(u.last_seen_at).toLocaleString(
                                       "pt-BR",
                                       {
@@ -652,7 +652,7 @@ export default function DashboardLayout({
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                    <h3 className="font-black text-lg text-slate-800">
+                    <h3 className="font-black text-xl text-slate-800">
                       Notificações
                     </h3>
                     <div className="flex items-center gap-2">
@@ -665,7 +665,7 @@ export default function DashboardLayout({
                               e.stopPropagation();
                               setNotificationFilter(f);
                             }}
-                            className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                            className={`px-2.5 py-1 rounded-md text-sm font-bold transition-all cursor-pointer ${
                               notificationFilter === f
                                 ? "bg-white text-slate-800 shadow-sm"
                                 : "text-slate-500 hover:text-slate-700"
@@ -706,7 +706,7 @@ export default function DashboardLayout({
                                 setShowNotificationSettings(false);
                               }}
                               disabled={unreadCount === 0}
-                              className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed transition-colors"
+                              className="w-full text-left px-3 py-2 text-base font-medium text-slate-700 hover:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed transition-colors"
                             >
                               Marcar todos como lidos
                             </button>
@@ -721,7 +721,7 @@ export default function DashboardLayout({
                     {filteredNotifications.length === 0 ? (
                       <div className="py-10 text-center text-slate-400">
                         <Bell size={28} className="mx-auto mb-3 opacity-40" />
-                        <p className="text-sm">Nenhuma notificação</p>
+                        <p className="text-base">Nenhuma notificação</p>
                       </div>
                     ) : (
                       filteredNotifications.map((notification) => {
@@ -856,7 +856,7 @@ export default function DashboardLayout({
                               <>
                                 {actionText}{" "}
                                 <span
-                                  className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                                  className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider border ${
                                     notifCycleIsReturn
                                       ? "bg-purple-50 text-purple-700 border-purple-200"
                                       : "bg-amber-50 text-amber-700 border-amber-200"
@@ -876,7 +876,7 @@ export default function DashboardLayout({
                               <>
                                 {actionText}{" "}
                                 <span
-                                  className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                                  className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider border ${
                                     notifCycleIsReturn
                                       ? "bg-purple-50 text-purple-700 border-purple-200"
                                       : "bg-amber-50 text-amber-700 border-amber-200"
@@ -1154,7 +1154,7 @@ export default function DashboardLayout({
                               <p className="leading-snug">
                                 {notification.created_by_name && (
                                   <span
-                                    className={`text-sm font-bold ${
+                                    className={`text-base font-bold ${
                                       !notification.read
                                         ? "text-slate-900"
                                         : "text-slate-400"
@@ -1166,7 +1166,7 @@ export default function DashboardLayout({
                                   </span>
                                 )}{" "}
                                 <span
-                                  className={`text-xs ${!notification.read ? "text-slate-700" : "text-slate-400"}`}
+                                  className={`text-sm ${!notification.read ? "text-slate-700" : "text-slate-400"}`}
                                 >
                                   {renderActionContent()}
                                 </span>
@@ -1177,7 +1177,7 @@ export default function DashboardLayout({
                                       className={`${!notification.read ? "text-blue-700" : "text-slate-400"}`}
                                     />
                                     <span
-                                      className={`text-xs font-bold ${!notification.read ? "text-blue-800" : "text-slate-400"}`}
+                                      className={`text-sm font-bold ${!notification.read ? "text-blue-800" : "text-slate-400"}`}
                                     >
                                       {driverShortName}
                                     </span>
@@ -1191,7 +1191,7 @@ export default function DashboardLayout({
                                   {chips.map((chip) => (
                                     <span
                                       key={String(chip)}
-                                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${!notification.read ? "bg-sky-100/70 text-sky-700" : "bg-slate-100/70 text-slate-400"}`}
+                                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold ${!notification.read ? "bg-sky-100/70 text-sky-700" : "bg-slate-100/70 text-slate-400"}`}
                                     >
                                       {String(chip)}
                                     </span>
@@ -1202,7 +1202,7 @@ export default function DashboardLayout({
                               {/* Meta */}
                               <div className="flex items-center gap-1.5 mt-1.5">
                                 <span
-                                  className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}
+                                  className={`text-sm ${!notification.read ? "text-slate-600" : "text-slate-400"}`}
                                 >
                                   {timeAgo(
                                     notification.created_at,
@@ -1211,7 +1211,7 @@ export default function DashboardLayout({
                                 </span>
                                 <span className="text-slate-300">•</span>
                                 <span
-                                  className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"} capitalize`}
+                                  className={`text-sm ${!notification.read ? "text-slate-600" : "text-slate-400"} capitalize`}
                                 >
                                   {notification.type === "success"
                                     ? "Cadastro"
@@ -1223,7 +1223,7 @@ export default function DashboardLayout({
                                   <>
                                     <span className="text-slate-300">•</span>
                                     <span
-                                      className={`text-xs ${!notification.read ? "text-slate-600" : "text-slate-400"}`}
+                                      className={`text-sm ${!notification.read ? "text-slate-600" : "text-slate-400"}`}
                                     >
                                       {protocolo}
                                     </span>

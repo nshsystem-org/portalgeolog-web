@@ -649,7 +649,15 @@ export default function OSOperationalPage() {
     [],
   );
   const [caixaContas, setCaixaContas] = useState<
-    Array<{ id: string; nome: string; tipo: string; ativa: boolean | null }>
+    Array<{
+      id: string;
+      nome: string;
+      tipo: string;
+      ativa: boolean | null;
+      is_default?: boolean | null;
+      banco_id?: string | null;
+      bancos?: { nome: string; sigla: string; cor: string } | null;
+    }>
   >([]);
   const [docagemPendentesGlobal, setDocagemPendentesGlobal] = useState<
     DocagemInstance[]
@@ -852,11 +860,14 @@ export default function OSOperationalPage() {
     const fetchCaixaContas = async () => {
       const { data, error } = await supabase
         .from("caixa_contas")
-        .select("id, nome, tipo, ativa")
+        .select(
+          "id, nome, tipo, ativa, is_default, banco_id, bancos(id, nome, sigla, cor)",
+        )
         .eq("ativa", true)
         .order("is_default", { ascending: false })
         .order("nome");
-      if (!error && data) setCaixaContas(data as typeof caixaContas);
+      if (!error && data)
+        setCaixaContas(data as unknown as typeof caixaContas);
     };
     void fetchCaixaContas();
   }, [supabase]);
@@ -2396,7 +2407,9 @@ export default function OSOperationalPage() {
   const handleOpenCreateOSModal = () => {
     logInfo("OS/Create", "Abriu modal para criar nova OS");
     setEditingOSId(null);
-    setFormData(initialForm);
+    const defaultContaId =
+      caixaContas.find((c) => c.is_default)?.id ?? initialForm.caixaContaId;
+    setFormData({ ...initialForm, caixaContaId: defaultContaId });
     setOpenWaypointComments({});
     setIsModalOpen(true);
   };
@@ -7663,6 +7676,7 @@ export default function OSOperationalPage() {
                         value={formData.clienteId}
                         onChange={handleClienteChange}
                         required
+                        variant="form"
                       />
                     </div>
                     <div className="flex flex-col w-full md:w-[20%]">
@@ -7686,6 +7700,7 @@ export default function OSOperationalPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <GeologSearchableSelect
                       label="Solicitante Responsável"
+                      variant="form"
                       options={availableSolicitantes.map((s) => ({
                         id: s.id,
                         nome: s.nome,
@@ -7713,6 +7728,7 @@ export default function OSOperationalPage() {
                     />
                     <GeologSearchableSelect
                       label="Centro de Custo"
+                      variant="form"
                       options={availableCentrosCusto.map((c) => ({
                         id: c.id,
                         nome: c.nome,
@@ -7733,6 +7749,7 @@ export default function OSOperationalPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <GeologSearchableSelect
                       label="Motorista Alocado"
+                      variant="form"
                       options={driverOptions}
                       value={formData.driverId || ""}
                       onChange={(id) => {
@@ -7749,6 +7766,7 @@ export default function OSOperationalPage() {
                     />
                     <GeologSearchableSelect
                       label="Veículo de Uso"
+                      variant="form"
                       options={selectedDriverVehicleOptions}
                       value={formData.veiculoId}
                       onChange={(id) =>
@@ -8403,30 +8421,6 @@ export default function OSOperationalPage() {
                         </div>
                       </div>
 
-                      {caixaContas.length > 0 && (
-                        <div className="flex flex-col gap-2 w-full sm:w-[200px]">
-                          <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
-                            Conta de Caixa
-                          </label>
-                          <select
-                            name="caixaContaId"
-                            value={formData.caixaContaId}
-                            onChange={handleInputChange}
-                            className="w-full bg-slate-50 border-2 border-slate-200 px-4 h-[58px] rounded-xl font-bold text-sm text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition-all shadow-sm cursor-pointer"
-                          >
-                            <option value="">Padrão (auto)</option>
-                            {caixaContas.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.nome}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-[10px] font-medium text-slate-400 ml-1">
-                            Destino dos lançamentos de recebimento/repasse
-                          </p>
-                        </div>
-                      )}
-
                       <div
                         className={`flex items-end gap-6 pt-4 px-6 pb-8 rounded-[1.5rem] border transition-all duration-300 mb-[-2rem] ${formData.noShow ? "bg-red-50 border-red-200 shadow-sm" : "border-transparent"}`}
                       >
@@ -8484,32 +8478,70 @@ export default function OSOperationalPage() {
                     </div>
 
                     <div
-                      className={`flex flex-col gap-2 transition-all duration-300 ${formData.noShow ? "mt-14" : ""}`}
+                      className={`flex flex-col gap-4 transition-all duration-300 ${formData.noShow ? "mt-14" : ""}`}
                     >
-                      <button
-                        type="button"
-                        onClick={() => setShowObsFinanceiras((prev) => !prev)}
-                        className="flex items-center justify-between w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl hover:bg-slate-100 transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <MessageSquareMore
-                            size={18}
-                            className="text-slate-400 group-hover:text-blue-500 transition-colors"
-                          />
-                          <span className="text-sm font-bold text-slate-800 uppercase tracking-tight">
-                            Observações Financeiras
-                          </span>
-                          {formData.obsFinanceiras && (
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-wider">
-                              Preenchido
+                      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end w-full">
+                        <button
+                          type="button"
+                          onClick={() => setShowObsFinanceiras((prev) => !prev)}
+                          className="flex items-center justify-between flex-1 h-[58px] p-4 bg-slate-50 border-2 border-slate-200 rounded-xl hover:bg-slate-100 transition-all cursor-pointer group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <MessageSquareMore
+                              size={18}
+                              className="text-slate-400 group-hover:text-blue-500 transition-colors"
+                            />
+                            <span className="text-sm font-bold text-slate-800 uppercase tracking-tight">
+                              Observações Financeiras
                             </span>
-                          )}
-                        </div>
-                        <ChevronDown
-                          size={20}
-                          className={`text-slate-400 transition-transform duration-300 ${showObsFinanceiras ? "rotate-180" : ""}`}
-                        />
-                      </button>
+                            {formData.obsFinanceiras && (
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                Preenchido
+                              </span>
+                            )}
+                          </div>
+                          <ChevronDown
+                            size={20}
+                            className={`text-slate-400 transition-transform duration-300 ${showObsFinanceiras ? "rotate-180" : ""}`}
+                          />
+                        </button>
+
+                        {caixaContas.length > 0 && (
+                          <div className="flex flex-col gap-2 w-full sm:w-[280px]">
+                            <GeologSearchableSelect
+                              label="Conta Recebimento"
+                              options={caixaContas.map((c) => ({
+                                id: c.id,
+                                nome: c.nome,
+                                sublabel: c.bancos?.nome,
+                                isFavorite: Boolean(c.is_default),
+                                icon: c.bancos ? (
+                                  <span
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black uppercase"
+                                    style={{ backgroundColor: c.bancos.cor }}
+                                  >
+                                    {c.bancos.sigla}
+                                  </span>
+                                ) : undefined,
+                              }))}
+                              value={formData.caixaContaId || ""}
+                              onChange={(id) =>
+                                handleInputChange({
+                                  target: {
+                                    name: "caixaContaId",
+                                    value: id,
+                                  },
+                                } as React.ChangeEvent<HTMLSelectElement>)
+                              }
+                              placeholder="Padrão (auto)"
+                              disableSearch
+                              variant="form"
+                              triggerClassName="h-[58px] py-3 text-base"
+                              className="w-full"
+                            />
+                          </div>
+                        )}
+                      </div>
 
                       {showObsFinanceiras && (
                         <div className="animate-in slide-in-from-top-2 duration-300">

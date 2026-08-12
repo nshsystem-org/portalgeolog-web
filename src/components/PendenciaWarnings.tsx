@@ -571,7 +571,7 @@ export default function PendenciaWarnings({
         >
           <div className="p-4 border-b border-slate-200">
             <div className="flex items-center justify-between">
-              <h3 className="font-black text-slate-800 flex items-center gap-2">
+              <h3 className="font-black text-xl text-slate-800 flex items-center gap-2">
                 <AlertTriangle size={16} className="text-red-500" />
                 Avisos de Pendências
               </h3>
@@ -599,7 +599,7 @@ export default function PendenciaWarnings({
                 </button>
               </div>
             </div>
-            <p className="text-xs text-slate-500 font-bold mt-1">
+            <p className="text-sm text-slate-500 font-bold mt-1">
               {hasPendencias ? (
                 <>
                   <span className="text-red-600">{total}</span>
@@ -624,7 +624,7 @@ export default function PendenciaWarnings({
                 <button
                   key={key}
                   onClick={() => changeFiltroPeriodo(key)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold text-[11px] uppercase tracking-wide transition-all cursor-pointer ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold text-sm uppercase tracking-wide transition-all cursor-pointer ${
                     filtroPeriodo === key
                       ? "bg-slate-800 text-white"
                       : "text-slate-500 hover:bg-slate-100"
@@ -634,7 +634,7 @@ export default function PendenciaWarnings({
                   {label}
                 </button>
               ))}
-              <span className="ml-auto text-[11px] font-bold text-slate-400">
+              <span className="ml-auto text-sm font-bold text-slate-400">
                 {itemsFiltrados.length} exibid
                 {itemsFiltrados.length === 1 ? "a" : "as"}
               </span>
@@ -648,14 +648,14 @@ export default function PendenciaWarnings({
                   size={32}
                   className="mx-auto mb-2 opacity-40"
                 />
-                <p className="text-sm font-bold">
+                <p className="text-base font-bold">
                   Nenhuma pendência encontrada. Ótimo!
                 </p>
               </div>
             ) : itemsFiltrados.length === 0 ? (
               <div className="p-8 text-center text-slate-400">
                 <CalendarDays size={32} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm font-bold">
+                <p className="text-base font-bold">
                   Nenhuma pendência neste período.
                 </p>
               </div>
@@ -695,12 +695,12 @@ export default function PendenciaWarnings({
                       {/* Conteúdo principal */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
-                          <p className="text-sm font-black text-slate-800 truncate">
+                          <p className="text-base font-black text-slate-800 truncate">
                             #{protocolo}
                           </p>
                           {itinLabel && (
                             <span
-                              className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border shrink-0 ${
+                              className={`inline-flex items-center px-1 py-0 rounded text-[10px] font-black uppercase tracking-wide border shrink-0 ${
                                 item.itineraryIndex < 0
                                   ? "bg-purple-50 text-purple-700 border-purple-200"
                                   : "bg-amber-50 text-amber-700 border-amber-200"
@@ -710,27 +710,27 @@ export default function PendenciaWarnings({
                             </span>
                           )}
                           {novo && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide bg-blue-100 text-blue-700 animate-pulse shrink-0">
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wide bg-blue-100 text-blue-700 animate-pulse shrink-0">
                               <Sparkles size={9} />
                               Novo
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-600 font-bold truncate">
+                        <p className="text-sm text-slate-600 font-bold truncate">
                           {item.clienteNome}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide ${cfg.iconBg} ${cfg.iconColor} ${cfg.badgeClass}`}>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black uppercase tracking-wide ${cfg.iconBg} ${cfg.iconColor} ${cfg.badgeClass}`}>
                             <MotivoIcon size={9} />
                             {cfg.label}
                           </span>
                           {infoTempo && (
-                            <span className="text-[10px] font-bold text-slate-400">
+                            <span className="text-xs font-bold text-slate-400">
                               {infoTempo}
                             </span>
                           )}
                           {/* Badge de tipo na mesma linha do motivo */}
-                          <span className={`ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide ${tipoCfg.bg} ${tipoCfg.color}`}>
+                          <span className={`ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-black uppercase tracking-wide ${tipoCfg.bg} ${tipoCfg.color}`}>
                             <tipoCfg.icon size={9} />
                             {tipoCfg.label}
                           </span>

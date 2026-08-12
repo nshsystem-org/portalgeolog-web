@@ -350,7 +350,14 @@ export function useFinanceiroPage(): FinanceiroPageState {
 
     const handleOutsideClick = (event: MouseEvent): void => {
       const currentMenu = actionMenuRefs.current[openActionMenuId];
-      if (currentMenu && !currentMenu.contains(event.target as Node)) {
+      const portalEl = (event.target as HTMLElement).closest?.(
+        ".geolog-action-menu-portal",
+      );
+      if (
+        currentMenu &&
+        !currentMenu.contains(event.target as Node) &&
+        !portalEl
+      ) {
         setOpenActionMenuId(null);
       }
     };

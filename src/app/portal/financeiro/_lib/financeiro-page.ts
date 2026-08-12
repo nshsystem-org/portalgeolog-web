@@ -135,13 +135,13 @@ export const getFinanceDisplayStatus = (os: OrderService): string => {
 export const statusStyle = (status: string): string => {
   switch (status) {
     case "Liberado":
-      return "border-blue-200 bg-blue-50 text-blue-600";
+      return "border-blue-950 bg-blue-950 text-white";
     case "Faturado":
-      return "border-amber-200 bg-amber-50 text-amber-700";
+      return "border-amber-300 bg-amber-50 text-amber-700";
     case "Recebido":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+      return "border-emerald-300 bg-emerald-50 text-emerald-700";
     default:
-      return "border-slate-200 bg-slate-50 text-slate-700";
+      return "border-slate-300 bg-slate-50 text-slate-700";
   }
 };
 

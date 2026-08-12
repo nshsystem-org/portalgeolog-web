@@ -1,6 +1,7 @@
 import {
   BadgeInfo,
   Briefcase,
+  Clock,
   Building2,
   CheckCircle2,
   ChevronRight,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import type { MutableRefObject, ReactElement } from "react";
 import { useState } from "react";
+import { ActionMenuPortal } from "@/components/ui/ActionMenuPortal";
 import { DataTable } from "@/components/ui/DataTable";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import type { Driver, OrderService } from "@/context/DataContext";
@@ -434,12 +436,17 @@ export function FinanceiroTable({
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.3em] ${
                         isLiberado
-                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                          ? "border-blue-950 bg-blue-950 text-white"
                           : statusStyle(displayStatus)
                       }`}
                     >
                       {isLiberado ? (
-                        <Wallet size={12} className="text-blue-600" />
+                        <Wallet
+                          size={12}
+                          className="animate-wallet-wave text-cyan-300"
+                        />
+                      ) : displayStatus === "Pendente" ? (
+                        <Clock size={12} />
                       ) : (
                         <BadgeInfo size={12} />
                       )}
@@ -514,7 +521,13 @@ export function FinanceiroTable({
                   </button>
 
                   {openActionMenuId === item.id ? (
-                    <div className="absolute right-0 z-20 mt-2 w-56 rounded-3xl border border-slate-200 bg-white p-2.5 shadow-2xl shadow-slate-200/50">
+                    <ActionMenuPortal
+                      isOpen={openActionMenuId === item.id}
+                      getTriggerEl={() => actionMenuRefs.current[item.id] ?? null}
+                      align="right"
+                      width={224}
+                      panelClassName="rounded-3xl border border-slate-200 bg-white p-2.5 shadow-2xl shadow-slate-200/50"
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -568,7 +581,7 @@ export function FinanceiroTable({
                           Registrar Repasse
                         </button>
                       ) : null}
-                    </div>
+                    </ActionMenuPortal>
                   ) : null}
                 </div>
               );

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { MutableRefObject, ReactElement } from "react";
+import { ActionMenuPortal } from "@/components/ui/ActionMenuPortal";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import type { CaixaLancamento } from "../_lib/caixa-page";
 import {
@@ -215,7 +216,13 @@ export function CaixaTable({
               {isOpen ? <X size={16} /> : <MoreVertical size={16} />}
             </button>
             {isOpen ? (
-              <div className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 shadow-2xl">
+              <ActionMenuPortal
+                isOpen={isOpen}
+                getTriggerEl={() => actionMenuRefs.current[item.id] ?? null}
+                align="right"
+                width={176}
+                panelClassName="overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 shadow-2xl"
+              >
                 <button
                   type="button"
                   onClick={() => onOpenComprovante(item)}
@@ -240,7 +247,7 @@ export function CaixaTable({
                 >
                   <Trash2 size={15} /> Excluir
                 </button>
-              </div>
+              </ActionMenuPortal>
             ) : null}
           </div>
         );

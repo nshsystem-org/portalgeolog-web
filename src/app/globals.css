@@ -1,16 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sora: "Sora", ui-sans-serif, system-ui, -apple-system,
-    BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-space-grotesk: "Space Grotesk", "Segoe UI", system-ui, -apple-system,
-    BlinkMacSystemFont, sans-serif;
-  --font-geist-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
-    Consolas, "Liberation Mono", "Courier New", monospace;
   --font-sans:
-    var(--font-sora), ui-sans-serif, system-ui, -apple-system,
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: var(--font-geist-mono);
+  --font-mono:
+    var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
   --font-modal:
     var(--font-space-grotesk), "Segoe UI", system-ui, -apple-system,
     BlinkMacSystemFont, sans-serif;
@@ -94,7 +90,7 @@ html {
   }
 }
 
-/* Global font smoothing */
+/* Global font smoothing — unified for crisp, consistent rendering */
 * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -102,7 +98,8 @@ html {
   font-variant-ligatures: common-ligatures;
   font-feature-settings:
     "kern" 1,
-    "liga" 1;
+    "liga" 1,
+    "calt" 1;
 }
 
 /* Reinforce on body and all text elements */
@@ -123,40 +120,35 @@ textarea,
 label {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: geometricPrecision;
-}
-
-/* Chrome/Edge specific smoothing */
-@supports (-webkit-appearance: none) {
-  * {
-    -webkit-font-smoothing: subpixel-antialiased;
-    text-rendering: optimizeSpeed;
-  }
-}
-
-/* Safari specific */
-@supports (-webkit-backdrop-filter: none) {
-  * {
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-  }
-}
-
-/* Firefox specific */
-@supports (-moz-appearance: none) {
-  * {
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-  }
+  text-rendering: optimizeLegibility;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
-  line-height: 1.5;
+  line-height: 1.55;
+  letter-spacing: -0.011em;
+  font-feature-settings:
+    "kern" 1,
+    "liga" 1,
+    "calt" 1,
+    "cv02" 1,
+    "cv03" 1,
+    "cv04" 1,
+    "cv11" 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings: tighter tracking for crisper hierarchy */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.02em;
 }
 
 @layer base {
@@ -173,14 +165,15 @@ body {
     font-variant-ligatures: common-ligatures;
     font-feature-settings:
       "kern" 1,
-      "liga" 1;
+      "liga" 1,
+      "calt" 1;
   }
 
   .modal-content {
     font-family: var(--font-modal);
     line-height: 1.6;
-    letter-spacing: 0.01em;
-    text-rendering: geometricPrecision;
+    letter-spacing: -0.005em;
+    text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -240,6 +233,28 @@ body {
 
 .animate-toast-in {
   animation: toast-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Suave balanço do ícone de carteira para status "Liberado" */
+@keyframes wallet-wave {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-12deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+  75% {
+    transform: rotate(-4deg);
+  }
+}
+
+.animate-wallet-wave {
+  animation: wallet-wave 2.4s ease-in-out infinite;
+  transform-origin: 50% 60%;
 }
 
 /* Strong shake to draw attention to pending announcements */
