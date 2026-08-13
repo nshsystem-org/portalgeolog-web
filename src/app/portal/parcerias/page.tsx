@@ -696,8 +696,38 @@ export default function ParceriasPage() {
           icon={<Handshake size={24} />}
           maxWidthClassName="max-w-6xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-8"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="parceiro-form"
+                  disabled={isSubmitting}
+                  className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                >
+                  {isSubmitting
+                    ? "Salvando..."
+                    : editingParceiro
+                      ? "Atualizar Parceiro"
+                      : "Confirmar Parceiro"}
+                </button>
+              </div>
+            </div>
+          }
         >
-          <form onSubmit={handleSubmit} className="space-y-8">
+          <form
+            id="parceiro-form"
+            onSubmit={handleSubmit}
+            className="space-y-8"
+          >
             <section className="space-y-6">
               <div
                 className="flex items-center border-b-2 border-slate-100 pb-4"
@@ -985,27 +1015,6 @@ export default function ParceriasPage() {
                 </div>
               </div>
             </section>
-
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="px-8 py-4 bg-slate-100 text-slate-700 font-black rounded-xl hover:bg-slate-200 transition-all text-sm uppercase tracking-widest cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-12 py-4 bg-[var(--color-geolog-blue)] text-white font-black rounded-xl shadow-xl shadow-blue-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-              >
-                {isSubmitting
-                  ? "Salvando..."
-                  : editingParceiro
-                    ? "Salvar alterações"
-                    : "Salvar parceiro"}
-              </button>
-            </div>
           </form>
         </StandardModal>
       )}

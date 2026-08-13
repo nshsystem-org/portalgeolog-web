@@ -421,8 +421,38 @@ export default function VeiculosPage() {
           subtitle="Cadastro de veículo para a frota Geolog"
           icon={<Truck size={24} />}
           maxWidthClassName="max-w-6xl"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="novo-veiculo-form"
+                  disabled={isSubmitting}
+                  className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="animate-spin" size={18} />
+                  ) : (
+                    "Confirmar Veículo"
+                  )}
+                </button>
+              </div>
+            </div>
+          }
         >
-          <form onSubmit={handleAddVehicle} className="space-y-8">
+          <form
+            id="novo-veiculo-form"
+            onSubmit={handleAddVehicle}
+            className="space-y-8"
+          >
             <div className="space-y-6">
               <div
                 className="flex items-center border-b-2 border-slate-100 pb-4"
@@ -613,26 +643,6 @@ export default function VeiculosPage() {
                 </div>
               </div>
             </div>
-
-            <div className="flex gap-4 pt-4">
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="flex-1 py-4 border-2 border-slate-200 text-slate-500 font-black rounded-2xl hover:bg-slate-50 transition-all uppercase tracking-widest text-xs cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                disabled={isSubmitting}
-                className="flex-1 py-4 bg-green-600 text-white font-black rounded-2xl hover:bg-green-500 shadow-lg shadow-green-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 uppercase tracking-widest text-xs cursor-pointer"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  "Salvar Veículo"
-                )}
-              </button>
-            </div>
           </form>
         </StandardModal>
       )}
@@ -750,8 +760,35 @@ export default function VeiculosPage() {
           subtitle="Atualize as informações do veículo"
           icon={<Edit size={24} />}
           maxWidthClassName="max-w-6xl"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="editar-veiculo-form"
+                  disabled={isSubmitting}
+                  className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="animate-spin" size={18} />
+                  ) : (
+                    "Atualizar Veículo"
+                  )}
+                </button>
+              </div>
+            </div>
+          }
         >
           <form
+            id="editar-veiculo-form"
             onSubmit={async (e) => {
               e.preventDefault();
               setIsSubmitting(true);
@@ -980,25 +1017,6 @@ export default function VeiculosPage() {
                   </div>
                 </div>
               </div>
-            </div>
-            <div className="flex gap-4 pt-4">
-              <button
-                type="button"
-                onClick={() => setIsEditModalOpen(false)}
-                className="flex-1 py-4 border-2 border-slate-200 text-slate-500 font-black rounded-2xl hover:bg-slate-50 transition-all uppercase tracking-widest text-xs"
-              >
-                Cancelar
-              </button>
-              <button
-                disabled={isSubmitting}
-                className="flex-1 py-4 bg-green-600 text-white font-black rounded-2xl hover:bg-green-500 shadow-lg shadow-green-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 uppercase tracking-widest text-xs cursor-pointer"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  "Atualizar Veículo"
-                )}
-              </button>
             </div>
           </form>
         </StandardModal>

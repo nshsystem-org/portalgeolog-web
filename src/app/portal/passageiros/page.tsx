@@ -391,9 +391,37 @@ export default function PassageirosPage() {
           subtitle="Cadastro prioritário e monitoramento de endereços habituais"
           icon={<UserSquare2 className="w-6 h-6 md:w-7 md:h-7" />}
           maxWidthClassName="max-w-5xl"
-          bodyClassName="p-6 md:p-10 pb-16 space-y-12"
+          bodyClassName="p-6 md:p-10 pb-16 space-y-20"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetForm();
+                    setIsModalOpen(false);
+                  }}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="novo-passageiro-form"
+                  className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Confirmar Passageiro
+                </button>
+              </div>
+            </div>
+          }
         >
-          <form onSubmit={handleSubmit} className="space-y-12">
+          <form
+            id="novo-passageiro-form"
+            onSubmit={handleSubmit}
+            className="space-y-20"
+          >
             <section className="space-y-6">
               <div
                 className="flex items-center border-b-2 border-slate-100 pb-4"
@@ -579,15 +607,6 @@ export default function PassageirosPage() {
                 </div>
               </div>
             </section>
-
-            <div className="flex justify-end pt-4">
-              <button
-                type="submit"
-                className="px-12 py-4 bg-green-600 text-white font-black rounded-xl shadow-xl shadow-green-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
-              >
-                Salvar passageiro
-              </button>
-            </div>
           </form>
         </StandardModal>
       )}
@@ -673,9 +692,37 @@ export default function PassageirosPage() {
           subtitle="Atualize as informações do passageiro"
           icon={<Edit className="w-6 h-6 md:w-7 md:h-7" />}
           maxWidthClassName="max-w-5xl"
-          bodyClassName="p-6 md:p-10 pb-16 space-y-12"
+          bodyClassName="p-6 md:p-10 pb-16 space-y-20"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    resetForm();
+                  }}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="editar-passageiro-form"
+                  className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Atualizar Passageiro
+                </button>
+              </div>
+            </div>
+          }
         >
-          <form onSubmit={handleEditSubmit} className="space-y-12">
+          <form
+            id="editar-passageiro-form"
+            onSubmit={handleEditSubmit}
+            className="space-y-20"
+          >
             <section className="space-y-6">
               <div
                 className="flex items-center border-b-2 border-slate-100 pb-4"
@@ -855,15 +902,6 @@ export default function PassageirosPage() {
                 </div>
               </div>
             </section>
-
-            <div className="flex justify-end pt-4">
-              <button
-                type="submit"
-                className="px-12 py-4 bg-green-600 text-white font-black rounded-xl shadow-xl shadow-green-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
-              >
-                Atualizar passageiro
-              </button>
-            </div>
           </form>
         </StandardModal>
       )}

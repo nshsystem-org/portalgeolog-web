@@ -1960,8 +1960,39 @@ export default function MotoristasPage() {
           icon={<UserPlus size={24} />}
           maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-12"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="novo-motorista-form"
+                  disabled={isSubmitting}
+                  className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="animate-spin" size={18} />
+                  ) : (
+                    "Confirmar Motorista"
+                  )}
+                </button>
+              </div>
+            </div>
+          }
         >
-          <form onSubmit={handleAddDriver} noValidate className="space-y-12">
+          <form
+            id="novo-motorista-form"
+            onSubmit={handleAddDriver}
+            noValidate
+            className="space-y-12"
+          >
             <section className="space-y-6">
               <div
                 className="flex items-center border-b-2 border-slate-100 pb-4"
@@ -2368,20 +2399,6 @@ export default function MotoristasPage() {
                 </div>
               </div>
             </section>
-
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-12 py-4 bg-green-600 text-white font-black rounded-xl shadow-xl shadow-green-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="animate-spin" size={18} />
-                ) : (
-                  "Salvar motorista"
-                )}
-              </button>
-            </div>
           </form>
         </StandardModal>
       )}
@@ -2591,8 +2608,39 @@ export default function MotoristasPage() {
           icon={<Edit2 size={24} />}
           maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-12"
+          footer={
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
+              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+              <div className="flex items-center gap-5">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-6 py-4 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="editar-motorista-form"
+                  disabled={isSubmitting}
+                  className="px-12 py-4 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-xl shadow-[rgb(42,82,144)]/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="animate-spin" size={18} />
+                  ) : (
+                    "Atualizar Motorista"
+                  )}
+                </button>
+              </div>
+            </div>
+          }
         >
-          <form onSubmit={handleEditDriver} noValidate className="space-y-12">
+          <form
+            id="editar-motorista-form"
+            onSubmit={handleEditDriver}
+            noValidate
+            className="space-y-12"
+          >
             <section className="space-y-6">
               <div
                 className="flex items-center border-b-2 border-slate-100 pb-4"
@@ -3004,20 +3052,6 @@ export default function MotoristasPage() {
                 </div>
               </div>
             </section>
-
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-12 py-4 bg-blue-600 text-white font-black rounded-xl shadow-xl shadow-blue-900/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="animate-spin" size={18} />
-                ) : (
-                  "Atualizar motorista"
-                )}
-              </button>
-            </div>
           </form>
         </StandardModal>
       )}
