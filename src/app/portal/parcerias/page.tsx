@@ -39,6 +39,9 @@ import {
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import { formatBrazilPhone, normalizeBrazilPhone } from "@/lib/phone";
 import { formatDocument } from "@/lib/document-validator";
+import { useAuth } from "@/context/AuthContext";
+import { hasPageAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/ui/AccessDenied";
 
 const PESSOA_TIPO_OPTIONS = [
   { id: "juridica", nome: "Pessoa jurídica" },
@@ -129,6 +132,7 @@ const initialForm = (): ParceiroFormData => ({
 });
 
 export default function ParceriasPage() {
+  const { profile } = useAuth();
   const { parceiros, loading: parceirosLoading } = useParceiros();
   const { addParceiro, updateParceiro, deleteParceiro, unarchiveParceiro } =
     useData();
@@ -184,6 +188,10 @@ export default function ParceriasPage() {
       prevParceirosLengthRef.current = parceirosLengthRef.current;
     }
   }, [parceiros.length, parceiroTable]);
+
+  if (!hasPageAccess(profile, "parcerias")) {
+    return <AccessDenied module="Cadastros" />;
+  }
 
   const resetForm = () => {
     setEditingParceiro(null);

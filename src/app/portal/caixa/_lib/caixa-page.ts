@@ -7,6 +7,12 @@ import type { ParceiroServico } from "@/lib/supabase/queries";
 
 export type CaixaContaTipo = "caixa" | "banco" | "pix" | "carteira";
 
+export type CaixaContaBanco = {
+  nome: string;
+  sigla: string;
+  cor: string;
+};
+
 export type CaixaConta = {
   id: string;
   nome: string;
@@ -15,6 +21,8 @@ export type CaixaConta = {
   ativa: boolean;
   isDefault: boolean;
   createdAt: string;
+  bancoId?: string | null;
+  banco?: CaixaContaBanco | null;
 };
 
 export type CaixaFormaPagamento =

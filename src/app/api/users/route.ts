@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
@@ -44,8 +46,58 @@ function createResendClient() {
   return apiKey ? new Resend(apiKey) : null;
 }
 
+/**
+ * Verifica se o usuário autenticado é administrador.
+ * Retorna { user, isAdmin } ou null se não autenticado.
+ */
+async function requireAdmin() {
+  const cookieStore = await cookies();
+  const authClient = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: () => {},
+      },
+    },
+  );
+
+  const {
+    data: { user },
+    error,
+  } = await authClient.auth.getUser();
+
+  if (error || !user) {
+    return { user: null, isAdmin: false, error: "Não autenticado" as const };
+  }
+
+  // Buscar categoria do usuário
+  const adminClient = createSupabaseAdminClient();
+  const { data: roleRow } = await adminClient
+    .from("user_roles")
+    .select("categoria")
+    .eq("id", user.id)
+    .single();
+
+  const isAdmin = roleRow?.categoria === "administrador";
+
+  return { user, isAdmin, error: null };
+}
+
 export async function GET() {
   try {
+    const auth = await requireAdmin();
+    if (!auth.user) {
+      return NextResponse.json({ error: auth.error }, { status: 401 });
+    }
+    if (!auth.isAdmin) {
+      return NextResponse.json(
+        { error: "Acesso restrito a administradores" },
+        { status: 403 },
+      );
+    }
+
     const supabaseAdmin = createSupabaseAdminClient();
 
     // 1. Busca os perfis (roles)
@@ -93,6 +145,17 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const auth = await requireAdmin();
+    if (!auth.user) {
+      return NextResponse.json({ error: auth.error }, { status: 401 });
+    }
+    if (!auth.isAdmin) {
+      return NextResponse.json(
+        { error: "Acesso restrito a administradores" },
+        { status: 403 },
+      );
+    }
+
     const supabaseAdmin = createSupabaseAdminClient();
 
     const { id, updates } = await request.json();
@@ -120,6 +183,17 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAdmin();
+    if (!auth.user) {
+      return NextResponse.json({ error: auth.error }, { status: 401 });
+    }
+    if (!auth.isAdmin) {
+      return NextResponse.json(
+        { error: "Acesso restrito a administradores" },
+        { status: 403 },
+      );
+    }
+
     const supabaseAdmin = createSupabaseAdminClient();
     const resend = createResendClient();
 
@@ -212,6 +286,17 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const auth = await requireAdmin();
+    if (!auth.user) {
+      return NextResponse.json({ error: auth.error }, { status: 401 });
+    }
+    if (!auth.isAdmin) {
+      return NextResponse.json(
+        { error: "Acesso restrito a administradores" },
+        { status: 403 },
+      );
+    }
+
     const supabaseAdmin = createSupabaseAdminClient();
 
     const { searchParams } = new URL(request.url);

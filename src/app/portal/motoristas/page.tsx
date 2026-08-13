@@ -55,6 +55,9 @@ import {
 } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import { getThumbnailUrl } from "@/utils/avatar";
+import { useAuth } from "@/context/AuthContext";
+import { hasPageAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/ui/AccessDenied";
 
 interface DriverVehicle {
   id: string;
@@ -241,6 +244,7 @@ const validateCNPJ = (cnpj: string): boolean => {
 };
 
 export default function MotoristasPage() {
+  const { profile } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDriverForDocs, setSelectedDriverForDocs] =
     useState<Driver | null>(null);
@@ -1087,6 +1091,10 @@ export default function MotoristasPage() {
       supabase.removeChannel(vehiclesChannel);
     };
   }, [supabase]);
+
+  if (!hasPageAccess(profile, "motoristas")) {
+    return <AccessDenied module="Cadastros" />;
+  }
 
   const handleAddDriver = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -20,6 +20,9 @@ import RequiredAsterisk from "@/components/ui/RequiredAsterisk";
 import { fetchPassageirosPage } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import { formatBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
+import { useAuth } from "@/context/AuthContext";
+import { hasPageAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/ui/AccessDenied";
 
 interface NewPassengerForm {
   nomeCompleto: string;
@@ -32,6 +35,7 @@ const initialForm: NewPassengerForm = {
 };
 
 export default function PassageirosPage() {
+  const { profile } = useAuth();
   const { addPassageiro, updatePassageiro, archivePassageiro } = useData();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,6 +47,10 @@ export default function PassageirosPage() {
   const [formData, setFormData] = useState<NewPassengerForm>(initialForm);
   const [isEstrangeiro, setIsEstrangeiro] = useState(false);
   const passengerTable = useServerPaginatedTable(fetchPassageirosPage, 10);
+
+  if (!hasPageAccess(profile, "passageiros")) {
+    return <AccessDenied module="Cadastros" />;
+  }
 
   const formatPhone = (value: string) => {
     if (isEstrangeiro) {

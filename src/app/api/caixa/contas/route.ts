@@ -22,7 +22,9 @@ export async function GET() {
     const adminClient = createAdminClient();
     const { data, error } = await adminClient
       .from("caixa_contas")
-      .select("id, nome, tipo, saldo_inicial, ativa, is_default, created_at")
+      .select(
+        "id, nome, tipo, saldo_inicial, ativa, is_default, created_at, banco_id, bancos(id, nome, sigla, cor)",
+      )
       .order("is_default", { ascending: false })
       .order("created_at", { ascending: true });
 
@@ -95,7 +97,9 @@ export async function POST(request: Request) {
         ativa: body.ativa !== false,
         is_default: Boolean(body.isDefault),
       })
-      .select("id, nome, tipo, saldo_inicial, ativa, is_default, created_at")
+      .select(
+        "id, nome, tipo, saldo_inicial, ativa, is_default, created_at, banco_id, bancos(id, nome, sigla, cor)",
+      )
       .single();
 
     if (error) throw error;

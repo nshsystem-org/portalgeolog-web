@@ -24,6 +24,9 @@ import { toast } from "sonner";
 import { useData, type Vehicle } from "@/context/DataContext";
 import { fetchVeiculosPage } from "@/lib/supabase/queries";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
+import { useAuth } from "@/context/AuthContext";
+import { hasPageAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/ui/AccessDenied";
 
 type VehicleType = Vehicle["tipo"];
 
@@ -105,6 +108,7 @@ const getTipoIcon = (tipo: VehicleType) => {
 };
 
 export default function VeiculosPage() {
+  const { profile } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -127,6 +131,10 @@ export default function VeiculosPage() {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!hasPageAccess(profile, "veiculos")) {
+    return <AccessDenied module="Cadastros" />;
+  }
 
   const resetForm = () => {
     setFormData({

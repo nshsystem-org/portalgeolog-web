@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { MessageCircle, X, Minimize2, Maximize2 } from "lucide-react";
 import { useChat } from "@/hooks/useChat";
 import { useAuth } from "@/context/AuthContext";
@@ -64,6 +64,34 @@ export function ChatWidget() {
 
   const previewBody = latestUnread?.lastMessage?.content?.trim() || null;
   const hasPreview = !isOpen && unreadCount > 0 && previewSender;
+
+  // Escuta evento de notificação de chat para abrir a conversa
+  // diretamente quando o usuário clica no toast ou na notificação desktop.
+  useEffect(() => {
+    const handleOpenChatConversation = (e: Event) => {
+      const detail = (e as CustomEvent<{ conversationId: string }>).detail;
+      if (!detail?.conversationId) return;
+
+      setIsOpen(true);
+      setIsMinimized(false);
+      loadConversations().then((convs) => {
+        const target = convs?.find((c) => c.id === detail.conversationId);
+        if (target) {
+          selectConversation(target);
+        }
+      });
+    };
+
+    window.addEventListener(
+      "open-chat-conversation",
+      handleOpenChatConversation as EventListener,
+    );
+    return () =>
+      window.removeEventListener(
+        "open-chat-conversation",
+        handleOpenChatConversation as EventListener,
+      );
+  }, [loadConversations, selectConversation]);
 
   const handleToggle = () => {
     if (!isOpen) {

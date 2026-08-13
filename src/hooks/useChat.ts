@@ -13,6 +13,15 @@ import {
 import type { ChatConversation, ChatMessage } from "@/context/DataContext";
 import { useAuth } from "@/context/AuthContext";
 
+// Estende Window com a propriedade global usada para rastrear a conversa
+// de chat ativa, permitindo que useNotifications suprima notificações de
+// mensagens que o usuário já está visualizando em tempo real.
+declare global {
+  interface Window {
+    __activeChatConversationId?: string;
+  }
+}
+
 function deduplicateDirectConversations(
   conversations: Array<ChatConversation & { unreadCount: number }>,
   currentUserId: string,
@@ -165,6 +174,21 @@ export function useChat() {
     },
     [loadMessages],
   );
+
+  // Rastreia a conversa ativa em uma window global para que o
+  // useNotifications possa suprimir toast/desktop quando o usuário já
+  // estiver visualizando a conversa que recebeu a mensagem.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (activeConversation) {
+      window.__activeChatConversationId = activeConversation.id;
+    } else {
+      delete window.__activeChatConversationId;
+    }
+    return () => {
+      delete window.__activeChatConversationId;
+    };
+  }, [activeConversation]);
 
   const sendMessage = useCallback(
     async (content: string) => {

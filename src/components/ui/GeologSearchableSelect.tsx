@@ -481,7 +481,9 @@ export default function GeologSearchableSelect({
           `}
         >
           {label}
-          {required && <span className="text-rose-300 text-base">*</span>}
+          {required && (
+            <span className="text-rose-300 text-base leading-none">*</span>
+          )}
         </label>
       )}
 

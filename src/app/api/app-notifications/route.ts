@@ -72,12 +72,19 @@ export async function GET() {
     // independente, cada uma com seu próprio limite. Isso evita que um volume alto de
     // eventos de motorista (iniciou/finalizou rota, mensagens) "empurre" para fora as
     // notificações de sistema (e vice-versa) do topo-N retornado pela API.
+    // Filtro por target_user_id: mostra notificações globais (target_user_id
+    // IS NULL) OU notificações direcionadas especificamente ao usuário atual.
+    // Isso permite que notificações de chat sejam entregues apenas ao
+    // destinatário correto, sem vazar para outros usuários da mesma audience.
+    const targetUserFilter = `target_user_id.is.null,target_user_id.eq.${user.id}`;
+
     const [systemResult, driverResult] = await Promise.all([
       adminClient
         .from("app_notifications")
         .select("*")
         .in("target_audience", [tipoUsuario, "all"])
         .eq("category", "sistema")
+        .or(targetUserFilter)
         .order("created_at", { ascending: false })
         .limit(30),
       adminClient
@@ -85,6 +92,7 @@ export async function GET() {
         .select("*")
         .in("target_audience", [tipoUsuario, "all"])
         .eq("category", "motorista")
+        .or(targetUserFilter)
         .order("created_at", { ascending: false })
         .limit(30),
     ]);
@@ -126,20 +134,26 @@ export async function GET() {
     }
 
     // 4. Buscar quais notificações o usuário atual já leu
-    const { data: readsData } = await adminClient
-      .from("app_notification_reads")
-      .select("notification_id")
-      .eq("user_id", user.id)
-      .in(
-        "notification_id",
-        notifs.map((n) => n.id),
-      );
+    // Guard: .in() com array vazio gera URL inválido no PostgREST
+    let readIds = new Set<string>();
+    if (notifs.length > 0) {
+      const { data: readsData, error: readsError } = await adminClient
+        .from("app_notification_reads")
+        .select("notification_id")
+        .eq("user_id", user.id)
+        .in(
+          "notification_id",
+          notifs.map((n) => n.id),
+        );
 
-    const readIds = new Set(
-      ((readsData ?? []) as { notification_id: string }[]).map(
-        (r) => r.notification_id,
-      ),
-    );
+      if (readsError) throw readsError;
+
+      readIds = new Set(
+        ((readsData ?? []) as { notification_id: string }[]).map(
+          (r) => r.notification_id,
+        ),
+      );
+    }
 
     const enriched = notifs.map((n) => ({
       ...n,
@@ -156,8 +170,19 @@ export async function GET() {
 
     return NextResponse.json(enriched);
   } catch (error: unknown) {
+    // PostgrestError não é instância de Error — extrair mensagem de forma segura
     const message =
-      error instanceof Error ? error.message : "Erro desconhecido";
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" &&
+            error !== null &&
+            "message" in error &&
+            typeof (error as { message: unknown }).message === "string"
+          ? (error as { message: string }).message
+          : typeof error === "string"
+            ? error
+            : "Erro desconhecido";
+    console.error("[app-notifications GET] erro:", message, error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -231,7 +256,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const message =
-      error instanceof Error ? error.message : "Erro desconhecido";
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" &&
+            error !== null &&
+            "message" in error &&
+            typeof (error as { message: unknown }).message === "string"
+          ? (error as { message: string }).message
+          : typeof error === "string"
+            ? error
+            : "Erro desconhecido";
+    console.error("[app-notifications POST] erro:", message, error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -272,6 +307,7 @@ export async function PATCH(request: Request) {
         .from("app_notifications")
         .select("id")
         .in("target_audience", [tipoUsuario, "all"])
+        .or(`target_user_id.is.null,target_user_id.eq.${user.id}`)
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -308,7 +344,17 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const message =
-      error instanceof Error ? error.message : "Erro desconhecido";
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" &&
+            error !== null &&
+            "message" in error &&
+            typeof (error as { message: unknown }).message === "string"
+          ? (error as { message: string }).message
+          : typeof error === "string"
+            ? error
+            : "Erro desconhecido";
+    console.error("[app-notifications PATCH] erro:", message, error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

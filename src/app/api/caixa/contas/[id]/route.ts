@@ -79,7 +79,9 @@ export async function PATCH(
       .from("caixa_contas")
       .update(updates)
       .eq("id", id)
-      .select("id, nome, tipo, saldo_inicial, ativa, is_default, created_at")
+      .select(
+        "id, nome, tipo, saldo_inicial, ativa, is_default, created_at, banco_id, bancos(id, nome, sigla, cor)",
+      )
       .single();
 
     if (error) throw error;

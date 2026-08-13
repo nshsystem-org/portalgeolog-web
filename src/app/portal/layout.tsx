@@ -4,6 +4,11 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import {
+  hasPageAccess as checkPageAccess,
+  pathnameToPageKey,
+  type PageKey,
+} from "@/lib/permissions";
+import {
   useEffect,
   useState,
   useRef,
@@ -43,6 +48,13 @@ import {
   Flag,
   Navigation,
   Wallet,
+  ClipboardList,
+  Landmark,
+  ChevronDown,
+  Database,
+  Shield,
+  User,
+  Percent,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
@@ -144,6 +156,110 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
+  const [openSections, setOpenSections] = useState<
+    Record<
+      "operacional" | "financeiro" | "cadastros" | "configuracoes",
+      boolean
+    >
+  >({
+    operacional: false,
+    financeiro: false,
+    cadastros: false,
+    configuracoes: false,
+  });
+
+  // Mapa de rotas por seção para auto-abrir a seção ativa
+  const sectionRoutes: Record<
+    "operacional" | "financeiro" | "cadastros" | "configuracoes",
+    readonly string[]
+  > = {
+    operacional: ["/portal/os"],
+    financeiro: ["/portal/financeiro", "/portal/caixa"],
+    cadastros: [
+      "/portal/motoristas",
+      "/portal/veiculos",
+      "/portal/passageiros",
+      "/portal/clientes",
+      "/portal/parcerias",
+    ],
+    configuracoes: [
+      "/portal/config",
+      "/portal/config/acessos",
+      "/portal/config/perfil",
+      "/portal/config/financeiro",
+      "/portal/config/notificacoes",
+    ],
+  };
+
+  // Auto-abrir a seção que contém a rota ativa
+  useEffect(() => {
+    setOpenSections((prev) => {
+      const next = { ...prev };
+      (Object.keys(sectionRoutes) as (keyof typeof sectionRoutes)[]).forEach(
+        (section) => {
+          if (sectionRoutes[section].includes(pathname)) {
+            next[section] = true;
+          }
+        },
+      );
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  // Ao colapsar o sidebar, fechar todas as seções exceto a ativa.
+  // Ao expandir novamente, só a seção da página atual aparece aberta.
+  useEffect(() => {
+    if (collapsed) {
+      setOpenSections({
+        operacional: sectionRoutes.operacional.includes(pathname),
+        financeiro: sectionRoutes.financeiro.includes(pathname),
+        cadastros: sectionRoutes.cadastros.includes(pathname),
+        configuracoes: sectionRoutes.configuracoes.includes(pathname),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsed]);
+
+  // Seção que contém a rota atual (sempre fica aberta)
+  const activeSection = useMemo(() => {
+    return (Object.keys(sectionRoutes) as (keyof typeof sectionRoutes)[]).find(
+      (section) => sectionRoutes[section].includes(pathname),
+    );
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleSection = useCallback(
+    (
+      section: "operacional" | "financeiro" | "cadastros" | "configuracoes",
+    ) => {
+      // Se o sidebar estiver colapsado, expandir e abrir a seção
+      if (collapsed) {
+        setCollapsed(false);
+        setOpenSections((s) => ({ ...s, [section]: true }));
+        return;
+      }
+      // Ao abrir uma seção, fechar todas as outras (exceto a ativa da página)
+      setOpenSections((s) => {
+        const willOpen = !s[section];
+        if (!willOpen) {
+          // Fechando: só se não for a seção ativa
+          if (section === activeSection) return s;
+          return { ...s, [section]: false };
+        }
+        // Abrindo: fechar as outras, manter a ativa
+        const next = {
+          operacional: false,
+          financeiro: false,
+          cadastros: false,
+          configuracoes: false,
+        };
+        next[section] = true;
+        if (activeSection) next[activeSection] = true;
+        return next;
+      });
+    },
+    [collapsed, activeSection],
+  );
 
   useEffect(() => {
     if (!loading && !user) {
@@ -151,52 +267,21 @@ export default function DashboardLayout({
     }
   }, [user, loading, router]);
 
-  // Função helper para verificar permissões de página
+  // Função helper para verificar permissões de página (delegada ao módulo central)
   const hasPageAccess = useCallback(
-    (page: string): boolean => {
-      if (!profile) return false;
-
-      // Administradores têm acesso a tudo
-      if (profile.categoria === "administrador") return true;
-
-      // Verificar permissões específicas
-      const specificPermissions =
-        (profile.specific_permissions as Record<string, unknown>) || {};
-
-      switch (page) {
-        case "financeiro":
-        case "caixa": {
-          const financeiroPerms =
-            (specificPermissions.financeiro as Record<string, unknown>) || {};
-          // Se existir bloco de permissões do financeiro, ele passa a ser a fonte de verdade.
-          // O caixa reutiliza o mesmo perfil de acesso do financeiro.
-          if (Object.keys(financeiroPerms).length > 0) {
-            return financeiroPerms.page_access === true;
-          }
-          // Sem bloco específico, mantém o acesso baseado na categoria.
-          return profile.categoria === "financeiro";
-        }
-        default:
-          return true;
-      }
-    },
+    (page: string): boolean => checkPageAccess(profile, page as PageKey),
     [profile],
   );
 
-  // Verificar se o usuário tem acesso à página atual
+  // Verificar se o usuário tem acesso à página atual (guard global)
   useEffect(() => {
     if (!profile || loading) return;
 
-    // Se estiver na página financeiro mas não tiver acesso, redirecionar
-    if (pathname === "/portal/financeiro" && !hasPageAccess("financeiro")) {
-      toast.warning(
-        "Você não tem acesso à página financeira. Redirecionando...",
-      );
-      router.push("/portal/dashboard");
-    }
-    // Mesma proteção para a página de caixa (mesmo perfil de acesso).
-    if (pathname === "/portal/caixa" && !hasPageAccess("caixa")) {
-      toast.warning("Você não tem acesso ao caixa. Redirecionando...");
+    const pageKey = pathnameToPageKey(pathname);
+    if (!pageKey) return; // rota não mapeada, não interferir
+
+    if (!hasPageAccess(pageKey)) {
+      toast.warning("Você não tem acesso a esta página. Redirecionando...");
       router.push("/portal/dashboard");
     }
   }, [profile, loading, pathname, router, hasPageAccess]);
@@ -322,7 +407,7 @@ export default function DashboardLayout({
           )}
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 mt-4">
+        <nav className="flex-1 p-4 space-y-2 mt-4 overflow-y-auto overflow-x-hidden">
           <NavLink
             href="/portal/dashboard"
             icon={<LayoutDashboard />}
@@ -330,74 +415,149 @@ export default function DashboardLayout({
             active={pathname === "/portal/dashboard"}
             collapsed={collapsed}
           />
-          <NavLink
-            href="/portal/os"
-            icon={<FileText />}
-            label="Ordem de Serviço"
-            active={pathname === "/portal/os"}
-            collapsed={collapsed}
-          />
-          {hasPageAccess("financeiro") && (
-            <NavLink
-              href="/portal/financeiro"
-              icon={<DollarSign />}
-              label="Medição Financeira"
-              active={pathname === "/portal/financeiro"}
-              collapsed={collapsed}
-            />
-          )}
-          {hasPageAccess("caixa") && (
-            <NavLink
-              href="/portal/caixa"
-              icon={<Wallet />}
-              label="Fluxo de Caixa"
-              active={pathname === "/portal/caixa"}
-              collapsed={collapsed}
-            />
-          )}
-          <NavLink
-            href="/portal/motoristas"
-            icon={<Users />}
-            label="Motoristas"
-            active={pathname === "/portal/motoristas"}
-            collapsed={collapsed}
-          />
-          <NavLink
-            href="/portal/veiculos"
-            icon={<Truck />}
-            label="Veículos"
-            active={pathname === "/portal/veiculos"}
-            collapsed={collapsed}
-          />
-          <NavLink
-            href="/portal/passageiros"
-            icon={<UserSquare2 />}
-            label="Passageiros"
-            active={pathname === "/portal/passageiros"}
-            collapsed={collapsed}
+
+          <div
+            className={`h-px bg-blue-800/40 ${collapsed ? "mx-1 my-1" : "mx-2 my-2"}`}
           />
 
-          <NavLink
-            href="/portal/clientes"
-            icon={<Building />}
-            label="Clientes"
-            active={pathname === "/portal/clientes"}
-            collapsed={collapsed}
-          />
-          <NavLink
-            href="/portal/parcerias"
-            icon={<Handshake />}
-            label="Parceiros de Serviço"
-            active={pathname === "/portal/parcerias"}
-            collapsed={collapsed}
-          />
-          <NavLink
-            href="/portal/config"
-            icon={<Settings />}
-            label="Configurações"
-            active={pathname === "/portal/config"}
-            collapsed={collapsed}
-          />
+          {hasPageAccess("os") && (
+            <NavSection
+              id="operacional"
+              icon={<ClipboardList />}
+              label="Operacional"
+              collapsed={collapsed}
+              isOpen={openSections.operacional}
+              onToggle={() => toggleSection("operacional")}
+              pathname={pathname}
+              accentColor="text-amber-400"
+              items={[
+                {
+                  href: "/portal/os",
+                  icon: <FileText />,
+                  label: "Ordem de Serviço",
+                },
+              ]}
+            />
+          )}
+
+          {(hasPageAccess("motoristas") ||
+            hasPageAccess("veiculos") ||
+            hasPageAccess("passageiros") ||
+            hasPageAccess("clientes") ||
+            hasPageAccess("parcerias")) && (
+            <NavSection
+              id="cadastros"
+              icon={<Database />}
+              label="Cadastros"
+              collapsed={collapsed}
+              isOpen={openSections.cadastros}
+              onToggle={() => toggleSection("cadastros")}
+              pathname={pathname}
+              accentColor="text-violet-400"
+              items={[
+                hasPageAccess("motoristas") && {
+                  href: "/portal/motoristas",
+                  icon: <Users />,
+                  label: "Motoristas",
+                },
+                hasPageAccess("veiculos") && {
+                  href: "/portal/veiculos",
+                  icon: <Truck />,
+                  label: "Veículos",
+                },
+                hasPageAccess("passageiros") && {
+                  href: "/portal/passageiros",
+                  icon: <UserSquare2 />,
+                  label: "Passageiros",
+                },
+                hasPageAccess("clientes") && {
+                  href: "/portal/clientes",
+                  icon: <Building />,
+                  label: "Clientes",
+                },
+                hasPageAccess("parcerias") && {
+                  href: "/portal/parcerias",
+                  icon: <Handshake />,
+                  label: "Parceiros de Serviço",
+                },
+              ].filter(Boolean) as {
+                href: string;
+                icon: ReactElement;
+                label: string;
+              }[]}
+            />
+          )}
+
+          {(hasPageAccess("financeiro") || hasPageAccess("caixa")) && (
+            <NavSection
+              id="financeiro"
+              icon={<Landmark />}
+              label="Financeiro"
+              collapsed={collapsed}
+              isOpen={openSections.financeiro}
+              onToggle={() => toggleSection("financeiro")}
+              pathname={pathname}
+              accentColor="text-emerald-400"
+              items={[
+                hasPageAccess("financeiro") && {
+                  href: "/portal/financeiro",
+                  icon: <DollarSign />,
+                  label: "Medição Financeira",
+                },
+                hasPageAccess("caixa") && {
+                  href: "/portal/caixa",
+                  icon: <Wallet />,
+                  label: "Fluxo de Caixa",
+                },
+              ].filter(Boolean) as {
+                href: string;
+                icon: ReactElement;
+                label: string;
+              }[]}
+            />
+          )}
+
+          {(hasPageAccess("config-acessos") ||
+            hasPageAccess("config-perfil") ||
+            hasPageAccess("config-financeiro") ||
+            hasPageAccess("config-notificacoes")) && (
+            <NavSection
+              id="configuracoes"
+              icon={<Settings />}
+              label="Configurações"
+              collapsed={collapsed}
+              isOpen={openSections.configuracoes}
+              onToggle={() => toggleSection("configuracoes")}
+              pathname={pathname}
+              accentColor="text-sky-400"
+              items={[
+                hasPageAccess("config-acessos") && {
+                  href: "/portal/config/acessos",
+                  icon: <Shield />,
+                  label: "Gestão de Acessos",
+                },
+                hasPageAccess("config-perfil") && {
+                  href: "/portal/config/perfil",
+                  icon: <User />,
+                  label: "Meu Perfil",
+                },
+                hasPageAccess("config-financeiro") && {
+                  href: "/portal/config/financeiro",
+                  icon: <Percent />,
+                  label: "Financeiro",
+                },
+                hasPageAccess("config-notificacoes") && {
+                  href: "/portal/config/notificacoes",
+                  icon: <Bell />,
+                  label: "Notificações",
+                },
+              ].filter(Boolean) as {
+                href: string;
+                icon: ReactElement;
+                label: string;
+              }[]}
+            />
+          )}
         </nav>
 
         <div className="p-4 border-t border-blue-800/50">
@@ -1324,38 +1484,152 @@ function NavLink({
   label,
   active = false,
   collapsed = false,
+  variant = "primary",
 }: {
   href: string;
   icon: ReactElement;
   label: string;
   active?: boolean;
   collapsed?: boolean;
+  variant?: "primary" | "subitem";
 }) {
+  const isPrimary = variant === "primary";
+
+  // Cores dos 4 itens principais (Dashboard + headers) — mais chamativas
+  // Subitens (dentro dos accordions) — mais discretos
+  const activeClasses = isPrimary
+    ? "bg-sky-400 text-[var(--color-geolog-blue)] shadow-md shadow-sky-500/30"
+    : "bg-white/15 text-white";
+  const inactiveClasses = isPrimary
+    ? "text-blue-100 hover:text-white hover:bg-white/10"
+    : "text-blue-300/60 hover:text-blue-100 hover:bg-white/5";
+  const iconSize = isPrimary ? 20 : 16;
+  const fontWeight = isPrimary ? "font-bold" : "font-medium";
+  const padding = isPrimary ? "py-3" : "py-2";
+  const labelColor = isPrimary
+    ? "text-blue-50 group-hover/link:text-white"
+    : "text-blue-200/50 group-hover/link:text-blue-100";
+
   return (
     <Link
       href={href}
       title={collapsed ? label : ""}
-      className={`flex items-center ${collapsed ? "justify-center" : "gap-3 px-4"} py-3 rounded-xl transition-all font-bold text-sm relative group/link ${
-        active
-          ? "bg-white text-[var(--color-geolog-blue)] shadow-md"
-          : "text-blue-200/80 hover:text-white hover:bg-white/10"
-      }`}
+      className={`flex items-center ${collapsed ? "justify-center" : "gap-3 px-4"} ${padding} rounded-xl transition-all ${fontWeight} text-sm relative group/link ${active ? activeClasses : inactiveClasses}`}
     >
       <div
         className={`${active ? "scale-110 text-inherit" : "group-hover/link:translate-x-0.5 group-hover/link:scale-110 text-blue-300 group-hover/link:text-white"} transition-all duration-200`}
       >
-        {cloneElement(icon as ReactElement<{ size?: number }>, { size: 20 })}
+        {cloneElement(icon as ReactElement<{ size?: number }>, { size: iconSize })}
       </div>
       {!collapsed && (
         <span
-          className={`whitespace-nowrap ${active ? "text-inherit" : "text-blue-100/85 group-hover/link:text-white"}`}
+          className={`whitespace-nowrap ${active ? "text-inherit" : labelColor}`}
         >
           {label}
         </span>
       )}
       {active && !collapsed && (
-        <div className="absolute right-4 w-2 h-2 bg-[var(--color-geolog-blue)] rounded-full" />
+        <div
+          className={`absolute right-4 w-2 h-2 rounded-full ${isPrimary ? "bg-[var(--color-geolog-blue)]" : "bg-white"}`}
+        />
       )}
     </Link>
+  );
+}
+
+function NavSection({
+  id,
+  icon,
+  label,
+  items,
+  collapsed,
+  isOpen,
+  onToggle,
+  pathname,
+  accentColor = "text-blue-300",
+}: {
+  id: string;
+  icon: ReactElement;
+  label: string;
+  items: { href: string; icon: ReactElement; label: string }[];
+  collapsed: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  pathname: string;
+  accentColor?: string;
+}) {
+  const hasActive = items.some((item) => pathname === item.href);
+
+  // Estado colapsado (w-20): mostra apenas o ícone da categoria.
+  // Clicar expande o sidebar e abre a seção (handled pelo onToggle do parent).
+  if (collapsed) {
+    return (
+      <button
+        onClick={onToggle}
+        title={label}
+        aria-label={label}
+        aria-expanded={isOpen}
+        className={`flex items-center justify-center w-full py-3 rounded-xl transition-all font-bold text-sm relative group/section ${
+          hasActive
+            ? "bg-white/15 text-white"
+            : "text-blue-100 hover:text-white hover:bg-white/10"
+        }`}
+      >
+        <div
+          className={`transition-all duration-200 group-hover/section:scale-110 ${hasActive ? accentColor : accentColor}`}
+        >
+          {cloneElement(icon as ReactElement<{ size?: number }>, { size: 20 })}
+        </div>
+        {hasActive && (
+          <div className="absolute right-2 w-2 h-2 bg-white rounded-full" />
+        )}
+      </button>
+    );
+  }
+
+  // Estado expandido (w-72): accordion com header clicável.
+  return (
+    <div className="space-y-1" data-section={id}>
+      <button
+        onClick={onToggle}
+        aria-label={label}
+        aria-expanded={isOpen}
+        className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-black text-xs uppercase tracking-wider relative group/section ${
+          hasActive
+            ? "text-white bg-white/10"
+            : "text-blue-100 hover:text-white hover:bg-white/10"
+        }`}
+      >
+        <div
+          className={`transition-all ${hasActive ? "text-white" : accentColor}`}
+        >
+          {cloneElement(icon as ReactElement<{ size?: number }>, { size: 18 })}
+        </div>
+        <span className="whitespace-nowrap group-hover/section:text-white">
+          {label}
+        </span>
+        <ChevronDown
+          size={16}
+          className={`ml-auto transition-transform duration-200 text-blue-300/70 group-hover/section:text-white ${
+            isOpen ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      {isOpen && (
+        <div className="space-y-1 ml-4 pl-3 border-l border-blue-800/40">
+          {items.map((item) => (
+            <NavLink
+              key={item.href}
+              href={item.href}
+              icon={item.icon}
+              label={item.label}
+              active={pathname === item.href}
+              collapsed={false}
+              variant="subitem"
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

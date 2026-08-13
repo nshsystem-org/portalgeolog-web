@@ -89,6 +89,13 @@ export function sanitizeFileName(fileName: string): string {
 }
 
 // Tipos de domínio compartilhados entre as rotas
+export type CaixaBancoRow = {
+  id?: string;
+  nome: string | null;
+  sigla: string | null;
+  cor: string | null;
+};
+
 export type CaixaContaRow = {
   id: string;
   nome: string;
@@ -97,6 +104,8 @@ export type CaixaContaRow = {
   ativa: boolean | null;
   is_default: boolean | null;
   created_at: string | null;
+  banco_id?: string | null;
+  bancos?: CaixaBancoRow | CaixaBancoRow[] | null;
 };
 
 export type CaixaLancamentoJoinRow = {
@@ -122,15 +131,26 @@ export type CaixaLancamentoJoinRow = {
   os?: { protocolo: string } | null;
 };
 
-export const mapCaixaContaRow = (row: CaixaContaRow) => ({
-  id: row.id,
-  nome: row.nome,
-  tipo: row.tipo as "caixa" | "banco" | "pix" | "carteira",
-  saldoInicial: Number(row.saldo_inicial || 0),
-  ativa: row.ativa !== false,
-  isDefault: row.is_default === true,
-  createdAt: row.created_at || "",
-});
+export const mapCaixaContaRow = (row: CaixaContaRow) => {
+  const banco = pickJoin(row.bancos);
+  return {
+    id: row.id,
+    nome: row.nome,
+    tipo: row.tipo as "caixa" | "banco" | "pix" | "carteira",
+    saldoInicial: Number(row.saldo_inicial || 0),
+    ativa: row.ativa !== false,
+    isDefault: row.is_default === true,
+    createdAt: row.created_at || "",
+    bancoId: row.banco_id ?? null,
+    banco: banco
+      ? {
+          nome: banco.nome || "",
+          sigla: banco.sigla || "",
+          cor: banco.cor || "",
+        }
+      : null,
+  };
+};
 
 // Supabase retorna joins como array; normaliza para objeto único.
 const pickJoin = <T>(value: T | T[] | null | undefined): T | null => {

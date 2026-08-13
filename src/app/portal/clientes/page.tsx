@@ -25,8 +25,12 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
+import { hasPageAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/ui/AccessDenied";
 
 export default function ClientesPage() {
+  const { profile } = useAuth();
   const {
     clientes,
     solicitantes,
@@ -78,6 +82,10 @@ export default function ClientesPage() {
     clienteId: "",
     centroCustoId: "",
   });
+
+  if (!hasPageAccess(profile, "clientes")) {
+    return <AccessDenied module="Cadastros" />;
+  }
 
   const filteredClientes = clientes.filter((c) =>
     c.nome.toLowerCase().includes(searchTerm.toLowerCase()),

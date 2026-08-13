@@ -21,6 +21,7 @@ import {
   RotateCcw,
   RefreshCw,
   HandCoins,
+  MessageCircle,
 } from "lucide-react";
 
 // Função helper para formatar mensagem de notificação com protocolo em azul
@@ -170,6 +171,18 @@ function getNotificationIcon(notif: AppNotification) {
     };
   }
 
+  // Notificações de chat (metadata.kind === "chat_message")
+  const meta = notif.metadata as Record<string, unknown> | null;
+  if (meta?.kind === "chat_message") {
+    return {
+      icon: <MessageCircle size={20} className="text-blue-500" />,
+      bgClass: "bg-blue-50",
+      gradientClass: "from-blue-500 to-indigo-600",
+      borderClass: "hover:border-blue-200",
+      ringClass: "ring-blue-100",
+    };
+  }
+
   // Mapeamento padrão baseado no tipo
   switch (notif.type) {
     case "success":
@@ -224,6 +237,7 @@ const OS_NOTIFICATION_SHORT_ACTIONS: Record<string, string> = {
   "Rota finalizada": "finalizou a rota",
   "Novo comentário no atendimento": "comentou no atendimento",
   "Novo Centro de Custo": "criou um novo Centro de Custo",
+  "Nova mensagem": "enviou uma mensagem",
 };
 
 function showNativeNotification(notif: AppNotification): void {
@@ -256,9 +270,20 @@ function showNativeNotification(notif: AppNotification): void {
 
   native.onclick = () => {
     window.focus();
-    window.dispatchEvent(
-      new CustomEvent("open-notifications-dropdown", { bubbles: true }),
-    );
+    // Notificações de chat abrem a conversa diretamente
+    const meta = notif.metadata as Record<string, unknown> | null;
+    if (meta?.kind === "chat_message" && meta.conversation_id) {
+      window.dispatchEvent(
+        new CustomEvent("open-chat-conversation", {
+          bubbles: true,
+          detail: { conversationId: meta.conversation_id },
+        }),
+      );
+    } else {
+      window.dispatchEvent(
+        new CustomEvent("open-notifications-dropdown", { bubbles: true }),
+      );
+    }
     native.close();
   };
 }
@@ -307,6 +332,18 @@ function NotificationToastItem({
 
   const handleClick = () => {
     toast.dismiss(toastId);
+
+    // Notificações de chat abrem a conversa diretamente
+    const meta = notif.metadata as Record<string, unknown> | null;
+    if (meta?.kind === "chat_message" && meta.conversation_id) {
+      window.dispatchEvent(
+        new CustomEvent("open-chat-conversation", {
+          bubbles: true,
+          detail: { conversationId: meta.conversation_id },
+        }),
+      );
+      return;
+    }
 
     // Extrair ID da OS da mensagem se existir
     const osIdMatch = notif.message.match(/\[OS_ID:([a-f0-9-]+)\]/);
@@ -595,6 +632,22 @@ export function useNotifications(options?: {
             // Alertas de pendências (cron 2h) abrem modal bloqueante em vez
             // do toast padrão. O callback é registrado via options.onPendenciaAlert.
             if (maybeHandlePendenciaAlert(notif)) return;
+
+            // Notificações de chat: suprime toast + desktop se o usuário
+            // já estiver com a conversa aberta no ChatWidget (a mensagem
+            // aparece em tempo real via o listener do useChat).
+            const meta = notif.metadata as Record<string, unknown> | null;
+            if (
+              meta?.kind === "chat_message" &&
+              meta.conversation_id &&
+              typeof window !== "undefined" &&
+              window.__activeChatConversationId === meta.conversation_id
+            ) {
+              // Marca como lida silenciosamente — o useChat já atualizou
+              // last_read_at ao receber a mensagem via Realtime.
+              return;
+            }
+
             showNotificationToast(notif);
             showNativeNotification(notif);
           }

@@ -186,6 +186,15 @@ export default function GeologDateInput({
     }
   };
 
+  // Evita conflito de font-size: "text-sm"/"text-base" (padrão) e um
+  // tamanho customizado em inputClassName têm a mesma especificidade CSS,
+  // então qual vence depende da ordem de geração do Tailwind, não da ordem
+  // no atributo class — resultando em comportamento inconsistente. Omite
+  // o tamanho padrão quando o chamador já define um.
+  const hasCustomFontSize = /\btext-(\[|xs\b|sm\b|base\b|lg\b|xl\b|\d)/.test(
+    inputClassName,
+  );
+
   return (
     <div className={`group ${compact ? "" : "space-y-2"} ${className}`}>
       {!compact && (
@@ -209,8 +218,8 @@ export default function GeologDateInput({
           aria-label={label}
           className={
             compact
-              ? `w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 pr-9 text-sm font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 ${inputClassName}`
-              : `w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-base font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 ${inputClassName}`
+              ? `w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 pr-9 ${hasCustomFontSize ? "" : "text-sm"} font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 ${inputClassName}`
+              : `w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 ${hasCustomFontSize ? "" : "text-base"} font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 ${inputClassName}`
           }
         />
 

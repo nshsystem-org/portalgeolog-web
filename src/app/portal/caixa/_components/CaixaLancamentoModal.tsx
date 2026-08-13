@@ -8,6 +8,7 @@ import {
   Paperclip,
   RotateCcw,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 import { useMemo, useState, type ReactElement } from "react";
@@ -22,7 +23,6 @@ import {
   CATEGORIAS_ENTRADA,
   CATEGORIAS_SAIDA,
   FORMAS_PAGAMENTO,
-  formatCurrency,
   getBrazilDate,
   normalizeToInputDate,
   type CaixaConta,
@@ -125,7 +125,6 @@ function CaixaLancamentoForm({
     }
   };
 
-  const contaOptions = contasAtivas.map((c) => ({ id: c.id, nome: c.nome }));
   const categoriaOptions =
     tipo === "entrada"
       ? CATEGORIAS_ENTRADA.map((c) => ({ id: c.value, nome: c.label }))
@@ -264,31 +263,26 @@ function CaixaLancamentoForm({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {/* Valor */}
+        <div className="grid grid-cols-1 sm:grid-cols-[1.1fr_0.9fr_1.5fr] gap-5">
+          {/* Valor — mesmo estilo do campo Conta (OS) */}
           <div className="space-y-2">
-            <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 flex items-center justify-between">
-              <span className="flex items-center gap-1">
-                Valor <RequiredAsterisk />
-              </span>
-              {valor > 0 && (
-                <span className="text-xs font-bold text-emerald-600 normal-case tracking-normal">
-                  {formatCurrency(valor)}
-                </span>
-              )}
+            <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1 flex items-center gap-1">
+              Valor <RequiredAsterisk />
             </label>
             <GeologMoneyInput
               value={valor}
               onChange={setValor}
               compact
+              className="text-[18px]"
               placeholder="0,00"
-              inputClassName="h-12 !bg-white border-slate-200 font-black text-base rounded-2xl"
+              inputClassName="h-[58px] w-full py-3 pl-12 pr-12 text-[18px] font-bold text-emerald-600 rounded-xl border-2 border-slate-200 focus:!border-blue-500 hover:bg-white hover:border-blue-300"
+              rightIcon={<DollarSign size={20} className="text-emerald-600" />}
             />
           </div>
 
-          {/* Data */}
+          {/* Data — mesmo estilo do campo Conta (OS) */}
           <div className="space-y-2">
-            <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+            <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1 flex items-center gap-1">
               Data <RequiredAsterisk />
             </label>
             <GeologDateInput
@@ -297,25 +291,49 @@ function CaixaLancamentoForm({
               onChange={setData}
               compact
               placeholder="DD/MM/AAAA"
-              inputClassName="h-12 !bg-white border-slate-200 rounded-2xl"
+              inputClassName="h-[58px] w-full px-5 py-3 pr-12 text-[18px] font-bold text-slate-900 rounded-xl border-2 border-slate-200 focus:!border-blue-500 hover:bg-white hover:border-blue-300"
+              className="w-full"
             />
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {/* Conta */}
+          {/* Conta — mesmo estilo do "Conta Recebimento" da página OS */}
           <GeologSearchableSelect
             label="Conta"
             required
-            options={contaOptions}
+            options={contasAtivas.map((c) => ({
+              id: c.id,
+              nome: c.nome,
+              sublabel:
+                c.banco?.nome ??
+                (c.tipo === "caixa"
+                  ? "Caixa"
+                  : c.tipo === "banco"
+                    ? "Banco"
+                    : c.tipo === "pix"
+                      ? "Pix"
+                      : "Carteira"),
+              isFavorite: c.isDefault,
+              icon: c.banco ? (
+                <span
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black uppercase"
+                  style={{ backgroundColor: c.banco.cor }}
+                >
+                  {c.banco.sigla}
+                </span>
+              ) : undefined,
+            }))}
             value={contaId}
             onChange={setContaId}
             placeholder="Selecione a conta"
-            compact
             disableSearch
             hideTriggerAvatar
-            triggerClassName="h-12 !bg-white border-slate-200 rounded-xl"
+            variant="form"
+            triggerClassName="h-[58px] py-3 text-[18px]"
+            className="w-full min-w-0"
           />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           {/* Categoria */}
           <GeologSearchableSelect
             label="Categoria"
@@ -324,10 +342,10 @@ function CaixaLancamentoForm({
             value={categoria}
             onChange={setCategoria}
             placeholder="Selecione a categoria"
-            compact
             disableSearch
             hideTriggerAvatar
-            triggerClassName="h-12 !bg-white border-slate-200 rounded-xl"
+            variant="form"
+            triggerClassName="h-[58px] py-3 text-[18px]"
           />
           {/* Forma de Pagamento */}
           <GeologSearchableSelect
@@ -337,16 +355,16 @@ function CaixaLancamentoForm({
             value={formaPagamento}
             onChange={(v) => setFormaPagamento(v as CaixaFormaPagamento)}
             placeholder="Selecione a forma"
-            compact
             disableSearch
             hideTriggerAvatar
-            triggerClassName="h-12 !bg-white border-slate-200 rounded-xl"
+            variant="form"
+            triggerClassName="h-[58px] py-3 text-[18px]"
           />
         </div>
       </div>
 
       {/* Card 2: Detalhamento e Vínculos */}
-      <div className="bg-slate-50/60 border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm">
+      <div className="bg-slate-50/60 border border-slate-200/80 rounded-2xl p-5 shadow-sm">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-200/60 text-slate-700">
           <FileText size={16} className="text-slate-400" />
           <span className="text-xs font-black uppercase tracking-wider text-slate-500">
@@ -355,8 +373,8 @@ function CaixaLancamentoForm({
         </div>
 
         {/* Descrição */}
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+        <div className="mt-4 space-y-1.5">
+          <label className="text-sm font-bold text-slate-800 uppercase tracking-tight ml-1">
             Descrição
           </label>
           <textarea
@@ -364,33 +382,49 @@ function CaixaLancamentoForm({
             onChange={(e) => setDescricao(e.target.value)}
             placeholder="Descrição ou observações opcionais..."
             rows={2}
-            className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-800 shadow-xs outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+            className="w-full resize-none rounded-xl border-2 border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[18px] font-bold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
           />
         </div>
 
         {/* Vínculos */}
-        <div className="space-y-1.5">
-          <span className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 block">
-            Vínculos com Entidades (opcional)
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="mt-5 space-y-4">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-200/60">
+            <Users size={16} className="text-slate-400" />
+            <span className="text-xs font-black uppercase tracking-wider text-slate-500">
+              Vínculos com Entidades (opcional)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <GeologSearchableSelect
               label="Cliente"
               options={clienteOptions}
               value={clienteId}
               onChange={setClienteId}
               placeholder="Nenhum"
-              compact
-              triggerClassName="h-11 bg-white border-slate-200 rounded-xl"
+              variant="form"
+              triggerClassName="h-[58px] py-3 text-[18px]"
             />
+            <GeologSearchableSelect
+              label="Fornecedor"
+              options={[]}
+              value=""
+              onChange={() => {}}
+              placeholder="Em breve"
+              disabled
+              variant="form"
+              triggerClassName="h-[58px] py-3 text-[18px]"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <GeologSearchableSelect
               label="Parceiro"
               options={parceiroOptions}
               value={parceiroId}
               onChange={setParceiroId}
               placeholder="Nenhum"
-              compact
-              triggerClassName="h-11 bg-white border-slate-200 rounded-xl"
+              variant="form"
+              triggerClassName="h-[58px] py-3 text-[18px]"
             />
             <GeologSearchableSelect
               label="Motorista"
@@ -398,8 +432,8 @@ function CaixaLancamentoForm({
               value={driverId}
               onChange={setDriverId}
               placeholder="Nenhum"
-              compact
-              triggerClassName="h-11 bg-white border-slate-200 rounded-xl"
+              variant="form"
+              triggerClassName="h-[58px] py-3 text-[18px]"
             />
           </div>
         </div>

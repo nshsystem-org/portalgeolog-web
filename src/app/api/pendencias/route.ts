@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { fromZonedTime } from "date-fns-tz";
 
 export const runtime = "nodejs";
@@ -154,8 +156,33 @@ function checkAtrasada(
 
 export async function GET(request: Request): Promise<NextResponse> {
   try {
+    // Verificar autenticação
+    const cookieStore = await cookies();
+    const authClient = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll: () => cookieStore.getAll(),
+          setAll: () => {},
+        },
+      },
+    );
+
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser();
+
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: "Não autenticado" },
+        { status: 401 },
+      );
+    }
+
     const url = new URL(request.url);
-    const userId = url.searchParams.get("user_id");
+    const userId = url.searchParams.get("user_id") ?? user.id;
 
     const supabase = getAdminClient();
     const tz = getTimezone();

@@ -11,6 +11,8 @@ import React, {
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/context/AuthContext";
+import { hasPageAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/ui/AccessDenied";
 import { replaceOperationalCyclesForOS } from "@/lib/operational-cycles-db";
 import StandardModal from "@/components/StandardModal";
 import { FormErrorMessage } from "@/components/ui/FormErrorMessage";
@@ -610,7 +612,7 @@ export default function OSOperationalPage() {
     heavyLoading,
   } = useData();
   const supabase = createClient();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, profile } = useAuth();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
   // Sinaliza que o modal foi aberto via pendência "sem_valor" e deve rolar
@@ -5634,6 +5636,10 @@ export default function OSOperationalPage() {
   const hasActiveAdvancedFilters = useMemo(() => {
     return Object.values(advancedFilters).some((v) => v !== "");
   }, [advancedFilters]);
+
+  if (!hasPageAccess(profile, "os")) {
+    return <AccessDenied module="Operacional" />;
+  }
 
   const tableItems = osTable.items;
   const tableTotalCount = osTable.totalCount;
