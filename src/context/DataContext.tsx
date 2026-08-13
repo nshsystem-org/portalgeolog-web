@@ -179,7 +179,6 @@ export interface Passageiro {
   id: string;
   nomeCompleto: string;
   celular: string;
-  enderecos: PassageiroEndereco[];
 }
 
 export interface Vehicle {
@@ -195,21 +194,9 @@ export interface Vehicle {
   created_at: string;
 }
 
-export interface PassageiroEndereco {
-  id: string;
-  rotulo: string;
-  enderecoCompleto: string;
-  referencia?: string;
-}
-
 export interface NovoPassageiroInput {
   nomeCompleto: string;
   celular: string;
-  enderecos: {
-    rotulo?: string;
-    enderecoCompleto: string;
-    referencia?: string;
-  }[];
 }
 
 export interface Driver {

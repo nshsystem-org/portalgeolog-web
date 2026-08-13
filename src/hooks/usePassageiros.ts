@@ -50,13 +50,6 @@ export function usePassageiros() {
           void loadPassageiros();
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "passageiro_enderecos" },
-        () => {
-          void loadPassageiros();
-        },
-      )
       .subscribe();
 
     return () => {

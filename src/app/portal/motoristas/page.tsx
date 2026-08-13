@@ -1961,8 +1961,7 @@ export default function MotoristasPage() {
           maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-12"
           footer={
-            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
-              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
               <div className="flex items-center gap-5">
                 <button
                   type="button"
@@ -2609,8 +2608,7 @@ export default function MotoristasPage() {
           maxWidthClassName="max-w-7xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-12"
           footer={
-            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
-              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
               <div className="flex items-center gap-5">
                 <button
                   type="button"

@@ -26,13 +26,6 @@ interface PageProps {
   params: { token: string };
 }
 
-interface PassengerAddressRow {
-  id: string;
-  rotulo: string;
-  endereco_completo: string;
-  referencia?: string | null;
-}
-
 interface WaypointRow {
   id: string;
   label: string;
@@ -197,7 +190,6 @@ export default async function PassengerShortLinkPage({
   let vehicleLabel = "Não informado";
   let vehiclePlate = "Não informado";
   let passengerName = "Passageiro";
-  let passengerAddresses: PassengerAddressRow[] = [];
   let waypoints: WaypointRow[] = [];
 
   if (os.motorista) {
@@ -242,22 +234,12 @@ export default async function PassengerShortLinkPage({
   if (confirmation.passageiro_id) {
     const { data: passengerData } = await supabase
       .from("passageiros")
-      .select(
-        "id, nome_completo, passageiro_enderecos(id, rotulo, endereco_completo, referencia)",
-      )
+      .select("id, nome_completo")
       .eq("id", confirmation.passageiro_id)
       .maybeSingle();
 
     if (passengerData) {
       passengerName = passengerData.nome_completo || passengerName;
-      passengerAddresses = (
-        (passengerData.passageiro_enderecos || []) as PassengerAddressRow[]
-      ).map((address) => ({
-        id: address.id,
-        rotulo: address.rotulo,
-        endereco_completo: address.endereco_completo,
-        referencia: address.referencia ?? null,
-      }));
     }
   }
 
@@ -296,7 +278,6 @@ export default async function PassengerShortLinkPage({
     .sort((a, b) => a.firstPosition - b.firstPosition);
   const filteredItineraryGroups =
     passengerItineraryGroups.length > 0 ? [passengerItineraryGroups[0]] : [];
-  const passengerPrimaryAddress = passengerAddresses[0];
   const osProtocol = os.protocolo || os.os_number || "Viagem";
 
   return (
@@ -426,48 +407,9 @@ export default async function PassengerShortLinkPage({
                   </p>
                 </div>
 
-                {passengerPrimaryAddress ? (
-                  <div className="space-y-1 rounded-2xl bg-white border border-slate-200 p-4">
-                    <p className="text-sm font-black text-slate-800">
-                      {passengerPrimaryAddress.rotulo}
-                    </p>
-                    <p className="text-sm font-medium text-slate-600">
-                      {passengerPrimaryAddress.endereco_completo}
-                    </p>
-                    {passengerPrimaryAddress.referencia && (
-                      <p className="text-xs font-semibold text-slate-400">
-                        Referência: {passengerPrimaryAddress.referencia}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm font-semibold text-slate-500">
-                    Endereço não informado.
-                  </p>
-                )}
-
-                {passengerAddresses.length > 1 && (
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                      Outros endereços cadastrados
-                    </p>
-                    <div className="space-y-2">
-                      {passengerAddresses.slice(1).map((address) => (
-                        <div
-                          key={address.id}
-                          className="rounded-xl border border-slate-200 bg-white p-3"
-                        >
-                          <p className="text-sm font-bold text-slate-800">
-                            {address.rotulo}
-                          </p>
-                          <p className="text-sm font-medium text-slate-600">
-                            {address.endereco_completo}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <p className="text-sm font-semibold text-slate-500">
+                  Consulte os detalhes do trajeto abaixo.
+                </p>
               </div>
             </div>
 

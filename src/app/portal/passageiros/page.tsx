@@ -7,17 +7,9 @@ import {
   Edit,
   Eye,
   Archive,
-  X,
   Phone,
-  MapPin,
-  Layers,
-  PlusCircle,
 } from "lucide-react";
-import {
-  useData,
-  type Passageiro,
-  type PassageiroEndereco,
-} from "@/context/DataContext";
+import { useData, type Passageiro } from "@/context/DataContext";
 import StandardModal from "@/components/StandardModal";
 import { DataTable } from "@/components/ui/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -32,19 +24,11 @@ import { formatBrazilPhone, stripBrazilCountryCode } from "@/lib/phone";
 interface NewPassengerForm {
   nomeCompleto: string;
   celular: string;
-  enderecos: Array<Omit<PassageiroEndereco, "id">>;
 }
-
-const initialEndereco = {
-  rotulo: "RESIDENCIAL",
-  enderecoCompleto: "",
-  referencia: "",
-};
 
 const initialForm: NewPassengerForm = {
   nomeCompleto: "",
   celular: "",
-  enderecos: [{ ...initialEndereco }],
 };
 
 export default function PassageirosPage() {
@@ -59,42 +43,6 @@ export default function PassageirosPage() {
   const [formData, setFormData] = useState<NewPassengerForm>(initialForm);
   const [isEstrangeiro, setIsEstrangeiro] = useState(false);
   const passengerTable = useServerPaginatedTable(fetchPassageirosPage, 10);
-
-  const handleAddEndereco = () => {
-    setFormData((prev) => ({
-      ...prev,
-      enderecos: [
-        ...prev.enderecos,
-        { ...initialEndereco, rotulo: `Endereço ${prev.enderecos.length + 1}` },
-      ],
-    }));
-  };
-
-  const handleRemoveEndereco = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      enderecos: prev.enderecos.filter((_, idx) => idx !== index),
-    }));
-  };
-
-  const handleEnderecoChange = (
-    index: number,
-    field: keyof Omit<PassageiroEndereco, "id">,
-    value: string,
-  ) => {
-    let formattedValue = value;
-
-    if (field === "rotulo") {
-      formattedValue = formatUppercase(value);
-    }
-
-    setFormData((prev) => ({
-      ...prev,
-      enderecos: prev.enderecos.map((endereco, idx) =>
-        idx === index ? { ...endereco, [field]: formattedValue } : endereco,
-      ),
-    }));
-  };
 
   const formatPhone = (value: string) => {
     if (isEstrangeiro) {
@@ -122,18 +70,6 @@ export default function PassageirosPage() {
       await addPassageiro({
         nomeCompleto: formData.nomeCompleto.trim().toUpperCase(),
         celular: formatPhone(formData.celular),
-        enderecos: formData.enderecos
-          .filter(
-            (endereco) =>
-              endereco.rotulo.trim() ||
-              endereco.enderecoCompleto.trim() ||
-              endereco.referencia?.trim(),
-          )
-          .map((endereco) => ({
-            rotulo: endereco.rotulo.trim() || "Principal",
-            enderecoCompleto: endereco.enderecoCompleto.trim(),
-            referencia: endereco.referencia?.trim() || "",
-          })),
       });
 
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -166,18 +102,6 @@ export default function PassageirosPage() {
       await updatePassageiro(selectedPassenger.id, {
         nomeCompleto: formData.nomeCompleto.trim().toUpperCase(),
         celular: formatPhone(formData.celular),
-        enderecos: formData.enderecos
-          .filter(
-            (endereco) =>
-              endereco.rotulo.trim() ||
-              endereco.enderecoCompleto.trim() ||
-              endereco.referencia?.trim(),
-          )
-          .map((endereco) => ({
-            rotulo: endereco.rotulo.trim() || "Principal",
-            enderecoCompleto: endereco.enderecoCompleto.trim(),
-            referencia: endereco.referencia?.trim() || "",
-          })),
       });
 
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -201,7 +125,7 @@ export default function PassageirosPage() {
   };
 
   const handleInputChange = (
-    field: keyof Omit<NewPassengerForm, "enderecos">,
+    field: keyof NewPassengerForm,
     value: string,
   ) => {
     let formattedValue = value;
@@ -279,37 +203,6 @@ export default function PassageirosPage() {
             },
           },
           {
-            key: "enderecos",
-            title: "Endereços",
-            render: (value: unknown, item: Passageiro) => {
-              void value;
-
-              return (
-                <div className="space-y-2">
-                  {item.enderecos.slice(0, 2).map((endereco) => (
-                    <div
-                      key={endereco.id}
-                      className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
-                    >
-                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-                        <MapPin size={12} className="text-blue-500" />
-                        {endereco.rotulo}
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-slate-700 leading-snug">
-                        {endereco.enderecoCompleto}
-                      </p>
-                    </div>
-                  ))}
-                  {item.enderecos.length > 2 && (
-                    <div className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.2em] text-blue-600">
-                      <Layers size={12} />+{item.enderecos.length - 2} endereços
-                    </div>
-                  )}
-                </div>
-              );
-            },
-          },
-          {
             key: "acoes",
             title: "Ações",
             align: "center" as const,
@@ -337,11 +230,6 @@ export default function PassageirosPage() {
                 setFormData({
                   nomeCompleto: item.nomeCompleto,
                   celular: formatPhone(item.celular),
-                  enderecos: item.enderecos.map((e) => ({
-                    rotulo: e.rotulo,
-                    enderecoCompleto: e.enderecoCompleto,
-                    referencia: e.referencia || "",
-                  })),
                 });
                 setIsEditModalOpen(true);
               };
@@ -393,8 +281,7 @@ export default function PassageirosPage() {
           maxWidthClassName="max-w-5xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-20"
           footer={
-            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
-              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
               <div className="flex items-center gap-5">
                 <button
                   type="button"
@@ -495,118 +382,6 @@ export default function PassageirosPage() {
               </div>
             </section>
 
-            <section className="space-y-6">
-              <div
-                className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-slate-100 pb-4"
-                style={{ paddingBottom: "1.25rem" }}
-              >
-                <div>
-                  <h3
-                    className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
-                    style={{ lineHeight: "1.3" }}
-                  >
-                    <MapPin size={20} className="text-blue-600" /> Endereços
-                    monitorados
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-2">
-                    Registre bases fixas, hotéis, residências e referências
-                    operacionais (opcional).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddEndereco}
-                  className="flex items-center gap-3 px-4 py-3 bg-blue-100 text-blue-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm"
-                >
-                  <PlusCircle size={14} /> Adicionar endereço
-                </button>
-              </div>
-
-              <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="hidden md:grid grid-cols-[1.2fr_2fr_1fr_auto] gap-4 bg-slate-50/80 border-b border-slate-200 px-6 py-4 text-[12px] font-black uppercase tracking-widest text-slate-600">
-                  <span>Rótulo</span>
-                  <span>Endereço completo</span>
-                  <span>Referência</span>
-                  <span className="text-right">Ações</span>
-                </div>
-                <div className="divide-y divide-slate-100 max-h-[40vh] overflow-y-auto custom-scrollbar">
-                  {formData.enderecos.map((endereco, index) => (
-                    <div
-                      key={index}
-                      className="grid grid-cols-1 md:grid-cols-[1.2fr_2fr_1fr_auto] gap-4 items-start px-6 py-5"
-                    >
-                      <div className="space-y-2 md:space-y-1">
-                        <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                          Rótulo
-                        </label>
-                        <input
-                          placeholder="Residencial, Base, Hotel..."
-                          value={endereco.rotulo}
-                          onChange={(event) =>
-                            handleEnderecoChange(
-                              index,
-                              "rotulo",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                        />
-                      </div>
-                      <div className="space-y-2 md:space-y-1">
-                        <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                          Endereço completo
-                        </label>
-                        <input
-                          placeholder="Rua, número, bairro, cidade - UF"
-                          value={endereco.enderecoCompleto}
-                          onChange={(event) =>
-                            handleEnderecoChange(
-                              index,
-                              "enderecoCompleto",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                        />
-                      </div>
-                      <div className="space-y-2 md:space-y-1">
-                        <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                          Referência
-                        </label>
-                        <input
-                          placeholder="Portão azul, bloco B..."
-                          value={endereco.referencia || ""}
-                          onChange={(event) =>
-                            handleEnderecoChange(
-                              index,
-                              "referencia",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                        />
-                      </div>
-                      <div className="flex md:pt-1 justify-end">
-                        {formData.enderecos.length > 1 ? (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveEndereco(index)}
-                            className="inline-flex items-center justify-center p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                            aria-label="Remover endereço"
-                          >
-                            <X size={16} />
-                          </button>
-                        ) : (
-                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 pt-3">
-                            Principal
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
           </form>
         </StandardModal>
       )}
@@ -648,36 +423,6 @@ export default function PassageirosPage() {
                 </div>
               </div>
             </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                <MapPin size={24} className="text-blue-600" />
-                <h3 className="text-lg font-black text-slate-900 uppercase tracking-[0.1em]">
-                  Endereços
-                </h3>
-              </div>
-              <div className="space-y-3">
-                {selectedPassenger.enderecos.map((endereco) => (
-                  <div
-                    key={endereco.id}
-                    className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                  >
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
-                      <MapPin size={14} className="text-blue-500" />
-                      {endereco.rotulo}
-                    </div>
-                    <p className="text-base font-bold text-slate-700">
-                      {endereco.enderecoCompleto}
-                    </p>
-                    {endereco.referencia && (
-                      <p className="text-sm font-medium text-slate-500 mt-1">
-                        Referência: {endereco.referencia}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </StandardModal>
       )}
@@ -694,8 +439,7 @@ export default function PassageirosPage() {
           maxWidthClassName="max-w-5xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-20"
           footer={
-            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-5 shrink-0">
-              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm" />
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
               <div className="flex items-center gap-5">
                 <button
                   type="button"
@@ -791,114 +535,6 @@ export default function PassageirosPage() {
                       className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                     />
                   </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="space-y-6">
-              <div
-                className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-slate-100 pb-4"
-                style={{ paddingBottom: "1.25rem" }}
-              >
-                <div>
-                  <h3
-                    className="text-[17px] font-black text-slate-900 uppercase tracking-[0.1em] flex items-center gap-3"
-                    style={{ lineHeight: "1.3" }}
-                  >
-                    <MapPin size={20} className="text-blue-600" /> Endereços
-                    monitorados
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium mt-1">
-                    Adicione endereços quando necessário (opcional)
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddEndereco}
-                  className="flex items-center gap-3 px-4 py-3 bg-blue-100 text-blue-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm"
-                >
-                  <PlusCircle size={14} /> Adicionar endereço
-                </button>
-              </div>
-
-              <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="hidden md:grid grid-cols-[1.2fr_2fr_1fr_auto] gap-4 bg-slate-50/80 border-b border-slate-200 px-6 py-4 text-[12px] font-black uppercase tracking-widest text-slate-600">
-                  <span>Rótulo</span>
-                  <span>Endereço completo</span>
-                  <span>Referência</span>
-                  <span className="text-right">Ações</span>
-                </div>
-                <div className="divide-y divide-slate-100 max-h-[40vh] overflow-y-auto custom-scrollbar">
-                  {formData.enderecos.map((endereco, index) => (
-                    <div
-                      key={index}
-                      className="grid grid-cols-1 md:grid-cols-[1.2fr_2fr_1fr_auto] gap-4 items-start px-6 py-5"
-                    >
-                      <div className="space-y-2 md:space-y-1">
-                        <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                          Rótulo
-                        </label>
-                        <input
-                          placeholder="Residencial, Base, Hotel..."
-                          value={endereco.rotulo}
-                          onChange={(event) =>
-                            handleEnderecoChange(
-                              index,
-                              "rotulo",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                        />
-                      </div>
-                      <div className="space-y-2 md:space-y-1">
-                        <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                          Endereço completo
-                        </label>
-                        <input
-                          placeholder="Rua, número, bairro, cidade - UF"
-                          value={endereco.enderecoCompleto}
-                          onChange={(event) =>
-                            handleEnderecoChange(
-                              index,
-                              "enderecoCompleto",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                        />
-                      </div>
-                      <div className="space-y-2 md:space-y-1">
-                        <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                          Referência
-                        </label>
-                        <input
-                          placeholder="Portão azul, bloco B..."
-                          value={endereco.referencia || ""}
-                          onChange={(event) =>
-                            handleEnderecoChange(
-                              index,
-                              "referencia",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                        />
-                      </div>
-                      <div className="flex md:pt-1 justify-end">
-                        {formData.enderecos.length > 1 ? (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveEndereco(index)}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Remover endereço"
-                          >
-                            <X size={18} />
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </div>
             </section>

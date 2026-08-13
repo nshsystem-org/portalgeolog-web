@@ -1,5 +1,5 @@
 ---
-description: "Workflow de migrations Supabase e baseline sincronizado em 20260812"
+description: "Workflow de migrations Supabase e baseline sincronizado em 20260813"
 trigger: always_on
 ---
 
@@ -15,10 +15,10 @@ trigger: always_on
 - Produção: https://portalgeolog.com.br
 - GitHub: https://github.com/nshsystem-org/portalgeolog-web
 
-### Baseline atual (20260812)
+### Baseline atual (20260813)
 
-- Migrations locais ativas: 111 arquivos em `supabase/migrations/`
-- Registros remotos em `supabase_migrations.schema_migrations`: 111
+- Migrations locais ativas: 114 arquivos em `supabase/migrations/`
+- Registros remotos em `supabase_migrations.schema_migrations`: 114
 - Só-locais: 0
 - Só-remotas: 0
 - Snapshot do schema público remoto salvo em:
@@ -27,16 +27,21 @@ trigger: always_on
   `supabase/migrations_backup_pre_baseline_20260812/`
 - Backup histórico anterior em:
   `supabase/migrations_backup_pendentes/`
+- Migrations pós-baseline (20260812):
+  - `20260812215654_drop_passageiro_email_genero_notificar.sql`
+  - `20260812223957_drop_passageiro_cpf.sql`
+  - `20260813022809_drop_passageiro_enderecos.sql`
+- Registro fantasma removido em 20260813: `20260812162424` (duplicata de `20260518000003_fix_passageiro_atomic_nulls` causada por re-aplicação antiga do CLI)
 
-### Contagem de produção (validada pós-reconciliação)
+### Contagem de produção (validada pós-reconciliação 20260813)
 
-- 55 tabelas públicas
+- 54 tabelas públicas (era 55 — `passageiro_enderecos` removida)
 - 108 funções
 - 44 triggers
-- 127 policies
+- 126 policies
 - 22 tabelas em `supabase_realtime`
 - 4 cron jobs
-- 3.415 OS, 24 clientes, 204 motoristas, 20 bancos, 1 conta de caixa
+- 3.450 OS, 26 clientes, 208 motoristas, 20 bancos, 1 conta de caixa, 1.404 passageiros, 181 veículos
 
 ### Docker indisponível
 
@@ -48,6 +53,22 @@ A CLI do Supabase (`supabase db dump`, `supabase db pull`) depende do Docker, qu
 - `supabase migration new <nome>` (criar arquivo local)
 
 Para inspecionar o schema remoto, usar `execute_sql` do `supabase-mcp-server` em vez de `pg_dump`.
+
+### Conexão psql direta (alternativa quando MCP indisponível)
+
+O MCP às vezes fica indisponível. Nesses casos, `psql` funciona pelo pooler `aws-1` (não `aws-0`):
+
+```bash
+PGPASSWORD="$SUPABASE_DB_PASSWORD" psql \
+  "host=aws-1-us-east-2.pooler.supabase.com port=5432 \
+   user=postgres.hzpgfapvjwqtjclriisz dbname=postgres sslmode=require" \
+  -c "SELECT 1;"
+```
+
+- `aws-0` retorna `ENOTFOUND tenant/user not found`
+- `aws-1` na porta 5432 (session mode) funciona
+- Porta 6543 (transaction mode) também rejeita o tenant
+- Usar apenas para validações pontuais; migrations devem preferir o MCP `apply_migration` quando disponível
 
 ### Workflow obrigatório para novas migrations
 

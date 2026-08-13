@@ -6,7 +6,6 @@ import type {
   CentroCusto,
   Solicitante,
   Passageiro,
-  PassageiroEndereco,
   OrderService,
   NovoPassageiroInput,
   Waypoint,
@@ -431,8 +430,7 @@ const normalizePagination = (page = 1, pageSize = 10) => {
   };
 };
 
-const PASSAGEIRO_SELECT_COLUMNS =
-  "id, nome_completo, celular, passageiro_enderecos(id, rotulo, endereco_completo, referencia)";
+const PASSAGEIRO_SELECT_COLUMNS = "id, nome_completo, celular";
 const PASSAGEIRO_PAGE_SELECT_COLUMNS = "id, nome_completo, celular";
 const DRIVER_SELECT_COLUMNS =
   "id, name, cpf, cnh, phone, status, created_at, vinculo_tipo, parceiro_id, avatar_url, driver_vehicles(id, vehicle_id, vehicle:veiculos(id, placa, modelo, marca, tipo)), driver_documents(id)";
@@ -499,13 +497,6 @@ type PassageiroRow = {
   id: string;
   nome_completo: string;
   celular: string | null;
-};
-type PassageiroEnderecoRow = {
-  id: string;
-  passageiro_id: string;
-  rotulo: string;
-  endereco_completo: string;
-  referencia: string | null;
 };
 type OSRow = {
   id: string;
@@ -981,14 +972,6 @@ export async function fetchPassageiros(): Promise<Passageiro[]> {
       id: String(p.id),
       nomeCompleto: String(p.nome_completo),
       celular: p.celular ? String(p.celular) : "",
-      enderecos: (
-        (p.passageiro_enderecos || []) as Record<string, unknown>[]
-      ).map((e) => ({
-        id: String(e.id),
-        rotulo: String(e.rotulo),
-        enderecoCompleto: String(e.endereco_completo),
-        referencia: e.referencia ? String(e.referencia) : undefined,
-      })),
     }));
   });
 }
@@ -1009,38 +992,10 @@ export async function insertPassageiro(
 
   if (passError) throw passError;
 
-  const enderecos: PassageiroEndereco[] = [];
-
-  if (input.enderecos.length > 0) {
-    const { data: endRows, error: endError } = await getSupabase()
-      .from("passageiro_enderecos")
-      .insert(
-        input.enderecos.map((e) => ({
-          passageiro_id: passRow.id,
-          rotulo: trimText(e.rotulo) || "Principal",
-          endereco_completo: trimText(e.enderecoCompleto),
-          referencia: trimText(e.referencia) || null,
-        })),
-      )
-      .select("id, rotulo, endereco_completo, referencia");
-
-    if (!endError && endRows) {
-      (endRows as PassageiroEnderecoRow[]).forEach((e) =>
-        enderecos.push({
-          id: e.id,
-          rotulo: e.rotulo,
-          enderecoCompleto: e.endereco_completo,
-          referencia: e.referencia || undefined,
-        }),
-      );
-    }
-  }
-
   return {
     id: passRow.id,
     nomeCompleto: passRow.nome_completo,
     celular: passRow.celular || "",
-    enderecos,
   };
 }
 
@@ -1050,25 +1005,17 @@ export async function updatePassageiroInDB(
 ): Promise<Passageiro> {
   const celular = normalizeBrazilPhone(input.celular);
 
-  const enderecosPayload = input.enderecos.map((e) => ({
-    rotulo: trimText(e.rotulo) || "Principal",
-    endereco_completo: trimText(e.enderecoCompleto),
-    referencia: trimText(e.referencia) || null,
-  }));
-
   const { error: rpcError } = await getSupabase().rpc(
     "update_passageiro_atomic",
     {
       p_passageiro_id: id,
       p_nome_completo: upperText(input.nomeCompleto),
       p_celular: celular,
-      p_enderecos: enderecosPayload,
     },
   );
 
   if (rpcError) throw rpcError;
 
-  // Buscar dados atualizados
   const { data: passRow, error: passError } = await getSupabase()
     .from("passageiros")
     .select("id, nome_completo, celular")
@@ -1078,23 +1025,10 @@ export async function updatePassageiroInDB(
   if (passError || !passRow)
     throw passError || new Error("Passageiro não encontrado após atualização.");
 
-  const { data: endRows } = await getSupabase()
-    .from("passageiro_enderecos")
-    .select("id, rotulo, endereco_completo, referencia")
-    .eq("passageiro_id", id);
-
-  const enderecos: PassageiroEndereco[] = (endRows || []).map((e) => ({
-    id: e.id,
-    rotulo: e.rotulo,
-    enderecoCompleto: e.endereco_completo,
-    referencia: e.referencia || undefined,
-  }));
-
   return {
     id: passRow.id,
     nomeCompleto: passRow.nome_completo,
     celular: passRow.celular || "",
-    enderecos,
   };
 }
 
@@ -1134,31 +1068,12 @@ export async function fetchPassageirosPage({
     if (error) throw error;
 
     const typedPassengers = (passRaw || []) as PassageiroRow[];
-    const passengerIds = typedPassengers.map((p) => p.id);
-
-    let endRaw: PassageiroEnderecoRow[] = [];
-    if (passengerIds.length > 0) {
-      const { data: endData } = await getSupabase()
-        .from("passageiro_enderecos")
-        .select("id, passageiro_id, rotulo, endereco_completo, referencia")
-        .in("passageiro_id", passengerIds);
-
-      endRaw = (endData || []) as PassageiroEnderecoRow[];
-    }
 
     return {
       items: typedPassengers.map((p) => ({
         id: p.id,
         nomeCompleto: p.nome_completo,
         celular: p.celular || "",
-        enderecos: endRaw
-          .filter((e) => e.passageiro_id === p.id)
-          .map((e) => ({
-            id: e.id,
-            rotulo: e.rotulo,
-            enderecoCompleto: e.endereco_completo,
-            referencia: e.referencia || undefined,
-          })),
       })),
       totalCount: count ?? typedPassengers.length,
     };
@@ -1189,14 +1104,6 @@ export async function fetchPassageirosByIds(
       id: String(p.id),
       nomeCompleto: String(p.nome_completo),
       celular: p.celular ? String(p.celular) : "",
-      enderecos: (
-        (p.passageiro_enderecos || []) as Record<string, unknown>[]
-      ).map((e) => ({
-        id: String(e.id),
-        rotulo: String(e.rotulo),
-        enderecoCompleto: String(e.endereco_completo),
-        referencia: e.referencia ? String(e.referencia) : undefined,
-      })),
     }));
   });
 }

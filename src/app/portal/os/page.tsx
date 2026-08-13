@@ -3688,9 +3688,6 @@ export default function OSOperationalPage() {
   const initialQuickPassengerForm = {
     nomeCompleto: "",
     celular: "",
-    rotulo: "RESIDENCIAL",
-    referencia: "",
-    enderecoCompleto: "",
   };
   const [quickPassengerForm, setQuickPassengerForm] = useState(
     initialQuickPassengerForm,
@@ -3699,7 +3696,6 @@ export default function OSOperationalPage() {
     nomeCompleto?: string;
     celular?: string;
   }>({});
-  const [isAddressExpanded, setIsAddressExpanded] = useState(false);
   const [isEstrangeiro, setIsEstrangeiro] = useState(false);
   const driverOptions = useMemo(() => {
     const baseOptions = drivers
@@ -3882,9 +3878,6 @@ export default function OSOperationalPage() {
           waypointLabel: waypoint.label,
           nome: passengerRecord?.nomeCompleto || "Passageiro não identificado",
           celular: passengerRecord?.celular || "Não informado",
-          endereco:
-            passengerRecord?.enderecos?.[0]?.enderecoCompleto ||
-            "Não informado",
           hasPhone: Boolean(
             passengerRecord?.celular &&
             passengerRecord.celular.replace(/\D/g, "").length > 0,
@@ -4534,41 +4527,6 @@ export default function OSOperationalPage() {
     setFormData((prev) => ({ ...prev, waypoints: newWaypoints }));
   };
 
-  const getWaypointInfo = (waypointIndex: number) => {
-    const totalWaypoints = formData.waypoints.length;
-    const isFirst = waypointIndex === 0;
-    const isLast = waypointIndex === totalWaypoints - 1;
-
-    if (isFirst) {
-      return {
-        type: "ORIGEM",
-        color: "emerald",
-        bgColor: "bg-emerald-50",
-        textColor: "text-emerald-600",
-        borderColor: "border-emerald-200",
-        description: "Ponto de partida",
-      };
-    } else if (isLast) {
-      return {
-        type: "DESTINO FINAL",
-        color: "blue",
-        bgColor: "bg-blue-50",
-        textColor: "text-blue-600",
-        borderColor: "border-blue-200",
-        description: "Ponto de chegada",
-      };
-    } else {
-      return {
-        type: "PARADA",
-        color: "slate",
-        bgColor: "bg-slate-50",
-        textColor: "text-slate-600",
-        borderColor: "border-slate-200",
-        description: "Parada intermediária",
-      };
-    }
-  };
-
   const openQuickPassengerModal = (
     waypointIndex: number,
     passengerId: string,
@@ -4576,7 +4534,6 @@ export default function OSOperationalPage() {
     setQuickPassengerTarget({ waypointIndex, passengerId });
     setQuickPassengerForm(initialQuickPassengerForm);
     setQuickPassengerErrors({});
-    setIsAddressExpanded(false);
     setIsQuickPassengerModalOpen(true);
   };
 
@@ -5027,7 +4984,6 @@ export default function OSOperationalPage() {
     if (!quickPassengerTarget) return;
 
     const trimmedNome = quickPassengerForm.nomeCompleto.trim();
-    const trimmedEndereco = quickPassengerForm.enderecoCompleto.trim();
     const phoneDigits = stripBrazilCountryCode(quickPassengerForm.celular);
 
     setQuickPassengerErrors({});
@@ -5046,28 +5002,10 @@ export default function OSOperationalPage() {
       return;
     }
 
-    if (isAddressExpanded && !trimmedEndereco) {
-      toast.error(
-        "Informe o endereço completo ou recolha a seção de endereço para salvar sem endereço.",
-      );
-      return;
-    }
-
-    const enderecos = trimmedEndereco
-      ? [
-          {
-            rotulo: quickPassengerForm.rotulo.trim(),
-            referencia: quickPassengerForm.referencia.trim(),
-            enderecoCompleto: trimmedEndereco,
-          },
-        ]
-      : [];
-
     try {
       const novoPassageiro = await addPassageiro({
         nomeCompleto: trimmedNome.toUpperCase(),
         celular: normalizeBrazilPhone(quickPassengerForm.celular),
-        enderecos,
       });
 
       const newWaypoints = [...formData.waypoints];
@@ -9216,129 +9154,6 @@ export default function OSOperationalPage() {
               </div>
             </div>
 
-            <div className="relative rounded-[2rem] border-2 border-slate-200 bg-white p-6 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setIsAddressExpanded(!isAddressExpanded)}
-                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
-                title={
-                  isAddressExpanded ? "Recolher endereço" : "Expandir endereço"
-                }
-              >
-                <ChevronDown
-                  size={20}
-                  className={`transition-transform duration-200 ${isAddressExpanded ? "rotate-180" : ""}`}
-                />
-              </button>
-
-              <div className="flex items-center gap-3 mb-6">
-                <div
-                  className={`w-10 h-10 rounded-xl ${quickPassengerTarget ? getWaypointInfo(quickPassengerTarget.waypointIndex).bgColor : "bg-blue-50"} ${quickPassengerTarget ? getWaypointInfo(quickPassengerTarget.waypointIndex).textColor : "text-blue-600"} flex items-center justify-center`}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="lucide lucide-map-pin"
-                    aria-hidden="true"
-                  >
-                    <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"></path>
-                    <circle cx="12" cy="10" r="3"></circle>
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                    {isAddressExpanded
-                      ? quickPassengerTarget
-                        ? `${getWaypointInfo(quickPassengerTarget.waypointIndex).type} - Endereço`
-                        : "Endereço 1"
-                      : quickPassengerForm.enderecoCompleto ||
-                        (quickPassengerTarget
-                          ? `Endereço vinculado à ${getWaypointInfo(quickPassengerTarget.waypointIndex).type}`
-                          : "Endereço vinculado ao roteiro")}
-                  </p>
-                  <p
-                    className={`text-base font-black ${quickPassengerTarget ? getWaypointInfo(quickPassengerTarget.waypointIndex).textColor : "text-slate-800"}`}
-                  >
-                    {isAddressExpanded
-                      ? quickPassengerTarget
-                        ? getWaypointInfo(quickPassengerTarget.waypointIndex)
-                            .description
-                        : "Ponto de apoio / destino recorrente"
-                      : quickPassengerForm.enderecoCompleto ||
-                        (quickPassengerTarget
-                          ? getWaypointInfo(quickPassengerTarget.waypointIndex)
-                              .type
-                          : "Origem, Parada ou Destino Final")}
-                  </p>
-                </div>
-              </div>
-
-              {isAddressExpanded && (
-                <div className="space-y-6 animate-in slide-in-from-top-2 duration-200">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
-                        Rótulo{" "}
-                        <span className="text-rose-300 text-base">*</span>
-                      </label>
-                      <input
-                        value={quickPassengerForm.rotulo}
-                        onChange={(e) =>
-                          setQuickPassengerForm((prev) => ({
-                            ...prev,
-                            rotulo: e.target.value,
-                          }))
-                        }
-                        placeholder="RESIDENCIAL, BASE, HOTEL..."
-                        className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                        Referência
-                      </label>
-                      <input
-                        value={quickPassengerForm.referencia}
-                        onChange={(e) =>
-                          setQuickPassengerForm((prev) => ({
-                            ...prev,
-                            referencia: e.target.value,
-                          }))
-                        }
-                        placeholder="Portaria azul, torre B, etc"
-                        className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2 mt-6">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
-                      Endereço completo{" "}
-                      <span className="text-rose-300 text-base">*</span>
-                    </label>
-                    <input
-                      required
-                      value={quickPassengerForm.enderecoCompleto}
-                      onChange={(e) =>
-                        setQuickPassengerForm((prev) => ({
-                          ...prev,
-                          enderecoCompleto: e.target.value,
-                        }))
-                      }
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
-                      placeholder="Rua, número, bairro, cidade - UF"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
             <div className="flex justify-end gap-4">
               <button
                 type="button"
@@ -10740,9 +10555,6 @@ export default function OSOperationalPage() {
                             <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[20%]">
                               Contato
                             </th>
-                            <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[40%]">
-                              Endereço
-                            </th>
                             <th className="px-6 py-4 text-left text-[12px] font-black uppercase tracking-widest text-slate-600 w-[15%]">
                               Status
                             </th>
@@ -10774,17 +10586,6 @@ export default function OSOperationalPage() {
                                   />
                                   <p className="text-sm font-semibold text-slate-600">
                                     {passenger.celular}
-                                  </p>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-start gap-2 max-w-[280px]">
-                                  <MapPin
-                                    size={14}
-                                    className="text-slate-400 shrink-0 mt-0.5"
-                                  />
-                                  <p className="text-sm font-medium text-slate-600 line-clamp-2">
-                                    {passenger.endereco}
                                   </p>
                                 </div>
                               </td>
