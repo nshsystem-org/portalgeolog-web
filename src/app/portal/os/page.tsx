@@ -9082,11 +9082,11 @@ export default function OSOperationalPage() {
           title="Novo Passageiro Rápido"
           subtitle="Cadastro sintetizado direto no atendimento"
           icon={<User size={24} />}
-          maxWidthClassName="max-w-6xl"
+          maxWidthClassName="max-w-4xl"
         >
           <form onSubmit={handleQuickPassengerSubmit} className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-25 gap-6">
-              <div className="space-y-2 md:col-span-12">
+            <div className="grid grid-cols-1 md:grid-cols-10 gap-6">
+              <div className="space-y-2 md:col-span-7">
                 <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
                   Nome completo{" "}
                   <span className="text-rose-300 text-base">*</span>
@@ -9105,7 +9105,7 @@ export default function OSOperationalPage() {
                 />
                 <FormErrorMessage message={quickPassengerErrors.nomeCompleto} />
               </div>
-              <div className="space-y-2 md:col-span-13">
+              <div className="space-y-2 md:col-span-3">
                 <div className="flex justify-between items-center">
                   <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
                     Celular <RequiredAsterisk />
