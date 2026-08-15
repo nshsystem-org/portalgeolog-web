@@ -545,8 +545,17 @@ export function useNotifications(options?: {
         if (res.ok) {
           const data = (await res.json()) as AppNotification[];
           if (!isMountedRef.current) return;
+          // Notificações de chat (metadata.kind === "chat_message") não
+          // aparecem no sino/dropdown — apenas como notificação desktop.
+          // São filtradas aqui na carga inicial e também no handler do
+          // Realtime abaixo.
+          const filtered = data.filter(
+            (n) =>
+              (n.metadata as Record<string, unknown> | null)?.kind !==
+              "chat_message",
+          );
           knownIdsRef.current = new Set(data.map((n) => n.id));
-          setNotifications(data);
+          setNotifications(filtered);
 
           // No load inicial, verifica se a notificação mais recente é um
           // alerta de pendências (cron 2h). Se for, dispara o modal — caso
@@ -621,32 +630,40 @@ export function useNotifications(options?: {
         (payload: { new: Record<string, unknown> }) => {
           const notif = payload.new as unknown as AppNotification;
           const isNew = !knownIdsRef.current.has(notif.id);
+          const meta = notif.metadata as Record<string, unknown> | null;
+          const isChatMessage = meta?.kind === "chat_message";
 
-          setNotifications((prev) => {
-            if (prev.some((n) => n.id === notif.id)) return prev;
-            return [notif, ...prev];
-          });
+          // Notificações de chat NÃO entram no estado (sino/dropdown).
+          // Apenas disparam notificação desktop nativa.
+          if (!isChatMessage) {
+            setNotifications((prev) => {
+              if (prev.some((n) => n.id === notif.id)) return prev;
+              return [notif, ...prev];
+            });
+          }
 
           if (isNew) {
             knownIdsRef.current.add(notif.id);
+
+            // Notificações de chat: apenas desktop, sem toast e sem sino.
+            // Suprime até a notificação desktop se o usuário já estiver
+            // com a conversa aberta (a mensagem aparece em tempo real via
+            // o listener do useChat).
+            if (isChatMessage) {
+              if (
+                meta.conversation_id &&
+                typeof window !== "undefined" &&
+                window.__activeChatConversationId === meta.conversation_id
+              ) {
+                return;
+              }
+              showNativeNotification(notif);
+              return;
+            }
+
             // Alertas de pendências (cron 2h) abrem modal bloqueante em vez
             // do toast padrão. O callback é registrado via options.onPendenciaAlert.
             if (maybeHandlePendenciaAlert(notif)) return;
-
-            // Notificações de chat: suprime toast + desktop se o usuário
-            // já estiver com a conversa aberta no ChatWidget (a mensagem
-            // aparece em tempo real via o listener do useChat).
-            const meta = notif.metadata as Record<string, unknown> | null;
-            if (
-              meta?.kind === "chat_message" &&
-              meta.conversation_id &&
-              typeof window !== "undefined" &&
-              window.__activeChatConversationId === meta.conversation_id
-            ) {
-              // Marca como lida silenciosamente — o useChat já atualizou
-              // last_read_at ao receber a mensagem via Realtime.
-              return;
-            }
 
             showNotificationToast(notif);
             showNativeNotification(notif);
@@ -717,10 +734,16 @@ export function useNotifications(options?: {
   const isPendenciaAlert = (n: AppNotification): boolean =>
     (n.metadata as Record<string, unknown> | null)?.kind === "pendencia_alert";
 
+  const isChatMessage = (n: AppNotification): boolean =>
+    (n.metadata as Record<string, unknown> | null)?.kind === "chat_message";
+
   const systemNotifications = useMemo(
     () =>
       notifications.filter(
-        (n) => n.category !== "motorista" && !isPendenciaAlert(n),
+        (n) =>
+          n.category !== "motorista" &&
+          !isPendenciaAlert(n) &&
+          !isChatMessage(n),
       ),
     [notifications],
   );

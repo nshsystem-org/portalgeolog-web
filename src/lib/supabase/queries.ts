@@ -2877,6 +2877,43 @@ export async function checkActiveOSForDriverVehicle(
   return Boolean(data);
 }
 
+export interface BlockingOSInfo {
+  id: string;
+  protocolo: string | null;
+  status_operacional: string;
+}
+
+/**
+ * Busca OS ativas que bloqueiam a desvinculação de um veículo de um motorista.
+ * Diferente de checkActiveOSForDriverVehicle (que retorna boolean), esta retorna
+ * os dados da OS (id, protocolo, status) para exibir o botão "Ver OS".
+ */
+export async function fetchBlockingOSForDriverVehicle(
+  driverId: string,
+  vehicleId: string,
+  excludeOsId?: string | null,
+): Promise<BlockingOSInfo | null> {
+  let query = getSupabase()
+    .from("ordens_servico")
+    .select("id, protocolo, status_operacional")
+    .eq("arquivado", false)
+    .eq("driver_id", driverId)
+    .eq("veiculo_id", vehicleId)
+    .neq("status_operacional", "Finalizado")
+    .neq("status_operacional", "Cancelado")
+    .limit(1);
+
+  if (excludeOsId) {
+    query = query.neq("id", excludeOsId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data && data.length > 0)
+    ? (data[0] as unknown as BlockingOSInfo)
+    : null;
+}
+
 export async function fetchOSFinanceStats(
   filters: FinanceQueryFilters = {},
 ): Promise<{

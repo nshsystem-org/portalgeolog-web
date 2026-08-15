@@ -79,6 +79,7 @@ import {
   AlertCircle,
   ArrowUpCircle,
   GripVertical,
+  ExternalLink,
 } from "lucide-react";
 import {
   DndContext,
@@ -108,6 +109,7 @@ import {
   fetchOSLogs,
   fetchOSCalendarRange,
   checkActiveOSForDriverVehicle,
+  fetchBlockingOSForDriverVehicle,
   fetchPassageirosPage,
   fetchPassageirosByIds,
   promoteDraftToOS,
@@ -115,6 +117,10 @@ import {
   type OSLog,
   type OSPageFilters,
 } from "@/lib/supabase/queries";
+import {
+  logDriverEvent,
+  buildActorFromProfile,
+} from "@/lib/supabase/driver-logs";
 import {
   createDocagem,
   fetchDocagemInstancesByRange,
@@ -4594,6 +4600,52 @@ export default function OSOperationalPage() {
       const toAdd = finalIds.filter((id) => !currentIds.includes(id));
       const toRemove = currentIds.filter((id) => !finalIds.includes(id));
 
+      // Validação: verificar se veículos a serem removidos têm OS ativa
+      if (toRemove.length > 0) {
+        for (const vehicleId of toRemove) {
+          const blockingOS = await fetchBlockingOSForDriverVehicle(
+            driver.id,
+            vehicleId,
+            editingOSId,
+          );
+          if (blockingOS) {
+            toast(
+              <div className="flex items-start gap-3">
+                <AlertCircle
+                  className="text-amber-600 flex-shrink-0 mt-0.5"
+                  size={20}
+                />
+                <div className="flex-1">
+                  <p className="font-semibold text-slate-800 mb-1">
+                    Veículo em uso
+                  </p>
+                  <p className="text-sm text-slate-600 mb-3">
+                    Este veículo está em atendimento ativo (OS{" "}
+                    {blockingOS.protocolo || blockingOS.id})
+                  </p>
+                  <button
+                    onClick={() => {
+                      handleViewOS(blockingOS.id);
+                      setIsOsVehicleQuickModalOpen(false);
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    <ExternalLink size={14} />
+                    Ver OS
+                  </button>
+                </div>
+              </div>,
+              {
+                duration: 10000,
+                className: "!bg-amber-50 !border-amber-200",
+              },
+            );
+            setIsSubmittingOsVehicle(false);
+            return;
+          }
+        }
+      }
+
       if (toRemove.length > 0) {
         const { error: delError } = await supabase
           .from("driver_vehicles")
@@ -4609,6 +4661,29 @@ export default function OSOperationalPage() {
             toAdd.map((vid) => ({ driver_id: driver.id, vehicle_id: vid })),
           );
         if (insError) throw insError;
+      }
+
+      // Logs de auditoria: vehicle_link / vehicle_unlink
+      const actor = buildActorFromProfile(profile);
+      for (const vehicleId of toAdd) {
+        const v = vehicles.find((vv) => vv.id === vehicleId);
+        await logDriverEvent({
+          driver_id: driver.id,
+          type: "vehicle_link",
+          ...actor,
+          description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} vinculado ao motorista.`,
+          metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null, origin: "os_page" },
+        });
+      }
+      for (const vehicleId of toRemove) {
+        const v = vehicles.find((vv) => vv.id === vehicleId);
+        await logDriverEvent({
+          driver_id: driver.id,
+          type: "vehicle_unlink",
+          ...actor,
+          description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} desvinculado do motorista.`,
+          metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null, origin: "os_page" },
+        });
       }
 
       setDriverVehiclesAssoc((prev) => [
@@ -4634,15 +4709,43 @@ export default function OSOperationalPage() {
     if (!vehicleId) return;
     if (!formData.driverId) return;
 
-    const hasActive = await checkActiveOSForDriverVehicle(
+    const blockingOS = await fetchBlockingOSForDriverVehicle(
       formData.driverId,
       vehicleId,
       editingOSId,
     );
 
-    if (hasActive) {
-      toast.error(
-        "Não é possível remover este veículo. Existe uma OS ativa vinculada a ele.",
+    if (blockingOS) {
+      toast(
+        <div className="flex items-start gap-3">
+          <AlertCircle
+            className="text-amber-600 flex-shrink-0 mt-0.5"
+            size={20}
+          />
+          <div className="flex-1">
+            <p className="font-semibold text-slate-800 mb-1">
+              Veículo em uso
+            </p>
+            <p className="text-sm text-slate-600 mb-3">
+              Este veículo está em atendimento ativo (OS{" "}
+              {blockingOS.protocolo || blockingOS.id})
+            </p>
+            <button
+              onClick={() => {
+                handleViewOS(blockingOS.id);
+                setIsOsVehicleQuickModalOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <ExternalLink size={14} />
+              Ver OS
+            </button>
+          </div>
+        </div>,
+        {
+          duration: 10000,
+          className: "!bg-amber-50 !border-amber-200",
+        },
       );
       return;
     }
@@ -4892,6 +4995,31 @@ export default function OSOperationalPage() {
               motorista: newDriver.name,
               veiculoId: "",
             }));
+
+            // Logs de auditoria: criação + vínculos de veículos
+            const actor = buildActorFromProfile(profile);
+            await logDriverEvent({
+              driver_id: newDriver.id,
+              type: "create",
+              ...actor,
+              description: `Motorista ${newDriver.name} criado via cadastro rápido na OS.`,
+              metadata: {
+                vinculo_tipo: quickAddDriverForm.vinculo_tipo,
+                parceiro_id: quickAddDriverForm.parceiro_id || null,
+                vehicle_ids: quickAddDriverForm.vehicle_ids,
+                origin: "os_page",
+              },
+            });
+            for (const vehicleId of quickAddDriverForm.vehicle_ids) {
+              const v = vehicles.find((vv) => vv.id === vehicleId);
+              await logDriverEvent({
+                driver_id: newDriver.id,
+                type: "vehicle_link",
+                ...actor,
+                description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} vinculado ao motorista.`,
+                metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null, origin: "os_page" },
+              });
+            }
           }
           break;
         }
