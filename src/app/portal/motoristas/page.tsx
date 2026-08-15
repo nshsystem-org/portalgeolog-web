@@ -612,7 +612,7 @@ export default function MotoristasPage() {
               </div>
             </div>,
             {
-              duration: 10000,
+              duration: 3000,
               className: "!bg-amber-50 !border-amber-200",
             },
           );
@@ -1450,7 +1450,7 @@ export default function MotoristasPage() {
               </div>
             </div>,
             {
-              duration: 10000,
+              duration: 3000,
               className: "!bg-amber-50 !border-amber-200",
             },
           );

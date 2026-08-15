@@ -4636,7 +4636,7 @@ export default function OSOperationalPage() {
                 </div>
               </div>,
               {
-                duration: 10000,
+                duration: 3000,
                 className: "!bg-amber-50 !border-amber-200",
               },
             );
@@ -4743,7 +4743,7 @@ export default function OSOperationalPage() {
           </div>
         </div>,
         {
-          duration: 10000,
+          duration: 3000,
           className: "!bg-amber-50 !border-amber-200",
         },
       );
@@ -7537,7 +7537,7 @@ export default function OSOperationalPage() {
             )
           }
           maxWidthClassName="max-w-7xl"
-          bodyClassName="p-6 md:p-10 pb-80 space-y-12"
+          bodyClassName="p-6 md:p-10 space-y-12"
           headerClassName={
             osCreationType === "freelance"
               ? "bg-emerald-600"
