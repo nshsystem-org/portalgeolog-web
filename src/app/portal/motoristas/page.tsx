@@ -27,6 +27,10 @@ import {
   RotateCcw,
   ExternalLink,
   AlertCircle,
+  History,
+  Archive,
+  Link2,
+  Unlink,
 } from "lucide-react";
 import DriverDocsModal from "@/components/DriverDocsModal";
 import { DataTable } from "@/components/ui/DataTable";
@@ -53,6 +57,13 @@ import {
   fetchDrivers,
   fetchOSById,
 } from "@/lib/supabase/queries";
+import {
+  logDriverEvent,
+  fetchDriverLogs,
+  buildActorFromProfile,
+  type DriverLogEntry,
+  type DriverLogType,
+} from "@/lib/supabase/driver-logs";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import { getThumbnailUrl } from "@/utils/avatar";
 import { useAuth } from "@/context/AuthContext";
@@ -249,6 +260,10 @@ export default function MotoristasPage() {
   const [selectedDriverForDocs, setSelectedDriverForDocs] =
     useState<Driver | null>(null);
   const [viewingDriver, setViewingDriver] = useState<Driver | null>(null);
+  const [viewingDriverLogs, setViewingDriverLogs] = useState<DriverLogEntry[]>(
+    [],
+  );
+  const [isLoadingDriverLogs, setIsLoadingDriverLogs] = useState(false);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
   const [editingDriverAvatarUrl, setEditingDriverAvatarUrl] = useState<
     string | null
@@ -483,6 +498,46 @@ export default function MotoristasPage() {
       preloadedDriverAvatarsRef.current.add(url);
     });
   }, [tableItems]);
+
+  // Carrega logs de auditoria do motorista sempre que a modal Visualizar abre
+  useEffect(() => {
+    if (!viewingDriver) {
+      setViewingDriverLogs([]);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingDriverLogs(true);
+    void (async () => {
+      const logs = await fetchDriverLogs(viewingDriver.id, 100);
+      if (!cancelled) {
+        setViewingDriverLogs(logs);
+        setIsLoadingDriverLogs(false);
+      }
+    })();
+    // Realtime: atualiza a lista quando um novo log é inserido para este driver
+    const channel = supabase
+      .channel(`driver_logs:${viewingDriver.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "driver_logs",
+          filter: `driver_id=eq.${viewingDriver.id}`,
+        },
+        (payload) => {
+          setViewingDriverLogs((prev) => [
+            payload.new as DriverLogEntry,
+            ...prev,
+          ]);
+        },
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [viewingDriver, supabase]);
 
   const tableTotalCount = useMemo(() => {
     if (hasActiveAdvancedFilters) return filteredDrivers.length;
@@ -1216,6 +1271,41 @@ export default function MotoristasPage() {
         void driversTable.refresh();
       }
 
+      // Logs de auditoria: criação do motorista + vínculos de veículos
+      if (data) {
+        const actor = buildActorFromProfile(profile);
+        await logDriverEvent({
+          driver_id: data.id,
+          type: "create",
+          ...actor,
+          description: `Motorista ${data.name} criado.`,
+          metadata: {
+            vinculo_tipo: formData.vinculo_tipo,
+            parceiro_id: formData.parceiro_id || null,
+            vehicle_ids: formData.vehicle_ids,
+          },
+        });
+        for (const vehicleId of formData.vehicle_ids) {
+          const v = vehicles.find((vv) => vv.id === vehicleId);
+          await logDriverEvent({
+            driver_id: data.id,
+            type: "vehicle_link",
+            ...actor,
+            description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} vinculado ao motorista.`,
+            metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null },
+          });
+        }
+        if (driverAvatarFile) {
+          await logDriverEvent({
+            driver_id: data.id,
+            type: "avatar_update",
+            ...actor,
+            description: `Foto do motorista ${data.name} definida.`,
+            metadata: { action: "upload" },
+          });
+        }
+      }
+
       setIsModalOpen(false);
       setFormData({
         name: "",
@@ -1452,6 +1542,108 @@ export default function MotoristasPage() {
         void driversTable.refresh();
       }
 
+      // Logs de auditoria da edição
+      if (data) {
+        const actor = buildActorFromProfile(profile);
+        const driverId = editingDriver.id;
+
+        // Diff de campos de dados pessoais / vínculo
+        const changes: Record<string, { from: unknown; to: unknown }> = {};
+        const normalizeCpf = (s: string) => s.replace(/\D/g, "");
+        if ((editingDriver.name || "") !== formData.name.trim()) {
+          changes.name = { from: editingDriver.name, to: formData.name.trim() };
+        }
+        if (normalizeCpf(editingDriver.cpf || "") !== normalizeCpf(formData.cpf)) {
+          changes.cpf = { from: editingDriver.cpf, to: formData.cpf };
+        }
+        const newPhone = normalizeBrazilPhone(formData.celular);
+        if ((editingDriver.phone || "") !== newPhone) {
+          changes.phone = { from: editingDriver.phone, to: newPhone };
+        }
+        if ((editingDriver.vinculo_tipo || "parceiro") !== formData.vinculo_tipo) {
+          changes.vinculo_tipo = {
+            from: editingDriver.vinculo_tipo,
+            to: formData.vinculo_tipo,
+          };
+        }
+        const newParceiroId =
+          formData.vinculo_tipo === "parceiro" ? formData.parceiro_id : null;
+        if ((editingDriver.parceiro_id || null) !== (newParceiroId || null)) {
+          changes.parceiro_id = {
+            from: editingDriver.parceiro_id,
+            to: newParceiroId,
+          };
+        }
+
+        if (Object.keys(changes).length > 0) {
+          await logDriverEvent({
+            driver_id: driverId,
+            type: "update",
+            ...actor,
+            description: `Dados do motorista ${data.name} atualizados.`,
+            metadata: { changes },
+          });
+        }
+
+        // Diff de veículos vinculados
+        const previousVehicleIds =
+          editingDriver.driver_vehicles?.map((dv) => dv.vehicle_id) ||
+          (editingDriver.vehicle_id ? [editingDriver.vehicle_id] : []);
+        const newVehicleIds = formData.vehicle_ids;
+        const linkedIds = newVehicleIds.filter(
+          (id) => !previousVehicleIds.includes(id),
+        );
+        const unlinkedIds = previousVehicleIds.filter(
+          (id) => !newVehicleIds.includes(id),
+        );
+
+        for (const vehicleId of linkedIds) {
+          const v = vehicles.find((vv) => vv.id === vehicleId);
+          await logDriverEvent({
+            driver_id: driverId,
+            type: "vehicle_link",
+            ...actor,
+            description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} vinculado ao motorista.`,
+            metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null },
+          });
+        }
+        for (const vehicleId of unlinkedIds) {
+          const v = vehicles.find((vv) => vv.id === vehicleId);
+          await logDriverEvent({
+            driver_id: driverId,
+            type: "vehicle_unlink",
+            ...actor,
+            description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} desvinculado do motorista.`,
+            metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null },
+          });
+        }
+
+        // Avatar: remoção
+        if (
+          editingDriver.avatar_url &&
+          !driverAvatarFile &&
+          !editingDriverAvatarUrl
+        ) {
+          await logDriverEvent({
+            driver_id: driverId,
+            type: "avatar_update",
+            ...actor,
+            description: `Foto do motorista ${data.name} removida.`,
+            metadata: { action: "remove" },
+          });
+        }
+        // Avatar: upload
+        if (driverAvatarFile) {
+          await logDriverEvent({
+            driver_id: driverId,
+            type: "avatar_update",
+            ...actor,
+            description: `Foto do motorista ${data.name} atualizada.`,
+            metadata: { action: "upload" },
+          });
+        }
+      }
+
       setEditingDriver(null);
       setEditingDriverAvatarUrl(null);
       setDriverAvatarFile(null);
@@ -1517,6 +1709,13 @@ export default function MotoristasPage() {
       await deleteDriver(id);
       void driversTable.refresh();
       toast.success("Motorista arquivado com sucesso!");
+      await logDriverEvent({
+        driver_id: id,
+        type: "archive",
+        ...buildActorFromProfile(profile),
+        description: `Motorista ${driver.name} arquivado.`,
+        metadata: { previous_status: driver.status },
+      });
     } catch (error) {
       console.error("Erro ao arquivar motorista:", error);
       toast.error("Erro ao arquivar motorista.");
@@ -1545,6 +1744,13 @@ export default function MotoristasPage() {
       void refreshData();
       void driversTable.refresh();
       toast.success("Motorista restaurado com sucesso!");
+      await logDriverEvent({
+        driver_id: id,
+        type: "restore",
+        ...buildActorFromProfile(profile),
+        description: `Motorista ${driver.name} restaurado.`,
+        metadata: {},
+      });
     } catch (error) {
       console.error("Erro ao restaurar motorista:", error);
       toast.error("Erro ao restaurar motorista.");
@@ -2417,154 +2623,344 @@ export default function MotoristasPage() {
           title={viewingDriver.name}
           subtitle={`${viewingDriver.vinculo_tipo === "interno" ? "Motorista Interno" : viewingDriver.vinculo_tipo === "autonomo" ? "Motorista Autônomo" : "Motorista de Parceiro"} · ${viewingDriver.status === "active" ? "Ativo" : "Inativo"}`}
           icon={<User size={24} />}
-          maxWidthClassName="max-w-3xl"
+          maxWidthClassName="max-w-4xl"
           bodyClassName="p-6 md:p-10 pb-10 space-y-8"
         >
-          <div className="space-y-6">
-            <h3 className="text-[13px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <IdCard size={14} className="text-blue-500" /> Dados Pessoais
-            </h3>
-            <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="divide-y divide-slate-100">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-6 py-4">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
-                      CPF
-                    </p>
-                    <p className="text-base font-bold text-slate-800">
-                      {formatDocumento(viewingDriver.cpf || "", "cpf") || "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
-                      Celular
-                    </p>
-                    <p className="text-base font-bold text-slate-800">
-                      {viewingDriver.phone
-                        ? formatCelular(viewingDriver.phone)
-                        : "—"}
-                    </p>
-                  </div>
-                </div>
+          {/* Card unificado: Dados Pessoais + Vínculo + Veículos */}
+          <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
+            {/* Linha 1: CPF | Celular | Tipo de Vínculo | Parceiro */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 px-6 py-5 border-b border-slate-100">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                  CPF
+                </p>
+                <p className="text-lg font-bold text-slate-800">
+                  {formatDocumento(viewingDriver.cpf || "", "cpf") || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                  Celular
+                </p>
+                <p className="text-lg font-bold text-slate-800">
+                  {viewingDriver.phone
+                    ? formatCelular(viewingDriver.phone)
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                  Vínculo
+                </p>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-black uppercase tracking-wide border ${
+                    viewingDriver.vinculo_tipo === "interno"
+                      ? "bg-sky-50/80 text-sky-700/80 border-sky-100/60"
+                      : viewingDriver.vinculo_tipo === "autonomo"
+                        ? "bg-orange-50/80 text-orange-400/80 border-orange-100/60"
+                        : "bg-cyan-50/80 text-cyan-400/80 border-cyan-100/60"
+                  }`}
+                >
+                  {viewingDriver.vinculo_tipo === "interno" ? (
+                    <Building2 size={14} />
+                  ) : viewingDriver.vinculo_tipo === "autonomo" ? (
+                    <User size={14} />
+                  ) : (
+                    <Handshake size={14} />
+                  )}
+                  {viewingDriver.vinculo_tipo === "interno"
+                    ? "Interno"
+                    : viewingDriver.vinculo_tipo === "autonomo"
+                      ? "Autônomo"
+                      : "Parceiro"}
+                </span>
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                  Parceiro
+                </p>
+                <p className="text-lg font-bold text-slate-800 truncate">
+                  {(viewingDriver.vinculo_tipo === "parceiro" ||
+                    viewingDriver.vinculo_tipo === "autonomo") &&
+                  viewingDriver.parceiro_id
+                    ? parceiros.find(
+                        (p: ParceiroServico) =>
+                          p.id === viewingDriver.parceiro_id,
+                      )?.razaoSocialOuNomeCompleto || "—"
+                    : "—"}
+                </p>
               </div>
             </div>
-          </div>
 
-          <div className="space-y-6">
-            <h3 className="text-[13px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <Truck size={14} className="text-blue-500" /> Veículos Vinculados
-            </h3>
-            <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="divide-y divide-slate-100">
-                {(() => {
-                  const driverVehicles = viewingDriver.driver_vehicles || [];
-                  const legacyVehicleId = viewingDriver.vehicle_id;
-                  const allVehicles =
-                    driverVehicles.length > 0
-                      ? driverVehicles
-                          .map(
-                            (dv) =>
-                              dv.vehicle ||
-                              vehicles.find((v) => v.id === dv.vehicle_id),
-                          )
-                          .filter(Boolean)
-                      : legacyVehicleId
-                        ? [vehicles.find((v) => v.id === legacyVehicleId)]
-                        : [];
+            {/* Linha 2: Veículos Vinculados (horizontal compacto) */}
+            <div className="px-6 py-5">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-3 flex items-center gap-1.5">
+                <Truck size={14} className="text-blue-500" /> Veículos Vinculados
+              </p>
+              {(() => {
+                const driverVehicles = viewingDriver.driver_vehicles || [];
+                const legacyVehicleId = viewingDriver.vehicle_id;
+                const allVehicles =
+                  driverVehicles.length > 0
+                    ? driverVehicles
+                        .map(
+                          (dv) =>
+                            dv.vehicle ||
+                            vehicles.find((v) => v.id === dv.vehicle_id),
+                        )
+                        .filter(Boolean)
+                    : legacyVehicleId
+                      ? [vehicles.find((v) => v.id === legacyVehicleId)]
+                      : [];
 
-                  if (allVehicles.length === 0) {
-                    return (
-                      <div className="px-6 py-4">
-                        <p className="text-base font-bold text-slate-400">
-                          Sem veículos vinculados
-                        </p>
-                      </div>
-                    );
-                  }
+                if (allVehicles.length === 0) {
+                  return (
+                    <p className="text-base font-bold text-slate-400">
+                      Sem veículos vinculados
+                    </p>
+                  );
+                }
 
-                  return allVehicles.map((vehicle, index) => (
-                    <div
-                      key={index}
-                      className="grid grid-cols-1 md:grid-cols-2 gap-4 px-6 py-4"
-                    >
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
-                          Veículo {index + 1}
-                        </p>
-                        <p className="text-base font-bold text-slate-800">
-                          {vehicle?.marca} {vehicle?.modelo}
-                        </p>
-                      </div>
-                      <div className="ml-5">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
-                          Placa
-                        </p>
-                        <div className="w-[120px] bg-white border-2 border-slate-400 rounded-md overflow-hidden shadow-sm flex flex-col items-center">
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {allVehicles.map((vehicle, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-white rounded-2xl pl-4 pr-3 py-3 border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                            <Car size={18} className="text-blue-600" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 mb-0.5">
+                              {vehicle?.marca}
+                            </p>
+                            <p className="text-base font-bold text-slate-800 truncate">
+                              {vehicle?.modelo}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0 w-[120px] bg-white border-2 border-slate-400 rounded-md overflow-hidden shadow-sm flex flex-col items-center">
                           <div className="w-full bg-blue-600 h-1" />
-                          <div className="py-3 px-4 flex items-center justify-center">
+                          <div className="py-2.5 px-3 flex items-center justify-center">
                             <span className="text-[15px] font-black text-slate-900 uppercase tracking-widest leading-none">
                               {vehicle?.placa || "—"}
                             </span>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ));
-                })()}
-              </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
+          {/* Seção: Histórico de Ações */}
           <div className="space-y-6">
             <h3 className="text-[13px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <Handshake size={14} className="text-blue-500" /> Vínculo
+              <History size={14} className="text-blue-500" /> Histórico de Ações
             </h3>
             <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
               <div className="divide-y divide-slate-100">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-6 py-4">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
-                      Tipo de Vínculo
-                    </p>
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wide border ${
-                        viewingDriver.vinculo_tipo === "interno"
-                          ? "bg-sky-50/80 text-sky-700/80 border-sky-100/60"
-                          : viewingDriver.vinculo_tipo === "autonomo"
-                            ? "bg-orange-50/80 text-orange-400/80 border-orange-100/60"
-                            : "bg-cyan-50/80 text-cyan-400/80 border-cyan-100/60"
-                      }`}
-                    >
-                      {viewingDriver.vinculo_tipo === "interno" ? (
-                        <Building2 size={12} />
-                      ) : viewingDriver.vinculo_tipo === "autonomo" ? (
-                        <User size={12} />
-                      ) : (
-                        <Handshake size={12} />
-                      )}
-                      {viewingDriver.vinculo_tipo === "interno"
-                        ? "Interno"
-                        : viewingDriver.vinculo_tipo === "autonomo"
-                          ? "Autônomo"
-                          : "Parceiro"}
+                {isLoadingDriverLogs ? (
+                  <div className="px-6 py-8 flex items-center justify-center gap-3 text-slate-400">
+                    <Loader2 size={18} className="animate-spin" />
+                    <span className="text-sm font-semibold">
+                      Carregando histórico…
                     </span>
                   </div>
-                  {(viewingDriver.vinculo_tipo === "parceiro" ||
-                    viewingDriver.vinculo_tipo === "autonomo") &&
-                    viewingDriver.parceiro_id && (
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
-                          Parceiro
-                        </p>
-                        <p className="text-base font-bold text-slate-800">
-                          {parceiros.find(
-                            (p: ParceiroServico) =>
-                              p.id === viewingDriver.parceiro_id,
-                          )?.razaoSocialOuNomeCompleto || "—"}
-                        </p>
+                ) : viewingDriverLogs.length === 0 ? (
+                  <div className="px-6 py-8">
+                    <p className="text-base font-bold text-slate-400">
+                      Nenhuma ação registrada
+                    </p>
+                  </div>
+                ) : (
+                  viewingDriverLogs.map((log) => {
+                    const iconMap: Record<
+                      DriverLogType,
+                      { icon: React.ReactNode; color: string; label: string }
+                    > = {
+                      create: {
+                        icon: <PlusCircle size={14} />,
+                        color: "text-emerald-600 bg-emerald-50 border-emerald-100",
+                        label: "Criação",
+                      },
+                      update: {
+                        icon: <Edit2 size={14} />,
+                        color: "text-blue-600 bg-blue-50 border-blue-100",
+                        label: "Edição",
+                      },
+                      vehicle_link: {
+                        icon: <Link2 size={14} />,
+                        color:
+                          "text-violet-600 bg-violet-50 border-violet-100",
+                        label: "Vínculo",
+                      },
+                      vehicle_unlink: {
+                        icon: <Unlink size={14} />,
+                        color: "text-amber-600 bg-amber-50 border-amber-100",
+                        label: "Desvínculo",
+                      },
+                      archive: {
+                        icon: <Archive size={14} />,
+                        color: "text-rose-600 bg-rose-50 border-rose-100",
+                        label: "Arquivamento",
+                      },
+                      restore: {
+                        icon: <RotateCcw size={14} />,
+                        color: "text-cyan-600 bg-cyan-50 border-cyan-100",
+                        label: "Restauração",
+                      },
+                      avatar_update: {
+                        icon: <Camera size={14} />,
+                        color: "text-slate-600 bg-slate-100 border-slate-200",
+                        label: "Foto",
+                      },
+                    };
+                    const cfg = iconMap[log.type] ?? {
+                      icon: <History size={14} />,
+                      color: "text-slate-600 bg-slate-100 border-slate-200",
+                      label: log.type,
+                    };
+                    const date = new Date(log.created_at);
+                    const formattedDate = date.toLocaleString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    });
+                    return (
+                      <div
+                        key={log.id}
+                        className="px-6 py-4 flex items-start gap-4 hover:bg-slate-50/50 transition-colors"
+                      >
+                        <div className="flex-shrink-0 mt-0.5">
+                          {log.actor_avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={getThumbnailUrl(log.actor_avatar_url, 80) || log.actor_avatar_url}
+                              alt={log.actor_name}
+                              className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                              <User size={18} />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wide border ${cfg.color}`}
+                            >
+                              {cfg.icon}
+                              {cfg.label}
+                            </span>
+                            <span className="text-base font-bold text-slate-700">
+                              {log.actor_name}
+                            </span>
+                            <span className="text-sm text-slate-400 font-medium">
+                              {formattedDate}
+                            </span>
+                          </div>
+                          <p className="text-base text-slate-600 font-medium">
+                            {log.description}
+                          </p>
+                          {log.type === "update" &&
+                            log.metadata &&
+                            typeof log.metadata === "object" &&
+                            "changes" in log.metadata &&
+                            log.metadata.changes &&
+                            typeof log.metadata.changes === "object" ? (
+                            (() => {
+                              const changes = log.metadata.changes as Record<
+                                string,
+                                { from: unknown; to: unknown }
+                              >;
+                              const fieldLabels: Record<
+                                string,
+                                { label: string; format?: (v: unknown) => string }
+                              > = {
+                                name: { label: "Nome" },
+                                cpf: {
+                                  label: "CPF",
+                                  format: (v) =>
+                                    formatDocumento(String(v || ""), "cpf") ||
+                                    "—",
+                                },
+                                phone: {
+                                  label: "Celular",
+                                  format: (v) =>
+                                    v ? formatCelular(String(v)) : "—",
+                                },
+                                vinculo_tipo: {
+                                  label: "Tipo de vínculo",
+                                  format: (v) =>
+                                    v === "interno"
+                                      ? "Interno"
+                                      : v === "autonomo"
+                                        ? "Autônomo"
+                                        : v === "parceiro"
+                                          ? "Parceiro"
+                                          : String(v || "—"),
+                                },
+                                parceiro_id: {
+                                  label: "Parceiro",
+                                  format: (v) =>
+                                    v
+                                      ? parceiros.find(
+                                          (p: ParceiroServico) =>
+                                            p.id === String(v),
+                                        )?.razaoSocialOuNomeCompleto ||
+                                        String(v)
+                                      : "—",
+                                },
+                              };
+                              const entries = Object.entries(changes);
+                              if (entries.length === 0) return null;
+                              return (
+                                <div className="mt-2.5 space-y-2">
+                                  {entries.map(([field, diff]) => {
+                                    const cfg = fieldLabels[field] ?? {
+                                      label: field,
+                                    };
+                                    const fmt = (v: unknown) =>
+                                      cfg.format
+                                        ? cfg.format(v)
+                                        : v === null || v === undefined
+                                          ? "—"
+                                          : String(v);
+                                    return (
+                                      <div
+                                        key={field}
+                                        className="flex items-center gap-2.5 text-sm flex-wrap"
+                                      >
+                                        <span className="font-black uppercase tracking-wide text-slate-400 min-w-[90px]">
+                                          {cfg.label}
+                                        </span>
+                                        <span className="text-slate-500 line-through decoration-slate-300 font-medium">
+                                          {fmt(diff.from)}
+                                        </span>
+                                        <span className="text-slate-300">→</span>
+                                        <span className="text-blue-700 font-bold">
+                                          {fmt(diff.to)}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()
+                          ) : null}
+                        </div>
                       </div>
-                    )}
-                </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
