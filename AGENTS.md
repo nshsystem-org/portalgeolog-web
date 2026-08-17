@@ -26,6 +26,7 @@ Sempre verifique o `package.json` antes de executar, mas prefira estes padrões:
 - **NÃO FAÇA PUSH** sem autorização explícita do usuário.
 - **NÃO FAÇA DEPLOY** (incluindo `wrangler deploy`, `npm run deploy` ou `npm run publish:app-version`) sem autorização explícita do usuário.
 - **Regra de Ouro:** build, lint, commit, push e deploy só podem ocorrer quando eu pedir explicitamente no chat; na dúvida, pare e aguarde confirmação.
+- **Fluxo de Deploy OBRIGATÓRIO (5 passos, sem pular nenhum):** Quando o usuário pedir deploy, execute SEMPRE nesta ordem: (1) `npm run build` (2) `npm run lint` (3) validar secrets via `wrangler secret list` + testes (4) `wrangler deploy` (5) `npm run publish:app-version`. Pular o build causa deploy de assets stale. Pular secrets causa deploy com credenciais inválidas. Ver seção "Deploy Manual" abaixo para detalhes.
 - **Canal de execução GitHub:** Qualquer operação remota no GitHub (push, PR, issue, review, branch, comentário) DEVE ser feita via `github-mcp-server` (ver seção 9). Não use `gh` CLI nem `git push` direto quando houver tool MCP equivalente. O MCP é o canal, não a autorização — a regra de ouro acima continua valendo.
 
 ### 🧪 Testes (Protocolo de Validação)
@@ -307,7 +308,9 @@ valida/recria esse arquivo, bloqueando o deploy se `main` não apontar para
 
 ### Deploy Manual (Fluxo Obrigatório)
 
-Quando o usuário solicitar "faça deploy manual wrangler", o agente DEVE seguir este fluxo exato:
+> ⛔ **AVISO CRÍTICO:** Os 5 passos abaixo são OBRIGATÓRIOS e devem ser executados EM ORDEM, sem pular nenhum. Pular o build (passo 1) causa deploy de assets stale — já aconteceu (bug do ícone "Remover veículo" em produção). Pular a validação de secrets (passo 3) causa deploy com credenciais inválidas. NÃO EXISTE atalho.
+
+Quando o usuário solicitar "faça deploy manual wrangler" (ou qualquer variação de "deploy"), o agente DEVE seguir este fluxo exato:
 
 1. **Verificar Build Interno:** Executar `npm run build` e garantir que não há erros
 2. **Verificar ESLint:** Executar `npm run lint` e garantir que não há erros
