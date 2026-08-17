@@ -31,6 +31,7 @@ export type CaixaLancamentoPayload = {
   clienteId?: string;
   parceiroId?: string;
   driverId?: string;
+  fornecedorId?: string;
   osId?: string;
   file?: File | null;
 };
@@ -159,6 +160,8 @@ export async function createLancamento(
   if (payload.clienteId) formData.append("clienteId", payload.clienteId);
   if (payload.parceiroId) formData.append("parceiroId", payload.parceiroId);
   if (payload.driverId) formData.append("driverId", payload.driverId);
+  if (payload.fornecedorId)
+    formData.append("fornecedorId", payload.fornecedorId);
   if (payload.osId) formData.append("osId", payload.osId);
   if (payload.file) formData.append("file", payload.file);
 
@@ -190,6 +193,7 @@ export async function updateLancamento(
     clienteId?: string | null;
     parceiroId?: string | null;
     driverId?: string | null;
+    fornecedorId?: string | null;
     file?: File | null;
   },
 ): Promise<CaixaLancamento> {
@@ -210,6 +214,8 @@ export async function updateLancamento(
     formData.append("parceiroId", updates.parceiroId || "");
   if (updates.driverId !== undefined)
     formData.append("driverId", updates.driverId || "");
+  if (updates.fornecedorId !== undefined)
+    formData.append("fornecedorId", updates.fornecedorId || "");
   if (updates.file) formData.append("file", updates.file);
 
   const response = await fetch(`/api/caixa/lancamentos/${id}`, {
@@ -227,14 +233,14 @@ export async function updateLancamento(
   return body.lancamento;
 }
 
-export async function deleteLancamento(id: string): Promise<void> {
+export async function archiveLancamento(id: string): Promise<void> {
   const response = await fetch(`/api/caixa/lancamentos/${id}`, {
     method: "DELETE",
     credentials: "include",
   });
   if (!response.ok) {
     const body = (await parseJson(response)) as { error?: string };
-    throw new Error(body.error || "Falha ao excluir lançamento.");
+    throw new Error(body.error || "Falha ao arquivar lançamento.");
   }
 }
 

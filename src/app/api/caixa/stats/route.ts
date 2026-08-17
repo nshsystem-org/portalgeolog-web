@@ -53,7 +53,8 @@ export async function GET(request: Request) {
         .from("caixa_lancamentos")
         .select(
           "id, tipo, valor, conta_id, conta:caixa_contas(id, nome, tipo, saldo_inicial, ativa)",
-        );
+        )
+        .eq("arquivado", false);
       if (q.dataInicio) query = query.gte("data", q.dataInicio);
       if (q.dataFim) query = query.lte("data", q.dataFim);
       if (q.contaId) query = query.eq("conta_id", q.contaId);

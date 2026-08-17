@@ -37,6 +37,7 @@ export type PageKey =
   | "passageiros"
   | "clientes"
   | "parcerias"
+  | "fornecedores"
   | "financeiro"
   | "caixa"
   | "config-acessos"
@@ -61,6 +62,7 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     passageiros: true,
     clientes: true,
     parcerias: true,
+    fornecedores: true,
     financeiro: true,
     caixa: true,
     "config-acessos": true,
@@ -84,6 +86,7 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     passageiros: true,
     clientes: true,
     parcerias: true,
+    fornecedores: true,
     "config-perfil": true,
     "config-notificacoes": true,
   },
@@ -102,6 +105,7 @@ const PAGE_TO_PERMISSION_MODULE: Partial<Record<PageKey, string>> = {
   passageiros: "cadastros",
   clientes: "cadastros",
   parcerias: "cadastros",
+  fornecedores: "cadastros",
   "config-acessos": "config",
   "config-financeiro": "config",
 };
@@ -166,6 +170,7 @@ export function getAccessiblePages(
     "passageiros",
     "clientes",
     "parcerias",
+    "fornecedores",
     "financeiro",
     "caixa",
     "config-acessos",
@@ -189,6 +194,7 @@ export function pathnameToPageKey(pathname: string): PageKey | null {
     "/portal/passageiros": "passageiros",
     "/portal/clientes": "clientes",
     "/portal/parcerias": "parcerias",
+    "/portal/fornecedores": "fornecedores",
     "/portal/financeiro": "financeiro",
     "/portal/caixa": "caixa",
     "/portal/config": "config-perfil", // redirect target

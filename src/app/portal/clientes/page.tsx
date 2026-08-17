@@ -36,13 +36,13 @@ export default function ClientesPage() {
     solicitantes,
     addCliente,
     updateCliente,
-    deleteCliente,
+    archiveCliente,
     addSolicitante,
     updateSolicitante,
-    deleteSolicitante,
+    archiveSolicitante,
     addCentroCusto,
     updateCentroCusto,
-    deleteCentroCusto,
+    archiveCentroCusto,
     getCentrosCustoByCliente,
   } = useData();
 
@@ -137,7 +137,7 @@ export default function ClientesPage() {
     });
 
     if (confirmed) {
-      deleteCliente(id);
+      archiveCliente(id);
       if (selectedClienteId === id) {
         setSelectedClienteId(null);
       }
@@ -193,7 +193,7 @@ export default function ClientesPage() {
     });
 
     if (confirmed) {
-      deleteCentroCusto(id);
+      archiveCentroCusto(id);
       if (selectedCentroCustoId === id) setSelectedCentroCustoId(null);
       toast.success("Centro de custo arquivado com sucesso!");
     }
@@ -262,7 +262,7 @@ export default function ClientesPage() {
     });
 
     if (confirmed) {
-      deleteSolicitante(id);
+      archiveSolicitante(id);
       toast.success("Solicitante arquivado com sucesso!");
     }
   };

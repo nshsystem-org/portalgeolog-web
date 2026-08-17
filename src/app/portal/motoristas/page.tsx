@@ -277,7 +277,7 @@ export default function MotoristasPage() {
     drivers: allDrivers,
     refreshData,
     addParceiro,
-    deleteDriver,
+    archiveDriver,
     restoreDriver,
   } = useData();
   const driversTable = useServerPaginatedTable(fetchDriversPage, 10);
@@ -1706,7 +1706,7 @@ export default function MotoristasPage() {
     if (!confirmed) return;
 
     try {
-      await deleteDriver(id);
+      await archiveDriver(id);
       void driversTable.refresh();
       toast.success("Motorista arquivado com sucesso!");
       await logDriverEvent({

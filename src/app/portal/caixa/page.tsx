@@ -99,6 +99,7 @@ export default function CaixaPage(): ReactElement {
         clientes={page.clientes}
         parceiros={page.parceiros}
         drivers={page.drivers}
+        fornecedores={page.fornecedores}
         saving={page.savingLancamento}
         onClose={page.closeLancamentoModal}
         onSalvar={page.handleSalvarLancamento}

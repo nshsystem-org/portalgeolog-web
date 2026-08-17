@@ -127,6 +127,10 @@ export async function PATCH(
       const v = String(formData.get("driverId") || "").trim();
       updates.driver_id = v || null;
     }
+    if (formData.get("fornecedorId") !== null) {
+      const v = String(formData.get("fornecedorId") || "").trim();
+      updates.fornecedor_id = v || null;
+    }
 
     const file = formData.get("file");
     if (file instanceof File) {
@@ -224,18 +228,12 @@ export async function DELETE(
       );
     }
 
-    if (existing.anexo_path) {
-      await adminClient.storage
-        .from(CAIXA_ATTACHMENT_BUCKET)
-        .remove([existing.anexo_path]);
-    }
-
-    const { error: deleteError } = await adminClient
+    const { error: archiveError } = await adminClient
       .from("caixa_lancamentos")
-      .delete()
+      .update({ arquivado: true })
       .eq("id", id);
 
-    if (deleteError) throw deleteError;
+    if (archiveError) throw archiveError;
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

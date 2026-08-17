@@ -28,20 +28,20 @@ import {
   fetchDrivers,
   insertCliente,
   updateClienteInDB,
-  deleteClienteFromDB,
+  archiveClienteFromDB,
   updatePassageiroInDB,
   archivePassageiroInDB,
   updateVeiculoInDB,
-  deleteVeiculoFromDB,
+  archiveVeiculoFromDB,
   updateDriverInDB,
-  deleteDriverFromDB,
+  archiveDriverFromDB,
   restoreDriverFromDB,
   insertSolicitante,
   updateSolicitanteInDB,
-  deleteSolicitanteFromDB,
+  archiveSolicitanteFromDB,
   insertCentroCusto,
   updateCentroCustoInDB,
-  deleteCentroCustoFromDB,
+  archiveCentroCustoFromDB,
   insertPassageiro,
   insertDriver,
   insertOS,
@@ -54,7 +54,7 @@ import {
   insertParceiro,
   updateParceiroInDB,
   toggleParceiroStatus,
-  deleteParceiroFromDB,
+  archiveParceiroFromDB,
   unarchiveParceiroFromDB,
   getImpostoPercentual,
   setFinancialConfig,
@@ -348,7 +348,7 @@ interface DataContextType {
   lastOSUpdate: number;
   addCliente: (nome: string, contato?: string) => Promise<Cliente>;
   updateCliente: (id: string, updates: Partial<Cliente>) => Promise<void>;
-  deleteCliente: (id: string) => void;
+  archiveCliente: (id: string) => void;
 
   addSolicitante: (
     nome: string,
@@ -356,7 +356,7 @@ interface DataContextType {
     centroCustoId?: string,
   ) => Promise<Solicitante>;
   updateSolicitante: (id: string, updates: Partial<Solicitante>) => void;
-  deleteSolicitante: (id: string) => void;
+  archiveSolicitante: (id: string) => void;
 
   addPassageiro: (passageiro: NovoPassageiroInput) => Promise<Passageiro>;
   updatePassageiro: (
@@ -367,22 +367,22 @@ interface DataContextType {
 
   addDriver: (driver: Omit<Driver, "id" | "created_at">) => Promise<Driver>;
   updateDriver: (id: string, updates: Partial<Driver>) => Promise<void>;
-  deleteDriver: (id: string) => Promise<void>;
+  archiveDriver: (id: string) => Promise<void>;
   restoreDriver: (id: string) => Promise<void>;
   updateVeiculo: (id: string, input: Partial<Vehicle>) => Promise<Vehicle>;
-  deleteVeiculo: (id: string) => Promise<void>;
+  archiveVeiculo: (id: string) => Promise<void>;
 
   // Parceiros
   addParceiro: (parceiro: NovoParceiroInput) => Promise<ParceiroServico>;
   updateParceiro: (id: string, parceiro: NovoParceiroInput) => Promise<void>;
   toggleParceiro: (id: string) => Promise<void>;
-  deleteParceiro: (id: string) => void;
+  archiveParceiro: (id: string) => void;
   unarchiveParceiro: (id: string) => Promise<void>;
 
   // Centros de Custo
   addCentroCusto: (nome: string, clienteId: string) => Promise<CentroCusto>;
   updateCentroCusto: (id: string, updates: Partial<CentroCusto>) => void;
-  deleteCentroCusto: (id: string) => void;
+  archiveCentroCusto: (id: string) => void;
 
   addOS: (
     osData: Omit<
@@ -398,7 +398,7 @@ interface DataContextType {
     >,
   ) => Promise<{ changed: boolean }>;
   updateOSStatus: (id: string, updates: Partial<OSStatus>) => Promise<void>;
-  deleteOS: (id: string) => Promise<void>;
+  archiveOS: (id: string) => Promise<void>;
   unarchiveOS: (id: string) => Promise<void>;
 
   refreshData: () => Promise<void>;
@@ -1015,10 +1015,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteCliente = (id: string) => {
-    deleteClienteFromDB(id)
+  const archiveCliente = (id: string) => {
+    archiveClienteFromDB(id)
       .then(() => {
-        logInfo("DataContext", "Empresa excluída com sucesso", {
+        logInfo("DataContext", "Empresa arquivada com sucesso", {
           clienteId: id,
         });
         setClientes((prev) => prev.filter((cliente) => cliente.id !== id));
@@ -1028,10 +1028,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         void refreshData();
       })
       .catch((err) => {
-        logErrorEntry("DataContext", "Falha ao excluir empresa", err as Error, {
+        logErrorEntry("DataContext", "Falha ao arquivar empresa", err as Error, {
           clienteId: id,
         });
-        console.error("Error deleteClienteFromDB:", err);
+        console.error("Error archiveClienteFromDB:", err);
       });
   };
 
@@ -1101,15 +1101,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       .catch((err) => console.error("Error updateSolicitanteInDB:", err));
   };
 
-  const deleteSolicitante = (id: string) => {
-    deleteSolicitanteFromDB(id)
+  const archiveSolicitante = (id: string) => {
+    archiveSolicitanteFromDB(id)
       .then(() => {
         setSolicitantes((prev) =>
           prev.filter((solicitante) => solicitante.id !== id),
         );
         void refreshData();
       })
-      .catch((err) => console.error("Error deleteSolicitanteFromDB:", err));
+      .catch((err) => console.error("Error archiveSolicitanteFromDB:", err));
   };
 
   const addPassageiro = async (
@@ -1257,9 +1257,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteDriver = async (id: string): Promise<void> => {
+  const archiveDriver = async (id: string): Promise<void> => {
     try {
-      await deleteDriverFromDB(id);
+      await archiveDriverFromDB(id);
       setDrivers((prev) => prev.filter((driver) => driver.id !== id));
       logInfo("DataContext", "Motorista arquivado com sucesso", {
         driverId: id,
@@ -1309,8 +1309,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return currentVehicle;
   };
 
-  const deleteVeiculo = async (id: string): Promise<void> => {
-    await deleteVeiculoFromDB(id);
+  const archiveVeiculo = async (id: string): Promise<void> => {
+    await archiveVeiculoFromDB(id);
     void refreshData();
   };
 
@@ -1558,7 +1558,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteOS = async (id: string): Promise<void> => {
+  const archiveOS = async (id: string): Promise<void> => {
     const currentOS = osList.find((os) => os.id === id) || null;
     setOsList((prev) => prev.filter((os) => os.id !== id));
 
@@ -1713,21 +1713,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteParceiro = (id: string) => {
-    deleteParceiroFromDB(id)
+  const archiveParceiro = (id: string) => {
+    archiveParceiroFromDB(id)
       .then(() => {
-        logInfo("DataContext", "Parceiro excluído com sucesso", {
+        logInfo("DataContext", "Parceiro arquivado com sucesso", {
           parceiroId: id,
         });
       })
       .catch((err) => {
         logErrorEntry(
           "DataContext",
-          "Falha ao excluir parceiro",
+          "Falha ao arquivar parceiro",
           err as Error,
           { parceiroId: id },
         );
-        console.error("Error deleteParceiroFromDB:", err);
+        console.error("Error archiveParceiroFromDB:", err);
       });
   };
 
@@ -1784,8 +1784,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       .catch((err) => console.error("Error updateCentroCustoInDB:", err));
   };
 
-  const deleteCentroCusto = (id: string) => {
-    deleteCentroCustoFromDB(id)
+  const archiveCentroCusto = (id: string) => {
+    archiveCentroCustoFromDB(id)
       .then(() => {
         setClientes((prev) =>
           prev.map((c) => ({
@@ -1795,7 +1795,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         );
         void refreshData();
       })
-      .catch((err) => console.error("Error deleteCentroCustoFromDB:", err));
+      .catch((err) => console.error("Error archiveCentroCustoFromDB:", err));
   };
 
   const setImpostoPercentual = async (
@@ -1830,31 +1830,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         lastOSUpdate,
         addCliente,
         updateCliente,
-        deleteCliente,
+        archiveCliente,
         addSolicitante,
         updateSolicitante,
-        deleteSolicitante,
+        archiveSolicitante,
         addPassageiro,
         updatePassageiro,
         archivePassageiro,
         addDriver,
         updateDriver,
-        deleteDriver,
+        archiveDriver,
         restoreDriver,
         updateVeiculo,
-        deleteVeiculo,
+        archiveVeiculo,
         addParceiro,
         updateParceiro,
         toggleParceiro,
-        deleteParceiro,
+        archiveParceiro,
         unarchiveParceiro,
         addCentroCusto,
         updateCentroCusto,
-        deleteCentroCusto,
+        archiveCentroCusto,
         addOS,
         updateOS,
         updateOSStatus,
-        deleteOS,
+        archiveOS,
         unarchiveOS,
         refreshData,
         getSolicitantesByCliente,

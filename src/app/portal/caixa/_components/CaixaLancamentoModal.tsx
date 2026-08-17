@@ -18,7 +18,7 @@ import GeologMoneyInput from "@/components/ui/GeologMoneyInput";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import RequiredAsterisk from "@/components/ui/RequiredAsterisk";
 import type { Cliente, Driver } from "@/context/DataContext";
-import type { ParceiroServico } from "@/lib/supabase/queries";
+import type { ParceiroServico, Fornecedor } from "@/lib/supabase/queries";
 import {
   CATEGORIAS_ENTRADA,
   CATEGORIAS_SAIDA,
@@ -38,6 +38,7 @@ type CaixaLancamentoModalProps = {
   clientes: Cliente[];
   parceiros: ParceiroServico[];
   drivers: Driver[];
+  fornecedores: Fornecedor[];
   saving: boolean;
   onClose: () => void;
   onSalvar: (
@@ -65,6 +66,7 @@ const buildInitialState = (
       clienteId: lancamentoEmEdicao.clienteId || "",
       parceiroId: lancamentoEmEdicao.parceiroId || "",
       driverId: lancamentoEmEdicao.driverId || "",
+      fornecedorId: lancamentoEmEdicao.fornecedorId || "",
     };
   }
   return {
@@ -78,6 +80,7 @@ const buildInitialState = (
     clienteId: "",
     parceiroId: "",
     driverId: "",
+    fornecedorId: "",
   };
 };
 
@@ -89,6 +92,7 @@ function CaixaLancamentoForm({
   clientes,
   parceiros,
   drivers,
+  fornecedores,
   saving,
   onClose,
   onSalvar,
@@ -112,6 +116,7 @@ function CaixaLancamentoForm({
   const [clienteId, setClienteId] = useState(initial.clienteId);
   const [parceiroId, setParceiroId] = useState(initial.parceiroId);
   const [driverId, setDriverId] = useState(initial.driverId);
+  const [fornecedorId, setFornecedorId] = useState(initial.fornecedorId);
   const [file, setFile] = useState<File | null>(null);
 
   const handleTipoChange = (next: "entrada" | "saida"): void => {
@@ -138,7 +143,52 @@ function CaixaLancamentoForm({
     id: p.id,
     nome: p.razaoSocialOuNomeCompleto,
   }));
-  const driverOptions = drivers.map((d) => ({ id: d.id, nome: d.name }));
+  // Motoristas vinculados ao parceiro selecionado. Se nenhum parceiro
+  // estiver selecionado, exibe todos os motoristas.
+  // Inclui avatar (photoUrl) e badge de vínculo (typeLabel) com as mesmas
+  // cores usadas pelo GeologSearchableSelect (Autônomo=orange, Interno=blue,
+  // Parceiro=cyan), igual ao padrão da página OS.
+  // Nomes longos são truncados para manter o dropdown compacto.
+  const truncateName = (name: string, max = 27): string =>
+    name.length > max ? `${name.slice(0, max)}…` : name;
+  const driverOptions = (
+    parceiroId
+      ? drivers.filter((d) => d.parceiro_id === parceiroId)
+      : drivers
+  ).map((d) => ({
+    id: d.id,
+    nome: truncateName(d.name),
+    photoUrl: d.avatar_url,
+    typeLabel:
+      d.vinculo_tipo === "interno"
+        ? "Interno"
+        : d.vinculo_tipo === "parceiro"
+          ? "Parceiro"
+          : d.vinculo_tipo === "autonomo"
+            ? "Autônomo"
+            : undefined,
+  }));
+  const fornecedorOptions = fornecedores.map((f) => ({
+    id: f.id,
+    nome: f.nome,
+  }));
+
+  // Selecionar motorista: se ele estiver vinculado a um parceiro, preenche
+  // o select de parceiro automaticamente.
+  const handleDriverChange = (nextDriverId: string): void => {
+    setDriverId(nextDriverId);
+    const driver = drivers.find((d) => d.id === nextDriverId);
+    if (driver?.parceiro_id) {
+      setParceiroId(driver.parceiro_id);
+    }
+  };
+
+  // Selecionar parceiro: limpa o motorista selecionado e restringe a lista
+  // apenas aos motoristas vinculados ao parceiro.
+  const handleParceiroChange = (nextParceiroId: string): void => {
+    setParceiroId(nextParceiroId);
+    setDriverId("");
+  };
 
   const valorValido = valor > 0;
   const podeSalvar =
@@ -157,20 +207,46 @@ function CaixaLancamentoForm({
       clienteId: clienteId || undefined,
       parceiroId: parceiroId || undefined,
       driverId: driverId || undefined,
+      fornecedorId: fornecedorId || undefined,
       file: file ?? null,
     });
   };
 
   const isEntrada = tipo === "entrada";
+  // Header: gradiente pastel claro → escuro (sem azul), com escuro menos
+  // intenso (700) para entrada e saída.
   const headerGradient = isEntrada
-    ? "bg-gradient-to-r from-[#001C3A] via-[#002B49] to-emerald-950 border-b border-emerald-500/20"
-    : "bg-gradient-to-r from-[#001C3A] via-[#002B49] to-rose-950 border-b border-rose-500/20";
-  const headerGlow = isEntrada ? "bg-emerald-500/20" : "bg-rose-500/20";
-  const subtitleColor = isEntrada ? "text-emerald-300/90" : "text-rose-300/90";
-  const iconColor = isEntrada ? "text-emerald-300" : "text-rose-300";
+    ? "bg-gradient-to-r from-emerald-100 via-emerald-300 to-emerald-700 border-b border-emerald-300/50"
+    : "bg-gradient-to-r from-rose-100 via-rose-300 to-rose-700 border-b border-rose-300/50";
+  const headerGlow = isEntrada ? "bg-emerald-200/50" : "bg-rose-200/50";
+  const titleColor = isEntrada ? "text-emerald-950" : "text-rose-950";
+  const subtitleColor = isEntrada ? "text-emerald-800/80" : "text-rose-800/80";
+  const iconColor = isEntrada ? "text-emerald-800" : "text-rose-800";
   const iconBorder = isEntrada
-    ? "bg-emerald-500/20 border-emerald-400/30"
-    : "bg-rose-500/20 border-rose-400/30";
+    ? "bg-white/40 border-emerald-400/40"
+    : "bg-white/40 border-rose-400/40";
+  const closeButton = isEntrada
+    ? "text-emerald-800/70 hover:text-emerald-950 hover:bg-emerald-950/10"
+    : "text-rose-800/70 hover:text-rose-950 hover:bg-rose-950/10";
+
+  // Tokens de destaque (accent) reativos ao tipo — mantêm o corpo do modal
+  // visualmente coerente com o header e o botão Salvar ao alternar.
+  const accentText = isEntrada ? "text-emerald-600" : "text-rose-600";
+  const accentIconWrap = isEntrada
+    ? "bg-emerald-50 border-emerald-100 text-emerald-600"
+    : "bg-rose-50 border-rose-100 text-rose-600";
+  const accentFocus = isEntrada
+    ? "focus:!border-emerald-500 hover:border-emerald-300 focus:ring-emerald-500/10"
+    : "focus:!border-rose-500 hover:border-rose-300 focus:ring-rose-500/10";
+  const card1Border = isEntrada
+    ? "border-emerald-200/70"
+    : "border-rose-200/70";
+  const cardSoftBorder = isEntrada
+    ? "border-emerald-200/50"
+    : "border-rose-200/50";
+  const cardSoftBg = isEntrada ? "bg-emerald-50/30" : "bg-rose-50/30";
+  const footerBorder = isEntrada ? "border-emerald-200/70" : "border-rose-200/70";
+  const footerBg = isEntrada ? "bg-emerald-50/40" : "bg-rose-50/40";
 
   return (
     <StandardModal
@@ -180,17 +256,19 @@ function CaixaLancamentoForm({
         isEntrada ? <ArrowUpCircle size={24} /> : <ArrowDownCircle size={24} />
       }
       onClose={onClose}
-      maxWidthClassName="max-w-4xl"
+      maxWidthClassName="max-w-5xl"
       bodyClassName="space-y-5 p-6 md:p-8"
       headerClassName={headerGradient}
       headerGlowClassName={headerGlow}
-      titleClassName="text-white font-black"
+      titleClassName={`${titleColor} font-black`}
       subtitleClassName={`${subtitleColor} font-bold tracking-widest`}
       iconContainerClassName={`${iconBorder} shadow-inner`}
       iconClassName={iconColor}
-      closeButtonClassName="text-white/60 hover:text-white hover:bg-white/10"
+      closeButtonClassName={closeButton}
       footer={
-        <div className="flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-6 py-4 md:px-8 shrink-0">
+        <div
+          className={`flex items-center justify-between gap-4 border-t ${footerBorder} ${footerBg} px-6 py-4 md:px-8 shrink-0 transition-colors`}
+        >
           {/* Toggle Entrada / Saída (padrão página OS) */}
           <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm">
             {(
@@ -253,9 +331,13 @@ function CaixaLancamentoForm({
       }
     >
       {/* Card 1: Dados Financeiros Principais */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-sm">
+      <div
+        className={`bg-white border ${card1Border} rounded-2xl p-6 space-y-5 shadow-sm transition-colors`}
+      >
         <div className="flex items-center gap-2 pb-3 border-b border-slate-100 text-slate-700">
-          <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+          <div
+            className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-colors ${accentIconWrap}`}
+          >
             <DollarSign size={16} />
           </div>
           <span className="text-xs font-black uppercase tracking-wider text-slate-500">
@@ -275,8 +357,8 @@ function CaixaLancamentoForm({
               compact
               className="text-[18px]"
               placeholder="0,00"
-              inputClassName="h-[58px] w-full py-3 pl-12 pr-12 text-[18px] font-bold text-emerald-600 rounded-xl border-2 border-slate-200 focus:!border-blue-500 hover:bg-white hover:border-blue-300"
-              rightIcon={<DollarSign size={20} className="text-emerald-600" />}
+              inputClassName={`h-[58px] w-full py-3 pl-12 pr-12 text-[18px] font-bold ${accentText} rounded-xl border-2 border-slate-200 hover:bg-white transition-colors ${accentFocus} focus:ring-4`}
+              rightIcon={<DollarSign size={20} className={accentText} />}
             />
           </div>
 
@@ -291,7 +373,7 @@ function CaixaLancamentoForm({
               onChange={setData}
               compact
               placeholder="DD/MM/AAAA"
-              inputClassName="h-[58px] w-full px-5 py-3 pr-12 text-[18px] font-bold text-slate-900 rounded-xl border-2 border-slate-200 focus:!border-blue-500 hover:bg-white hover:border-blue-300"
+              inputClassName={`h-[58px] w-full px-5 py-3 pr-12 text-[18px] font-bold text-slate-900 rounded-xl border-2 border-slate-200 hover:bg-white transition-colors ${accentFocus} focus:ring-4`}
               className="w-full"
             />
           </div>
@@ -364,7 +446,9 @@ function CaixaLancamentoForm({
       </div>
 
       {/* Card 2: Detalhamento e Vínculos */}
-      <div className="bg-slate-50/60 border border-slate-200/80 rounded-2xl p-5 shadow-sm">
+      <div
+        className={`${cardSoftBg} border ${cardSoftBorder} rounded-2xl p-5 shadow-sm transition-colors`}
+      >
         <div className="flex items-center gap-2 pb-2 border-b border-slate-200/60 text-slate-700">
           <FileText size={16} className="text-slate-400" />
           <span className="text-xs font-black uppercase tracking-wider text-slate-500">
@@ -382,7 +466,7 @@ function CaixaLancamentoForm({
             onChange={(e) => setDescricao(e.target.value)}
             placeholder="Descrição ou observações opcionais..."
             rows={2}
-            className="w-full resize-none rounded-xl border-2 border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[18px] font-bold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+            className={`w-full resize-none rounded-xl border-2 border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[18px] font-bold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:bg-white focus:ring-4 ${accentFocus}`}
           />
         </div>
 
@@ -407,11 +491,10 @@ function CaixaLancamentoForm({
             />
             <GeologSearchableSelect
               label="Fornecedor"
-              options={[]}
-              value=""
-              onChange={() => {}}
-              placeholder="Em breve"
-              disabled
+              options={fornecedorOptions}
+              value={fornecedorId}
+              onChange={setFornecedorId}
+              placeholder="Nenhum"
               variant="form"
               triggerClassName="h-[58px] py-3 text-[18px]"
             />
@@ -421,7 +504,7 @@ function CaixaLancamentoForm({
               label="Parceiro"
               options={parceiroOptions}
               value={parceiroId}
-              onChange={setParceiroId}
+              onChange={handleParceiroChange}
               placeholder="Nenhum"
               variant="form"
               triggerClassName="h-[58px] py-3 text-[18px]"
@@ -430,17 +513,23 @@ function CaixaLancamentoForm({
               label="Motorista"
               options={driverOptions}
               value={driverId}
-              onChange={setDriverId}
-              placeholder="Nenhum"
+              onChange={handleDriverChange}
+              placeholder={
+                parceiroId && driverOptions.length === 0
+                  ? "Sem motoristas vinculados"
+                  : "Nenhum"
+              }
               variant="form"
-              triggerClassName="h-[58px] py-3 text-[18px]"
+              triggerClassName="h-[58px] py-3 text-[16px]"
             />
           </div>
         </div>
       </div>
 
       {/* Card 3: Comprovante */}
-      <div className="bg-slate-50/60 border border-slate-200/80 rounded-2xl p-5 space-y-3 shadow-sm">
+      <div
+        className={`${cardSoftBg} border ${cardSoftBorder} rounded-2xl p-5 space-y-3 shadow-sm transition-colors`}
+      >
         <div className="flex items-center gap-2 pb-1 text-slate-700">
           <Paperclip size={16} className="text-slate-400" />
           <span className="text-xs font-black uppercase tracking-wider text-slate-500">
@@ -448,13 +537,31 @@ function CaixaLancamentoForm({
           </span>
         </div>
 
-        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border-2 border-dashed border-slate-200 bg-white px-4 py-3 transition-all hover:border-blue-400 hover:bg-blue-50/20 group">
+        <label
+          className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border-2 border-dashed border-slate-200 bg-white px-4 py-3 transition-all group ${
+            isEntrada
+              ? "hover:border-emerald-400 hover:bg-emerald-50/20"
+              : "hover:border-rose-400 hover:bg-rose-50/20"
+          }`}
+        >
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors flex-shrink-0">
+            <div
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${
+                isEntrada
+                  ? "bg-slate-100 text-slate-500 group-hover:bg-emerald-100 group-hover:text-emerald-600"
+                  : "bg-slate-100 text-slate-500 group-hover:bg-rose-100 group-hover:text-rose-600"
+              }`}
+            >
               <Upload size={18} />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-700 group-hover:text-blue-700 transition-colors">
+              <p
+                className={`truncate text-sm font-bold text-slate-700 transition-colors ${
+                  isEntrada
+                    ? "group-hover:text-emerald-700"
+                    : "group-hover:text-rose-700"
+                }`}
+              >
                 {file ? file.name : "Clique para selecionar um comprovante"}
               </p>
               <p className="text-xs text-slate-400">
@@ -489,7 +596,11 @@ function CaixaLancamentoForm({
         </label>
         {lancamentoEmEdicao?.anexoPath && !file ? (
           <p className="text-xs font-bold text-slate-500 flex items-center gap-1.5 pt-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                isEntrada ? "bg-emerald-500" : "bg-rose-500"
+              }`}
+            />
             Comprovante atual já anexado. Selecione um novo arquivo para
             substituir.
           </p>
@@ -506,6 +617,7 @@ export function CaixaLancamentoModal({
   clientes,
   parceiros,
   drivers,
+  fornecedores,
   saving,
   onClose,
   onSalvar,
@@ -523,6 +635,7 @@ export function CaixaLancamentoModal({
       clientes={clientes}
       parceiros={parceiros}
       drivers={drivers}
+      fornecedores={fornecedores}
       saving={saving}
       onClose={onClose}
       onSalvar={onSalvar}

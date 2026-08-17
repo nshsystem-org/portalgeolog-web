@@ -48,6 +48,7 @@ export type CaixaLancamento = {
   clienteId: string | null;
   parceiroId: string | null;
   driverId: string | null;
+  fornecedorId: string | null;
   osId: string | null;
   origem: CaixaLancamentoOrigem;
   anexoPath: string | null;
@@ -56,6 +57,7 @@ export type CaixaLancamento = {
   clienteNome?: string | null;
   parceiroNome?: string | null;
   driverNome?: string | null;
+  fornecedorNome?: string | null;
   osProtocolo?: string | null;
   createdAt: string;
 };

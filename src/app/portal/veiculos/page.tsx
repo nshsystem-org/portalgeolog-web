@@ -114,7 +114,7 @@ export default function VeiculosPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
-  const { updateVeiculo, deleteVeiculo } = useData();
+  const { updateVeiculo, archiveVeiculo } = useData();
   const supabase = createClient();
   const vehicleTable = useServerPaginatedTable(fetchVeiculosPage, 10);
 
@@ -359,7 +359,7 @@ export default function VeiculosPage() {
                 });
 
                 if (confirmed) {
-                  await deleteVeiculo(item.id);
+                  await archiveVeiculo(item.id);
                   await vehicleTable.refresh();
                   toast.success("Veículo arquivado com sucesso.");
                 }

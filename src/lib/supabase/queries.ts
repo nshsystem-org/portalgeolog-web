@@ -834,7 +834,7 @@ export async function updateCentroCustoInDB(
   if (error) throw error;
 }
 
-export async function deleteCentroCustoFromDB(id: string): Promise<void> {
+export async function archiveCentroCustoFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("centros_custo")
     .update({ arquivado: true })
@@ -878,7 +878,7 @@ export async function updateClienteInDB(
   if (error) throw error;
 }
 
-export async function deleteClienteFromDB(id: string): Promise<void> {
+export async function archiveClienteFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("clientes")
     .update({ arquivado: true })
@@ -947,7 +947,7 @@ export async function updateSolicitanteInDB(
   if (error) throw error;
 }
 
-export async function deleteSolicitanteFromDB(id: string): Promise<void> {
+export async function archiveSolicitanteFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("solicitantes")
     .update({ arquivado: true })
@@ -1146,7 +1146,7 @@ export async function updateVeiculoInDB(
   };
 }
 
-export async function deleteVeiculoFromDB(id: string): Promise<void> {
+export async function archiveVeiculoFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("veiculos")
     .update({ arquivado: true, status: "inativo" })
@@ -2161,7 +2161,7 @@ export async function updateDriverInDB(
   if (error) throw error;
 }
 
-export async function deleteDriverFromDB(id: string): Promise<void> {
+export async function archiveDriverFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("drivers")
     .update({ arquivado: true, status: "inactive" })
@@ -2590,7 +2590,7 @@ export async function toggleParceiroStatus(
   if (error) throw error;
 }
 
-export async function deleteParceiroFromDB(id: string): Promise<void> {
+export async function archiveParceiroFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("parceiros_servico")
     .update({ arquivado: true, status: "inativo" })
@@ -2602,6 +2602,215 @@ export async function deleteParceiroFromDB(id: string): Promise<void> {
 export async function unarchiveParceiroFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("parceiros_servico")
+    .update({ arquivado: false })
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+// ── Fornecedores ─────────────────────────────────────────
+
+export interface Fornecedor {
+  id: string;
+  nome: string;
+  pessoaTipo: "fisica" | "juridica";
+  documento: string;
+  telefone: string;
+  email: string;
+  endereco: string;
+  cidade: string;
+  estado: string;
+  cep: string;
+  observacoes: string;
+  status: "ativo" | "inativo";
+  arquivado: boolean;
+}
+
+export interface NovoFornecedorInput {
+  nome: string;
+  pessoaTipo: "fisica" | "juridica";
+  documento?: string;
+  telefone?: string;
+  email?: string;
+  endereco?: string;
+  cidade?: string;
+  estado?: string;
+  cep?: string;
+  observacoes?: string;
+}
+
+type FornecedorRow = {
+  id: string;
+  nome: string;
+  pessoa_tipo: "fisica" | "juridica";
+  documento: string | null;
+  telefone: string | null;
+  email: string | null;
+  endereco: string | null;
+  cidade: string | null;
+  estado: string | null;
+  cep: string | null;
+  observacoes: string | null;
+  status: "ativo" | "inativo";
+  arquivado: boolean;
+  search_index: string;
+  created_at: string;
+  updated_at: string;
+};
+
+const mapFornecedorPayload = (row: FornecedorRow): Fornecedor => ({
+  id: row.id,
+  nome: row.nome,
+  pessoaTipo: row.pessoa_tipo,
+  documento: row.documento || "",
+  telefone: row.telefone || "",
+  email: row.email || "",
+  endereco: row.endereco || "",
+  cidade: row.cidade || "",
+  estado: row.estado || "",
+  cep: row.cep || "",
+  observacoes: row.observacoes || "",
+  status: row.status || "ativo",
+  arquivado: row.arquivado ?? false,
+});
+
+const FORNECEDOR_SELECT_COLUMNS =
+  "id, nome, pessoa_tipo, documento, telefone, email, endereco, cidade, estado, cep, observacoes, status, arquivado, search_index, created_at, updated_at";
+
+export async function fetchFornecedores(): Promise<Fornecedor[]> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("fornecedores")
+      .select(FORNECEDOR_SELECT_COLUMNS)
+      .eq("arquivado", false)
+      .order("nome");
+
+    if (error) throw error;
+    return (data as FornecedorRow[]).map(mapFornecedorPayload);
+  });
+}
+
+export async function fetchFornecedoresPage({
+  page = 1,
+  pageSize = 10,
+  searchTerm = "",
+  arquivado = false,
+}: PaginationParams & { arquivado?: boolean } = {}): Promise<
+  PaginatedResult<Fornecedor>
+> {
+  return withRetry(async () => {
+    const { from, to } = normalizePagination(page, pageSize);
+    const term = searchTerm.trim();
+    const likeTerm = term ? `%${sanitizeSearchTerm(term)}%` : "";
+
+    let query = getSupabase()
+      .from("fornecedores")
+      .select(FORNECEDOR_SELECT_COLUMNS, { count: "exact" })
+      .eq("arquivado", arquivado)
+      .order("nome", { ascending: true })
+      .range(from, to);
+
+    if (likeTerm) {
+      query = query.or(`search_index.ilike.${likeTerm}`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+    const rows = (data || []) as FornecedorRow[];
+    return {
+      items: rows.map(mapFornecedorPayload),
+      totalCount: count ?? rows.length,
+    };
+  });
+}
+
+export async function fetchFornecedorById(id: string): Promise<Fornecedor> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("fornecedores")
+      .select(FORNECEDOR_SELECT_COLUMNS)
+      .eq("id", id)
+      .single();
+
+    if (error) throw error;
+    return mapFornecedorPayload(data as FornecedorRow);
+  });
+}
+
+export async function insertFornecedor(
+  input: NovoFornecedorInput,
+): Promise<Fornecedor> {
+  const { data, error } = await getSupabase()
+    .from("fornecedores")
+    .insert({
+      nome: trimText(input.nome),
+      pessoa_tipo: input.pessoaTipo,
+      documento: trimText(input.documento) || null,
+      telefone: trimText(input.telefone) || null,
+      email: trimText(input.email).toLowerCase() || null,
+      endereco: trimText(input.endereco) || null,
+      cidade: trimText(input.cidade) || null,
+      estado: trimText(input.estado).toUpperCase() || null,
+      cep: trimText(input.cep) || null,
+      observacoes: trimText(input.observacoes) || null,
+    })
+    .select(FORNECEDOR_SELECT_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  return mapFornecedorPayload(data as FornecedorRow);
+}
+
+export async function updateFornecedorInDB(
+  id: string,
+  input: NovoFornecedorInput,
+): Promise<Fornecedor> {
+  const { error: rpcError } = await getSupabase().rpc(
+    "update_fornecedor_atomic",
+    {
+      p_fornecedor_id: id,
+      p_nome: trimText(input.nome),
+      p_pessoa_tipo: input.pessoaTipo,
+      p_documento: trimText(input.documento),
+      p_telefone: trimText(input.telefone),
+      p_email: trimText(input.email),
+      p_endereco: trimText(input.endereco),
+      p_cidade: trimText(input.cidade),
+      p_estado: trimText(input.estado),
+      p_cep: trimText(input.cep),
+      p_observacoes: trimText(input.observacoes),
+    },
+  );
+
+  if (rpcError) throw rpcError;
+  return fetchFornecedorById(id);
+}
+
+export async function toggleFornecedorStatus(
+  id: string,
+  currentStatus: "ativo" | "inativo",
+): Promise<void> {
+  const novoStatus = currentStatus === "ativo" ? "inativo" : "ativo";
+  const { error } = await getSupabase()
+    .from("fornecedores")
+    .update({ status: novoStatus })
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+export async function archiveFornecedorFromDB(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("fornecedores")
+    .update({ arquivado: true, status: "inativo" })
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+export async function unarchiveFornecedorFromDB(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("fornecedores")
     .update({ arquivado: false })
     .eq("id", id);
 
@@ -3668,6 +3877,7 @@ export async function fetchActiveAnnouncements(): Promise<
         "id, title, subtitle, message, type, created_at, updated_at, expires_at",
       )
       .eq("is_active", true)
+      .eq("arquivado", false)
       .or("expires_at.is.null,expires_at.gte.now()")
       .order("created_at", { ascending: false });
 
@@ -3765,10 +3975,10 @@ export async function updateAnnouncement(
   if (error) throw error;
 }
 
-export async function deleteAnnouncement(id: string): Promise<void> {
+export async function archiveAnnouncement(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("system_announcements")
-    .delete()
+    .update({ arquivado: true, is_active: false })
     .eq("id", id);
 
   if (error) throw error;

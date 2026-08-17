@@ -16,33 +16,29 @@ import { getThumbnailUrl } from "@/utils/avatar";
 function VehiclePlate({
   plate,
   size = "sm",
-  withNegativeMargin = false,
 }: {
   plate: string;
   size?: "sm" | "xs";
-  withNegativeMargin?: boolean;
 }) {
   const dims =
     size === "xs"
       ? {
-          w: "w-[100px]",
+          w: "min-w-[124px]",
           h: "h-[40px]",
           bar: "h-[4px]",
-          text: "text-[14px]",
+          text: "text-[13px] tracking-wider",
           pad: "pt-[9px] pb-[5px] px-2",
-          margin: withNegativeMargin ? "-my-[6px]" : "",
         }
       : {
-          w: "w-[110px]",
+          w: "min-w-[124px]",
           h: "h-[48px]",
           bar: "h-[5px]",
-          text: "text-[14px]",
+          text: "text-[14px] tracking-wider",
           pad: "py-2.5 px-3",
-          margin: "",
         };
   return (
     <div
-      className={`${dims.w} ${dims.h} ${dims.margin} bg-white border-2 border-slate-500 rounded-lg overflow-hidden shadow-sm flex flex-col items-center flex-shrink-0 min-w-max`}
+      className={`${dims.w} ${dims.h} bg-white border-2 border-slate-500 rounded-lg overflow-hidden shadow-sm flex flex-col items-center flex-shrink-0`}
     >
       <div
         className={`bg-blue-700 ${dims.bar}`}
@@ -50,7 +46,7 @@ function VehiclePlate({
       />
       <div className={`${dims.pad} flex items-center justify-center w-full`}>
         <span
-          className={`${dims.text} font-black text-slate-900 uppercase tracking-widest leading-none whitespace-nowrap`}
+          className={`${dims.text} font-black text-slate-900 uppercase leading-none whitespace-nowrap`}
         >
           {plate}
         </span>
@@ -493,7 +489,7 @@ export default function GeologSearchableSelect({
         className={`geolog-searchable-trigger w-full bg-slate-50 border-2 border-slate-200 rounded-xl flex items-center justify-between cursor-pointer transition-all hover:bg-white hover:border-blue-300 ${isOpen ? "ring-4 ring-blue-500/10 border-blue-500 bg-white" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""} shadow-sm ${triggerPaddingClass} ${triggerClassName}`}
       >
         <span
-          className={`font-bold leading-none flex items-center gap-2.5 ${selectedOption ? "text-slate-900" : "text-slate-400"} ${triggerTextClass}`}
+          className={`font-bold leading-none flex items-center gap-2.5 min-w-0 overflow-hidden flex-1 ${selectedOption ? "text-slate-900" : "text-slate-400"} ${triggerTextClass}`}
         >
           {selectedOption?.icon ? (
             <span className="flex items-center justify-center flex-shrink-0 text-slate-500">
@@ -507,11 +503,7 @@ export default function GeologSearchableSelect({
               loading="lazy"
             />
           ) : selectedOption?.plate ? (
-            <VehiclePlate
-              plate={selectedOption.plate}
-              size="xs"
-              withNegativeMargin
-            />
+            <VehiclePlate plate={selectedOption.plate} size="xs" />
           ) : selectedOption && !hideTriggerAvatar ? (
             <div
               className={`w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 ${hideTriggerBorder ? "" : "border-2 border-slate-200"}`}

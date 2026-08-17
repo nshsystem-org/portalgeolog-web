@@ -24,7 +24,7 @@ import {
   fetchAllAnnouncements,
   createAnnouncement,
   updateAnnouncement,
-  deleteAnnouncement,
+  archiveAnnouncement,
 } from "@/lib/supabase/queries";
 import { toast } from "sonner";
 
@@ -166,12 +166,12 @@ export default function AdminPage() {
 
   const handleDeleteAnnouncement = async (id: string) => {
     try {
-      await deleteAnnouncement(id);
-      toast.success("Aviso excluído com sucesso!");
+      await archiveAnnouncement(id);
+      toast.success("Aviso arquivado com sucesso!");
       loadAnnouncements();
     } catch (error) {
       console.error("Erro ao excluir aviso:", error);
-      toast.error("Erro ao excluir aviso");
+      toast.error("Erro ao arquivar aviso");
     }
   };
 

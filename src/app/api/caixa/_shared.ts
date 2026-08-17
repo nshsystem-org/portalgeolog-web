@@ -120,6 +120,7 @@ export type CaixaLancamentoJoinRow = {
   cliente_id: string | null;
   parceiro_id: string | null;
   driver_id: string | null;
+  fornecedor_id: string | null;
   os_id: string | null;
   origem: string | null;
   anexo_path: string | null;
@@ -128,6 +129,7 @@ export type CaixaLancamentoJoinRow = {
   conta?: { nome: string; tipo: string } | null;
   cliente?: { nome: string } | null;
   driver?: { name: string } | null;
+  fornecedor?: { nome: string } | null;
   os?: { protocolo: string } | null;
 };
 
@@ -163,6 +165,7 @@ export const mapCaixaLancamentoRow = (row: CaixaLancamentoJoinRow) => {
   const conta = pickJoin(row.conta);
   const cliente = pickJoin(row.cliente);
   const driver = pickJoin(row.driver);
+  const fornecedor = pickJoin(row.fornecedor);
   const os = pickJoin(row.os);
   return {
     id: row.id,
@@ -183,6 +186,7 @@ export const mapCaixaLancamentoRow = (row: CaixaLancamentoJoinRow) => {
     clienteId: row.cliente_id,
     parceiroId: row.parceiro_id,
     driverId: row.driver_id,
+    fornecedorId: row.fornecedor_id,
     osId: row.os_id,
     origem: (row.origem || "manual") as
       | "manual"
@@ -194,10 +198,11 @@ export const mapCaixaLancamentoRow = (row: CaixaLancamentoJoinRow) => {
       (conta?.tipo as "caixa" | "banco" | "pix" | "carteira") ?? undefined,
     clienteNome: cliente?.nome ?? null,
     driverNome: driver?.name ?? null,
+    fornecedorNome: fornecedor?.nome ?? null,
     osProtocolo: os?.protocolo ?? null,
     createdAt: row.created_at || "",
   };
 };
 
 export const CAIXA_LANCAMENTO_SELECT =
-  "id, conta_id, tipo, valor, data, descricao, categoria, forma_pagamento, cliente_id, parceiro_id, driver_id, os_id, origem, anexo_path, created_by, created_at, conta:caixa_contas(nome, tipo), cliente:clientes(nome), driver:drivers(name), os:ordens_servico(protocolo)";
+  "id, conta_id, tipo, valor, data, descricao, categoria, forma_pagamento, cliente_id, parceiro_id, driver_id, fornecedor_id, os_id, origem, anexo_path, created_by, created_at, conta:caixa_contas(nome, tipo), cliente:clientes(nome), driver:drivers(name), fornecedor:fornecedores(nome), os:ordens_servico(protocolo)";

@@ -134,7 +134,7 @@ const initialForm = (): ParceiroFormData => ({
 export default function ParceriasPage() {
   const { profile } = useAuth();
   const { parceiros, loading: parceirosLoading } = useParceiros();
-  const { addParceiro, updateParceiro, deleteParceiro, unarchiveParceiro } =
+  const { addParceiro, updateParceiro, archiveParceiro, unarchiveParceiro } =
     useData();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
   const { validateForm } = useParceiroValidation(parceiros);
@@ -448,7 +448,7 @@ export default function ParceriasPage() {
     });
 
     if (confirmed) {
-      await deleteParceiro(id);
+      await archiveParceiro(id);
       await parceiroTable.refresh();
       toast.success("Parceiro arquivado com sucesso!");
     }

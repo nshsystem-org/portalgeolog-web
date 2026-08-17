@@ -70,7 +70,8 @@ export async function GET(request: Request) {
     const adminClient = createAdminClient();
     let query = adminClient
       .from("caixa_lancamentos")
-      .select(CAIXA_LANCAMENTO_SELECT, { count: "exact" });
+      .select(CAIXA_LANCAMENTO_SELECT, { count: "exact" })
+      .eq("arquivado", false);
 
     if (q.dataInicio) query = query.gte("data", q.dataInicio);
     if (q.dataFim) query = query.lte("data", q.dataFim);
@@ -137,6 +138,8 @@ export async function POST(request: Request) {
     const clienteId = String(formData.get("clienteId") || "").trim() || null;
     const parceiroId = String(formData.get("parceiroId") || "").trim() || null;
     const driverId = String(formData.get("driverId") || "").trim() || null;
+    const fornecedorId =
+      String(formData.get("fornecedorId") || "").trim() || null;
     const osId = String(formData.get("osId") || "").trim() || null;
     const file = formData.get("file");
 
@@ -223,6 +226,7 @@ export async function POST(request: Request) {
       cliente_id: clienteId,
       parceiro_id: parceiroId,
       driver_id: driverId,
+      fornecedor_id: fornecedorId,
       os_id: osId,
       origem: "manual",
       anexo_path: anexoPath,

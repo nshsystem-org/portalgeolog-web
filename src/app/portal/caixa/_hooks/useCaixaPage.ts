@@ -5,11 +5,12 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { useData, type Cliente, type Driver } from "@/context/DataContext";
 import { useParceiros } from "@/hooks/useParceiros";
+import { useFornecedores } from "@/hooks/useFornecedores";
 import {
   useServerPaginatedTable,
   type UseServerPaginatedTableResult,
 } from "@/hooks/useServerPaginatedTable";
-import type { ParceiroServico } from "@/lib/supabase/queries";
+import type { ParceiroServico, Fornecedor } from "@/lib/supabase/queries";
 import {
   createCaixaFilters,
   createCaixaLookupMaps,
@@ -28,7 +29,7 @@ import {
 import {
   createConta,
   createLancamento,
-  deleteLancamento,
+  archiveLancamento,
   getCaixaStats,
   getComprovanteUrl,
   isLancamentoEditavel,
@@ -130,6 +131,7 @@ export type CaixaPageState = {
   clientes: Cliente[];
   drivers: Driver[];
   parceiros: ParceiroServico[];
+  fornecedores: Fornecedor[];
   dataLoading: boolean;
 };
 
@@ -138,6 +140,7 @@ const DEFAULT_PAGE_SIZE = 20;
 export function useCaixaPage(): CaixaPageState {
   const { profile } = useAuth();
   const { parceiros } = useParceiros();
+  const { fornecedores } = useFornecedores();
   const { clientes, drivers, loading: dataLoading } = useData();
   const now = getBrazilDate();
 
@@ -383,6 +386,7 @@ export function useCaixaPage(): CaixaPageState {
             clienteId: payload.clienteId || null,
             parceiroId: payload.parceiroId || null,
             driverId: payload.driverId || null,
+            fornecedorId: payload.fornecedorId || null,
             file: payload.file ?? null,
           });
           toast.success("Lançamento atualizado com sucesso.");
@@ -481,8 +485,8 @@ export function useCaixaPage(): CaixaPageState {
       );
       if (!ok) return;
       try {
-        await deleteLancamento(lancamento.id);
-        toast.success("Lançamento excluído.");
+        await archiveLancamento(lancamento.id);
+        toast.success("Lançamento arquivado.");
         setOpenActionMenuId(null);
         await Promise.all([lancamentosTable.refresh(), loadContas()]);
       } catch (error) {
@@ -582,6 +586,7 @@ export function useCaixaPage(): CaixaPageState {
     clientes,
     drivers,
     parceiros,
+    fornecedores,
     dataLoading,
   };
 }

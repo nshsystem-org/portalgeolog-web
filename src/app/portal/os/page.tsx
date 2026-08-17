@@ -605,7 +605,7 @@ export default function OSOperationalPage() {
     addOS,
     updateOS,
     updateOSStatus,
-    deleteOS,
+    archiveOS,
     unarchiveOS,
     addPassageiro,
     addDriver,
@@ -2904,7 +2904,7 @@ export default function OSOperationalPage() {
           osId: targetOS.id,
         },
       );
-      await deleteOS(osId);
+      await archiveOS(osId);
       await osTable.refresh();
       setOpenActionMenuId(null);
     } catch (error) {
@@ -4577,7 +4577,12 @@ export default function OSOperationalPage() {
     }
     const driver = drivers.find((d) => d.name === formData.motorista);
     const linked = driverVehiclesAssoc
-      .filter((a) => a.driver_id === driver?.id)
+      .filter(
+        (a) =>
+          a.driver_id === driver?.id &&
+          a.vehicle_id &&
+          vehicles.some((v) => v.id === a.vehicle_id),
+      )
       .map((a) => a.vehicle_id);
     setOsVehicleManageIds(linked);
     setIsOsVehicleQuickModalOpen(true);
@@ -4941,7 +4946,11 @@ export default function OSOperationalPage() {
             return;
           }
 
-          if (quickAddDriverForm.vehicle_ids.length === 0) {
+          const selectedVehicleIds = quickAddDriverForm.vehicle_ids.filter(
+            (vehicleId, index, vehicleIds) =>
+              vehicleId && vehicleIds.indexOf(vehicleId) === index,
+          );
+          if (selectedVehicleIds.length === 0) {
             toast.error("Adicione pelo menos um veículo ao motorista.");
             return;
           }
@@ -4988,8 +4997,8 @@ export default function OSOperationalPage() {
           const newDriver = await addDriver(insertData);
 
           // Inserir veículos vinculados
-          if (newDriver && quickAddDriverForm.vehicle_ids.length > 0) {
-            const driverVehicles = quickAddDriverForm.vehicle_ids.map(
+          if (newDriver && selectedVehicleIds.length > 0) {
+            const driverVehicles = selectedVehicleIds.map(
               (vehicleId) => ({
                 driver_id: newDriver.id,
                 vehicle_id: vehicleId,
@@ -5008,7 +5017,7 @@ export default function OSOperationalPage() {
             } else {
               setDriverVehiclesAssoc((prev) => [
                 ...prev,
-                ...quickAddDriverForm.vehicle_ids.map((vehicleId) => ({
+                ...selectedVehicleIds.map((vehicleId) => ({
                   driver_id: newDriver.id,
                   vehicle_id: vehicleId,
                 })),
@@ -5040,11 +5049,11 @@ export default function OSOperationalPage() {
               metadata: {
                 vinculo_tipo: quickAddDriverForm.vinculo_tipo,
                 parceiro_id: quickAddDriverForm.parceiro_id || null,
-                vehicle_ids: quickAddDriverForm.vehicle_ids,
+                vehicle_ids: selectedVehicleIds,
                 origin: "os_page",
               },
             });
-            for (const vehicleId of quickAddDriverForm.vehicle_ids) {
+            for (const vehicleId of selectedVehicleIds) {
               const v = vehicles.find((vv) => vv.id === vehicleId);
               await logDriverEvent({
                 driver_id: newDriver.id,
@@ -11191,12 +11200,7 @@ export default function OSOperationalPage() {
                     onClick={() =>
                       setQuickAddDriverForm((prev) => ({
                         ...prev,
-                        vehicle_ids: [
-                          ...prev.vehicle_ids,
-                          filteredQuickAddVehicles.find(
-                            (v) => !prev.vehicle_ids.includes(v.id),
-                          )?.id || "",
-                        ],
+                        vehicle_ids: [...prev.vehicle_ids, ""],
                       }))
                     }
                     disabled={
@@ -11426,7 +11430,10 @@ export default function OSOperationalPage() {
       {/* Modal Gerenciar Veículos Vinculados */}
       {isOsVehicleQuickModalOpen && (
         <StandardModal
-          onClose={() => setIsOsVehicleQuickModalOpen(false)}
+          onClose={() => {
+            setIsOsVehicleQuickModalOpen(false);
+            setOsVehicleManageIds([]);
+          }}
           title="Gerenciar Veículos Vinculados"
           subtitle="Vincule veículos existentes ou cadastre novos para o motorista"
           icon={<Truck size={24} />}
@@ -11449,11 +11456,7 @@ export default function OSOperationalPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      setOsVehicleManageIds((prev) => [
-                        ...prev,
-                        filteredQuickAddVehicles.find((v) => !prev.includes(v.id))
-                          ?.id || "",
-                      ])
+                      setOsVehicleManageIds((prev) => [...prev, ""])
                     }
                     disabled={
                       filteredQuickAddVehicles.filter(

@@ -55,6 +55,7 @@ import {
   Shield,
   User,
   Percent,
+  Package,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
@@ -181,6 +182,7 @@ export default function DashboardLayout({
       "/portal/passageiros",
       "/portal/clientes",
       "/portal/parcerias",
+      "/portal/fornecedores",
     ],
     configuracoes: [
       "/portal/config",
@@ -444,7 +446,8 @@ export default function DashboardLayout({
             hasPageAccess("veiculos") ||
             hasPageAccess("passageiros") ||
             hasPageAccess("clientes") ||
-            hasPageAccess("parcerias")) && (
+            hasPageAccess("parcerias") ||
+            hasPageAccess("fornecedores")) && (
             <NavSection
               id="cadastros"
               icon={<Database />}
@@ -479,6 +482,11 @@ export default function DashboardLayout({
                   href: "/portal/parcerias",
                   icon: <Handshake />,
                   label: "Parceiros de Serviço",
+                },
+                hasPageAccess("fornecedores") && {
+                  href: "/portal/fornecedores",
+                  icon: <Package />,
+                  label: "Fornecedores",
                 },
               ].filter(Boolean) as {
                 href: string;
