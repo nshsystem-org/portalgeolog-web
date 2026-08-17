@@ -1,9 +1,23 @@
 const { Client } = require("pg");
 
 async function enableRealtime() {
-  const connectionString =
-    "postgresql://postgres:AdminPGeolog@2026@db.hzpgfapvjwqtjclriisz.supabase.co:5432/postgres";
-  const client = new Client({ connectionString });
+  const password = process.env.SUPABASE_DB_PASSWORD;
+  if (!password) {
+    console.error("SUPABASE_DB_PASSWORD não definido no ambiente.");
+    process.exit(1);
+  }
+
+  const host =
+    process.env.SUPABASE_DB_HOST || "aws-1-us-east-2.pooler.supabase.com";
+  const port = process.env.SUPABASE_DB_PORT || "5432";
+  const user =
+    process.env.SUPABASE_DB_USER || "postgres.hzpgfapvjwqtjclriisz";
+  const database = process.env.SUPABASE_DB_NAME || "postgres";
+  const connectionString = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+  const client = new Client({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+  });
 
   try {
     console.log("🔄 Conectando ao banco de dados Supabase...");
@@ -20,7 +34,7 @@ async function enableRealtime() {
         END IF; 
       END $$;
 
-      -- 2. Define as tabelas que PERMITEM Realtime (sobrescreve a lista anterior para evitar erros de duplicidade)
+      -- 2. Define as tabelas que PERMITE Realtime (sobrescreve a lista anterior para evitar erros de duplicidade)
       -- Usamos SET TABLE para definir exatamente a lista que queremos
       ALTER PUBLICATION supabase_realtime SET TABLE 
         clientes, 
