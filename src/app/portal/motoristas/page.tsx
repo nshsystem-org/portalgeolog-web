@@ -2919,6 +2919,9 @@ export default function MotoristasPage() {
                                         String(v)
                                       : "—",
                                 },
+                                placa: { label: "Placa" },
+                                modelo: { label: "Modelo" },
+                                marca: { label: "Marca" },
                               };
                               const entries = Object.entries(changes);
                               if (entries.length === 0) return null;

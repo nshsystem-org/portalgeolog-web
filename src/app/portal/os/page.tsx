@@ -59,6 +59,7 @@ import {
   LayoutGrid,
   CalendarDays,
   Trash2,
+  Link2Off,
   Smartphone,
   Bell,
   Filter,
@@ -4751,9 +4752,9 @@ export default function OSOperationalPage() {
     }
 
     const confirmed = await confirm({
-      title: "Remover veículo vinculado",
-      message: "Tem certeza que deseja remover este veículo do motorista?",
-      confirmText: "Remover",
+      title: "Desvincular veículo",
+      message: "Tem certeza que deseja desvincular este veículo do motorista?",
+      confirmText: "Desvincular",
       cancelText: "Cancelar",
       type: "danger",
     });
@@ -4815,6 +4816,7 @@ export default function OSOperationalPage() {
         const { vehicleId } = quickVehicleModal;
         if (hasDuplicatePlateQuick(vehicleQuickForm.placa, vehicleId))
           throw new Error("Já existe um veículo com esta placa.");
+        const oldVehicle = vehicles.find((v) => v.id === vehicleId);
         const { data, error } = await supabase
           .from("veiculos")
           .update({
@@ -4827,9 +4829,41 @@ export default function OSOperationalPage() {
           .select("id, placa, modelo, marca")
           .single();
         if (error) throw error;
+        const newVehicle = data as VehicleOption;
         setVehicles((prev) =>
-          prev.map((v) => (v.id === vehicleId ? (data as VehicleOption) : v)),
+          prev.map((v) => (v.id === vehicleId ? newVehicle : v)),
         );
+
+        // Auditoria: como o veículo pode estar vinculado a vários motoristas,
+        // registra o log de atualização para todos os motoristas afetados.
+        const oldLabel = oldVehicle
+          ? `${oldVehicle.marca} ${oldVehicle.modelo} (${oldVehicle.placa})`
+          : "veículo";
+        const newLabel = `${newVehicle.marca} ${newVehicle.modelo} (${newVehicle.placa})`;
+        if (oldLabel !== newLabel) {
+          const actor = buildActorFromProfile(profile);
+          const affectedDriverIds = driverVehiclesAssoc
+            .filter((a) => a.vehicle_id === vehicleId)
+            .map((a) => a.driver_id);
+          for (const driverId of affectedDriverIds) {
+            await logDriverEvent({
+              driver_id: driverId,
+              type: "update",
+              ...actor,
+              description: `Dados do veículo vinculado atualizados: ${oldLabel} → ${newLabel}.`,
+              metadata: {
+                vehicle_id: vehicleId,
+                changes: {
+                  placa: { from: oldVehicle?.placa ?? null, to: newVehicle.placa },
+                  modelo: { from: oldVehicle?.modelo ?? null, to: newVehicle.modelo },
+                  marca: { from: oldVehicle?.marca ?? null, to: newVehicle.marca },
+                },
+                origin: "os_page",
+              },
+            });
+          }
+        }
+
         toast.success("Veículo atualizado!");
       }
       setQuickVehicleModal(null);
@@ -11297,10 +11331,10 @@ export default function OSOperationalPage() {
                                 }))
                               }
                               className="inline-flex items-center justify-center p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                              aria-label="Remover veículo"
-                              title="Remover veículo"
+                              aria-label="Desvincular"
+                              title="Desvincular"
                             >
-                              <Trash2 size={16} />
+                              <Link2Off size={16} />
                             </button>
                           </div>
                         </div>
@@ -11411,24 +11445,44 @@ export default function OSOperationalPage() {
                   <Truck size={20} className="text-slate-500" /> Veículos
                   Vinculados
                 </h3>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOsVehicleManageIds((prev) => [
-                      ...prev,
-                      filteredQuickAddVehicles.find((v) => !prev.includes(v.id))
-                        ?.id || "",
-                    ])
-                  }
-                  disabled={
-                    filteredQuickAddVehicles.filter(
-                      (v) => !osVehicleManageIds.includes(v.id),
-                    ).length === 0
-                  }
-                  className="flex items-center gap-3 px-4 py-3 bg-blue-100 text-blue-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <PlusCircle size={14} /> Adicionar veículo
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOsVehicleManageIds((prev) => [
+                        ...prev,
+                        filteredQuickAddVehicles.find((v) => !prev.includes(v.id))
+                          ?.id || "",
+                      ])
+                    }
+                    disabled={
+                      filteredQuickAddVehicles.filter(
+                        (v) => !osVehicleManageIds.includes(v.id),
+                      ).length === 0
+                    }
+                    className="flex items-center gap-3 px-4 py-3 bg-blue-100 text-blue-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <PlusCircle size={14} /> Adicionar veículo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVehicleQuickForm({
+                        placa: "",
+                        modelo: "",
+                        marca: "",
+                        tipo: "carro",
+                      });
+                      setQuickVehicleModal({
+                        mode: "create",
+                        rowIndex: -1,
+                      });
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 bg-green-100 text-green-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-green-200 transition-all shadow-sm cursor-pointer"
+                  >
+                    <Car size={14} /> Cadastrar novo
+                  </button>
+                </div>
               </div>
 
               <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -11522,34 +11576,14 @@ export default function OSOperationalPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              setVehicleQuickForm({
-                                placa: "",
-                                modelo: "",
-                                marca: "",
-                                tipo: "carro",
-                              });
-                              setQuickVehicleModal({
-                                mode: "create",
-                                rowIndex: index,
-                              });
-                            }}
-                            className="inline-flex items-center justify-center p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all cursor-pointer"
-                            aria-label="Cadastrar novo veículo"
-                            title="Cadastrar novo veículo"
-                          >
-                            <Car size={16} />
-                          </button>
-                          <button
-                            type="button"
                             onClick={() =>
                               handleRemoveVehicleFromManage(vehicleId, index)
                             }
                             className="inline-flex items-center justify-center p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                            aria-label="Remover veículo"
-                            title="Remover veículo"
+                            aria-label="Desvincular"
+                            title="Desvincular"
                           >
-                            <Trash2 size={16} />
+                            <Link2Off size={16} />
                           </button>
                         </div>
                       </div>
