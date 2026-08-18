@@ -25,14 +25,7 @@ export type CaixaConta = {
   banco?: CaixaContaBanco | null;
 };
 
-export type CaixaFormaPagamento =
-  | "pix"
-  | "dinheiro"
-  | "cartao_credito"
-  | "cartao_debito"
-  | "transferencia"
-  | "boleto"
-  | "outro";
+export type CaixaFormaPagamento = string;
 
 export type CaixaLancamentoOrigem = "manual" | "os_recebimento" | "os_repasse";
 

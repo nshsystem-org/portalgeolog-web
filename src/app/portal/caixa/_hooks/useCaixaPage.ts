@@ -7,10 +7,19 @@ import { useData, type Cliente, type Driver } from "@/context/DataContext";
 import { useParceiros } from "@/hooks/useParceiros";
 import { useFornecedores } from "@/hooks/useFornecedores";
 import {
+  useCaixaCategorias,
+  useCaixaFormasPagamento,
+} from "@/hooks/useCaixaCategorias";
+import {
   useServerPaginatedTable,
   type UseServerPaginatedTableResult,
 } from "@/hooks/useServerPaginatedTable";
-import type { ParceiroServico, Fornecedor } from "@/lib/supabase/queries";
+import type {
+  ParceiroServico,
+  Fornecedor,
+  CaixaCategoria,
+  CaixaFormaPagamento as CaixaFormaPagamentoDB,
+} from "@/lib/supabase/queries";
 import {
   createCaixaFilters,
   createCaixaLookupMaps,
@@ -30,6 +39,7 @@ import {
   createConta,
   createLancamento,
   archiveLancamento,
+  gerarRelatorioCaixa,
   getCaixaStats,
   getComprovanteUrl,
   isLancamentoEditavel,
@@ -39,6 +49,7 @@ import {
   updateLancamento,
   type CaixaContaPayload,
   type CaixaLancamentoPayload,
+  type CaixaReportPayload,
 } from "../_services/caixa.service";
 
 type QuickRangeMode = "today" | "week" | "month";
@@ -85,8 +96,10 @@ export type CaixaPageState = {
   showLancamentoModal: boolean;
   lancamentoEmEdicao: CaixaLancamento | null;
   showContasModal: boolean;
+  showRelatorioModal: boolean;
   savingLancamento: boolean;
   savingConta: boolean;
+  reportLoading: boolean;
   openActionMenuId: string | null;
   actionMenuRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
 
@@ -114,6 +127,9 @@ export type CaixaPageState = {
   closeLancamentoModal: () => void;
   handleOpenContasModal: () => void;
   closeContasModal: () => void;
+  handleOpenRelatorioModal: () => void;
+  closeRelatorioModal: () => void;
+  handleGenerateReport: (payload: CaixaReportPayload) => Promise<void>;
   handleSalvarLancamento: (
     payload: Omit<CaixaLancamentoPayload, "contaId" | "tipo"> & {
       contaId: string;
@@ -132,6 +148,10 @@ export type CaixaPageState = {
   drivers: Driver[];
   parceiros: ParceiroServico[];
   fornecedores: Fornecedor[];
+  categoriasDB: CaixaCategoria[];
+  formasDB: CaixaFormaPagamentoDB[];
+  refreshCategorias: () => void;
+  refreshFormas: () => void;
   dataLoading: boolean;
 };
 
@@ -141,6 +161,10 @@ export function useCaixaPage(): CaixaPageState {
   const { profile } = useAuth();
   const { parceiros } = useParceiros();
   const { fornecedores } = useFornecedores();
+  const { categorias: categoriasDB, refresh: refreshCategorias } =
+    useCaixaCategorias();
+  const { formas: formasDB, refresh: refreshFormas } =
+    useCaixaFormasPagamento();
   const { clientes, drivers, loading: dataLoading } = useData();
   const now = getBrazilDate();
 
@@ -171,8 +195,10 @@ export function useCaixaPage(): CaixaPageState {
   const [lancamentoEmEdicao, setLancamentoEmEdicao] =
     useState<CaixaLancamento | null>(null);
   const [showContasModal, setShowContasModal] = useState(false);
+  const [showRelatorioModal, setShowRelatorioModal] = useState(false);
   const [savingLancamento, setSavingLancamento] = useState(false);
   const [savingConta, setSavingConta] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
   // UI visibility
@@ -417,6 +443,47 @@ export function useCaixaPage(): CaixaPageState {
     setShowContasModal(false);
   }, []);
 
+  // Modal: relatório
+  const handleOpenRelatorioModal = useCallback((): void => {
+    setShowRelatorioModal(true);
+  }, []);
+
+  const closeRelatorioModal = useCallback((): void => {
+    if (reportLoading) return;
+    setShowRelatorioModal(false);
+  }, [reportLoading]);
+
+  const handleGenerateReport = useCallback(
+    async (payload: CaixaReportPayload): Promise<void> => {
+      setReportLoading(true);
+      try {
+        const { blob, fileName: serverFileName } =
+          await gerarRelatorioCaixa(payload);
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        const ext = payload.format === "xlsx" ? "xlsx" : "pdf";
+        const fileName =
+          serverFileName ||
+          `caixa-${payload.template}-${payload.dataInicio}-ate-${payload.dataFim}.${ext}`;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success("Relatório gerado com sucesso!");
+        setShowRelatorioModal(false);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Erro ao gerar relatório.",
+        );
+      } finally {
+        setReportLoading(false);
+      }
+    },
+    [],
+  );
+
   const handleSalvarConta = useCallback(
     async (payload: CaixaContaPayload): Promise<void> => {
       setSavingConta(true);
@@ -546,8 +613,10 @@ export function useCaixaPage(): CaixaPageState {
     showLancamentoModal,
     lancamentoEmEdicao,
     showContasModal,
+    showRelatorioModal,
     savingLancamento,
     savingConta,
+    reportLoading,
     openActionMenuId,
     actionMenuRefs,
     setDataInicio: (value) => {
@@ -576,6 +645,9 @@ export function useCaixaPage(): CaixaPageState {
     closeLancamentoModal,
     handleOpenContasModal,
     closeContasModal,
+    handleOpenRelatorioModal,
+    closeRelatorioModal,
+    handleGenerateReport,
     handleSalvarLancamento,
     handleSalvarConta,
     handleToggleContaAtiva,
@@ -587,6 +659,10 @@ export function useCaixaPage(): CaixaPageState {
     drivers,
     parceiros,
     fornecedores,
+    categoriasDB,
+    formasDB,
+    refreshCategorias,
+    refreshFormas,
     dataLoading,
   };
 }

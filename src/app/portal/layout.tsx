@@ -50,7 +50,7 @@ import {
   Wallet,
   ClipboardList,
   Landmark,
-  ChevronDown,
+  ChevronRight,
   Database,
   Shield,
   User,
@@ -156,112 +156,41 @@ export default function DashboardLayout({
   } = useUserPresence();
   const router = useRouter();
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(true);
-  const [openSections, setOpenSections] = useState<
-    Record<
-      "operacional" | "financeiro" | "cadastros" | "configuracoes",
-      boolean
-    >
-  >({
-    operacional: false,
-    financeiro: false,
-    cadastros: false,
-    configuracoes: false,
-  });
 
-  // Mapa de rotas por seção para auto-abrir a seção ativa
-  const sectionRoutes: Record<
-    "operacional" | "financeiro" | "cadastros" | "configuracoes",
-    readonly string[]
-  > = {
-    operacional: ["/portal/os"],
-    financeiro: ["/portal/financeiro", "/portal/caixa"],
-    cadastros: [
-      "/portal/motoristas",
-      "/portal/veiculos",
-      "/portal/passageiros",
-      "/portal/clientes",
-      "/portal/parcerias",
-      "/portal/fornecedores",
-    ],
-    configuracoes: [
-      "/portal/config",
-      "/portal/config/acessos",
-      "/portal/config/perfil",
-      "/portal/config/financeiro",
-      "/portal/config/notificacoes",
-    ],
-  };
+  type SectionKey =
+    | "operacional"
+    | "financeiro"
+    | "cadastros"
+    | "configuracoes";
+  const [hoveredSection, setHoveredSection] = useState<SectionKey | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-abrir a seção que contém a rota ativa
+  const handleOpenSection = useCallback((section: SectionKey | null) => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    setHoveredSection(section);
+  }, []);
+
+  const handleScheduleClose = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      setHoveredSection(null);
+    }, 180);
+  }, []);
+
+  const handleCancelClose = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+  }, []);
+
+  const handleCloseImmediately = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    setHoveredSection(null);
+  }, []);
+
   useEffect(() => {
-    setOpenSections((prev) => {
-      const next = { ...prev };
-      (Object.keys(sectionRoutes) as (keyof typeof sectionRoutes)[]).forEach(
-        (section) => {
-          if (sectionRoutes[section].includes(pathname)) {
-            next[section] = true;
-          }
-        },
-      );
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
-
-  // Ao colapsar o sidebar, fechar todas as seções exceto a ativa.
-  // Ao expandir novamente, só a seção da página atual aparece aberta.
-  useEffect(() => {
-    if (collapsed) {
-      setOpenSections({
-        operacional: sectionRoutes.operacional.includes(pathname),
-        financeiro: sectionRoutes.financeiro.includes(pathname),
-        cadastros: sectionRoutes.cadastros.includes(pathname),
-        configuracoes: sectionRoutes.configuracoes.includes(pathname),
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapsed]);
-
-  // Seção que contém a rota atual (sempre fica aberta)
-  const activeSection = useMemo(() => {
-    return (Object.keys(sectionRoutes) as (keyof typeof sectionRoutes)[]).find(
-      (section) => sectionRoutes[section].includes(pathname),
-    );
-  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleSection = useCallback(
-    (
-      section: "operacional" | "financeiro" | "cadastros" | "configuracoes",
-    ) => {
-      // Se o sidebar estiver colapsado, expandir e abrir a seção
-      if (collapsed) {
-        setCollapsed(false);
-        setOpenSections((s) => ({ ...s, [section]: true }));
-        return;
-      }
-      // Ao abrir uma seção, fechar todas as outras (exceto a ativa da página)
-      setOpenSections((s) => {
-        const willOpen = !s[section];
-        if (!willOpen) {
-          // Fechando: só se não for a seção ativa
-          if (section === activeSection) return s;
-          return { ...s, [section]: false };
-        }
-        // Abrindo: fechar as outras, manter a ativa
-        const next = {
-          operacional: false,
-          financeiro: false,
-          cadastros: false,
-          configuracoes: false,
-        };
-        next[section] = true;
-        if (activeSection) next[activeSection] = true;
-        return next;
-      });
-    },
-    [collapsed, activeSection],
-  );
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -273,6 +202,152 @@ export default function DashboardLayout({
   const hasPageAccess = useCallback(
     (page: string): boolean => checkPageAccess(profile, page as PageKey),
     [profile],
+  );
+
+  // Seções do Sidebar e seus subitens
+  const menuSections = useMemo(
+    () => [
+      {
+        id: "operacional" as const,
+        label: "Operacional",
+        icon: <ClipboardList />,
+        accentColor: "text-sky-400",
+        description: "Ordens de Serviço e acompanhamento de rotas",
+        items: [
+          hasPageAccess("os") && {
+            href: "/portal/os",
+            icon: <FileText />,
+            label: "Ordem de Serviço",
+            description: "Emissão e controle operacional de OS",
+          },
+        ].filter(Boolean) as {
+          href: string;
+          icon: ReactElement;
+          label: string;
+          description: string;
+        }[],
+      },
+      {
+        id: "financeiro" as const,
+        label: "Financeiro",
+        icon: <Landmark />,
+        accentColor: "text-sky-400",
+        description: "Medição de faturamento e fluxo de caixa",
+        items: [
+          hasPageAccess("financeiro") && {
+            href: "/portal/financeiro",
+            icon: <DollarSign />,
+            label: "Medição Financeira",
+            description: "Fechamento, faturamento e repasse",
+          },
+          hasPageAccess("caixa") && {
+            href: "/portal/caixa",
+            icon: <Wallet />,
+            label: "Fluxo de Caixa",
+            description: "Controle de receitas, despesas e saldos",
+          },
+        ].filter(Boolean) as {
+          href: string;
+          icon: ReactElement;
+          label: string;
+          description: string;
+        }[],
+      },
+      {
+        id: "cadastros" as const,
+        label: "Cadastros",
+        icon: <Database />,
+        accentColor: "text-sky-400",
+        description: "Cadastros base e parceiros do sistema",
+        items: [
+          hasPageAccess("motoristas") && {
+            href: "/portal/motoristas",
+            icon: <Users />,
+            label: "Motoristas",
+            description: "Cadastro e documentação de condutores",
+          },
+          hasPageAccess("veiculos") && {
+            href: "/portal/veiculos",
+            icon: <Truck />,
+            label: "Veículos",
+            description: "Frota de veículos e especificações",
+          },
+          hasPageAccess("passageiros") && {
+            href: "/portal/passageiros",
+            icon: <UserSquare2 />,
+            label: "Passageiros",
+            description: "Passageiros e colaboradores das rotas",
+          },
+          hasPageAccess("clientes") && {
+            href: "/portal/clientes",
+            icon: <Building />,
+            label: "Clientes",
+            description: "Empresas contratantes e centros de custo",
+          },
+          hasPageAccess("parcerias") && {
+            href: "/portal/parcerias",
+            icon: <Handshake />,
+            label: "Parceiros de Serviço",
+            description: "Parcerias operacionais e convênios",
+          },
+          hasPageAccess("fornecedores") && {
+            href: "/portal/fornecedores",
+            icon: <Package />,
+            label: "Fornecedores",
+            description: "Cadastro de fornecedores de insumos",
+          },
+        ].filter(Boolean) as {
+          href: string;
+          icon: ReactElement;
+          label: string;
+          description: string;
+        }[],
+      },
+      {
+        id: "configuracoes" as const,
+        label: "Configurações",
+        icon: <Settings />,
+        accentColor: "text-sky-400",
+        description: "Gestão de acessos, perfil e parâmetros",
+        items: [
+          hasPageAccess("config-acessos") && {
+            href: "/portal/config/acessos",
+            icon: <Shield />,
+            label: "Gestão de Acessos",
+            description: "Controle de usuários e permissões",
+          },
+          hasPageAccess("config-perfil") && {
+            href: "/portal/config/perfil",
+            icon: <User />,
+            label: "Meu Perfil",
+            description: "Dados da conta e alteração de senha",
+          },
+          hasPageAccess("config-financeiro") && {
+            href: "/portal/config/financeiro",
+            icon: <Percent />,
+            label: "Financeiro",
+            description: "Parâmetros e taxas padrão do sistema",
+          },
+          hasPageAccess("config-notificacoes") && {
+            href: "/portal/config/notificacoes",
+            icon: <Bell />,
+            label: "Notificações",
+            description: "Canais e preferências de alerta",
+          },
+        ].filter(Boolean) as {
+          href: string;
+          icon: ReactElement;
+          label: string;
+          description: string;
+        }[],
+      },
+    ],
+    [hasPageAccess],
+  );
+
+  const activeHoveredSection = useMemo(
+    () => menuSections.find((sec) => sec.id === hoveredSection),
+    [menuSections, hoveredSection],
   );
 
   // Verificar se o usuário tem acesso à página atual (guard global)
@@ -380,213 +455,236 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] flex text-[var(--color-geolog-blue)]">
-      {/* Sidebar - Hover to Expand */}
+      {/* Sidebar - Fixo 88px estilo rail vertical */}
       <aside
-        onMouseEnter={() => setCollapsed(false)}
-        onMouseLeave={() => setCollapsed(true)}
-        className={`${
-          collapsed ? "w-20" : "w-72"
-        } bg-[var(--color-geolog-blue)] border-r border-blue-900 hidden md:flex flex-col fixed inset-y-0 shadow-[4px_0_24px_rgba(0,0,0,0.1)] z-50 transition-all duration-300 ease-in-out group/sidebar`}
+        className="w-[88px] bg-[var(--color-geolog-blue)] border-r border-blue-900 hidden md:flex flex-col fixed inset-y-0 shadow-[4px_0_24px_rgba(0,0,0,0.15)] z-50 transition-all duration-200 select-none"
+        onMouseEnter={handleCancelClose}
+        onMouseLeave={handleScheduleClose}
       >
-        <div
-          className={`p-6 flex items-center ${collapsed ? "justify-center" : "justify-start gap-3"} border-b border-blue-800/50 h-20 overflow-hidden`}
-        >
-          <div className="flex-shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Geolog Logo" className="h-10 w-auto" />
-          </div>
-          {!collapsed && (
-            <div className="flex flex-col leading-none">
-              <span className="text-base font-black text-white tracking-wide whitespace-nowrap">
-                Portal Geolog
-              </span>
-              {displayVersion && (
-                <span className="mt-1 text-[10px] font-bold text-blue-300/60 tracking-wider whitespace-nowrap">
-                  {displayVersion}
-                </span>
-              )}
-            </div>
-          )}
+        {/* Logo */}
+        <div className="flex flex-col items-center justify-center border-b border-blue-800/50 h-20 overflow-hidden px-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="Geolog Logo"
+            className="h-10 w-auto animate-logo-dance"
+          />
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 mt-4 overflow-y-auto overflow-x-hidden">
-          <NavLink
+        {/* Nav Items (Vertical Rail) */}
+        <nav className="flex-1 p-2 space-y-1.5 overflow-y-auto overflow-x-hidden">
+          {/* Dashboard (Link direto sem subitens) */}
+          <Link
             href="/portal/dashboard"
-            icon={<LayoutDashboard />}
-            label="Dashboard"
-            active={pathname === "/portal/dashboard"}
-            collapsed={collapsed}
-          />
+            onClick={handleCloseImmediately}
+            onMouseEnter={() => handleOpenSection(null)}
+            title="Dashboard"
+            className={`flex flex-col items-center justify-center gap-1 w-full h-[72px] rounded-2xl transition-all font-bold group cursor-pointer ${
+              pathname === "/portal/dashboard"
+                ? "bg-gradient-to-b from-[#4fc9c9] to-[#001c3a] text-white shadow-md shadow-black/20"
+                : "text-blue-100 hover:text-white hover:bg-white/10"
+            }`}
+          >
+            <div
+              className={`transition-all duration-200 ${
+                pathname === "/portal/dashboard"
+                  ? "scale-110 text-[#001c3a]"
+                  : "text-blue-300 group-hover:text-white group-hover:scale-110"
+              }`}
+            >
+              <LayoutDashboard size={24} />
+            </div>
+            <span
+              className={`text-[11px] leading-tight text-center px-1 truncate w-full ${
+                pathname === "/portal/dashboard"
+                  ? "text-white font-extrabold"
+                  : "text-blue-100/90"
+              }`}
+            >
+              Dashboard
+            </span>
+          </Link>
 
-          <div
-            className={`h-px bg-blue-800/40 ${collapsed ? "mx-1 my-1" : "mx-2 my-2"}`}
-          />
+          <div className="h-px bg-blue-800/40 mx-2 my-1.5" />
 
-          {hasPageAccess("os") && (
-            <NavSection
-              id="operacional"
-              icon={<ClipboardList />}
-              label="Operacional"
-              collapsed={collapsed}
-              isOpen={openSections.operacional}
-              onToggle={() => toggleSection("operacional")}
-              pathname={pathname}
-              accentColor="text-amber-400"
-              items={[
-                {
-                  href: "/portal/os",
-                  icon: <FileText />,
-                  label: "Ordem de Serviço",
-                },
-              ]}
-            />
-          )}
+          {/* Seções com Subitens */}
+          {menuSections
+            .filter((section) => section.items.length > 0)
+            .map((section) => {
+              const isRouteActive = section.items.some(
+                (it) => it.href === pathname,
+              );
+              const isHovered = hoveredSection === section.id;
 
-          {(hasPageAccess("motoristas") ||
-            hasPageAccess("veiculos") ||
-            hasPageAccess("passageiros") ||
-            hasPageAccess("clientes") ||
-            hasPageAccess("parcerias") ||
-            hasPageAccess("fornecedores")) && (
-            <NavSection
-              id="cadastros"
-              icon={<Database />}
-              label="Cadastros"
-              collapsed={collapsed}
-              isOpen={openSections.cadastros}
-              onToggle={() => toggleSection("cadastros")}
-              pathname={pathname}
-              accentColor="text-violet-400"
-              items={[
-                hasPageAccess("motoristas") && {
-                  href: "/portal/motoristas",
-                  icon: <Users />,
-                  label: "Motoristas",
-                },
-                hasPageAccess("veiculos") && {
-                  href: "/portal/veiculos",
-                  icon: <Truck />,
-                  label: "Veículos",
-                },
-                hasPageAccess("passageiros") && {
-                  href: "/portal/passageiros",
-                  icon: <UserSquare2 />,
-                  label: "Passageiros",
-                },
-                hasPageAccess("clientes") && {
-                  href: "/portal/clientes",
-                  icon: <Building />,
-                  label: "Clientes",
-                },
-                hasPageAccess("parcerias") && {
-                  href: "/portal/parcerias",
-                  icon: <Handshake />,
-                  label: "Parceiros de Serviço",
-                },
-                hasPageAccess("fornecedores") && {
-                  href: "/portal/fornecedores",
-                  icon: <Package />,
-                  label: "Fornecedores",
-                },
-              ].filter(Boolean) as {
-                href: string;
-                icon: ReactElement;
-                label: string;
-              }[]}
-            />
-          )}
-
-          {(hasPageAccess("financeiro") || hasPageAccess("caixa")) && (
-            <NavSection
-              id="financeiro"
-              icon={<Landmark />}
-              label="Financeiro"
-              collapsed={collapsed}
-              isOpen={openSections.financeiro}
-              onToggle={() => toggleSection("financeiro")}
-              pathname={pathname}
-              accentColor="text-emerald-400"
-              items={[
-                hasPageAccess("financeiro") && {
-                  href: "/portal/financeiro",
-                  icon: <DollarSign />,
-                  label: "Medição Financeira",
-                },
-                hasPageAccess("caixa") && {
-                  href: "/portal/caixa",
-                  icon: <Wallet />,
-                  label: "Fluxo de Caixa",
-                },
-              ].filter(Boolean) as {
-                href: string;
-                icon: ReactElement;
-                label: string;
-              }[]}
-            />
-          )}
-
-          {(hasPageAccess("config-acessos") ||
-            hasPageAccess("config-perfil") ||
-            hasPageAccess("config-financeiro") ||
-            hasPageAccess("config-notificacoes")) && (
-            <NavSection
-              id="configuracoes"
-              icon={<Settings />}
-              label="Configurações"
-              collapsed={collapsed}
-              isOpen={openSections.configuracoes}
-              onToggle={() => toggleSection("configuracoes")}
-              pathname={pathname}
-              accentColor="text-sky-400"
-              items={[
-                hasPageAccess("config-acessos") && {
-                  href: "/portal/config/acessos",
-                  icon: <Shield />,
-                  label: "Gestão de Acessos",
-                },
-                hasPageAccess("config-perfil") && {
-                  href: "/portal/config/perfil",
-                  icon: <User />,
-                  label: "Meu Perfil",
-                },
-                hasPageAccess("config-financeiro") && {
-                  href: "/portal/config/financeiro",
-                  icon: <Percent />,
-                  label: "Financeiro",
-                },
-                hasPageAccess("config-notificacoes") && {
-                  href: "/portal/config/notificacoes",
-                  icon: <Bell />,
-                  label: "Notificações",
-                },
-              ].filter(Boolean) as {
-                href: string;
-                icon: ReactElement;
-                label: string;
-              }[]}
-            />
-          )}
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onMouseEnter={() => handleOpenSection(section.id)}
+                  onClick={() => handleOpenSection(section.id)}
+                  title={section.label}
+                  className={`flex flex-col items-center justify-center gap-1 w-full h-[72px] rounded-2xl transition-all font-bold relative group cursor-pointer ${
+                    isRouteActive
+                      ? "bg-gradient-to-b from-[#4fc9c9] to-[#001c3a] text-white shadow-md shadow-black/20"
+                      : isHovered
+                        ? "bg-white/15 text-white"
+                        : "text-blue-100 hover:text-white hover:bg-white/10"
+                  }`}
+                >
+                  <div
+                    className={`transition-all duration-200 group-hover:scale-110 ${
+                      isRouteActive ? "text-[#001c3a]" : section.accentColor
+                    }`}
+                  >
+                    {cloneElement(
+                      section.icon as ReactElement<{ size?: number }>,
+                      { size: 24 },
+                    )}
+                  </div>
+                  <span
+                    className={`text-[11px] leading-tight text-center px-1 truncate w-full ${
+                      isRouteActive
+                        ? "text-white font-extrabold"
+                        : "text-blue-100/90"
+                    }`}
+                  >
+                    {section.label}
+                  </span>
+                </button>
+              );
+            })}
         </nav>
 
-        <div className="p-4 border-t border-blue-800/50">
+        {/* Botão Sair */}
+        <div className="p-2 border-t border-blue-800/50">
           <button
             onClick={handleSignOut}
-            className={`w-full flex items-center ${collapsed ? "justify-center" : "gap-3 px-5"} py-3 text-blue-300/80 hover:text-white hover:bg-red-500/20 rounded-xl transition-all group font-bold text-sm`}
-            title={collapsed ? "Sair" : ""}
+            className="w-full flex flex-col items-center justify-center gap-1 h-[72px] text-blue-300/80 hover:text-white hover:bg-red-500/20 rounded-xl transition-all group font-bold"
+            title="Sair do Portal"
           >
             <LogOut
-              size={18}
-              className={`${!collapsed && "group-hover:-translate-x-1"} transition-transform`}
+              size={24}
+              className="group-hover:-translate-x-0.5 transition-transform text-blue-300 group-hover:text-red-300"
             />
-            {!collapsed && <span>Sair do Portal</span>}
+            <span className="text-[11px] leading-tight text-center">Sair</span>
           </button>
         </div>
       </aside>
 
+      {/* Backdrop Modal Azul Escuro (ativo ao abrir submenu lateral) */}
+      {hoveredSection &&
+        activeHoveredSection &&
+        activeHoveredSection.items.length > 0 && (
+          <div
+            className="fixed inset-0 z-40 bg-[#020817]/75 backdrop-blur-[3px] transition-all duration-300 animate-in fade-in"
+            onClick={handleCloseImmediately}
+            onMouseEnter={handleScheduleClose}
+          />
+        )}
+
+      {/* Div Lateral Submenu com Fundo Branco (largura responsiva ampliada para telas >= 1400px) */}
+      {hoveredSection &&
+        activeHoveredSection &&
+        activeHoveredSection.items.length > 0 && (
+          <div
+            className="fixed left-[88px] inset-y-0 z-50 w-80 xl:w-96 2xl:w-[420px] bg-white border-r border-slate-200 shadow-[20px_0_40px_rgba(0,0,0,0.2)] flex flex-col transition-all duration-200 ease-out animate-in fade-in slide-in-from-left-2"
+            onMouseEnter={handleCancelClose}
+            onMouseLeave={handleScheduleClose}
+          >
+            {/* Header da Div Lateral */}
+            <div className="h-20 px-6 xl:px-7 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+              <div className="flex flex-col">
+                <span className="text-[10px] xl:text-[11px] font-black uppercase tracking-[0.2em] text-blue-600">
+                  Navegação
+                </span>
+                <h2 className="text-lg xl:text-xl font-black text-slate-800 tracking-tight">
+                  {activeHoveredSection.label}
+                </h2>
+              </div>
+              <div className="w-10 h-10 xl:w-11 xl:h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-xs">
+                {cloneElement(
+                  activeHoveredSection.icon as ReactElement<{ size?: number }>,
+                  { size: 22 },
+                )}
+              </div>
+            </div>
+
+            {/* Lista de Subitens */}
+            <div className="flex-1 p-4 xl:p-5 space-y-2 overflow-y-auto">
+              <div className="px-2 py-1 mb-1.5">
+                <p className="text-xs xl:text-sm font-medium text-slate-400">
+                  {activeHoveredSection.description}
+                </p>
+              </div>
+
+              {activeHoveredSection.items.map((item) => {
+                const isItemActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={handleCloseImmediately}
+                    className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all group cursor-pointer ${
+                      isItemActive
+                        ? "bg-[#c6fff2] text-[#020817] border border-slate-200/80 shadow-xs font-bold"
+                        : "text-slate-700 hover:bg-slate-50 hover:text-blue-600 border border-transparent"
+                    }`}
+                  >
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+                        isItemActive
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600"
+                      }`}
+                    >
+                      {cloneElement(
+                        item.icon as ReactElement<{ size?: number }>,
+                        { size: 20 },
+                      )}
+                    </div>
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span
+                        className={`text-sm xl:text-[15px] leading-snug truncate ${
+                          isItemActive
+                            ? "font-bold text-blue-900"
+                            : "font-semibold text-slate-800 group-hover:text-blue-600"
+                        }`}
+                      >
+                        {item.label}
+                      </span>
+                      {item.description && (
+                        <span className="text-xs text-slate-400 font-normal leading-tight truncate group-hover:text-slate-500 mt-0.5">
+                          {item.description}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight
+                      size={18}
+                      className={`text-slate-300 group-hover:text-blue-500 shrink-0 group-hover:translate-x-0.5 transition-transform ${
+                        isItemActive ? "text-blue-600 font-bold" : ""
+                      }`}
+                    />
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Rodapé da Div Lateral */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-center">
+              <span className="text-xs font-semibold text-slate-400">
+                Portal Geolog &bull; 2026
+                {displayVersion && (
+                  <span className="ml-1.5 text-[9px] font-bold text-blue-400 tracking-wider">
+                    {displayVersion}
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+
       {/* Main Content Area */}
-      <div
-        className={`flex-1 ${collapsed ? "md:ml-20" : "md:ml-72"} flex flex-col transition-all duration-300 ease-in-out`}
-      >
+      <div className="flex-1 md:ml-[88px] flex flex-col transition-all duration-300 ease-in-out">
         {/* Header */}
         <header className="h-20 bg-white border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-40">
           <div className="flex items-center gap-4">
@@ -1482,162 +1580,6 @@ export default function DashboardLayout({
 
       {/* Chat Widget Flutuante */}
       <ChatWidget />
-    </div>
-  );
-}
-
-function NavLink({
-  href,
-  icon,
-  label,
-  active = false,
-  collapsed = false,
-  variant = "primary",
-}: {
-  href: string;
-  icon: ReactElement;
-  label: string;
-  active?: boolean;
-  collapsed?: boolean;
-  variant?: "primary" | "subitem";
-}) {
-  const isPrimary = variant === "primary";
-
-  // Cores dos 4 itens principais (Dashboard + headers) — mais chamativas
-  // Subitens (dentro dos accordions) — mais discretos
-  const activeClasses = isPrimary
-    ? "bg-sky-400 text-[var(--color-geolog-blue)] shadow-md shadow-sky-500/30"
-    : "bg-white/15 text-white";
-  const inactiveClasses = isPrimary
-    ? "text-blue-100 hover:text-white hover:bg-white/10"
-    : "text-blue-300/60 hover:text-blue-100 hover:bg-white/5";
-  const iconSize = isPrimary ? 20 : 16;
-  const fontWeight = isPrimary ? "font-bold" : "font-medium";
-  const padding = isPrimary ? "py-3" : "py-2";
-  const labelColor = isPrimary
-    ? "text-blue-50 group-hover/link:text-white"
-    : "text-blue-200/50 group-hover/link:text-blue-100";
-
-  return (
-    <Link
-      href={href}
-      title={collapsed ? label : ""}
-      className={`flex items-center ${collapsed ? "justify-center" : "gap-3 px-4"} ${padding} rounded-xl transition-all ${fontWeight} text-sm relative group/link ${active ? activeClasses : inactiveClasses}`}
-    >
-      <div
-        className={`${active ? "scale-110 text-inherit" : "group-hover/link:translate-x-0.5 group-hover/link:scale-110 text-blue-300 group-hover/link:text-white"} transition-all duration-200`}
-      >
-        {cloneElement(icon as ReactElement<{ size?: number }>, { size: iconSize })}
-      </div>
-      {!collapsed && (
-        <span
-          className={`whitespace-nowrap ${active ? "text-inherit" : labelColor}`}
-        >
-          {label}
-        </span>
-      )}
-      {active && !collapsed && (
-        <div
-          className={`absolute right-4 w-2 h-2 rounded-full ${isPrimary ? "bg-[var(--color-geolog-blue)]" : "bg-white"}`}
-        />
-      )}
-    </Link>
-  );
-}
-
-function NavSection({
-  id,
-  icon,
-  label,
-  items,
-  collapsed,
-  isOpen,
-  onToggle,
-  pathname,
-  accentColor = "text-blue-300",
-}: {
-  id: string;
-  icon: ReactElement;
-  label: string;
-  items: { href: string; icon: ReactElement; label: string }[];
-  collapsed: boolean;
-  isOpen: boolean;
-  onToggle: () => void;
-  pathname: string;
-  accentColor?: string;
-}) {
-  const hasActive = items.some((item) => pathname === item.href);
-
-  // Estado colapsado (w-20): mostra apenas o ícone da categoria.
-  // Clicar expande o sidebar e abre a seção (handled pelo onToggle do parent).
-  if (collapsed) {
-    return (
-      <button
-        onClick={onToggle}
-        title={label}
-        aria-label={label}
-        aria-expanded={isOpen}
-        className={`flex items-center justify-center w-full py-3 rounded-xl transition-all font-bold text-sm relative group/section ${
-          hasActive
-            ? "bg-white/15 text-white"
-            : "text-blue-100 hover:text-white hover:bg-white/10"
-        }`}
-      >
-        <div
-          className={`transition-all duration-200 group-hover/section:scale-110 ${hasActive ? accentColor : accentColor}`}
-        >
-          {cloneElement(icon as ReactElement<{ size?: number }>, { size: 20 })}
-        </div>
-        {hasActive && (
-          <div className="absolute right-2 w-2 h-2 bg-white rounded-full" />
-        )}
-      </button>
-    );
-  }
-
-  // Estado expandido (w-72): accordion com header clicável.
-  return (
-    <div className="space-y-1" data-section={id}>
-      <button
-        onClick={onToggle}
-        aria-label={label}
-        aria-expanded={isOpen}
-        className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-black text-xs uppercase tracking-wider relative group/section ${
-          hasActive
-            ? "text-white bg-white/10"
-            : "text-blue-100 hover:text-white hover:bg-white/10"
-        }`}
-      >
-        <div
-          className={`transition-all ${hasActive ? "text-white" : accentColor}`}
-        >
-          {cloneElement(icon as ReactElement<{ size?: number }>, { size: 18 })}
-        </div>
-        <span className="whitespace-nowrap group-hover/section:text-white">
-          {label}
-        </span>
-        <ChevronDown
-          size={16}
-          className={`ml-auto transition-transform duration-200 text-blue-300/70 group-hover/section:text-white ${
-            isOpen ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-      {isOpen && (
-        <div className="space-y-1 ml-4 pl-3 border-l border-blue-800/40">
-          {items.map((item) => (
-            <NavLink
-              key={item.href}
-              href={item.href}
-              icon={item.icon}
-              label={item.label}
-              active={pathname === item.href}
-              collapsed={false}
-              variant="subitem"
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -18,11 +18,17 @@ import GeologMoneyInput from "@/components/ui/GeologMoneyInput";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import RequiredAsterisk from "@/components/ui/RequiredAsterisk";
 import type { Cliente, Driver } from "@/context/DataContext";
-import type { ParceiroServico, Fornecedor } from "@/lib/supabase/queries";
+import type {
+  ParceiroServico,
+  Fornecedor,
+  CaixaCategoria,
+  CaixaFormaPagamento as CaixaFormaPagamentoDB,
+} from "@/lib/supabase/queries";
 import {
-  CATEGORIAS_ENTRADA,
-  CATEGORIAS_SAIDA,
-  FORMAS_PAGAMENTO,
+  insertCaixaCategoria,
+  insertCaixaFormaPagamento,
+} from "@/lib/supabase/queries";
+import {
   getBrazilDate,
   normalizeToInputDate,
   type CaixaConta,
@@ -39,6 +45,8 @@ type CaixaLancamentoModalProps = {
   parceiros: ParceiroServico[];
   drivers: Driver[];
   fornecedores: Fornecedor[];
+  categoriasDB: CaixaCategoria[];
+  formasDB: CaixaFormaPagamentoDB[];
   saving: boolean;
   onClose: () => void;
   onSalvar: (
@@ -47,6 +55,8 @@ type CaixaLancamentoModalProps = {
       tipo: "entrada" | "saida";
     },
   ) => Promise<void>;
+  onRefreshCategorias: () => void;
+  onRefreshFormas: () => void;
 };
 
 // Estado inicial derivado de lancamentoEmEdicao (lazy init via useState)
@@ -93,9 +103,13 @@ function CaixaLancamentoForm({
   parceiros,
   drivers,
   fornecedores,
+  categoriasDB,
+  formasDB,
   saving,
   onClose,
   onSalvar,
+  onRefreshCategorias,
+  onRefreshFormas,
 }: Omit<CaixaLancamentoModalProps, "isOpen">): ReactElement {
   const contasAtivas = useMemo(() => contas.filter((c) => c.ativa), [contas]);
   const initial = useMemo(
@@ -119,24 +133,60 @@ function CaixaLancamentoForm({
   const [fornecedorId, setFornecedorId] = useState(initial.fornecedorId);
   const [file, setFile] = useState<File | null>(null);
 
-  const handleTipoChange = (next: "entrada" | "saida"): void => {
-    setTipo(next);
-    // Reseta categoria se a atual não pertence à lista do novo tipo
-    const lista = next === "entrada" ? CATEGORIAS_ENTRADA : CATEGORIAS_SAIDA;
-    if (!lista.some((c) => c.value === categoria)) {
-      setCategoria(
-        next === "entrada" ? "recebimento_cliente" : "repasse_motorista",
-      );
+  // Quick-add modal state
+  const [quickAddOpen, setQuickAddOpen] = useState<
+    "categoria" | "forma" | null
+  >(null);
+  const [quickAddNome, setQuickAddNome] = useState("");
+  const [quickAddSaving, setQuickAddSaving] = useState(false);
+
+  const handleQuickAddCategoria = async () => {
+    if (!quickAddNome.trim()) return;
+    setQuickAddSaving(true);
+    try {
+      await insertCaixaCategoria(quickAddNome.trim(), tipo);
+      onRefreshCategorias();
+      setQuickAddOpen(null);
+      setQuickAddNome("");
+    } catch (err) {
+      console.error("Erro ao criar categoria:", err);
+    } finally {
+      setQuickAddSaving(false);
     }
   };
 
-  const categoriaOptions =
-    tipo === "entrada"
-      ? CATEGORIAS_ENTRADA.map((c) => ({ id: c.value, nome: c.label }))
-      : CATEGORIAS_SAIDA.map((c) => ({ id: c.value, nome: c.label }));
-  const formaOptions = FORMAS_PAGAMENTO.map((f) => ({
-    id: f.value,
-    nome: f.label,
+  const handleQuickAddForma = async () => {
+    if (!quickAddNome.trim()) return;
+    setQuickAddSaving(true);
+    try {
+      await insertCaixaFormaPagamento(quickAddNome.trim());
+      onRefreshFormas();
+      setQuickAddOpen(null);
+      setQuickAddNome("");
+    } catch (err) {
+      console.error("Erro ao criar forma de pagamento:", err);
+    } finally {
+      setQuickAddSaving(false);
+    }
+  };
+
+  const handleTipoChange = (next: "entrada" | "saida"): void => {
+    setTipo(next);
+    // Reseta categoria se a atual não pertence à lista do novo tipo
+    const lista = categoriasDB.filter(
+      (c) => c.tipo === next || c.tipo === "ambos",
+    );
+    if (!lista.some((c) => c.slug === categoria)) {
+      setCategoria(lista[0]?.slug ?? "");
+    }
+  };
+
+  const categoriaOptions = categoriasDB
+    .filter((c) => c.tipo === tipo || c.tipo === "ambos")
+    .map((c) => ({ id: c.slug, nome: c.nome }));
+  const formaOptions = formasDB.map((f) => ({
+    id: f.slug,
+    nome: f.nome,
   }));
   const clienteOptions = clientes.map((c) => ({ id: c.id, nome: c.nome }));
   const parceiroOptions = parceiros.map((p) => ({
@@ -424,10 +474,14 @@ function CaixaLancamentoForm({
             value={categoria}
             onChange={setCategoria}
             placeholder="Selecione a categoria"
-            disableSearch
             hideTriggerAvatar
+            hideDropdownPhotos
             variant="form"
             triggerClassName="h-[58px] py-3 text-[18px]"
+            onQuickAdd={() => {
+              setQuickAddNome("");
+              setQuickAddOpen("categoria");
+            }}
           />
           {/* Forma de Pagamento */}
           <GeologSearchableSelect
@@ -439,8 +493,13 @@ function CaixaLancamentoForm({
             placeholder="Selecione a forma"
             disableSearch
             hideTriggerAvatar
+            hideDropdownPhotos
             variant="form"
             triggerClassName="h-[58px] py-3 text-[18px]"
+            onQuickAdd={() => {
+              setQuickAddNome("");
+              setQuickAddOpen("forma");
+            }}
           />
         </div>
       </div>
@@ -496,6 +555,8 @@ function CaixaLancamentoForm({
               onChange={setFornecedorId}
               placeholder="Nenhum"
               variant="form"
+              hideTriggerAvatar
+              hideDropdownPhotos
               triggerClassName="h-[58px] py-3 text-[18px]"
             />
           </div>
@@ -507,6 +568,8 @@ function CaixaLancamentoForm({
               onChange={handleParceiroChange}
               placeholder="Nenhum"
               variant="form"
+              hideTriggerAvatar
+              hideDropdownPhotos
               triggerClassName="h-[58px] py-3 text-[18px]"
             />
             <GeologSearchableSelect
@@ -606,6 +669,84 @@ function CaixaLancamentoForm({
           </p>
         ) : null}
       </div>
+
+      {/* Quick-add modal */}
+      {quickAddOpen && (
+        <div
+          className="fixed inset-0 z-[10001] bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !quickAddSaving && setQuickAddOpen(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-slate-900">
+                {quickAddOpen === "categoria"
+                  ? "Nova Categoria"
+                  : "Nova Forma de Pagamento"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => !quickAddSaving && setQuickAddOpen(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-slate-500">
+              {quickAddOpen === "categoria"
+                ? `Cadastre uma nova categoria de ${tipo === "entrada" ? "entrada" : "saída"}.`
+                : "Cadastre uma nova forma de pagamento."}
+            </p>
+            <input
+              autoFocus
+              type="text"
+              value={quickAddNome}
+              onChange={(e) => setQuickAddNome(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !quickAddSaving) {
+                  e.preventDefault();
+                  if (quickAddOpen === "categoria") {
+                    void handleQuickAddCategoria();
+                  } else {
+                    void handleQuickAddForma();
+                  }
+                }
+              }}
+              placeholder={
+                quickAddOpen === "categoria"
+                  ? "Ex: Marketing, Software..."
+                  : "Ex: Depósito, Cheque..."
+              }
+              className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+            />
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => !quickAddSaving && setQuickAddOpen(null)}
+                className="px-6 py-3 text-slate-600 font-bold hover:text-slate-900 transition-colors text-sm uppercase tracking-widest cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={quickAddSaving || !quickAddNome.trim()}
+                onClick={() => {
+                  if (quickAddOpen === "categoria") {
+                    void handleQuickAddCategoria();
+                  } else {
+                    void handleQuickAddForma();
+                  }
+                }}
+                className="px-6 py-3 bg-[rgb(42,82,144)] text-white font-black rounded-xl shadow-lg hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              >
+                {quickAddSaving ? "Salvando..." : "Adicionar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </StandardModal>
   );
 }
@@ -618,14 +759,15 @@ export function CaixaLancamentoModal({
   parceiros,
   drivers,
   fornecedores,
+  categoriasDB,
+  formasDB,
   saving,
   onClose,
   onSalvar,
+  onRefreshCategorias,
+  onRefreshFormas,
 }: CaixaLancamentoModalProps): ReactElement | null {
   if (!isOpen) return null;
-  // key muda quando o alvo muda (novo vs edição de diferentes lancamentos),
-  // forçando o React a remontar o formulário com estado inicial fresco —
-  // sem precisar de setState-in-effect.
   const formKey = lancamentoEmEdicao?.id ?? "novo";
   return (
     <CaixaLancamentoForm
@@ -636,9 +778,13 @@ export function CaixaLancamentoModal({
       parceiros={parceiros}
       drivers={drivers}
       fornecedores={fornecedores}
+      categoriasDB={categoriasDB}
+      formasDB={formasDB}
       saving={saving}
       onClose={onClose}
       onSalvar={onSalvar}
+      onRefreshCategorias={onRefreshCategorias}
+      onRefreshFormas={onRefreshFormas}
     />
   );
 }

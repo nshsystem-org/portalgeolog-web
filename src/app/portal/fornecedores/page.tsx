@@ -117,6 +117,7 @@ const initialForm = (): FornecedorFormData => ({
   pessoaTipo: "juridica",
   documento: "",
   telefone: "",
+  telefoneFixo: "",
   email: "",
   endereco: "",
   cidade: "",
@@ -192,6 +193,7 @@ export default function FornecedoresPage() {
         pessoaTipo: fornecedor.pessoaTipo,
         documento: fornecedor.documento,
         telefone: fornecedor.telefone ? formatBrazilPhone(fornecedor.telefone) : "",
+        telefoneFixo: fornecedor.telefoneFixo ? formatBrazilPhone(fornecedor.telefoneFixo) : "",
         email: fornecedor.email,
         endereco: fornecedor.endereco,
         cidade: fornecedor.cidade,
@@ -228,6 +230,13 @@ export default function FornecedoresPage() {
       }));
       return;
     }
+    if (field === "telefoneFixo") {
+      setFormData((prev) => ({
+        ...prev,
+        telefoneFixo: formatBrazilPhone(value),
+      }));
+      return;
+    }
     if (field === "email") {
       setFormData((prev) => ({ ...prev, email: value.toLowerCase() }));
       return;
@@ -254,6 +263,7 @@ export default function FornecedoresPage() {
     pessoaTipo: formData.pessoaTipo,
     documento: formData.documento.trim(),
     telefone: normalizeBrazilPhone(formData.telefone),
+    telefoneFixo: normalizeBrazilPhone(formData.telefoneFixo),
     email: formData.email.trim(),
     endereco: formData.endereco.trim(),
     cidade: formData.cidade.trim(),
@@ -413,7 +423,7 @@ export default function FornecedoresPage() {
                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                     item.pessoaTipo === "juridica"
                       ? "bg-blue-50 text-blue-600"
-                      : "bg-violet-50 text-violet-600"
+                      : "bg-slate-100 text-slate-500"
                   }`}
                 >
                   {item.pessoaTipo === "juridica" ? (
@@ -453,6 +463,12 @@ export default function FornecedoresPage() {
             title: "Contato",
             render: (_value: unknown, item: Fornecedor) => (
               <div className="flex flex-col gap-1 text-sm">
+                {item.telefoneFixo && (
+                  <span className="inline-flex items-center gap-1.5 text-slate-600 font-medium whitespace-nowrap">
+                    <Phone size={12} className="text-blue-500 shrink-0" />
+                    {highlightText(formatBrazilPhone(item.telefoneFixo), searchTerm)}
+                  </span>
+                )}
                 {item.telefone && (
                   <span className="inline-flex items-center gap-1.5 text-slate-600 font-medium whitespace-nowrap">
                     <Phone size={12} className="text-blue-500 shrink-0" />
@@ -465,7 +481,7 @@ export default function FornecedoresPage() {
                     {highlightText(item.email, searchTerm)}
                   </span>
                 )}
-                {!item.telefone && !item.email && (
+                {!item.telefone && !item.telefoneFixo && !item.email && (
                   <span className="text-slate-300 text-xs">
                     Sem contato cadastrado
                   </span>
@@ -582,7 +598,7 @@ export default function FornecedoresPage() {
           title={editingFornecedor ? "Editar Fornecedor" : "Novo Fornecedor"}
           subtitle="Cadastro de fornecedores para vinculação em lançamentos de caixa"
           icon={<Package size={24} />}
-          maxWidthClassName="max-w-4xl"
+          maxWidthClassName="max-w-5xl"
           bodyClassName="p-6 md:p-10 pb-16 space-y-8"
           footer={
             <div className="p-8 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-5 shrink-0">
@@ -631,19 +647,24 @@ export default function FornecedoresPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-[0.7fr_1.6fr_0.9fr] gap-6">
-                <div className="space-y-2">
+                <div>
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
+                    Tipo de pessoa
+                  </label>
                   <GeologSearchableSelect
-                    label="Tipo de pessoa"
                     options={PESSOA_TIPO_OPTIONS}
                     value={formData.pessoaTipo}
                     onChange={(value) =>
                       handlePessoaTipoChange(value as "fisica" | "juridica")
                     }
-                    triggerClassName="px-5 py-3.5 !bg-slate-50 border-2 !border-slate-200 mt-[5px]"
+                    hideTriggerAvatar
+                    hideDropdownPhotos
+                    disableSearch
+                    triggerClassName="h-14 text-base px-5 !bg-slate-50 border-2 !border-slate-200"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1">
+                <div>
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1 block mb-2">
                     {labels.nomeLabel} <RequiredAsterisk />
                   </label>
                   <input
@@ -653,20 +674,21 @@ export default function FornecedoresPage() {
                       handleInputChange("nome", e.target.value)
                     }
                     placeholder={labels.nomePlaceholder}
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm mt-[2px]"
+                    className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                    {labels.documentoLabel}
+                <div>
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1 block mb-2">
+                    {labels.documentoLabel} <RequiredAsterisk />
                   </label>
                   <input
+                    required
                     value={formData.documento}
                     onChange={(e) =>
                       handleInputChange("documento", e.target.value)
                     }
                     placeholder={labels.documentoPlaceholder}
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                    className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />
                 </div>
               </div>
@@ -688,10 +710,23 @@ export default function FornecedoresPage() {
                 </h3>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                    Telefone / Celular
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div>
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
+                    Telefone Fixo
+                  </label>
+                  <input
+                    value={formData.telefoneFixo}
+                    onChange={(e) =>
+                      handleInputChange("telefoneFixo", e.target.value)
+                    }
+                    placeholder="(00) 0000-0000"
+                    className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
+                    Celular
                   </label>
                   <input
                     value={formData.telefone}
@@ -699,11 +734,11 @@ export default function FornecedoresPage() {
                       handleInputChange("telefone", e.target.value)
                     }
                     placeholder="(00) 00000-0000"
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                    className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                <div className="md:col-span-2">
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
                     E-mail
                   </label>
                   <input
@@ -713,15 +748,11 @@ export default function FornecedoresPage() {
                       handleInputChange("email", e.target.value)
                     }
                     placeholder="contato@fornecedor.com"
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                    className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />
                 </div>
               </div>
             </section>
-
-            <div className="border-b-2 border-slate-100 my-10"></div>
-
-            {/* Seção: Endereço */}
             <section className="space-y-6">
               <div
                 className="flex items-center border-b-2 border-slate-100 pb-4"
@@ -736,8 +767,8 @@ export default function FornecedoresPage() {
               </div>
 
               <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                <div>
+                  <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
                     Endereço completo
                   </label>
                   <input
@@ -746,13 +777,13 @@ export default function FornecedoresPage() {
                       handleInputChange("endereco", e.target.value)
                     }
                     placeholder="Rua, número, bairro, complemento..."
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                    className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-[1.5fr_0.5fr_0.7fr] gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                  <div>
+                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
                       Cidade
                     </label>
                     <input
@@ -761,11 +792,11 @@ export default function FornecedoresPage() {
                         handleInputChange("cidade", e.target.value)
                       }
                       placeholder="Cidade"
-                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                      className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                  <div>
+                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
                       UF
                     </label>
                     <GeologSearchableSelect
@@ -776,18 +807,18 @@ export default function FornecedoresPage() {
                       disableSearch
                       hideTriggerAvatar
                       variant="form"
-                      triggerClassName="px-5 py-3.5 !bg-slate-50 border-2 !border-slate-200 mt-[2px]"
+                      triggerClassName="h-14 text-base px-5 !bg-slate-50 border-2 !border-slate-200"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                  <div>
+                    <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
                       CEP
                     </label>
                     <input
                       value={formData.cep}
                       onChange={(e) => handleInputChange("cep", e.target.value)}
                       placeholder="00000-000"
-                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                      className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                     />
                   </div>
                 </div>
@@ -810,7 +841,10 @@ export default function FornecedoresPage() {
                 </h3>
               </div>
 
-              <div className="space-y-2">
+              <div>
+                <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 block mb-2">
+                  Observações
+                </label>
                 <textarea
                   value={formData.observacoes}
                   onChange={(e) =>
@@ -818,7 +852,7 @@ export default function FornecedoresPage() {
                   }
                   placeholder="Observações opcionais sobre o fornecedor..."
                   rows={3}
-                  className="w-full resize-none px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
+                  className="w-full h-14 resize-none px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                 />
               </div>
             </section>
@@ -827,7 +861,7 @@ export default function FornecedoresPage() {
       )}
 
       <ConfirmDialog
-        open={confirmState.open}
+        isOpen={confirmState.isOpen}
         title={confirmState.title}
         message={confirmState.message}
         confirmText={confirmState.confirmText}

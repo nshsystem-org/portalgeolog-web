@@ -2,6 +2,7 @@ import {
   ArrowRight,
   ArrowRightLeft,
   CalendarClock,
+  Download,
   Filter,
   Plus,
   RotateCcw,
@@ -15,10 +16,12 @@ type CaixaToolbarProps = {
   dataFim: string;
   showFilters: boolean;
   activeQuickRange: "today" | "week" | "month" | "custom" | null;
+  reportLoading: boolean;
   onToggleFilters: () => void;
   onSetQuickRange: (mode: "today" | "week" | "month") => void;
   onOpenNovoLancamento: () => void;
   onOpenContasModal: () => void;
+  onOpenRelatorioModal: () => void;
   onDataInicioChange: (value: string) => void;
   onDataFimChange: (value: string) => void;
 };
@@ -35,10 +38,12 @@ export function CaixaToolbar({
   dataFim,
   showFilters,
   activeQuickRange,
+  reportLoading,
   onToggleFilters,
   onSetQuickRange,
   onOpenNovoLancamento,
   onOpenContasModal,
+  onOpenRelatorioModal,
   onDataInicioChange,
   onDataFimChange,
 }: CaixaToolbarProps): ReactElement {
@@ -111,6 +116,19 @@ export function CaixaToolbar({
           >
             <Wallet size={16} />
             Contas
+          </button>
+          <button
+            type="button"
+            onClick={onOpenRelatorioModal}
+            disabled={reportLoading}
+            className="inline-flex items-center gap-2 rounded-2xl border border-yellow-300 bg-gradient-to-r from-yellow-50 via-yellow-100 to-yellow-200 bg-[length:200%_100%] animate-gradient px-4 py-2.5 text-sm font-black text-[rgb(100,102,20)] transition-all duration-300 hover:from-yellow-100 hover:via-yellow-200 hover:to-yellow-300 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
+          >
+            {reportLoading ? (
+              <RotateCcw size={16} className="animate-spin" />
+            ) : (
+              <Download size={16} />
+            )}
+            Exportar Relatório
           </button>
           <button
             type="button"

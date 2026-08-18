@@ -2,6 +2,7 @@
 
 import type { ReactElement } from "react";
 import { RotateCcw } from "lucide-react";
+import { CaixaRelatorioModal } from "@/components/caixa/CaixaRelatorioModal";
 import { CaixaAccessDenied } from "./_components/CaixaAccessDenied";
 import { CaixaContasModal } from "./_components/CaixaContasModal";
 import { CaixaFilters } from "./_components/CaixaFilters";
@@ -25,10 +26,12 @@ export default function CaixaPage(): ReactElement {
         dataFim={page.dataFim}
         showFilters={page.showFilters}
         activeQuickRange={page.activeQuickRange}
+        reportLoading={page.reportLoading}
         onToggleFilters={() => page.setShowFilters((current) => !current)}
         onSetQuickRange={page.setQuickRange}
         onOpenNovoLancamento={page.handleOpenNovoLancamento}
         onOpenContasModal={page.handleOpenContasModal}
+        onOpenRelatorioModal={page.handleOpenRelatorioModal}
         onDataInicioChange={(value) => {
           page.setDataInicio(value);
           page.setActiveQuickRange("custom");
@@ -100,9 +103,13 @@ export default function CaixaPage(): ReactElement {
         parceiros={page.parceiros}
         drivers={page.drivers}
         fornecedores={page.fornecedores}
+        categoriasDB={page.categoriasDB}
+        formasDB={page.formasDB}
         saving={page.savingLancamento}
         onClose={page.closeLancamentoModal}
         onSalvar={page.handleSalvarLancamento}
+        onRefreshCategorias={page.refreshCategorias}
+        onRefreshFormas={page.refreshFormas}
       />
 
       <CaixaContasModal
@@ -113,6 +120,20 @@ export default function CaixaPage(): ReactElement {
         onSalvar={page.handleSalvarConta}
         onToggleAtiva={page.handleToggleContaAtiva}
         onSetDefault={page.handleSetContaDefault}
+      />
+
+      <CaixaRelatorioModal
+        isOpen={page.showRelatorioModal}
+        onClose={page.closeRelatorioModal}
+        onGenerate={page.handleGenerateReport}
+        defaultDataInicio={page.dataInicio}
+        defaultDataFim={page.dataFim}
+        loading={page.reportLoading}
+        contas={page.contas}
+        clientes={page.clientes}
+        parceiros={page.parceiros}
+        drivers={page.drivers}
+        fornecedores={page.fornecedores}
       />
 
       {page.overviewLoading || page.contasLoading ? (

@@ -2616,6 +2616,7 @@ export interface Fornecedor {
   pessoaTipo: "fisica" | "juridica";
   documento: string;
   telefone: string;
+  telefoneFixo: string;
   email: string;
   endereco: string;
   cidade: string;
@@ -2629,8 +2630,9 @@ export interface Fornecedor {
 export interface NovoFornecedorInput {
   nome: string;
   pessoaTipo: "fisica" | "juridica";
-  documento?: string;
+  documento: string;
   telefone?: string;
+  telefoneFixo?: string;
   email?: string;
   endereco?: string;
   cidade?: string;
@@ -2645,6 +2647,7 @@ type FornecedorRow = {
   pessoa_tipo: "fisica" | "juridica";
   documento: string | null;
   telefone: string | null;
+  telefone_fixo: string | null;
   email: string | null;
   endereco: string | null;
   cidade: string | null;
@@ -2664,6 +2667,7 @@ const mapFornecedorPayload = (row: FornecedorRow): Fornecedor => ({
   pessoaTipo: row.pessoa_tipo,
   documento: row.documento || "",
   telefone: row.telefone || "",
+  telefoneFixo: row.telefone_fixo || "",
   email: row.email || "",
   endereco: row.endereco || "",
   cidade: row.cidade || "",
@@ -2675,7 +2679,7 @@ const mapFornecedorPayload = (row: FornecedorRow): Fornecedor => ({
 });
 
 const FORNECEDOR_SELECT_COLUMNS =
-  "id, nome, pessoa_tipo, documento, telefone, email, endereco, cidade, estado, cep, observacoes, status, arquivado, search_index, created_at, updated_at";
+  "id, nome, pessoa_tipo, documento, telefone, telefone_fixo, email, endereco, cidade, estado, cep, observacoes, status, arquivado, search_index, created_at, updated_at";
 
 export async function fetchFornecedores(): Promise<Fornecedor[]> {
   return withRetry(async () => {
@@ -2747,6 +2751,7 @@ export async function insertFornecedor(
       pessoa_tipo: input.pessoaTipo,
       documento: trimText(input.documento) || null,
       telefone: trimText(input.telefone) || null,
+      telefone_fixo: trimText(input.telefoneFixo) || null,
       email: trimText(input.email).toLowerCase() || null,
       endereco: trimText(input.endereco) || null,
       cidade: trimText(input.cidade) || null,
@@ -2773,6 +2778,7 @@ export async function updateFornecedorInDB(
       p_pessoa_tipo: input.pessoaTipo,
       p_documento: trimText(input.documento),
       p_telefone: trimText(input.telefone),
+      p_telefone_fixo: trimText(input.telefoneFixo),
       p_email: trimText(input.email),
       p_endereco: trimText(input.endereco),
       p_cidade: trimText(input.cidade),
@@ -2811,10 +2817,98 @@ export async function archiveFornecedorFromDB(id: string): Promise<void> {
 export async function unarchiveFornecedorFromDB(id: string): Promise<void> {
   const { error } = await getSupabase()
     .from("fornecedores")
-    .update({ arquivado: false })
+    .update({ arquivado: false, status: "ativo" })
     .eq("id", id);
 
   if (error) throw error;
+}
+
+// ── Caixa Categorias & Formas de Pagamento ────────────────
+
+export interface CaixaCategoria {
+  id: string;
+  nome: string;
+  slug: string;
+  tipo: "entrada" | "saida" | "ambos";
+  ativo: boolean;
+  ordem: number;
+}
+
+export interface CaixaFormaPagamento {
+  id: string;
+  nome: string;
+  slug: string;
+  ativo: boolean;
+  ordem: number;
+}
+
+export async function fetchCaixaCategorias(): Promise<CaixaCategoria[]> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("caixa_categorias")
+      .select("id, nome, slug, tipo, ativo, ordem")
+      .eq("ativo", true)
+      .order("ordem", { ascending: true });
+
+    if (error) throw error;
+    return (data || []) as CaixaCategoria[];
+  });
+}
+
+export async function insertCaixaCategoria(
+  nome: string,
+  tipo: "entrada" | "saida" | "ambos",
+): Promise<CaixaCategoria> {
+  const slug = nome
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  const { data, error } = await getSupabase()
+    .from("caixa_categorias")
+    .insert({ nome: nome.trim(), slug, tipo })
+    .select("id, nome, slug, tipo, ativo, ordem")
+    .single();
+
+  if (error) throw error;
+  return data as CaixaCategoria;
+}
+
+export async function fetchCaixaFormasPagamento(): Promise<CaixaFormaPagamento[]> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("caixa_formas_pagamento")
+      .select("id, nome, slug, ativo, ordem")
+      .eq("ativo", true)
+      .order("ordem", { ascending: true });
+
+    if (error) throw error;
+    return (data || []) as CaixaFormaPagamento[];
+  });
+}
+
+export async function insertCaixaFormaPagamento(
+  nome: string,
+): Promise<CaixaFormaPagamento> {
+  const slug = nome
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  const { data, error } = await getSupabase()
+    .from("caixa_formas_pagamento")
+    .insert({ nome: nome.trim(), slug })
+    .select("id, nome, slug, ativo, ordem")
+    .single();
+
+  if (error) throw error;
+  return data as CaixaFormaPagamento;
 }
 
 // ── App Settings ────────────────────────────────────────

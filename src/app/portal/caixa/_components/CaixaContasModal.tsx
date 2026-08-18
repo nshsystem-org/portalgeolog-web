@@ -3,13 +3,13 @@
 import {
   CheckCircle2,
   CircleSlash,
-  PiggyBank,
   Plus,
   RotateCcw,
   Star,
   Wallet,
 } from "lucide-react";
 import { useState, type ReactElement } from "react";
+import { BankLogo } from "@/components/ui/BankLogo";
 import StandardModal from "@/components/StandardModal";
 import {
   TIPOS_CONTA,
@@ -134,29 +134,31 @@ export function CaixaContasModal({
                   : "border-slate-200 bg-slate-50/40 opacity-60"
               }`}
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <PiggyBank size={16} className="text-slate-400" />
-                  <p className="truncate font-black text-slate-800">
-                    {conta.nome}
+              <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                <BankLogo name={conta.nome} type={conta.tipo} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate font-black text-slate-800">
+                      {conta.nome}
+                    </p>
+                    {conta.isDefault ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-blue-700">
+                        <Star size={10} /> Padrão
+                      </span>
+                    ) : null}
+                    {!conta.ativa ? (
+                      <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        Inativa
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">
+                    {TIPOS_CONTA.find((t) => t.value === conta.tipo)?.label ??
+                      conta.tipo}
+                    {" · Saldo inicial "}
+                    {formatCurrency(conta.saldoInicial)}
                   </p>
-                  {conta.isDefault ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-blue-700">
-                      <Star size={10} /> Padrão
-                    </span>
-                  ) : null}
-                  {!conta.ativa ? (
-                    <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      Inativa
-                    </span>
-                  ) : null}
                 </div>
-                <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">
-                  {TIPOS_CONTA.find((t) => t.value === conta.tipo)?.label ??
-                    conta.tipo}
-                  {" · Saldo inicial "}
-                  {formatCurrency(conta.saldoInicial)}
-                </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {!conta.isDefault && conta.ativa ? (

@@ -286,6 +286,64 @@ export async function getComprovanteUrl(lancamentoId: string): Promise<string> {
 }
 
 // =============================================================================
+// Relatórios (PDF / Excel)
+// =============================================================================
+
+export type CaixaReportTemplate =
+  | "movimentacoes"
+  | "por_categoria"
+  | "por_fornecedor"
+  | "por_conta";
+
+export type CaixaReportFormat = "pdf" | "xlsx";
+
+export type CaixaReportPayload = {
+  template: CaixaReportTemplate;
+  format: CaixaReportFormat;
+  dataInicio: string;
+  dataFim: string;
+  tipo?: "entrada" | "saida";
+  contaId?: string;
+  categoria?: string;
+  clienteId?: string;
+  parceiroId?: string;
+  driverId?: string;
+  fornecedorId?: string;
+};
+
+export async function gerarRelatorioCaixa(
+  payload: CaixaReportPayload,
+): Promise<{ blob: Blob; fileName: string | null }> {
+  const params = new URLSearchParams();
+  params.set("template", payload.template);
+  params.set("format", payload.format);
+  params.set("dataInicio", payload.dataInicio);
+  params.set("dataFim", payload.dataFim);
+  if (payload.tipo) params.set("tipo", payload.tipo);
+  if (payload.contaId) params.set("contaId", payload.contaId);
+  if (payload.categoria) params.set("categoria", payload.categoria);
+  if (payload.clienteId) params.set("clienteId", payload.clienteId);
+  if (payload.parceiroId) params.set("parceiroId", payload.parceiroId);
+  if (payload.driverId) params.set("driverId", payload.driverId);
+  if (payload.fornecedorId) params.set("fornecedorId", payload.fornecedorId);
+
+  const response = await fetch(`/api/caixa/relatorio?${params.toString()}`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const body = (await parseJson(response)) as { error?: string };
+    throw new Error(body.error || "Falha ao gerar relatório.");
+  }
+
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  const fileName = match ? decodeURIComponent(match[1]) : null;
+
+  return { blob: await response.blob(), fileName };
+}
+
+// =============================================================================
 // Helper: origem editável
 // =============================================================================
 

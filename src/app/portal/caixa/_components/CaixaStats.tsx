@@ -2,11 +2,11 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Layers,
-  PiggyBank,
   TrendingUp,
   Wallet,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
+import { BankLogo, getBankBrand } from "@/components/ui/BankLogo";
 import {
   formatCurrency,
   labelTipoConta,
@@ -137,31 +137,93 @@ export function CaixaStats({ stats }: CaixaStatsProps): ReactElement {
               Saldo por Conta
             </h3>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {stats.saldosPorConta.map((conta) => (
-              <div
-                key={conta.contaId}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-5 py-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-800">
-                    {conta.contaNome}
-                  </p>
-                  <p className="mt-0.5 text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                    {labelTipoConta(conta.contaTipo)}
-                  </p>
-                </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {stats.saldosPorConta.map((conta) => {
+              const brand = getBankBrand(
+                conta.contaNome,
+                undefined,
+                undefined,
+                conta.contaTipo,
+              );
+              const saldoPositivo = conta.saldo >= 0;
+
+              return (
                 <div
-                  className={`flex items-center gap-1.5 font-black tabular-nums ${conta.saldo >= 0 ? "text-teal-700" : "text-rose-600"}`}
+                  key={conta.contaId}
+                  className="group relative flex items-center justify-between gap-3.5 rounded-2xl border p-4 xl:p-5 shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.01] hover:shadow-xl overflow-hidden"
+                  style={{
+                    background: `linear-gradient(135deg, ${hexToRgba(brand.color, 0.06)} 0%, #ffffff 60%, ${hexToRgba(brand.color, 0.04)} 100%)`,
+                    borderColor: hexToRgba(brand.color, 0.25),
+                  }}
                 >
-                  <PiggyBank size={16} />
-                  {formatCurrency(conta.saldo)}
+                  {/* Faixa lateral animada */}
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-1.5 transition-all duration-300 group-hover:w-2 group-hover:opacity-80"
+                    style={{ backgroundColor: brand.color }}
+                  />
+
+                  {/* Brilho de movimentação no hover */}
+                  <div
+                    className="absolute -right-10 -top-10 w-32 h-32 rounded-full opacity-0 group-hover:opacity-20 blur-3xl transition-all duration-500 group-hover:translate-x-2 group-hover:translate-y-2"
+                    style={{ backgroundColor: brand.color }}
+                  />
+
+                  <div className="relative flex items-center gap-3.5 min-w-0 flex-1 pl-2">
+                    <BankLogo
+                      name={conta.contaNome}
+                      type={conta.contaTipo}
+                      size="md"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-black text-slate-800 group-hover:text-[#020817] transition-colors">
+                        {conta.contaNome}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-black uppercase tracking-wider transition-colors duration-300"
+                          style={{
+                            backgroundColor: hexToRgba(brand.color, 0.12),
+                            borderColor: hexToRgba(brand.color, 0.25),
+                            color: brand.color,
+                          }}
+                        >
+                          {labelTipoConta(conta.contaTipo)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="relative flex flex-col items-end shrink-0 pl-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">
+                      Saldo
+                    </span>
+                    <div
+                      className="flex items-center gap-1.5 text-base xl:text-lg font-black tabular-nums tracking-tight transition-colors duration-300"
+                      style={{
+                        color: saldoPositivo ? "#047857" : "#DC2626",
+                      }}
+                    >
+                      <span className="inline-block transition-transform duration-300 group-hover:scale-110">
+                        {saldoPositivo ? "+" : ""}
+                      </span>
+                      {formatCurrency(conta.saldo)}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : null}
     </section>
   );
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.substring(0, 2) || "00", 16);
+  const g = parseInt(clean.substring(2, 4) || "00", 16);
+  const b = parseInt(clean.substring(4, 6) || "00", 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
