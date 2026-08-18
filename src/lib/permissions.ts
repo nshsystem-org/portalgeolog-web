@@ -14,6 +14,8 @@
  * | parcerias     | ✅            | ❌*        | ✅       |
  * | financeiro    | ✅            | ✅         | ❌*      |
  * | caixa         | ✅            | ✅         | ❌*      |
+ * | categorias-caixa   | ✅       | ✅         | ❌*      |
+ * | formas-pagamento   | ✅       | ✅         | ❌*      |
  * | config        | ✅            | ❌         | ❌       |
  *
  * ❌* = pode ser liberado via specific_permissions.{modulo}.page_access === true
@@ -40,6 +42,8 @@ export type PageKey =
   | "fornecedores"
   | "financeiro"
   | "caixa"
+  | "categorias-caixa"
+  | "formas-pagamento"
   | "config-acessos"
   | "config-perfil"
   | "config-financeiro"
@@ -65,6 +69,8 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     fornecedores: true,
     financeiro: true,
     caixa: true,
+    "categorias-caixa": true,
+    "formas-pagamento": true,
     "config-acessos": true,
     "config-perfil": true,
     "config-financeiro": true,
@@ -74,6 +80,8 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     dashboard: true,
     financeiro: true,
     caixa: true,
+    "categorias-caixa": true,
+    "formas-pagamento": true,
     "config-perfil": true,
     "config-financeiro": true,
     "config-notificacoes": true,
@@ -108,6 +116,8 @@ const PAGE_TO_PERMISSION_MODULE: Partial<Record<PageKey, string>> = {
   fornecedores: "cadastros",
   "config-acessos": "config",
   "config-financeiro": "config",
+  "categorias-caixa": "financeiro",
+  "formas-pagamento": "financeiro",
 };
 
 /**
@@ -173,6 +183,8 @@ export function getAccessiblePages(
     "fornecedores",
     "financeiro",
     "caixa",
+    "categorias-caixa",
+    "formas-pagamento",
     "config-acessos",
     "config-perfil",
     "config-financeiro",
@@ -197,6 +209,8 @@ export function pathnameToPageKey(pathname: string): PageKey | null {
     "/portal/fornecedores": "fornecedores",
     "/portal/financeiro": "financeiro",
     "/portal/caixa": "caixa",
+    "/portal/financeiro/categorias": "categorias-caixa",
+    "/portal/financeiro/formas-pagamento": "formas-pagamento",
     "/portal/config": "config-perfil", // redirect target
     "/portal/config/acessos": "config-acessos",
     "/portal/config/perfil": "config-perfil",

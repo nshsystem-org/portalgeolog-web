@@ -2855,26 +2855,131 @@ export async function fetchCaixaCategorias(): Promise<CaixaCategoria[]> {
   });
 }
 
-export async function insertCaixaCategoria(
-  nome: string,
-  tipo: "entrada" | "saida" | "ambos",
-): Promise<CaixaCategoria> {
-  const slug = nome
+export type CaixaCategoriaFilters = {
+  searchTerm?: string;
+  tipo?: "entrada" | "saida" | "ambos";
+  showInativos?: boolean;
+  page?: number;
+  pageSize?: number;
+};
+
+export type CaixaCategoriaPageResult = {
+  items: CaixaCategoria[];
+  totalCount: number;
+};
+
+function buildSlugFromName(nome: string): string {
+  return nome
     .trim()
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+export async function fetchCaixaCategoriasPaginated(
+  filters: CaixaCategoriaFilters,
+): Promise<CaixaCategoriaPageResult> {
+  return withRetry(async () => {
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.max(1, filters.pageSize ?? 10);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = getSupabase()
+      .from("caixa_categorias")
+      .select("id, nome, slug, tipo, ativo, ordem", { count: "exact" });
+
+    if (!filters.showInativos) {
+      query = query.eq("ativo", true);
+    }
+    if (filters.tipo) {
+      query = query.eq("tipo", filters.tipo);
+    }
+    if (filters.searchTerm) {
+      const term = filters.searchTerm.trim();
+      if (term) {
+        query = query.or(
+          `nome.ilike.%${term}%,slug.ilike.%${term}%`,
+        );
+      }
+    }
+
+    query = query.order("ordem", { ascending: true }).range(from, to);
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+    return {
+      items: (data || []) as CaixaCategoria[],
+      totalCount: count ?? 0,
+    };
+  });
+}
+
+export async function insertCaixaCategoria(
+  nome: string,
+  tipo: "entrada" | "saida" | "ambos",
+  ordem?: number,
+): Promise<CaixaCategoria> {
+  const slug = buildSlugFromName(nome);
 
   const { data, error } = await getSupabase()
     .from("caixa_categorias")
-    .insert({ nome: nome.trim(), slug, tipo })
+    .insert({
+      nome: nome.trim(),
+      slug,
+      tipo,
+      ordem: ordem ?? 0,
+    })
     .select("id, nome, slug, tipo, ativo, ordem")
     .single();
 
   if (error) throw error;
   return data as CaixaCategoria;
+}
+
+export type CaixaCategoriaUpdate = {
+  nome?: string;
+  tipo?: "entrada" | "saida" | "ambos";
+  ativo?: boolean;
+  ordem?: number;
+};
+
+export async function updateCaixaCategoria(
+  id: string,
+  patch: CaixaCategoriaUpdate,
+): Promise<CaixaCategoria> {
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.nome !== undefined) {
+    update.nome = patch.nome.trim();
+    update.slug = buildSlugFromName(patch.nome);
+  }
+  if (patch.tipo !== undefined) update.tipo = patch.tipo;
+  if (patch.ativo !== undefined) update.ativo = patch.ativo;
+  if (patch.ordem !== undefined) update.ordem = patch.ordem;
+
+  const { data, error } = await getSupabase()
+    .from("caixa_categorias")
+    .update(update)
+    .eq("id", id)
+    .select("id, nome, slug, tipo, ativo, ordem")
+    .single();
+
+  if (error) throw error;
+  return data as CaixaCategoria;
+}
+
+export async function setCaixaCategoriaAtivo(
+  id: string,
+  ativo: boolean,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("caixa_categorias")
+    .update({ ativo, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw error;
 }
 
 export async function fetchCaixaFormasPagamento(): Promise<CaixaFormaPagamento[]> {
@@ -2890,25 +2995,109 @@ export async function fetchCaixaFormasPagamento(): Promise<CaixaFormaPagamento[]
   });
 }
 
+export type CaixaFormaPagamentoFilters = {
+  searchTerm?: string;
+  showInativos?: boolean;
+  page?: number;
+  pageSize?: number;
+};
+
+export type CaixaFormaPagamentoPageResult = {
+  items: CaixaFormaPagamento[];
+  totalCount: number;
+};
+
+export async function fetchCaixaFormasPagamentoPaginated(
+  filters: CaixaFormaPagamentoFilters,
+): Promise<CaixaFormaPagamentoPageResult> {
+  return withRetry(async () => {
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.max(1, filters.pageSize ?? 10);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = getSupabase()
+      .from("caixa_formas_pagamento")
+      .select("id, nome, slug, ativo, ordem", { count: "exact" });
+
+    if (!filters.showInativos) {
+      query = query.eq("ativo", true);
+    }
+    if (filters.searchTerm) {
+      const term = filters.searchTerm.trim();
+      if (term) {
+        query = query.or(
+          `nome.ilike.%${term}%,slug.ilike.%${term}%`,
+        );
+      }
+    }
+
+    query = query.order("ordem", { ascending: true }).range(from, to);
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+    return {
+      items: (data || []) as CaixaFormaPagamento[],
+      totalCount: count ?? 0,
+    };
+  });
+}
+
 export async function insertCaixaFormaPagamento(
   nome: string,
+  ordem?: number,
 ): Promise<CaixaFormaPagamento> {
-  const slug = nome
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+  const slug = buildSlugFromName(nome);
 
   const { data, error } = await getSupabase()
     .from("caixa_formas_pagamento")
-    .insert({ nome: nome.trim(), slug })
+    .insert({ nome: nome.trim(), slug, ordem: ordem ?? 0 })
     .select("id, nome, slug, ativo, ordem")
     .single();
 
   if (error) throw error;
   return data as CaixaFormaPagamento;
+}
+
+export type CaixaFormaPagamentoUpdate = {
+  nome?: string;
+  ativo?: boolean;
+  ordem?: number;
+};
+
+export async function updateCaixaFormaPagamento(
+  id: string,
+  patch: CaixaFormaPagamentoUpdate,
+): Promise<CaixaFormaPagamento> {
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.nome !== undefined) {
+    update.nome = patch.nome.trim();
+    update.slug = buildSlugFromName(patch.nome);
+  }
+  if (patch.ativo !== undefined) update.ativo = patch.ativo;
+  if (patch.ordem !== undefined) update.ordem = patch.ordem;
+
+  const { data, error } = await getSupabase()
+    .from("caixa_formas_pagamento")
+    .update(update)
+    .eq("id", id)
+    .select("id, nome, slug, ativo, ordem")
+    .single();
+
+  if (error) throw error;
+  return data as CaixaFormaPagamento;
+}
+
+export async function setCaixaFormaPagamentoAtivo(
+  id: string,
+  ativo: boolean,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("caixa_formas_pagamento")
+    .update({ ativo, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw error;
 }
 
 // ── App Settings ────────────────────────────────────────

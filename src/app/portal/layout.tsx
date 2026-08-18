@@ -56,6 +56,8 @@ import {
   User,
   Percent,
   Package,
+  Tags,
+  CreditCard,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
@@ -163,27 +165,32 @@ export default function DashboardLayout({
     | "cadastros"
     | "configuracoes";
   const [hoveredSection, setHoveredSection] = useState<SectionKey | null>(null);
+  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleOpenSection = useCallback((section: SectionKey | null) => {
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     setHoveredSection(section);
+    setIsSidebarHovered(true);
   }, []);
 
   const handleScheduleClose = useCallback(() => {
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => {
       setHoveredSection(null);
+      setIsSidebarHovered(false);
     }, 180);
   }, []);
 
   const handleCancelClose = useCallback(() => {
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    setIsSidebarHovered(true);
   }, []);
 
   const handleCloseImmediately = useCallback(() => {
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     setHoveredSection(null);
+    setIsSidebarHovered(false);
   }, []);
 
   useEffect(() => {
@@ -246,6 +253,24 @@ export default function DashboardLayout({
             label: "Fluxo de Caixa",
             description: "Controle de receitas, despesas e saldos",
           },
+          hasPageAccess("fornecedores") && {
+            href: "/portal/fornecedores",
+            icon: <Package />,
+            label: "Fornecedores",
+            description: "Cadastro de fornecedores de insumos",
+          },
+          hasPageAccess("categorias-caixa") && {
+            href: "/portal/financeiro/categorias",
+            icon: <Tags />,
+            label: "Categorias",
+            description: "Categorias de lançamentos do caixa",
+          },
+          hasPageAccess("formas-pagamento") && {
+            href: "/portal/financeiro/formas-pagamento",
+            icon: <CreditCard />,
+            label: "Formas de Pagamento",
+            description: "Métodos de pagamento disponíveis no caixa",
+          },
         ].filter(Boolean) as {
           href: string;
           icon: ReactElement;
@@ -289,12 +314,6 @@ export default function DashboardLayout({
             icon: <Handshake />,
             label: "Parceiros de Serviço",
             description: "Parcerias operacionais e convênios",
-          },
-          hasPageAccess("fornecedores") && {
-            href: "/portal/fornecedores",
-            icon: <Package />,
-            label: "Fornecedores",
-            description: "Cadastro de fornecedores de insumos",
           },
         ].filter(Boolean) as {
           href: string;
@@ -455,9 +474,11 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] flex text-[var(--color-geolog-blue)]">
-      {/* Sidebar - Fixo 88px estilo rail vertical */}
+      {/* Sidebar - Recolhido por padrão (apenas ícones), expande e exibe nomes ao passar o mouse */}
       <aside
-        className="w-[88px] bg-[var(--color-geolog-blue)] border-r border-blue-900 hidden md:flex flex-col fixed inset-y-0 shadow-[4px_0_24px_rgba(0,0,0,0.15)] z-50 transition-all duration-200 select-none"
+        className={`bg-[var(--color-geolog-blue)] border-r border-blue-900 hidden md:flex flex-col fixed inset-y-0 shadow-[4px_0_24px_rgba(0,0,0,0.15)] z-50 transition-all duration-200 select-none ${
+          isSidebarHovered ? "w-[88px]" : "w-[68px]"
+        }`}
         onMouseEnter={handleCancelClose}
         onMouseLeave={handleScheduleClose}
       >
@@ -479,7 +500,9 @@ export default function DashboardLayout({
             onClick={handleCloseImmediately}
             onMouseEnter={() => handleOpenSection(null)}
             title="Dashboard"
-            className={`flex flex-col items-center justify-center gap-1 w-full h-[72px] rounded-2xl transition-all font-bold group cursor-pointer ${
+            className={`flex flex-col items-center justify-center gap-0.5 w-full rounded-2xl transition-all duration-200 font-bold group cursor-pointer ${
+              isSidebarHovered ? "h-[70px]" : "h-[50px]"
+            } ${
               pathname === "/portal/dashboard"
                 ? "bg-gradient-to-b from-[#4fc9c9] to-[#001c3a] text-white shadow-md shadow-black/20"
                 : "text-blue-100 hover:text-white hover:bg-white/10"
@@ -492,10 +515,14 @@ export default function DashboardLayout({
                   : "text-blue-300 group-hover:text-white group-hover:scale-110"
               }`}
             >
-              <LayoutDashboard size={24} />
+              <LayoutDashboard size={22} />
             </div>
             <span
-              className={`text-[11px] leading-tight text-center px-1 truncate w-full ${
+              className={`text-[11px] leading-tight text-center px-1 truncate w-full transition-all duration-200 ${
+                isSidebarHovered
+                  ? "opacity-100 max-h-4"
+                  : "opacity-0 max-h-0 overflow-hidden"
+              } ${
                 pathname === "/portal/dashboard"
                   ? "text-white font-extrabold"
                   : "text-blue-100/90"
@@ -523,7 +550,9 @@ export default function DashboardLayout({
                   onMouseEnter={() => handleOpenSection(section.id)}
                   onClick={() => handleOpenSection(section.id)}
                   title={section.label}
-                  className={`flex flex-col items-center justify-center gap-1 w-full h-[72px] rounded-2xl transition-all font-bold relative group cursor-pointer ${
+                  className={`flex flex-col items-center justify-center gap-0.5 w-full rounded-2xl transition-all duration-200 font-bold relative group cursor-pointer ${
+                    isSidebarHovered ? "h-[70px]" : "h-[50px]"
+                  } ${
                     isRouteActive
                       ? "bg-gradient-to-b from-[#4fc9c9] to-[#001c3a] text-white shadow-md shadow-black/20"
                       : isHovered
@@ -538,11 +567,15 @@ export default function DashboardLayout({
                   >
                     {cloneElement(
                       section.icon as ReactElement<{ size?: number }>,
-                      { size: 24 },
+                      { size: 22 },
                     )}
                   </div>
                   <span
-                    className={`text-[11px] leading-tight text-center px-1 truncate w-full ${
+                    className={`text-[11px] leading-tight text-center px-1 truncate w-full transition-all duration-200 ${
+                      isSidebarHovered
+                        ? "opacity-100 max-h-4"
+                        : "opacity-0 max-h-0 overflow-hidden"
+                    } ${
                       isRouteActive
                         ? "text-white font-extrabold"
                         : "text-blue-100/90"
@@ -559,14 +592,24 @@ export default function DashboardLayout({
         <div className="p-2 border-t border-blue-800/50">
           <button
             onClick={handleSignOut}
-            className="w-full flex flex-col items-center justify-center gap-1 h-[72px] text-blue-300/80 hover:text-white hover:bg-red-500/20 rounded-xl transition-all group font-bold"
+            className={`w-full flex flex-col items-center justify-center gap-0.5 text-blue-300/80 hover:text-white hover:bg-red-500/20 rounded-xl transition-all duration-200 group font-bold ${
+              isSidebarHovered ? "h-[70px]" : "h-[50px]"
+            }`}
             title="Sair do Portal"
           >
             <LogOut
-              size={24}
+              size={22}
               className="group-hover:-translate-x-0.5 transition-transform text-blue-300 group-hover:text-red-300"
             />
-            <span className="text-[11px] leading-tight text-center">Sair</span>
+            <span
+              className={`text-[11px] leading-tight text-center transition-all duration-200 ${
+                isSidebarHovered
+                  ? "opacity-100 max-h-4"
+                  : "opacity-0 max-h-0 overflow-hidden"
+              }`}
+            >
+              Sair
+            </span>
           </button>
         </div>
       </aside>
@@ -679,7 +722,7 @@ export default function DashboardLayout({
         )}
 
       {/* Main Content Area */}
-      <div className="flex-1 md:ml-[88px] flex flex-col transition-all duration-300 ease-in-out">
+      <div className="flex-1 md:ml-[68px] flex flex-col transition-all duration-300 ease-in-out">
         {/* Header */}
         <header className="h-20 bg-white border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-40">
           <div className="flex items-center gap-4">
