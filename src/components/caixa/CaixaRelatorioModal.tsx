@@ -4,25 +4,19 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
-  Building2,
-  Calendar,
-  CheckCircle,
   ChevronDown,
   Download,
   FileSpreadsheet,
   FileText,
-  ListChecks,
-  Tag,
   X,
 } from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
 import GeologDateInput from "@/components/ui/GeologDateInput";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import { CaixaReportLoadingOverlay } from "./CaixaReportLoadingOverlay";
 import type {
   CaixaReportFormat,
   CaixaReportPayload,
-  CaixaReportTemplate,
 } from "@/app/portal/caixa/_services/caixa.service";
 import {
   CATEGORIAS_ENTRADA,
@@ -33,83 +27,6 @@ import type { Cliente, Driver } from "@/context/DataContext";
 import type { Fornecedor, ParceiroServico } from "@/lib/supabase/queries";
 
 type MovimentacaoTipo = "todas" | "entrada" | "saida";
-
-type TemplateColor = "blue" | "emerald" | "amber" | "purple";
-
-type TemplateConfig = {
-  id: CaixaReportTemplate;
-  label: string;
-  description: string;
-  icon: ReactNode;
-  color: TemplateColor;
-};
-
-const COLOR_STYLES: Record<
-  TemplateColor,
-  {
-    active: string;
-    activeIcon: string;
-    summary: string;
-    summaryText: string;
-  }
-> = {
-  blue: {
-    active: "border-blue-400 bg-blue-50 text-blue-700 shadow-sm",
-    activeIcon: "text-blue-500",
-    summary: "bg-blue-50 border-blue-200",
-    summaryText: "text-blue-700",
-  },
-  emerald: {
-    active:
-      "border-emerald-400 bg-emerald-50 text-emerald-800 shadow-sm",
-    activeIcon: "text-emerald-500",
-    summary: "bg-emerald-50 border-emerald-200",
-    summaryText: "text-emerald-800",
-  },
-  amber: {
-    active: "border-amber-400 bg-amber-50 text-amber-900 shadow-sm",
-    activeIcon: "text-amber-500",
-    summary: "bg-amber-50 border-amber-200",
-    summaryText: "text-amber-900",
-  },
-  purple: {
-    active: "border-purple-400 bg-purple-50 text-purple-800 shadow-sm",
-    activeIcon: "text-purple-500",
-    summary: "bg-purple-50 border-purple-200",
-    summaryText: "text-purple-800",
-  },
-};
-
-const TEMPLATES: TemplateConfig[] = [
-  {
-    id: "movimentacoes",
-    label: "Movimentações do Período",
-    description: "Lista detalhada de lançamentos (entradas, saídas ou ambas)",
-    icon: <ListChecks size={18} className="text-blue-500" />,
-    color: "blue",
-  },
-  {
-    id: "por_categoria",
-    label: "Análise por Categoria",
-    description: "Agrupa lançamentos por categoria com subtotais",
-    icon: <Tag size={18} className="text-emerald-500" />,
-    color: "emerald",
-  },
-  {
-    id: "por_fornecedor",
-    label: "Análise por Fornecedor",
-    description: "Saídas agrupadas por fornecedor com total gasto",
-    icon: <Building2 size={18} className="text-amber-500" />,
-    color: "amber",
-  },
-  {
-    id: "por_conta",
-    label: "Análise por Conta",
-    description: "Movimentação e saldo por conta (banco/caixa/pix/carteira)",
-    icon: <Calendar size={18} className="text-purple-500" />,
-    color: "purple",
-  },
-];
 
 interface CaixaRelatorioModalProps {
   isOpen: boolean;
@@ -146,8 +63,6 @@ export function CaixaRelatorioModal({
   drivers,
   fornecedores,
 }: CaixaRelatorioModalProps): ReactElement | null {
-  const [selectedTemplate, setSelectedTemplate] =
-    useState<CaixaReportTemplate | "">("");
   const [movimentacaoTipo, setMovimentacaoTipo] =
     useState<MovimentacaoTipo>("todas");
   const [format, setFormat] = useState<CaixaReportFormat>("pdf");
@@ -172,16 +87,6 @@ export function CaixaRelatorioModal({
     };
   }, [isOpen]);
 
-  // "Análise por Fornecedor" só faz sentido para saídas — trava o tipo
-  const handleSelectTemplate = (tpl: CaixaReportTemplate): void => {
-    setSelectedTemplate(tpl);
-    if (tpl === "por_fornecedor") {
-      setMovimentacaoTipo("saida");
-    }
-  };
-
-  const isPorFornecedor = selectedTemplate === "por_fornecedor";
-
   const dateRangeInvalid = Boolean(
     dataInicio && dataFim && dataInicio > dataFim,
   );
@@ -194,7 +99,10 @@ export function CaixaRelatorioModal({
     placeholderOption("Todas as categorias"),
     ...selectOptions(CATEGORIAS_ENTRADA),
     ...selectOptions(CATEGORIAS_SAIDA),
-  ];
+  ].filter(
+    (opt, index, arr) =>
+      index === 0 || arr.findIndex((o) => o.id === opt.id) === index,
+  );
   const clienteOptions = [
     placeholderOption("Todos os clientes"),
     ...clientes.map((c) => ({ id: c.id, nome: c.nome })),
@@ -215,15 +123,10 @@ export function CaixaRelatorioModal({
     ...fornecedores.map((f) => ({ id: f.id, nome: f.nome })),
   ];
 
-  const canGenerate =
-    selectedTemplate &&
-    dataInicio &&
-    dataFim &&
-    !dateRangeInvalid;
+  const canGenerate = Boolean(dataInicio && dataFim && !dateRangeInvalid);
 
   const handleClose = (): void => {
     onClose();
-    setSelectedTemplate("");
     setMovimentacaoTipo("todas");
     setFormat("pdf");
     setDataInicio(defaultDataInicio);
@@ -238,27 +141,21 @@ export function CaixaRelatorioModal({
   };
 
   const handleGenerate = (): void => {
-    if (!selectedTemplate || !dataInicio || !dataFim || dateRangeInvalid) return;
+    if (!dataInicio || !dataFim || dateRangeInvalid) return;
 
     const payload: CaixaReportPayload = {
-      template: selectedTemplate,
+      template: "movimentacoes",
       format,
       dataInicio,
       dataFim,
     };
 
-    // Tipo só é relevante para movimentacoes (e por_fornecedor já é saída)
-    if (selectedTemplate === "movimentacoes" && movimentacaoTipo !== "todas") {
+    if (movimentacaoTipo !== "todas") {
       payload.tipo = movimentacaoTipo;
-    }
-    if (isPorFornecedor) {
-      payload.tipo = "saida";
     }
 
     if (contaId) payload.contaId = contaId;
-    // categoria não é filtro para o template "por_categoria"
-    if (categoria && selectedTemplate !== "por_categoria")
-      payload.categoria = categoria;
+    if (categoria) payload.categoria = categoria;
     if (clienteId) payload.clienteId = clienteId;
     if (parceiroId) payload.parceiroId = parceiroId;
     if (driverId) payload.driverId = driverId;
@@ -315,123 +212,10 @@ export function CaixaRelatorioModal({
 
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-8">
-          {/* Template cards */}
-          <div className="space-y-3 mt-3 animate-in fade-in slide-in-from-top-4 duration-500">
-            <div className="p-5 rounded-3xl border space-y-4 bg-slate-50/50 border-slate-100">
-              <div
-                className={`grid gap-3 grid-cols-1 sm:grid-cols-2 ${
-                  selectedTemplate ? "group/template-cards" : ""
-                }`}
-              >
-                {selectedTemplate && (
-                  <div
-                    className={`col-span-full flex items-center gap-2 rounded-xl border px-3 py-2 group-hover/template-cards:hidden ${
-                      (() => {
-                        const tpl = TEMPLATES.find(
-                          (t) => t.id === selectedTemplate,
-                        );
-                        return tpl
-                          ? COLOR_STYLES[tpl.color].summary
-                          : "bg-white border-slate-200";
-                      })()
-                    }`}
-                  >
-                    {(() => {
-                      const tpl = TEMPLATES.find(
-                        (t) => t.id === selectedTemplate,
-                      );
-                      return (
-                        <>
-                          {tpl?.icon}
-                          <span
-                            className={`text-sm font-black tracking-tight whitespace-nowrap ${
-                              tpl
-                                ? COLOR_STYLES[tpl.color].summaryText
-                                : "text-slate-700"
-                            }`}
-                          >
-                            {tpl?.label}
-                          </span>
-                        </>
-                      );
-                    })()}
-                    <span className="ml-auto whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                      Passe o mouse para trocar
-                    </span>
-                  </div>
-                )}
-                <div
-                  className={`contents ${
-                    selectedTemplate
-                      ? "hidden group-hover/template-cards:contents"
-                      : "contents"
-                  }`}
-                >
-                  {TEMPLATES.map((tpl) => {
-                    const isActive = selectedTemplate === tpl.id;
-                    const colors = COLOR_STYLES[tpl.color];
-                    return (
-                      <button
-                        key={tpl.id}
-                        type="button"
-                        onClick={() => handleSelectTemplate(tpl.id)}
-                        aria-pressed={isActive}
-                        className={`relative flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-all cursor-pointer ${
-                          isActive
-                            ? colors.active
-                            : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                        }`}
-                      >
-                        <span
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                            isActive ? "bg-white shadow-sm" : "bg-slate-50"
-                          }`}
-                        >
-                          {tpl.icon}
-                        </span>
-                        <span className="min-w-0 flex-1 pr-5">
-                          <span
-                            className={`block text-base font-black leading-tight ${
-                              isActive ? colors.summaryText : ""
-                            }`}
-                          >
-                            {tpl.label}
-                          </span>
-                        </span>
-                        {isActive && (
-                          <CheckCircle
-                            size={18}
-                            className={`absolute right-3 top-1/2 -translate-y-1/2 ${colors.activeIcon}`}
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Aviso "Por Fornecedor" */}
-          {isPorFornecedor && (
-            <div className="flex items-center gap-3 p-4 rounded-2xl bg-amber-50/60 border border-amber-200">
-              <AlertCircle size={20} className="shrink-0 text-amber-600" />
-              <div>
-                <p className="text-sm font-black text-amber-800">
-                  Apenas lançamentos de saída
-                </p>
-                <p className="text-xs font-medium text-amber-600 mt-0.5">
-                  Este relatório considera apenas lançamentos de saída.
-                </p>
-              </div>
-            </div>
-          )}
-
+          {/* Tipo de relatório */}
           {/* Tipo de movimentação + Período */}
-          {selectedTemplate && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in slide-in-from-top-4 duration-500 items-end">
-              {selectedTemplate === "movimentacoes" && (
-                <div className="flex items-end">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8 animate-in fade-in slide-in-from-top-4 duration-500 items-end">
+              <div className="flex items-end">
                   <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm w-fit">
                     {(
                       [
@@ -475,7 +259,6 @@ export function CaixaRelatorioModal({
                     })}
                   </div>
                 </div>
-              )}
 
               <div className="space-y-2">
                 <div className="flex items-end gap-2">
@@ -514,11 +297,9 @@ export function CaixaRelatorioModal({
                 )}
               </div>
             </div>
-          )}
 
           {/* Filtros adicionais */}
-          {selectedTemplate && (
-            <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
               <div className="p-5 rounded-3xl border bg-slate-50/50 border-slate-100 transition-colors hover:bg-blue-50/70 hover:border-blue-100">
                 <button
                   type="button"
@@ -553,20 +334,18 @@ export function CaixaRelatorioModal({
                       disableSearch
                       disabled
                     />
-                    {selectedTemplate !== "por_categoria" && (
-                      <GeologSearchableSelect
-                        label="Categoria"
-                        options={categoriaOptions}
-                        value={categoria}
-                        onChange={setCategoria}
-                        placeholder="Todas as categorias"
-                        compact
-                        triggerClassName="h-12"
-                        dropdownPosition="up"
-                        hideTriggerAvatar
-                        disabled
-                      />
-                    )}
+                    <GeologSearchableSelect
+                      label="Categoria"
+                      options={categoriaOptions}
+                      value={categoria}
+                      onChange={setCategoria}
+                      placeholder="Todas as categorias"
+                      compact
+                      triggerClassName="h-12"
+                      dropdownPosition="up"
+                      hideTriggerAvatar
+                      disabled
+                    />
                     <GeologSearchableSelect
                       label="Cliente"
                       options={clienteOptions}
@@ -603,25 +382,22 @@ export function CaixaRelatorioModal({
                       hideTriggerAvatar
                       disabled
                     />
-                    {isPorFornecedor && (
-                      <GeologSearchableSelect
-                        label="Fornecedor"
-                        options={fornecedorOptions}
-                        value={fornecedorId}
-                        onChange={setFornecedorId}
-                        placeholder="Todos os fornecedores"
-                        compact
-                        triggerClassName="h-12"
-                        dropdownPosition="up"
-                        hideTriggerAvatar
-                        disabled
-                      />
-                    )}
+                    <GeologSearchableSelect
+                      label="Fornecedor"
+                      options={fornecedorOptions}
+                      value={fornecedorId}
+                      onChange={setFornecedorId}
+                      placeholder="Todos os fornecedores"
+                      compact
+                      triggerClassName="h-12"
+                      dropdownPosition="up"
+                      hideTriggerAvatar
+                      disabled
+                    />
                   </div>
                 )}
               </div>
-            </div>
-          )}
+          </div>
         </div>
 
         {/* Footer */}

@@ -24,6 +24,7 @@ import {
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import StandardModal from "@/components/StandardModal";
 import { DataTable } from "@/components/ui/DataTable";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 interface UserWithAuth extends UserProfile {
   email: string;
@@ -260,48 +261,31 @@ export default function AcessosPage() {
 
   return (
     <>
-      <div className="fixed top-44 left-4 right-4 md:left-24 md:right-10 bottom-10 z-10">
-        <div className="max-w-[1000px] mx-auto h-full bg-white rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col overflow-hidden">
-          {/* Header - Fixed at top */}
-          <div className="p-6 md:p-8 border-b-2 border-slate-50 flex-shrink-0">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-                <Shield size={24} />
+      <div className="space-y-6">
+        <PageHeader
+          title="Gestão de Acessos"
+          icon={<Shield size={20} />}
+        />
+
+        {!isAccessAdmin ? (
+          <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden flex items-center justify-center p-10 text-center">
+            <div className="max-w-lg space-y-4">
+              <div className="mx-auto w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-500">
+                <ShieldCheck size={28} />
               </div>
-              <div>
-                <h2 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight">
-                  Membros da Equipe
-                </h2>
-                <p className="text-slate-500 font-bold text-sm md:text-base">
-                  Gerencie {users.length} usuários ativos no sistema.
-                </p>
-              </div>
+              <h3 className="text-xl font-black text-slate-800">
+                Gestão de acesso restrita
+              </h3>
+              <p className="text-slate-500 font-semibold leading-relaxed">
+                Apenas administradores podem visualizar e alterar os usuários
+                do sistema.
+              </p>
             </div>
           </div>
-
-          {/* Table Area */}
-          <div className="flex-1 min-h-0 overflow-hidden p-4 md:p-6 bg-slate-50/30">
-            {!isAccessAdmin ? (
-              <div className="h-full bg-white rounded-2xl border-2 border-slate-100 shadow-sm overflow-hidden flex items-center justify-center p-10 text-center">
-                <div className="max-w-lg space-y-4">
-                  <div className="mx-auto w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-500">
-                    <ShieldCheck size={28} />
-                  </div>
-                  <h3 className="text-xl font-black text-slate-800">
-                    Gestão de acesso restrita
-                  </h3>
-                  <p className="text-slate-500 font-semibold leading-relaxed">
-                    Apenas administradores podem visualizar e alterar os
-                    usuários do sistema.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <DataTable
-                className="h-full min-h-0"
-                data={users}
-                maxHeight="100%"
-                columns={[
+        ) : (
+          <DataTable
+            data={users}
+            columns={[
                   {
                     key: "nome",
                     title: "Usuário",
@@ -434,27 +418,25 @@ export default function AcessosPage() {
                     ),
                   },
                 ]}
-                loading={isUsersLoading}
-                searchTerm={searchTerm}
-                onSearchChange={setSearchTerm}
-                searchPlaceholder="Buscar por nome, e-mail..."
-                emptyMessage="Nenhum usuário encontrado."
-                emptyIcon={<ShieldCheck size={48} />}
-                actionButton={
-                  isAccessAdmin ? (
-                    <button
-                      onClick={() => setIsCreateModalOpen(true)}
-                      className="flex items-center gap-2 bg-[var(--color-geolog-blue)] text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-blue-900/10 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest cursor-pointer"
-                    >
-                      <Plus size={18} strokeWidth={3} />
-                      Novo Login
-                    </button>
-                  ) : undefined
-                }
-              />
-            )}
-          </div>
-        </div>
+            loading={isUsersLoading}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Pesquisar por nome, e-mail..."
+            emptyMessage="Nenhum usuário encontrado."
+            emptyIcon={<ShieldCheck size={48} />}
+            actionButton={
+              isAccessAdmin ? (
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="flex items-center justify-center gap-2 bg-[var(--color-geolog-blue)] text-white px-7 py-3.5 rounded-2xl font-black shadow-lg shadow-blue-900/10 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest shrink-0 w-full md:w-auto cursor-pointer whitespace-nowrap"
+                >
+                  <Plus size={18} strokeWidth={3} />
+                  Novo Login
+                </button>
+              ) : undefined
+            }
+          />
+        )}
       </div>
 
       {/* Modal Criar Usuário */}

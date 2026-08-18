@@ -652,11 +652,6 @@ export default function DashboardLayout({
                       >
                         {item.label}
                       </span>
-                      {item.description && (
-                        <span className="text-xs text-slate-400 font-normal leading-tight truncate group-hover:text-slate-500 mt-0.5">
-                          {item.description}
-                        </span>
-                      )}
                     </div>
                     <ChevronRight
                       size={18}
