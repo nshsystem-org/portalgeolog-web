@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth, UserProfile } from "@/context/AuthContext";
-import { hasPageAccess, getEffectivePageAccess } from "@/lib/permissions";
+import {
+  hasPageAccess,
+  getEffectivePageAccess,
+  type PageKey,
+  type PageAction,
+} from "@/lib/permissions";
 import { AccessDenied } from "@/components/ui/AccessDenied";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -22,6 +27,12 @@ import {
   PencilLine,
   Eye,
   Building2,
+  Wallet,
+  Package,
+  Tags,
+  CreditCard,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import StandardModal from "@/components/StandardModal";
@@ -137,6 +148,173 @@ function TipoUsuarioAvatar({ tipo }: { tipo: string }) {
   );
 }
 
+/**
+ * Configuração das páginas e ações disponíveis no módulo financeiro.
+ * Cada página possui controle independente de:
+ * - view: acesso/visualização da tela
+ * - create: criar e editar registros
+ * - delete: excluir registros
+ * - sensitive: ações sensíveis específicas da página
+ */
+const FINANCEIRO_PAGE_CONFIG: Array<{
+  key: PageKey;
+  label: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  badgeColor: string;
+  actions: Array<{
+    key: PageAction;
+    label: string;
+    description: string;
+  }>;
+}> = [
+  {
+    key: "financeiro",
+    label: "Medição Financeira",
+    description: "Fechamento, faturamento e repasse de OS",
+    icon: DollarSign,
+    badgeColor: "bg-amber-100 text-amber-700 border-amber-200",
+    actions: [
+      {
+        key: "view",
+        label: "Acesso à Página",
+        description: "Visualizar tabela de medição e relatórios",
+      },
+      {
+        key: "create",
+        label: "Criar / Editar",
+        description: "Editar valores, dados de repasse e faturamento",
+      },
+      {
+        key: "delete",
+        label: "Excluir Registros",
+        description: "Remover lançamentos e comprovantes anexados",
+      },
+      {
+        key: "sensitive",
+        label: "Faturar / Baixar / Repasse",
+        description: "Executar faturamento, baixa e repasse em lote",
+      },
+    ],
+  },
+  {
+    key: "caixa",
+    label: "Fluxo de Caixa",
+    description: "Controle de receitas, despesas e saldos de contas",
+    icon: Wallet,
+    badgeColor: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    actions: [
+      {
+        key: "view",
+        label: "Acesso à Página",
+        description: "Visualizar extrato, saldos e filtros do caixa",
+      },
+      {
+        key: "create",
+        label: "Lançar / Editar",
+        description: "Registrar entradas, saídas e editar lançamentos",
+      },
+      {
+        key: "delete",
+        label: "Excluir Lançamentos",
+        description: "Remover movimentações e estornos do caixa",
+      },
+      {
+        key: "sensitive",
+        label: "Exportar Relatórios",
+        description: "Gerar e baixar relatórios analíticos PDF/Excel",
+      },
+    ],
+  },
+  {
+    key: "fornecedores",
+    label: "Fornecedores",
+    description: "Cadastro e gestão de fornecedores de insumos",
+    icon: Package,
+    badgeColor: "bg-blue-100 text-blue-700 border-blue-200",
+    actions: [
+      {
+        key: "view",
+        label: "Acesso à Página",
+        description: "Visualizar cadastro e listagem de fornecedores",
+      },
+      {
+        key: "create",
+        label: "Cadastrar / Editar",
+        description: "Adicionar novos fornecedores e atualizar dados",
+      },
+      {
+        key: "delete",
+        label: "Excluir / Arquivar",
+        description: "Arquivar e desativar fornecedores cadastrados",
+      },
+      {
+        key: "sensitive",
+        label: "Exportar Dados",
+        description: "Exportar listagem completa de fornecedores",
+      },
+    ],
+  },
+  {
+    key: "categorias-caixa",
+    label: "Categorias",
+    description: "Categorias de receitas e despesas do fluxo de caixa",
+    icon: Tags,
+    badgeColor: "bg-purple-100 text-purple-700 border-purple-200",
+    actions: [
+      {
+        key: "view",
+        label: "Acesso à Página",
+        description: "Visualizar lista de categorias de lançamentos",
+      },
+      {
+        key: "create",
+        label: "Criar / Editar",
+        description: "Cadastrar e editar categorias do plano de contas",
+      },
+      {
+        key: "delete",
+        label: "Excluir Categorias",
+        description: "Remover categorias sem movimentações vinculadas",
+      },
+      {
+        key: "sensitive",
+        label: "Ativar / Inativar",
+        description: "Alternar status de ativação das categorias",
+      },
+    ],
+  },
+  {
+    key: "formas-pagamento",
+    label: "Formas de Pagamento",
+    description: "Métodos de pagamento disponíveis para transações",
+    icon: CreditCard,
+    badgeColor: "bg-indigo-100 text-indigo-700 border-indigo-200",
+    actions: [
+      {
+        key: "view",
+        label: "Acesso à Página",
+        description: "Visualizar métodos de pagamento cadastrados",
+      },
+      {
+        key: "create",
+        label: "Criar / Editar",
+        description: "Cadastrar novas formas de pagamento e taxas",
+      },
+      {
+        key: "delete",
+        label: "Excluir Formas",
+        description: "Remover métodos de pagamento sem uso ativo",
+      },
+      {
+        key: "sensitive",
+        label: "Ativar / Inativar",
+        description: "Alternar status de aceitação de formas de pagamento",
+      },
+    ],
+  },
+];
+
 export default function AcessosPage() {
   const { user, profile } = useAuth();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
@@ -155,6 +333,13 @@ export default function AcessosPage() {
   const [selectedUserForPermissions, setSelectedUserForPermissions] =
     useState<UserWithAuth | null>(null);
   const [activePermissionTab, setActivePermissionTab] = useState("financeiro");
+  const [expandedPages, setExpandedPages] = useState<Record<string, boolean>>({
+    financeiro: true,
+    caixa: true,
+    fornecedores: true,
+    "categorias-caixa": false,
+    "formas-pagamento": false,
+  });
   const [newUser, setNewUser] = useState({
     primeiroNome: "",
     sobrenome: "",
@@ -280,6 +465,90 @@ export default function AcessosPage() {
       toast.error("Erro ao atualizar permissões: " + formatErrorMessage(err));
       fetchUsers();
     }
+  };
+
+  /**
+   * Alterna uma permissão granular por página/ação dentro do módulo financeiro.
+   * Suporta migração automática da flag legacy `page_access: true` para a
+   * nova estrutura granular `pages.{pageKey}.{action}` sem quebrar acessos existentes.
+   */
+  const handleTogglePageAction = (
+    pageKey: PageKey,
+    action: PageAction,
+    value: boolean,
+  ) => {
+    if (!selectedUserForPermissions) return;
+
+    const currentSpecific =
+      (selectedUserForPermissions.specific_permissions as Record<
+        string,
+        unknown
+      >) || {};
+    const currentFinanceiro =
+      (currentSpecific.financeiro as Record<string, unknown>) || {};
+    const currentPages =
+      (currentFinanceiro.pages as Record<
+        string,
+        Partial<Record<PageAction, boolean>>
+      >) || {};
+
+    const isLegacyFull =
+      currentFinanceiro.page_access === true && !currentFinanceiro.pages;
+
+    const existingPagePerms: Record<PageAction, boolean> = {
+      view: currentPages[pageKey]?.view ?? isLegacyFull,
+      create: currentPages[pageKey]?.create ?? isLegacyFull,
+      delete: currentPages[pageKey]?.delete ?? isLegacyFull,
+      sensitive: currentPages[pageKey]?.sensitive ?? isLegacyFull,
+    };
+
+    const updatedPagePerms: Record<PageAction, boolean> = {
+      ...existingPagePerms,
+      [action]: value,
+    };
+
+    // Se desligou o acesso à página (view), desliga todas as subações dessa página
+    if (action === "view" && !value) {
+      updatedPagePerms.create = false;
+      updatedPagePerms.delete = false;
+      updatedPagePerms.sensitive = false;
+    }
+    // Se ligou qualquer subação quando view estava desligado, liga view
+    if (action !== "view" && value) {
+      updatedPagePerms.view = true;
+    }
+
+    // Inicializa as outras páginas financeiras se viemos do legacy para não perder acesso
+    const updatedPages: Record<
+      string,
+      Record<PageAction, boolean>
+    > = { ...currentPages as Record<string, Record<PageAction, boolean>> };
+
+    if (isLegacyFull) {
+      for (const p of FINANCEIRO_PAGE_CONFIG) {
+        if (!updatedPages[p.key]) {
+          updatedPages[p.key] = {
+            view: true,
+            create: true,
+            delete: true,
+            sensitive: true,
+          };
+        }
+      }
+    }
+
+    updatedPages[pageKey] = updatedPagePerms;
+
+    const updatedFinanceiro = {
+      ...currentFinanceiro,
+      pages: updatedPages,
+    };
+
+    void updateSpecificPermissions(
+      selectedUserForPermissions.id,
+      "financeiro",
+      updatedFinanceiro,
+    );
   };
 
   // Opções de categoria disponíveis no dropdown.
@@ -798,130 +1067,201 @@ export default function AcessosPage() {
               {/* Conteúdo das Tabs de Permissões Específicas */}
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                 {activePermissionTab === "financeiro" && (
-                  <div className="space-y-3">
-                    {(() => {
-                      const eff = getEffectivePageAccess(
-                        selectedUserForPermissions,
-                        "financeiro",
-                      );
-                      const locked = eff.lockedByCategoria;
-                      const hint = locked
-                        ? eff.source === "administrador"
-                          ? "Concedido automaticamente pelo perfil Administrador"
-                          : eff.source === "categoria-base"
-                            ? `Concedido automaticamente pelo perfil ${categoriaLabel(selectedUserForPermissions?.categoria)}`
-                            : "Bloqueado pela categoria"
-                        : "Permite acessar Financeiro, Caixa, Fornecedores, Categorias e Formas de Pagamento";
-                      return (
-                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">
-                              Acesso à Página
-                            </p>
-                            <p className="text-xs font-semibold text-slate-400">
-                              {hint}
-                            </p>
-                          </div>
-                          <label
-                            className={`relative inline-flex items-center ${
-                              locked
-                                ? "cursor-not-allowed"
-                                : "cursor-pointer"
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-wider text-slate-700">
+                          Páginas Financeiras (5 telas)
+                        </p>
+                        <p className="text-xs font-medium text-slate-400">
+                          Configure o acesso individual e ações permitidas em cada tela
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {FINANCEIRO_PAGE_CONFIG.map((cfg) => {
+                        const IconComponent = cfg.icon;
+                        const eff = getEffectivePageAccess(
+                          selectedUserForPermissions,
+                          cfg.key,
+                        );
+                        const locked = eff.lockedByCategoria;
+                        const isExpanded = expandedPages[cfg.key] ?? false;
+
+                        const specific =
+                          (selectedUserForPermissions.specific_permissions as Record<
+                            string,
+                            unknown
+                          >) || {};
+                        const fin =
+                          (specific.financeiro as Record<string, unknown>) || {};
+                        const pages =
+                          (fin.pages as Record<
+                            string,
+                            Partial<Record<PageAction, boolean>>
+                          >) || {};
+                        const isLegacyFull =
+                          fin.page_access === true && !fin.pages;
+
+                        return (
+                          <div
+                            key={cfg.key}
+                            className={`rounded-2xl border transition-all overflow-hidden bg-white ${
+                              eff.access
+                                ? "border-slate-200 shadow-sm"
+                                : "border-slate-200/60 opacity-80"
                             }`}
                           >
-                            <input
-                              type="checkbox"
-                              checked={eff.access}
-                              disabled={locked}
-                              onChange={(e) => {
-                                const currentPerms =
-                                  ((
-                                    (selectedUserForPermissions.specific_permissions as Record<
-                                      string,
-                                      unknown
-                                    >) || {}
-                                  ).financeiro as Record<string, unknown>) || {};
-                                void updateSpecificPermissions(
-                                  selectedUserForPermissions.id,
-                                  "financeiro",
-                                  {
-                                    ...currentPerms,
-                                    page_access: e.target.checked,
-                                  },
-                                );
-                              }}
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
-                          </label>
-                        </div>
-                      );
-                    })()}
+                            {/* Header da Página */}
+                            <div className="p-4 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div
+                                  className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${cfg.badgeColor}`}
+                                >
+                                  <IconComponent size={20} />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-bold text-sm text-slate-800 truncate">
+                                      {cfg.label}
+                                    </p>
+                                    {locked && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200">
+                                        {eff.source === "administrador"
+                                          ? "Admin"
+                                          : categoriaLabel(
+                                              selectedUserForPermissions.categoria,
+                                            )}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs font-medium text-slate-400 truncate">
+                                    {cfg.description}
+                                  </p>
+                                </div>
+                              </div>
 
-                    {getEffectivePageAccess(
-                      selectedUserForPermissions,
-                      "financeiro",
-                    ).access && (
-                      <>
-                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">
-                              Visualizar Faturamento
-                            </p>
-                            <p className="text-xs font-semibold text-slate-400">
-                              Acesso a relatórios financeiros · Em breve
-                            </p>
+                              <div className="flex items-center gap-3 flex-shrink-0">
+                                {/* Switch Principal: Acesso à Página */}
+                                <label
+                                  className={`relative inline-flex items-center ${
+                                    locked
+                                      ? "cursor-not-allowed"
+                                      : "cursor-pointer"
+                                  }`}
+                                  title={
+                                    locked
+                                      ? `Acesso concedido pela categoria ${categoriaLabel(selectedUserForPermissions.categoria)}`
+                                      : `Alternar acesso à página ${cfg.label}`
+                                  }
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={eff.access}
+                                    disabled={locked}
+                                    onChange={(e) => {
+                                      handleTogglePageAction(
+                                        cfg.key,
+                                        "view",
+                                        e.target.checked,
+                                      );
+                                    }}
+                                    className="sr-only peer"
+                                  />
+                                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
+                                </label>
+
+                                {/* Botão de Expandir Subações */}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedPages((prev) => ({
+                                      ...prev,
+                                      [cfg.key]: !isExpanded,
+                                    }))
+                                  }
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                                  title="Ver permissões detalhadas"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronUp size={18} />
+                                  ) : (
+                                    <ChevronDown size={18} />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Ações Granulares da Página */}
+                            {isExpanded && (
+                              <div className="bg-slate-50/70 px-4 py-3 border-t border-slate-100 space-y-2.5">
+                                <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                                  Ações permitidas nesta página
+                                </p>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                  {cfg.actions
+                                    .filter((act) => act.key !== "view")
+                                    .map((act) => {
+                                      const isActionAllowed = locked
+                                        ? true
+                                        : eff.access
+                                          ? (pages[cfg.key]?.[act.key] ??
+                                            isLegacyFull)
+                                          : false;
+
+                                      const actionDisabled =
+                                        locked || !eff.access;
+
+                                      return (
+                                        <div
+                                          key={act.key}
+                                          className={`flex items-center justify-between p-2.5 bg-white rounded-xl border transition-all ${
+                                            isActionAllowed && !actionDisabled
+                                              ? "border-slate-200 shadow-2xs"
+                                              : "border-slate-100 opacity-60"
+                                          }`}
+                                        >
+                                          <div className="min-w-0 pr-2">
+                                            <p className="font-bold text-xs text-slate-700 truncate">
+                                              {act.label}
+                                            </p>
+                                            <p className="text-[10px] font-medium text-slate-400 truncate">
+                                              {act.description}
+                                            </p>
+                                          </div>
+                                          <label
+                                            className={`relative inline-flex items-center ${
+                                              actionDisabled
+                                                ? "cursor-not-allowed"
+                                                : "cursor-pointer"
+                                            }`}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={isActionAllowed}
+                                              disabled={actionDisabled}
+                                              onChange={(e) => {
+                                                handleTogglePageAction(
+                                                  cfg.key,
+                                                  act.key,
+                                                  e.target.checked,
+                                                );
+                                              }}
+                                              className="sr-only peer"
+                                            />
+                                            <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-600 peer-checked:after:border-blue-600"></div>
+                                          </label>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <label className="relative inline-flex items-center cursor-not-allowed">
-                            <input
-                              type="checkbox"
-                              defaultChecked
-                              disabled
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
-                          </label>
-                        </div>
-                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">
-                              Editar Taxas
-                            </p>
-                            <p className="text-xs font-semibold text-slate-400">
-                              Modificar porcentagens · Em breve
-                            </p>
-                          </div>
-                          <label className="relative inline-flex items-center cursor-not-allowed">
-                            <input
-                              type="checkbox"
-                              defaultChecked={false}
-                              disabled
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
-                          </label>
-                        </div>
-                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">
-                              Exportar Relatórios
-                            </p>
-                            <p className="text-xs font-semibold text-slate-400">
-                              Download de dados · Em breve
-                            </p>
-                          </div>
-                          <label className="relative inline-flex items-center cursor-not-allowed">
-                            <input
-                              type="checkbox"
-                              defaultChecked={false}
-                              disabled
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
-                          </label>
-                        </div>
-                      </>
-                    )}
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 

@@ -17,7 +17,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { AccessDenied } from "@/components/ui/AccessDenied";
 import { useAuth } from "@/context/AuthContext";
-import { hasPageAccess } from "@/lib/permissions";
+import { hasPageAccess, hasPageAction } from "@/lib/permissions";
 import { useServerPaginatedTable } from "@/hooks/useServerPaginatedTable";
 import { toast } from "sonner";
 import {
@@ -74,6 +74,11 @@ export default function FormasPagamentoPage() {
     if (!isInativosFilterLoading) return;
     if (!formaTable.loading) setIsInativosFilterLoading(false);
   }, [formaTable.loading, isInativosFilterLoading]);
+
+  const canCreate = hasPageAction(profile, "formas-pagamento", "create");
+  const canDelete =
+    hasPageAction(profile, "formas-pagamento", "delete") ||
+    hasPageAction(profile, "formas-pagamento", "sensitive");
 
   if (!hasPageAccess(profile, "formas-pagamento")) {
     return <AccessDenied module="Financeiro" />;
@@ -189,13 +194,15 @@ export default function FormasPagamentoPage() {
               <Archive size={16} />
               {showInativosOnly ? "Ocultar" : "Arquivadas"}
             </button>
-            <button
-              onClick={() => handleOpenModal()}
-              className="flex items-center gap-2 bg-[var(--color-geolog-blue)] text-white px-5 py-3.5 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all text-sm cursor-pointer shadow-lg shadow-blue-900/20 whitespace-nowrap"
-            >
-              <Plus size={18} />
-              Nova Forma
-            </button>
+            {canCreate && (
+              <button
+                onClick={() => handleOpenModal()}
+                className="flex items-center gap-2 bg-[var(--color-geolog-blue)] text-white px-5 py-3.5 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all text-sm cursor-pointer shadow-lg shadow-blue-900/20 whitespace-nowrap"
+              >
+                <Plus size={18} />
+                Nova Forma
+              </button>
+            )}
           </div>
         }
         columns={[
@@ -252,7 +259,7 @@ export default function FormasPagamentoPage() {
             width: "160px",
             render: (_value: unknown, item: CaixaFormaPagamento) => (
               <div className="flex items-center justify-center gap-2">
-                {item.ativo && (
+                {item.ativo && canCreate && (
                   <button
                     onClick={() => handleOpenModal(item)}
                     className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
@@ -262,18 +269,28 @@ export default function FormasPagamentoPage() {
                     <Edit2 size={18} />
                   </button>
                 )}
-                <button
-                  onClick={() => handleToggleAtivo(item)}
-                  className={`p-2 rounded-lg transition-all cursor-pointer ${
-                    item.ativo
-                      ? "text-slate-400 hover:text-red-500 hover:bg-red-50"
-                      : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
-                  }`}
-                  title={item.ativo ? "Arquivar" : "Desarquivar"}
-                  aria-label={`${item.ativo ? "Arquivar" : "Desarquivar"} forma de pagamento ${item.nome}`}
-                >
-                  {item.ativo ? <Archive size={18} /> : <ArchiveRestore size={18} />}
-                </button>
+                {canDelete && (
+                  <button
+                    onClick={() => handleToggleAtivo(item)}
+                    className={`p-2 rounded-lg transition-all cursor-pointer ${
+                      item.ativo
+                        ? "text-slate-400 hover:text-red-500 hover:bg-red-50"
+                        : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
+                    }`}
+                    title={
+                      item.ativo
+                        ? "Arquivar Forma de Pagamento"
+                        : "Desarquivar Forma de Pagamento"
+                    }
+                    aria-label={`${item.ativo ? "Arquivar" : "Desarquivar"} forma de pagamento ${item.nome}`}
+                  >
+                    {item.ativo ? (
+                      <Archive size={18} />
+                    ) : (
+                      <ArchiveRestore size={18} />
+                    )}
+                  </button>
+                )}
               </div>
             ),
           },

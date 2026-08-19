@@ -27,6 +27,8 @@ export default function CaixaPage(): ReactElement {
         showFilters={page.showFilters}
         activeQuickRange={page.activeQuickRange}
         reportLoading={page.reportLoading}
+        canCreate={page.canCreate}
+        canExport={page.canExport}
         onToggleFilters={() => page.setShowFilters((current) => !current)}
         onSetQuickRange={page.setQuickRange}
         onOpenNovoLancamento={page.handleOpenNovoLancamento}

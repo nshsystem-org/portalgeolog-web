@@ -17,6 +17,8 @@ type CaixaToolbarProps = {
   showFilters: boolean;
   activeQuickRange: "today" | "week" | "month" | "custom" | null;
   reportLoading: boolean;
+  canCreate?: boolean;
+  canExport?: boolean;
   onToggleFilters: () => void;
   onSetQuickRange: (mode: "today" | "week" | "month") => void;
   onOpenNovoLancamento: () => void;
@@ -39,6 +41,8 @@ export function CaixaToolbar({
   showFilters,
   activeQuickRange,
   reportLoading,
+  canCreate = true,
+  canExport = true,
   onToggleFilters,
   onSetQuickRange,
   onOpenNovoLancamento,
@@ -117,27 +121,31 @@ export function CaixaToolbar({
             <Wallet size={16} />
             Contas
           </button>
-          <button
-            type="button"
-            onClick={onOpenRelatorioModal}
-            disabled={reportLoading}
-            className="inline-flex items-center gap-2 rounded-2xl border border-yellow-300 bg-gradient-to-r from-yellow-50 via-yellow-100 to-yellow-200 bg-[length:200%_100%] animate-gradient px-4 py-2.5 text-sm font-black text-[rgb(100,102,20)] transition-all duration-300 hover:from-yellow-100 hover:via-yellow-200 hover:to-yellow-300 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
-          >
-            {reportLoading ? (
-              <RotateCcw size={16} className="animate-spin" />
-            ) : (
-              <Download size={16} />
-            )}
-            Exportar Relatório
-          </button>
-          <button
-            type="button"
-            onClick={onOpenNovoLancamento}
-            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300 bg-gradient-to-r from-emerald-50 via-emerald-100 to-emerald-200 bg-[length:200%_100%] animate-gradient px-4 py-2.5 text-sm font-black text-emerald-800 transition-all duration-300 hover:from-emerald-100 hover:via-emerald-200 hover:to-emerald-300 active:scale-95 cursor-pointer"
-          >
-            <Plus size={16} />
-            Novo Lançamento
-          </button>
+          {canExport && (
+            <button
+              type="button"
+              onClick={onOpenRelatorioModal}
+              disabled={reportLoading}
+              className="inline-flex items-center gap-2 rounded-2xl border border-yellow-300 bg-gradient-to-r from-yellow-50 via-yellow-100 to-yellow-200 bg-[length:200%_100%] animate-gradient px-4 py-2.5 text-sm font-black text-[rgb(100,102,20)] transition-all duration-300 hover:from-yellow-100 hover:via-yellow-200 hover:to-yellow-300 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
+            >
+              {reportLoading ? (
+                <RotateCcw size={16} className="animate-spin" />
+              ) : (
+                <Download size={16} />
+              )}
+              Exportar Relatório
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              onClick={onOpenNovoLancamento}
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-300 bg-gradient-to-r from-emerald-50 via-emerald-100 to-emerald-200 bg-[length:200%_100%] animate-gradient px-4 py-2.5 text-sm font-black text-emerald-800 transition-all duration-300 hover:from-emerald-100 hover:via-emerald-200 hover:to-emerald-300 active:scale-95 cursor-pointer"
+            >
+              <Plus size={16} />
+              Novo Lançamento
+            </button>
+          )}
         </div>
       </div>
     </section>

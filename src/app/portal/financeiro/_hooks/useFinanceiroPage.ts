@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { hasPageAccess, hasPageAction } from "@/lib/permissions";
 import {
   useData,
   type Cliente,
@@ -50,6 +51,9 @@ type ActiveQuickRange = QuickRangeMode | "custom" | null;
 export type FinanceiroPageState = {
   // Access
   hasFinanceiroAccess: boolean;
+  canCreate: boolean;
+  canDelete: boolean;
+  canSensitive: boolean;
 
   // Filters
   dataInicio: string;
@@ -284,26 +288,23 @@ export function useFinanceiroPage(): FinanceiroPageState {
     [clientes, drivers, parceiros],
   );
 
-  // Permission
-  const hasFinanceiroAccess = useMemo((): boolean => {
-    if (!profile) return false;
-    if (
-      profile.categoria === "administrador" ||
-      profile.categoria === "diretoria"
-    ) {
-      return true;
-    }
-
-    const specificPermissions =
-      (profile.specific_permissions as Record<string, unknown>) || {};
-    const financeiroPerms =
-      (specificPermissions.financeiro as Record<string, unknown>) || {};
-    if (Object.keys(financeiroPerms).length > 0) {
-      return financeiroPerms.page_access === true;
-    }
-
-    return profile.categoria === "financeiro";
-  }, [profile]);
+  // Permissions
+  const hasFinanceiroAccess = useMemo(
+    () => hasPageAccess(profile, "financeiro"),
+    [profile],
+  );
+  const canCreate = useMemo(
+    () => hasPageAction(profile, "financeiro", "create"),
+    [profile],
+  );
+  const canDelete = useMemo(
+    () => hasPageAction(profile, "financeiro", "delete"),
+    [profile],
+  );
+  const canSensitive = useMemo(
+    () => hasPageAction(profile, "financeiro", "sensitive"),
+    [profile],
+  );
 
   // Load stats
   const loadStats = useCallback(async (): Promise<void> => {
@@ -747,6 +748,9 @@ export function useFinanceiroPage(): FinanceiroPageState {
 
   return {
     hasFinanceiroAccess,
+    canCreate,
+    canDelete,
+    canSensitive,
 
     dataInicio,
     dataFim,

@@ -153,12 +153,84 @@ const PAGE_TO_PERMISSION_MODULE: Partial<Record<PageKey, string>> = {
 };
 
 /**
+ * Tipos de ação controláveis por página dentro de um módulo.
+ * 2. administrador → acesso total, não editável via specific_permissions
+ * 3. Acesso base da categoria → concedido pela categoria, não editável
+ * 4. specific_permissions.{modulo}.page_access → override editável
+ * 5. Caso contrário → sem acesso
+ */
+/**
+ * Tipos de ação controláveis por página dentro de um módulo.
+ * - view: visualizar/acessar a página
+ * - create: criar e editar registros
+ * - delete: excluir registros
+ * - sensitive: ações sensíveis (faturar, baixar, exportar, arquivar)
+ */
+export type PageAction = "view" | "create" | "delete" | "sensitive";
+
+/**
+ * Estrutura granular de permissões por página dentro do módulo financeiro.
+ * Cada chave é um PageKey do módulo financeiro.
+ */
+type GranularPagePerms = Record<PageAction, boolean>;
+
+/**
+ * Estrutura completa do módulo financeiro em specific_permissions:
+ *   "financeiro": {
+ *     "page_access": true,           // legacy: concede tudo se não houver "pages"
+ *     "pages": {
+ *       "financeiro":       { "view": true, "create": true, "delete": true, "sensitive": true },
+ *       "caixa":            { "view": true, "create": true, "delete": true, "sensitive": true },
+ *       "fornecedores":     { "view": true, "create": true, "delete": true, "sensitive": true },
+ *       "categorias-caixa": { "view": true, "create": true, "delete": true, "sensitive": true },
+ *       "formas-pagamento": { "view": true, "create": true, "delete": true, "sensitive": true }
+ *     }
+ *   }
+ *
+ * Compatibilidade: se "page_access" existir sem "pages", concede view de todas
+ * as páginas do módulo (legacy). Se "pages" existir, usa granular.
+ */
+/**
+ * Lista das 5 páginas do módulo financeiro, para uso na UI de permissões.
+ */
+export const FINANCEIRO_PAGES: PageKey[] = [
+  "financeiro",
+  "caixa",
+  "fornecedores",
+  "categorias-caixa",
+  "formas-pagamento",
+];
+
+/**
+ * Lê as permissões granulares de uma página específica do módulo financeiro.
+ * Retorna null se não houver estrutura "pages" definida.
+ */
+function getGranularPagePerms(
+  modulePerms: Record<string, unknown> | undefined,
+  page: PageKey,
+): GranularPagePerms | null {
+  if (!modulePerms) return null;
+  const pages = modulePerms["pages"] as Record<string, Partial<GranularPagePerms>> | undefined;
+  if (!pages) return null;
+  const pagePerms = pages[page];
+  if (!pagePerms) return null;
+  return {
+    view: pagePerms.view ?? false,
+    create: pagePerms.create ?? false,
+    delete: pagePerms.delete ?? false,
+    sensitive: pagePerms.sensitive ?? false,
+  };
+}
+
+/**
  * Verifica se o usuário tem acesso a uma página.
  *
  * Lógica:
  * 1. administrador → sempre true
  * 2. Se a categoria base permite → true
- * 3. Se há specific_permissions para o módulo correspondente → page_access === true
+ * 3. Se há specific_permissions para o módulo correspondente:
+ *    a. Se há estrutura granular "pages" → checa pages[page].view
+ *    b. Senão, checa page_access (legacy, concede tudo do módulo)
  * 4. Caso contrário → false
  */
 export function hasPageAccess(
@@ -179,7 +251,9 @@ export function hasPageAccess(
  * 1. Usuário inativo (`is_active === false`) → sem acesso a nada
  * 2. administrador → acesso total, não editável via specific_permissions
  * 3. Acesso base da categoria → concedido pela categoria, não editável
- * 4. specific_permissions.{modulo}.page_access → override editável
+ * 4. specific_permissions.{modulo}:
+ *    a. Se há "pages" granular → pages[page].view
+ *    b. Senão, page_access (legacy, concede view de todo o módulo)
  * 5. Caso contrário → sem acesso
  */
 export function getEffectivePageAccess(
@@ -215,12 +289,67 @@ export function getEffectivePageAccess(
     | Record<string, unknown>
     | undefined;
 
+  // Estrutura granular por página (nova)
+  const granular = getGranularPagePerms(modulePerms, page);
+  if (granular) {
+    return {
+      access: granular.view,
+      source: granular.view ? "override" : "nenhum",
+      lockedByCategoria: false,
+    };
+  }
+
+  // Legacy: page_access concede view de todo o módulo
   const access = modulePerms?.page_access === true;
   return {
     access,
     source: access ? "override" : "nenhum",
     lockedByCategoria: false,
   };
+}
+
+/**
+ * Verifica se o usuário pode executar uma ação específica em uma página.
+ *
+ * Lógica:
+ * 1. administrador → sempre true
+ * 2. Categoria base concede a página → true para todas as ações
+ * 3. specific_permissions granular → pages[page].{action}
+ * 4. Legacy page_access → true para todas as ações (compatibilidade)
+ * 5. Caso contrário → false
+ */
+export function hasPageAction(
+  profile: ProfileLike | null | undefined,
+  page: PageKey,
+  action: PageAction,
+): boolean {
+  if (!profile) return false;
+  if (profile.is_active === false) return false;
+
+  const categoria = profile.categoria as Categoria;
+
+  if (categoria === "administrador") return true;
+
+  // Categoria base concede a página → todas as ações permitidas
+  const baseAllowed = BASE_ACCESS[categoria]?.[page] === true;
+  if (baseAllowed) return true;
+
+  const permModule = PAGE_TO_PERMISSION_MODULE[page];
+  if (!permModule) return false;
+
+  const specificPermissions = profile.specific_permissions ?? {};
+  const modulePerms = specificPermissions[permModule] as
+    | Record<string, unknown>
+    | undefined;
+
+  // Estrutura granular
+  const granular = getGranularPagePerms(modulePerms, page);
+  if (granular) {
+    return granular[action];
+  }
+
+  // Legacy: page_access concede tudo
+  return modulePerms?.page_access === true;
 }
 
 /**

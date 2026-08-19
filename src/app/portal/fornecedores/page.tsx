@@ -28,7 +28,7 @@ import {
 import { PageHeader } from "@/components/ui/PageHeader";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
-import { hasPageAccess } from "@/lib/permissions";
+import { hasPageAccess, hasPageAction } from "@/lib/permissions";
 import { AccessDenied } from "@/components/ui/AccessDenied";
 import {
   fetchFornecedoresPage,
@@ -175,6 +175,9 @@ export default function FornecedoresPage() {
       prevFornecedoresLengthRef.current = fornecedores.length;
     }
   }, [fornecedores.length, fornecedorTable]);
+
+  const canCreate = hasPageAction(profile, "fornecedores", "create");
+  const canDelete = hasPageAction(profile, "fornecedores", "delete");
 
   if (!hasPageAccess(profile, "fornecedores")) {
     return <AccessDenied module="Financeiro" />;
@@ -404,13 +407,15 @@ export default function FornecedoresPage() {
               <Archive size={16} />
               {showArchivedOnly ? "Ocultar" : "Arquivados"}
             </button>
-            <button
-              onClick={() => handleOpenModal()}
-              className="flex items-center gap-2 bg-[var(--color-geolog-blue)] text-white px-5 py-3.5 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all text-sm cursor-pointer shadow-lg shadow-blue-900/20 whitespace-nowrap"
-            >
-              <Plus size={18} />
-              Novo Fornecedor
-            </button>
+            {canCreate && (
+              <button
+                onClick={() => handleOpenModal()}
+                className="flex items-center gap-2 bg-[var(--color-geolog-blue)] text-white px-5 py-3.5 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all text-sm cursor-pointer shadow-lg shadow-blue-900/20 whitespace-nowrap"
+              >
+                <Plus size={18} />
+                Novo Fornecedor
+              </button>
+            )}
           </div>
         }
         columns={[
@@ -542,7 +547,7 @@ export default function FornecedoresPage() {
             align: "center",
             render: (_value: unknown, item: Fornecedor) => (
               <div className="flex items-center justify-center gap-2">
-                {!showArchivedOnly && (
+                {!showArchivedOnly && canCreate && (
                   <button
                     onClick={() => handleOpenModal(item)}
                     className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
@@ -552,7 +557,7 @@ export default function FornecedoresPage() {
                     <Edit2 size={18} />
                   </button>
                 )}
-                {!showArchivedOnly && (
+                {!showArchivedOnly && canDelete && (
                   <button
                     onClick={() => handleDelete(item.id)}
                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
@@ -562,7 +567,7 @@ export default function FornecedoresPage() {
                     <Archive size={18} />
                   </button>
                 )}
-                {showArchivedOnly && (
+                {showArchivedOnly && canDelete && (
                   <button
                     onClick={() => handleUnarchive(item.id)}
                     className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer"

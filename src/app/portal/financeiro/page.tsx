@@ -28,6 +28,7 @@ export default function MedicaoFinanceiraPage(): ReactElement {
         activeQuickRange={page.activeQuickRange}
         reportLoading={page.reportLoading}
         faturamentoLoteLoading={page.faturamentoLoteLoading}
+        canSensitive={page.canSensitive}
         onToggleFilters={() => page.setShowFilters((current) => !current)}
         onSetQuickRange={page.setQuickRange}
         onOpenReportModal={page.handleOpenReportModal}

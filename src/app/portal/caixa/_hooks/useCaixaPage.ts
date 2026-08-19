@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { hasPageAccess, hasPageAction } from "@/lib/permissions";
 import { useData, type Cliente, type Driver } from "@/context/DataContext";
 import { useParceiros } from "@/hooks/useParceiros";
 import { useFornecedores } from "@/hooks/useFornecedores";
@@ -58,6 +59,9 @@ type ActiveQuickRange = QuickRangeMode | "custom" | null;
 export type CaixaPageState = {
   // Access
   hasCaixaAccess: boolean;
+  canCreate: boolean;
+  canDelete: boolean;
+  canExport: boolean;
 
   // Filters
   dataInicio: string;
@@ -208,24 +212,23 @@ export function useCaixaPage(): CaixaPageState {
 
   const actionMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Permission
-  const hasCaixaAccess = useMemo((): boolean => {
-    if (!profile) return false;
-    if (
-      profile.categoria === "administrador" ||
-      profile.categoria === "diretoria"
-    ) {
-      return true;
-    }
-    const specificPermissions =
-      (profile.specific_permissions as Record<string, unknown>) || {};
-    const financeiroPerms =
-      (specificPermissions.financeiro as Record<string, unknown>) || {};
-    if (Object.keys(financeiroPerms).length > 0) {
-      return financeiroPerms.page_access === true;
-    }
-    return profile.categoria === "financeiro";
-  }, [profile]);
+  // Permissions
+  const hasCaixaAccess = useMemo(
+    () => hasPageAccess(profile, "caixa"),
+    [profile],
+  );
+  const canCreate = useMemo(
+    () => hasPageAction(profile, "caixa", "create"),
+    [profile],
+  );
+  const canDelete = useMemo(
+    () => hasPageAction(profile, "caixa", "delete"),
+    [profile],
+  );
+  const canExport = useMemo(
+    () => hasPageAction(profile, "caixa", "sensitive"),
+    [profile],
+  );
 
   // Filtros consolidados (estável por referência)
   const filters = useMemo(
@@ -594,6 +597,9 @@ export function useCaixaPage(): CaixaPageState {
 
   return {
     hasCaixaAccess,
+    canCreate,
+    canDelete,
+    canExport,
     dataInicio,
     dataFim,
     contaId,

@@ -17,6 +17,7 @@ type FinanceiroToolbarProps = {
   activeQuickRange: "today" | "week" | "month" | "custom" | null;
   reportLoading: boolean;
   faturamentoLoteLoading: boolean;
+  canSensitive?: boolean;
   onToggleFilters: () => void;
   onSetQuickRange: (mode: "today" | "week" | "month") => void;
   onOpenReportModal: () => void;
@@ -39,6 +40,7 @@ export function FinanceiroToolbar({
   activeQuickRange,
   reportLoading,
   faturamentoLoteLoading,
+  canSensitive = true,
   onToggleFilters,
   onSetQuickRange,
   onOpenReportModal,
@@ -108,32 +110,36 @@ export function FinanceiroToolbar({
             <ReceiptText size={16} />
             Mês
           </button>
-          <button
-            type="button"
-            onClick={onOpenReportModal}
-            disabled={reportLoading}
-            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
-          >
-            {reportLoading ? (
-              <RotateCcw size={16} className="animate-spin" />
-            ) : (
-              <Download size={16} />
-            )}
-            Exportar Relatório
-          </button>
-          <button
-            type="button"
-            onClick={onOpenFaturamentoLote}
-            disabled={faturamentoLoteLoading}
-            className="inline-flex items-center gap-2 rounded-2xl border border-yellow-300 bg-gradient-to-r from-yellow-50 via-yellow-100 to-yellow-200 bg-[length:200%_100%] animate-gradient px-4 py-2.5 text-sm font-black text-[rgb(100,102,20)] transition-all duration-300 hover:from-yellow-100 hover:via-yellow-200 hover:to-yellow-300 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
-          >
-            {faturamentoLoteLoading ? (
-              <RotateCcw size={16} className="animate-spin" />
-            ) : (
-              <ReceiptText size={16} />
-            )}
-            Faturar
-          </button>
+          {canSensitive && (
+            <button
+              type="button"
+              onClick={onOpenReportModal}
+              disabled={reportLoading}
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
+            >
+              {reportLoading ? (
+                <RotateCcw size={16} className="animate-spin" />
+              ) : (
+                <Download size={16} />
+              )}
+              Exportar Relatório
+            </button>
+          )}
+          {canSensitive && (
+            <button
+              type="button"
+              onClick={onOpenFaturamentoLote}
+              disabled={faturamentoLoteLoading}
+              className="inline-flex items-center gap-2 rounded-2xl border border-yellow-300 bg-gradient-to-r from-yellow-50 via-yellow-100 to-yellow-200 bg-[length:200%_100%] animate-gradient px-4 py-2.5 text-sm font-black text-[rgb(100,102,20)] transition-all duration-300 hover:from-yellow-100 hover:via-yellow-200 hover:to-yellow-300 disabled:cursor-not-allowed disabled:opacity-70 active:scale-95 cursor-pointer"
+            >
+              {faturamentoLoteLoading ? (
+                <RotateCcw size={16} className="animate-spin" />
+              ) : (
+                <ReceiptText size={16} />
+              )}
+              Faturar
+            </button>
+          )}
         </div>
       </div>
     </section>
