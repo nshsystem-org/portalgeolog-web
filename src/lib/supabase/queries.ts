@@ -4909,20 +4909,48 @@ type OSMetricRow = {
   data: string;
 };
 
-function buildOSMetricQuery(filters?: DesempenhoFilters) {
-  let query = getSupabase()
-    .from("ordens_servico")
-    .select(
-      "id, status_operacional, valor_bruto, custo, lucro, route_started_km, route_finished_km, route_started_at, route_finished_at, driver_id, cliente_id, veiculo_id, created_by, data",
-    )
-    .eq("arquivado", false);
-  if (filters?.dataInicio) {
-    query = query.gte("data", filters.dataInicio);
+const OS_METRIC_COLUMNS =
+  "id, status_operacional, valor_bruto, custo, lucro, route_started_km, route_finished_km, route_started_at, route_finished_at, driver_id, cliente_id, veiculo_id, created_by, data";
+
+const OS_METRIC_PAGE_SIZE = 1000;
+
+/**
+ * Busca TODAS as OS não-arquivadas aplicando os filtros de período.
+ * Pagina automaticamente (Supabase limita 1000 rows por requisição).
+ * Read-only: apenas SELECT em ordens_servico.
+ */
+async function fetchAllOSMetrics(
+  filters?: DesempenhoFilters,
+): Promise<OSMetricRow[]> {
+  const allRows: OSMetricRow[] = [];
+  let offset = 0;
+
+  while (true) {
+    let query = getSupabase()
+      .from("ordens_servico")
+      .select(OS_METRIC_COLUMNS)
+      .eq("arquivado", false)
+      .range(offset, offset + OS_METRIC_PAGE_SIZE - 1)
+      .order("data", { ascending: false });
+
+    if (filters?.dataInicio) {
+      query = query.gte("data", filters.dataInicio);
+    }
+    if (filters?.dataFim) {
+      query = query.lte("data", filters.dataFim);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const rows = (data || []) as unknown as OSMetricRow[];
+    allRows.push(...rows);
+
+    if (rows.length < OS_METRIC_PAGE_SIZE) break;
+    offset += OS_METRIC_PAGE_SIZE;
   }
-  if (filters?.dataFim) {
-    query = query.lte("data", filters.dataFim);
-  }
-  return query;
+
+  return allRows;
 }
 
 function calcTempoMedio(
@@ -4960,14 +4988,14 @@ export async function fetchDesempenhoOverview(
   filters?: DesempenhoFilters,
 ): Promise<DesempenhoOverview> {
   const [
-    osResult,
+    osRows,
     driversResult,
     funcionariosResult,
     parceirosResult,
     clientesResult,
     veiculosResult,
   ] = await Promise.all([
-    buildOSMetricQuery(filters),
+    fetchAllOSMetrics(filters),
     getSupabase()
       .from("drivers")
       .select("id, status, arquivado")
@@ -4977,8 +5005,6 @@ export async function fetchDesempenhoOverview(
     getSupabase().from("clientes").select("id, arquivado"),
     getSupabase().from("veiculos").select("id, status, arquivado"),
   ]);
-
-  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
   const drivers = (driversResult.data || []) as {
     id: string;
     status: string;
@@ -5049,16 +5075,14 @@ export async function fetchDesempenhoOverview(
 export async function fetchMotoristasDesempenho(
   filters?: DesempenhoFilters,
 ): Promise<MotoristaMetricas[]> {
-  const [osResult, driversResult] = await Promise.all([
-    buildOSMetricQuery(filters),
+  const [osRows, driversResult] = await Promise.all([
+    fetchAllOSMetrics(filters),
     getSupabase()
       .from("drivers")
       .select("id, name, vinculo_tipo, status, avatar_url, arquivado")
       .eq("arquivado", false)
       .order("name"),
   ]);
-
-  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
   const drivers = (driversResult.data || []) as {
     id: string;
     name: string;
@@ -5103,15 +5127,14 @@ export async function fetchFuncionariosDesempenho(
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 
-  const [osResult, usersResult] = await Promise.all([
-    buildOSMetricQuery(filters),
+  const [osRows, usersResult] = await Promise.all([
+    fetchAllOSMetrics(filters),
     getSupabase()
       .from("user_roles")
       .select("id, nome, categoria, is_active")
       .order("nome"),
   ]);
 
-  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
   const users = (usersResult.data || []) as {
     id: string;
     nome: string;
@@ -5139,8 +5162,8 @@ export async function fetchFuncionariosDesempenho(
 export async function fetchParceirosDesempenho(
   filters?: DesempenhoFilters,
 ): Promise<ParceiroMetricas[]> {
-  const [osResult, parceirosResult, driversResult] = await Promise.all([
-    buildOSMetricQuery(filters),
+  const [osRows, parceirosResult, driversResult] = await Promise.all([
+    fetchAllOSMetrics(filters),
     getSupabase()
       .from("parceiros_servico")
       .select("id, razao_social_ou_nome_completo, status, arquivado")
@@ -5150,8 +5173,6 @@ export async function fetchParceirosDesempenho(
       .select("id, parceiro_id, arquivado")
       .eq("arquivado", false),
   ]);
-
-  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
   const parceiros = (parceirosResult.data || []) as {
     id: string;
     razao_social_ou_nome_completo: string;
@@ -5199,12 +5220,11 @@ export async function fetchClientesDesempenho(
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 
-  const [osResult, clientesResult] = await Promise.all([
-    buildOSMetricQuery(filters),
+  const [osRows, clientesResult] = await Promise.all([
+    fetchAllOSMetrics(filters),
     getSupabase().from("clientes").select("id, nome, arquivado").order("nome"),
   ]);
 
-  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
   const clientes = (clientesResult.data || []) as {
     id: string;
     nome: string;
@@ -5240,8 +5260,8 @@ export async function fetchClientesDesempenho(
 export async function fetchVeiculosDesempenho(
   filters?: DesempenhoFilters,
 ): Promise<VeiculoMetricas[]> {
-  const [osResult, veiculosResult, maintResult] = await Promise.all([
-    buildOSMetricQuery(filters),
+  const [osRows, veiculosResult, maintResult] = await Promise.all([
+    fetchAllOSMetrics(filters),
     getSupabase()
       .from("veiculos")
       .select("id, placa, modelo, marca, status, arquivado")
@@ -5251,7 +5271,6 @@ export async function fetchVeiculosDesempenho(
       .select("id, veiculo_id, status, custo"),
   ]);
 
-  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
   const veiculos = (veiculosResult.data || []) as {
     id: string;
     placa: string;
