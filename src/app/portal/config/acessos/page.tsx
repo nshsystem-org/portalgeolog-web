@@ -811,7 +811,7 @@ export default function AcessosPage() {
                           : eff.source === "categoria-base"
                             ? `Concedido automaticamente pelo perfil ${categoriaLabel(selectedUserForPermissions?.categoria)}`
                             : "Bloqueado pela categoria"
-                        : "Permite acessar o módulo financeiro";
+                        : "Permite acessar Financeiro, Caixa, Fornecedores, Categorias e Formas de Pagamento";
                       return (
                         <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
                           <div>
@@ -1084,7 +1084,7 @@ export default function AcessosPage() {
                           : eff.source === "categoria-base"
                             ? `Concedido automaticamente pelo perfil ${categoriaLabel(selectedUserForPermissions?.categoria)}`
                             : "Bloqueado pela categoria"
-                        : "Permite acessar Clientes, Motoristas, Veículos, Passageiros, Parcerias e Fornecedores";
+                        : "Permite acessar Clientes, Motoristas, Veículos, Passageiros e Parcerias";
                       return (
                         <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
                           <div>

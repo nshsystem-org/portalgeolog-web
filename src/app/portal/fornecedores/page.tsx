@@ -177,7 +177,7 @@ export default function FornecedoresPage() {
   }, [fornecedores.length, fornecedorTable]);
 
   if (!hasPageAccess(profile, "fornecedores")) {
-    return <AccessDenied module="Cadastros" />;
+    return <AccessDenied module="Financeiro" />;
   }
 
   const resetForm = () => {

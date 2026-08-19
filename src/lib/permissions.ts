@@ -12,6 +12,7 @@
  * | passageiros   | ✅            | ✅        | ❌*        | ✅       |
  * | clientes      | ✅            | ✅        | ❌*        | ✅       |
  * | parcerias     | ✅            | ✅        | ❌*        | ✅       |
+ * | fornecedores  | ✅            | ✅        | ✅         | ❌*      |
  * | financeiro    | ✅            | ✅        | ✅         | ❌*      |
  * | caixa         | ✅            | ✅        | ✅         | ❌*      |
  * | categorias-caixa   | ✅       | ✅        | ✅         | ❌*      |
@@ -126,7 +127,6 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     passageiros: true,
     clientes: true,
     parcerias: true,
-    fornecedores: true,
     "config-perfil": true,
     "config-notificacoes": true,
   },
@@ -139,17 +139,17 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
 const PAGE_TO_PERMISSION_MODULE: Partial<Record<PageKey, string>> = {
   financeiro: "financeiro",
   caixa: "financeiro", // caixa reutiliza o mesmo perfil do financeiro
+  fornecedores: "financeiro", // fornecedores é cadastro de domínio financeiro
+  "categorias-caixa": "financeiro",
+  "formas-pagamento": "financeiro",
   os: "os",
   motoristas: "cadastros",
   veiculos: "cadastros",
   passageiros: "cadastros",
   clientes: "cadastros",
   parcerias: "cadastros",
-  fornecedores: "cadastros",
   "config-acessos": "config",
   "config-financeiro": "config",
-  "categorias-caixa": "financeiro",
-  "formas-pagamento": "financeiro",
 };
 
 /**
