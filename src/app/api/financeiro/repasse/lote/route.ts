@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import { hasFinanceAccess } from "@/lib/permissions-server";
 
 export const runtime = "edge";
 
@@ -145,6 +146,10 @@ export async function POST(request: Request) {
 
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
+    if (!(await hasFinanceAccess(user.id))) {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
     }
 
     const body = (await request.json()) as {

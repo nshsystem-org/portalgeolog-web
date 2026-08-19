@@ -19,6 +19,7 @@ export interface UserProfile {
   tipo_usuario: "interno" | "gestor";
   categoria:
     | "administrador"
+    | "diretoria"
     | "gestor"
     | "financeiro"
     | "operador"
@@ -26,6 +27,7 @@ export interface UserProfile {
   empresa_id?: string;
   avatar_url?: string | null;
   specific_permissions?: Record<string, unknown> | null;
+  is_active?: boolean;
 }
 
 interface AuthContextType {
@@ -75,7 +77,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           throw error;
         }
 
-        if (data) setProfile(data as UserProfile);
+        if (data) {
+          if ((data as UserProfile).is_active === false) {
+            toast.error(
+              "Sua conta foi desativada. Entre em contato com o administrador.",
+            );
+            await supabase.auth.signOut();
+            setUser(null);
+            setProfile(null);
+            return;
+          }
+          setProfile(data as UserProfile);
+        }
       } catch (err) {
         console.error(
           "Erro ao buscar perfil:",
@@ -158,6 +171,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         (payload: unknown) => {
           const newProfile = (payload as { new: UserProfile }).new;
 
+          if (newProfile.is_active === false) {
+            toast.error("O seu acesso foi desativado pelo administrador. Saindo...");
+            logout();
+            return;
+          }
+
           if (profile && profile.categoria !== newProfile.categoria) {
             toast.warning(
               `Seu nível de acesso foi alterado pelo administrador para: ${newProfile.categoria.toUpperCase()}`,
@@ -236,7 +255,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return false;
       }
 
-      return !!data.user;
+      if (!data.user) return false;
+
+      const { data: roleRow } = await supabase
+        .from("user_roles")
+        .select("is_active")
+        .eq("id", data.user.id)
+        .single();
+
+      if (roleRow && (roleRow as { is_active: boolean }).is_active === false) {
+        await supabase.auth.signOut();
+        toast.error(
+          "Sua conta foi desativada. Entre em contato com o administrador.",
+        );
+        return false;
+      }
+
+      return true;
     } catch (err) {
       console.error("Login unexpected error:", err);
       return false;

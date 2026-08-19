@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth, UserProfile } from "@/context/AuthContext";
-import { hasPageAccess } from "@/lib/permissions";
+import { hasPageAccess, getEffectivePageAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/ui/AccessDenied";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -16,10 +16,12 @@ import {
   Briefcase,
   Plus,
   Trash2,
-  Check,
-  X,
   DollarSign,
-  Car,
+  Crown,
+  ClipboardList,
+  PencilLine,
+  Eye,
+  Building2,
 } from "lucide-react";
 import GeologSearchableSelect from "@/components/ui/GeologSearchableSelect";
 import StandardModal from "@/components/StandardModal";
@@ -30,9 +32,118 @@ interface UserWithAuth extends UserProfile {
   email: string;
 }
 
+/**
+ * Retorna um avatar circular com ícone e cor específicos para cada categoria
+ * de usuário. Usado no dropdown de seleção de role e no trigger do select.
+ */
+function RoleAvatar({ categoria }: { categoria: string }) {
+  const config: Record<
+    string,
+    { icon: React.ReactNode; bg: string; border: string; text: string }
+  > = {
+    administrador: {
+      icon: <Crown size={16} />,
+      bg: "bg-indigo-100",
+      border: "border-indigo-300",
+      text: "text-indigo-600",
+    },
+    diretoria: {
+      icon: <Briefcase size={16} />,
+      bg: "bg-violet-100",
+      border: "border-violet-300",
+      text: "text-violet-600",
+    },
+    gestor: {
+      icon: <ClipboardList size={16} />,
+      bg: "bg-blue-100",
+      border: "border-blue-300",
+      text: "text-blue-600",
+    },
+    operador: {
+      icon: <PencilLine size={16} />,
+      bg: "bg-emerald-100",
+      border: "border-emerald-300",
+      text: "text-emerald-600",
+    },
+    financeiro: {
+      icon: <DollarSign size={16} />,
+      bg: "bg-amber-100",
+      border: "border-amber-300",
+      text: "text-amber-600",
+    },
+    "jovem aprendiz": {
+      icon: <Eye size={16} />,
+      bg: "bg-teal-100",
+      border: "border-teal-300",
+      text: "text-teal-600",
+    },
+  };
+  const c = config[categoria] ?? {
+    icon: <User size={16} />,
+    bg: "bg-slate-100",
+    border: "border-slate-200",
+    text: "text-slate-400",
+  };
+  return (
+    <div
+      className={`w-9 h-9 rounded-full ${c.bg} flex items-center justify-center flex-shrink-0 border-2 ${c.border} ${c.text}`}
+    >
+      {c.icon}
+    </div>
+  );
+}
+
+/**
+ * Rótulo de exibição para uma categoria de usuário. Usado nos textos de
+ * "concedido automaticamente pelo perfil X" no modal de permissões, para que
+ * a mensagem reflita a categoria real do usuário (ex: Diretoria, Financeiro).
+ */
+const CATEGORIA_LABEL: Record<string, string> = {
+  administrador: "Administrador",
+  diretoria: "Diretoria",
+  financeiro: "Financeiro",
+  operador: "Operador",
+  gestor: "Gestor",
+  "jovem aprendiz": "Jovem Aprendiz",
+};
+
+function categoriaLabel(categoria: string | undefined | null): string {
+  if (!categoria) return "categoria";
+  return CATEGORIA_LABEL[categoria] ?? categoria;
+}
+
+/**
+ * Retorna um avatar circular específico para o tipo de usuário:
+ * - "interno" (Geolog) → logotipo do sistema
+ * - "gestor" (cliente externo) → ícone de edifício (Building2) em ciano
+ */
+function TipoUsuarioAvatar({ tipo }: { tipo: string }) {
+  if (tipo === "interno") {
+    return (
+      <div className="w-9 h-9 rounded-full bg-slate-900 flex items-center justify-center flex-shrink-0 border-2 border-slate-300 overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logo.png"
+          alt="Geolog"
+          className="w-full h-full object-cover"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="w-9 h-9 rounded-full bg-cyan-100 flex items-center justify-center flex-shrink-0 border-2 border-cyan-300 text-cyan-600">
+      <Building2 size={16} />
+    </div>
+  );
+}
+
 export default function AcessosPage() {
   const { user, profile } = useAuth();
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
+
+  const isAccessAdmin = profile?.categoria === "administrador";
+  const isAccessDiretoria = profile?.categoria === "diretoria";
+  const canManageUsers = isAccessAdmin || isAccessDiretoria;
 
   const [users, setUsers] = useState<UserWithAuth[]>([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
@@ -44,7 +155,6 @@ export default function AcessosPage() {
   const [selectedUserForPermissions, setSelectedUserForPermissions] =
     useState<UserWithAuth | null>(null);
   const [activePermissionTab, setActivePermissionTab] = useState("financeiro");
-  const [financeiroPageAccess, setFinanceiroPageAccess] = useState(false);
   const [newUser, setNewUser] = useState({
     primeiroNome: "",
     sobrenome: "",
@@ -87,15 +197,15 @@ export default function AcessosPage() {
   }, []);
 
   useEffect(() => {
-    if (profile?.categoria === "administrador") {
+    if (canManageUsers) {
       void fetchUsers();
     }
-  }, [profile?.categoria, fetchUsers]);
+  }, [canManageUsers, fetchUsers]);
 
   const updateUserRole = async (
     userId: string,
     field: string,
-    value: string | Record<string, unknown>,
+    value: string | boolean | Record<string, unknown>,
   ) => {
     try {
       setUsers((prev) =>
@@ -172,7 +282,17 @@ export default function AcessosPage() {
     }
   };
 
-  const isAccessAdmin = profile?.categoria === "administrador";
+  // Opções de categoria disponíveis no dropdown.
+  // Diretoria não pode selecionar "Administrador" — nem para promover,
+  // nem para criar novos usuários admin.
+  const categoriaOptions = [
+    { id: "administrador", nome: "Administrador", icon: <RoleAvatar categoria="administrador" /> },
+    { id: "diretoria", nome: "Diretoria", icon: <RoleAvatar categoria="diretoria" /> },
+    { id: "gestor", nome: "Gestor", icon: <RoleAvatar categoria="gestor" /> },
+    { id: "operador", nome: "Operador", icon: <RoleAvatar categoria="operador" /> },
+    { id: "financeiro", nome: "Financeiro", icon: <RoleAvatar categoria="financeiro" /> },
+    { id: "jovem aprendiz", nome: "Jovem Aprendiz", icon: <RoleAvatar categoria="jovem aprendiz" /> },
+  ].filter((opt) => isAccessAdmin || opt.id !== "administrador");
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,11 +369,22 @@ export default function AcessosPage() {
 
   const openPermissionsModal = (user: UserWithAuth) => {
     setSelectedUserForPermissions(user);
-    const perms = (user.specific_permissions as Record<string, unknown>) || {};
-    const financeiroPerms = (perms.financeiro as Record<string, unknown>) || {};
-    setFinanceiroPageAccess((financeiroPerms.page_access as boolean) || false);
     setIsPermissionsModalOpen(true);
   };
+
+  // Mantém o modal de permissões sincronizado com a lista de usuários: se a
+  // categoria ou o status "Ativo" mudar (via dropdown na tabela) enquanto o
+  // modal está aberto, os toggles devem refletir o novo estado imediatamente.
+  useEffect(() => {
+    if (!selectedUserForPermissions) return;
+    const updated = users.find(
+      (u) => u.id === selectedUserForPermissions.id,
+    );
+    if (updated && updated !== selectedUserForPermissions) {
+      setSelectedUserForPermissions(updated);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users]);
 
   if (!hasPageAccess(profile, "config-acessos")) {
     return <AccessDenied module="Gestão de Acessos" />;
@@ -267,7 +398,7 @@ export default function AcessosPage() {
           icon={<Shield size={20} />}
         />
 
-        {!isAccessAdmin ? (
+        {!canManageUsers ? (
           <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden flex items-center justify-center p-10 text-center">
             <div className="max-w-lg space-y-4">
               <div className="mx-auto w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-500">
@@ -323,11 +454,13 @@ export default function AcessosPage() {
                             id: "interno",
                             nome: "Geolog",
                             sublabel: "Equipe Própria",
+                            icon: <TipoUsuarioAvatar tipo="interno" />,
                           },
                           {
                             id: "gestor",
                             nome: "Gestor",
                             sublabel: "Externo/Terceiro",
+                            icon: <TipoUsuarioAvatar tipo="gestor" />,
                           },
                         ]}
                         value={value as string}
@@ -352,33 +485,7 @@ export default function AcessosPage() {
                         disabled={
                           (item as UserWithAuth).tipo_usuario === "gestor"
                         }
-                        options={[
-                          {
-                            id: "administrador",
-                            nome: "Administrador",
-                            sublabel: "Total / Config",
-                          },
-                          {
-                            id: "gestor",
-                            nome: "Gestor",
-                            sublabel: "Controle de Fluxo",
-                          },
-                          {
-                            id: "operador",
-                            nome: "Operador",
-                            sublabel: "Lançamentos",
-                          },
-                          {
-                            id: "financeiro",
-                            nome: "Financeiro",
-                            sublabel: "Faturamento",
-                          },
-                          {
-                            id: "jovem aprendiz",
-                            nome: "Jovem Aprendiz",
-                            sublabel: "Visualização",
-                          },
-                        ]}
+                        options={categoriaOptions}
                         value={value as string}
                         onChange={(val) =>
                           updateUserRole(
@@ -404,7 +511,7 @@ export default function AcessosPage() {
                         >
                           <ShieldCheck size={18} />
                         </button>
-                        {isAccessAdmin && (
+                        {canManageUsers && (
                           <button
                             onClick={() =>
                               handleDeleteUser((item as UserWithAuth).id)
@@ -425,7 +532,7 @@ export default function AcessosPage() {
             emptyMessage="Nenhum usuário encontrado."
             emptyIcon={<ShieldCheck size={48} />}
             actionButton={
-              isAccessAdmin ? (
+              canManageUsers ? (
                 <button
                   onClick={() => setIsCreateModalOpen(true)}
                   className="flex items-center justify-center gap-2 bg-[var(--color-geolog-blue)] text-white px-7 py-3.5 rounded-2xl font-black shadow-lg shadow-blue-900/10 hover:scale-[1.02] active:scale-95 transition-all text-xs uppercase tracking-widest shrink-0 w-full md:w-auto cursor-pointer whitespace-nowrap"
@@ -532,11 +639,13 @@ export default function AcessosPage() {
                       id: "interno",
                       nome: "Geolog",
                       sublabel: "Equipe Própria",
+                      icon: <TipoUsuarioAvatar tipo="interno" />,
                     },
                     {
                       id: "gestor",
                       nome: "Gestor",
                       sublabel: "Externo/Terceiro",
+                      icon: <TipoUsuarioAvatar tipo="gestor" />,
                     },
                   ]}
                   value={newUser.tipo_usuario}
@@ -554,33 +663,7 @@ export default function AcessosPage() {
                 <GeologSearchableSelect
                   label="Nível Inicial"
                   disabled={newUser.tipo_usuario === "gestor"}
-                  options={[
-                    {
-                      id: "administrador",
-                      nome: "Administrador",
-                      sublabel: "Total / Config",
-                    },
-                    {
-                      id: "gestor",
-                      nome: "Gestor",
-                      sublabel: "Controle de Fluxo",
-                    },
-                    {
-                      id: "operador",
-                      nome: "Operador",
-                      sublabel: "Lançamentos",
-                    },
-                    {
-                      id: "financeiro",
-                      nome: "Financeiro",
-                      sublabel: "Faturamento",
-                    },
-                    {
-                      id: "jovem aprendiz",
-                      nome: "Jovem Aprendiz",
-                      sublabel: "Visualização",
-                    },
-                  ]}
+                  options={categoriaOptions}
                   value={newUser.categoria}
                   onChange={(val) => setNewUser({ ...newUser, categoria: val })}
                 />
@@ -638,17 +721,35 @@ export default function AcessosPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <label className="relative inline-flex items-center cursor-pointer">
+                <label
+                  className={`relative inline-flex items-center ${
+                    selectedUserForPermissions.id === user?.id
+                      ? "cursor-not-allowed opacity-60"
+                      : "cursor-pointer"
+                  }`}
+                  title={
+                    selectedUserForPermissions.id === user?.id
+                      ? "Você não pode desativar a si mesmo"
+                      : ""
+                  }
+                >
                   <input
                     type="checkbox"
                     checked={
-                      selectedUserForPermissions.email ===
-                      selectedUserForPermissions.email
+                      selectedUserForPermissions.is_active !== false
                     }
-                    onChange={() => {
-                      // Implementar lógica de ativar/desativar usuário
-                      toast.info(
-                        "Funcionalidade de ativar/desativar usuário em breve",
+                    disabled={
+                      selectedUserForPermissions.id === user?.id
+                    }
+                    onChange={(e) => {
+                      const nextActive = e.target.checked;
+                      setSelectedUserForPermissions((prev) =>
+                        prev ? { ...prev, is_active: nextActive } : prev,
+                      );
+                      void updateUserRole(
+                        selectedUserForPermissions.id,
+                        "is_active",
+                        nextActive,
                       );
                     }}
                     className="sr-only peer"
@@ -656,7 +757,9 @@ export default function AcessosPage() {
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-checked:after:border-blue-600"></div>
                 </label>
                 <span className="text-sm font-semibold text-slate-600">
-                  Ativo
+                  {selectedUserForPermissions.is_active === false
+                    ? "Desativado"
+                    : "Ativo"}
                 </span>
               </div>
             </div>
@@ -672,9 +775,7 @@ export default function AcessosPage() {
                 {[
                   { id: "financeiro", label: "Financeiro", icon: DollarSign },
                   { id: "os", label: "Ordens", icon: Briefcase },
-                  { id: "clientes", label: "Clientes", icon: User },
-                  { id: "motoristas", label: "Motoristas", icon: Briefcase },
-                  { id: "veiculos", label: "Veículos", icon: Car },
+                  { id: "cadastros", label: "Cadastros", icon: User },
                 ].map((tab) => {
                   const Icon = tab.icon;
                   return (
@@ -698,106 +799,125 @@ export default function AcessosPage() {
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                 {activePermissionTab === "financeiro" && (
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Acesso à Página
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Permite acessar o módulo financeiro
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={financeiroPageAccess}
-                          onChange={(e) => {
-                            setFinanceiroPageAccess(e.target.checked);
-                            const currentPerms =
-                              ((
-                                (selectedUserForPermissions.specific_permissions as Record<
-                                  string,
-                                  unknown
-                                >) || {}
-                              ).financeiro as Record<string, unknown>) || {};
-                            void updateSpecificPermissions(
-                              selectedUserForPermissions.id,
-                              "financeiro",
-                              {
-                                ...currentPerms,
-                                page_access: e.target.checked,
-                              },
-                            );
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
-                      </label>
-                    </div>
-
-                    {financeiroPageAccess && (
-                      <>
+                    {(() => {
+                      const eff = getEffectivePageAccess(
+                        selectedUserForPermissions,
+                        "financeiro",
+                      );
+                      const locked = eff.lockedByCategoria;
+                      const hint = locked
+                        ? eff.source === "administrador"
+                          ? "Concedido automaticamente pelo perfil Administrador"
+                          : eff.source === "categoria-base"
+                            ? `Concedido automaticamente pelo perfil ${categoriaLabel(selectedUserForPermissions?.categoria)}`
+                            : "Bloqueado pela categoria"
+                        : "Permite acessar o módulo financeiro";
+                      return (
                         <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">
+                              Acesso à Página
+                            </p>
+                            <p className="text-xs font-semibold text-slate-400">
+                              {hint}
+                            </p>
+                          </div>
+                          <label
+                            className={`relative inline-flex items-center ${
+                              locked
+                                ? "cursor-not-allowed"
+                                : "cursor-pointer"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={eff.access}
+                              disabled={locked}
+                              onChange={(e) => {
+                                const currentPerms =
+                                  ((
+                                    (selectedUserForPermissions.specific_permissions as Record<
+                                      string,
+                                      unknown
+                                    >) || {}
+                                  ).financeiro as Record<string, unknown>) || {};
+                                void updateSpecificPermissions(
+                                  selectedUserForPermissions.id,
+                                  "financeiro",
+                                  {
+                                    ...currentPerms,
+                                    page_access: e.target.checked,
+                                  },
+                                );
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
+                          </label>
+                        </div>
+                      );
+                    })()}
+
+                    {getEffectivePageAccess(
+                      selectedUserForPermissions,
+                      "financeiro",
+                    ).access && (
+                      <>
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
                           <div>
                             <p className="font-bold text-sm text-slate-800">
                               Visualizar Faturamento
                             </p>
                             <p className="text-xs font-semibold text-slate-400">
-                              Acesso a relatórios financeiros
+                              Acesso a relatórios financeiros · Em breve
                             </p>
                           </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
+                          <label className="relative inline-flex items-center cursor-not-allowed">
                             <input
                               type="checkbox"
                               defaultChecked
-                              onChange={() => {
-                                toast.info("Permissão atualizada");
-                              }}
+                              disabled
                               className="sr-only peer"
                             />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
+                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
                           </label>
                         </div>
-                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
                           <div>
                             <p className="font-bold text-sm text-slate-800">
                               Editar Taxas
                             </p>
                             <p className="text-xs font-semibold text-slate-400">
-                              Modificar porcentagens
+                              Modificar porcentagens · Em breve
                             </p>
                           </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
+                          <label className="relative inline-flex items-center cursor-not-allowed">
                             <input
                               type="checkbox"
                               defaultChecked={false}
-                              onChange={() => {
-                                toast.info("Permissão atualizada");
-                              }}
+                              disabled
                               className="sr-only peer"
                             />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
+                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
                           </label>
                         </div>
-                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
                           <div>
                             <p className="font-bold text-sm text-slate-800">
                               Exportar Relatórios
                             </p>
                             <p className="text-xs font-semibold text-slate-400">
-                              Download de dados
+                              Download de dados · Em breve
                             </p>
                           </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
+                          <label className="relative inline-flex items-center cursor-not-allowed">
                             <input
                               type="checkbox"
                               defaultChecked={false}
-                              onChange={() => {
-                                toast.info("Permissão atualizada");
-                              }}
+                              disabled
                               className="sr-only peer"
                             />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
+                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
                           </label>
                         </div>
                       </>
@@ -807,294 +927,209 @@ export default function AcessosPage() {
 
                 {activePermissionTab === "os" && (
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Criar OS
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Nova ordem de serviço
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-checked:after:border-blue-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Editar OS
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Modificar ordens existentes
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-checked:after:border-blue-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Deletar OS
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Remover ordens de serviço
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked={false}
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600 peer-checked:after:border-red-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Cancelar OS
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Cancelar ordens em andamento
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked={false}
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600 peer-checked:after:border-orange-600"></div>
-                      </label>
-                    </div>
+                    {(() => {
+                      const eff = getEffectivePageAccess(
+                        selectedUserForPermissions,
+                        "os",
+                      );
+                      const locked = eff.lockedByCategoria;
+                      const hint = locked
+                        ? eff.source === "administrador"
+                          ? "Concedido automaticamente pelo perfil Administrador"
+                          : eff.source === "categoria-base"
+                            ? `Concedido automaticamente pelo perfil ${categoriaLabel(selectedUserForPermissions?.categoria)}`
+                            : "Bloqueado pela categoria"
+                        : "Permite acessar o módulo de Ordens de Serviço";
+                      return (
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">
+                              Acesso à Página
+                            </p>
+                            <p className="text-xs font-semibold text-slate-400">
+                              {hint}
+                            </p>
+                          </div>
+                          <label
+                            className={`relative inline-flex items-center ${
+                              locked
+                                ? "cursor-not-allowed"
+                                : "cursor-pointer"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={eff.access}
+                              disabled={locked}
+                              onChange={(e) => {
+                                const currentPerms =
+                                  ((
+                                    (selectedUserForPermissions.specific_permissions as Record<
+                                      string,
+                                      unknown
+                                    >) || {}
+                                  ).os as Record<string, unknown>) || {};
+                                void updateSpecificPermissions(
+                                  selectedUserForPermissions.id,
+                                  "os",
+                                  {
+                                    ...currentPerms,
+                                    page_access: e.target.checked,
+                                  },
+                                );
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
+                          </label>
+                        </div>
+                      );
+                    })()}
+
+                    {getEffectivePageAccess(selectedUserForPermissions, "os")
+                      .access && (
+                      <>
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">
+                              Criar OS
+                            </p>
+                            <p className="text-xs font-semibold text-slate-400">
+                              Nova ordem de serviço · Em breve
+                            </p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-not-allowed">
+                            <input
+                              type="checkbox"
+                              defaultChecked
+                              disabled
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-checked:after:border-blue-600"></div>
+                          </label>
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">
+                              Editar OS
+                            </p>
+                            <p className="text-xs font-semibold text-slate-400">
+                              Modificar ordens existentes · Em breve
+                            </p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-not-allowed">
+                            <input
+                              type="checkbox"
+                              defaultChecked
+                              disabled
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-checked:after:border-blue-600"></div>
+                          </label>
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">
+                              Deletar OS
+                            </p>
+                            <p className="text-xs font-semibold text-slate-400">
+                              Remover ordens de serviço · Em breve
+                            </p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-not-allowed">
+                            <input
+                              type="checkbox"
+                              defaultChecked={false}
+                              disabled
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600 peer-checked:after:border-red-600"></div>
+                          </label>
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 opacity-60">
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">
+                              Cancelar OS
+                            </p>
+                            <p className="text-xs font-semibold text-slate-400">
+                              Cancelar ordens em andamento · Em breve
+                            </p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-not-allowed">
+                            <input
+                              type="checkbox"
+                              defaultChecked={false}
+                              disabled
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600 peer-checked:after:border-orange-600"></div>
+                          </label>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
-                {activePermissionTab === "clientes" && (
+                {activePermissionTab === "cadastros" && (
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Criar Cliente
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Novo cadastro
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600 peer-checked:after:border-purple-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Editar Cliente
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Modificar dados
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600 peer-checked:after:border-purple-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Deletar Cliente
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Remover cadastro
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked={false}
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600 peer-checked:after:border-red-600"></div>
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {activePermissionTab === "motoristas" && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Criar Motorista
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Novo cadastro
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600 peer-checked:after:border-orange-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Editar Motorista
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Modificar dados
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600 peer-checked:after:border-orange-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Deletar Motorista
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Remover cadastro
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked={false}
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600 peer-checked:after:border-red-600"></div>
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {activePermissionTab === "veiculos" && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Criar Veículo
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Novo cadastro
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600 peer-checked:after:border-teal-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Editar Veículo
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Modificar dados
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600 peer-checked:after:border-teal-600"></div>
-                      </label>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">
-                          Deletar Veículo
-                        </p>
-                        <p className="text-xs font-semibold text-slate-400">
-                          Remover cadastro
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          defaultChecked={false}
-                          onChange={() => {
-                            toast.info("Permissão atualizada");
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600 peer-checked:after:border-red-600"></div>
-                      </label>
-                    </div>
+                    {(() => {
+                      const eff = getEffectivePageAccess(
+                        selectedUserForPermissions,
+                        "clientes",
+                      );
+                      const locked = eff.lockedByCategoria;
+                      const hint = locked
+                        ? eff.source === "administrador"
+                          ? "Concedido automaticamente pelo perfil Administrador"
+                          : eff.source === "categoria-base"
+                            ? `Concedido automaticamente pelo perfil ${categoriaLabel(selectedUserForPermissions?.categoria)}`
+                            : "Bloqueado pela categoria"
+                        : "Permite acessar Clientes, Motoristas, Veículos, Passageiros, Parcerias e Fornecedores";
+                      return (
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">
+                              Acesso à Página
+                            </p>
+                            <p className="text-xs font-semibold text-slate-400">
+                              {hint}
+                            </p>
+                          </div>
+                          <label
+                            className={`relative inline-flex items-center ${
+                              locked
+                                ? "cursor-not-allowed"
+                                : "cursor-pointer"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={eff.access}
+                              disabled={locked}
+                              onChange={(e) => {
+                                const currentPerms =
+                                  ((
+                                    (selectedUserForPermissions.specific_permissions as Record<
+                                      string,
+                                      unknown
+                                    >) || {}
+                                  ).cadastros as Record<string, unknown>) || {};
+                                void updateSpecificPermissions(
+                                  selectedUserForPermissions.id,
+                                  "cadastros",
+                                  {
+                                    ...currentPerms,
+                                    page_access: e.target.checked,
+                                  },
+                                );
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-500/20 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600 peer-checked:after:border-green-600"></div>
+                          </label>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

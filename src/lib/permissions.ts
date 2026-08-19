@@ -3,22 +3,23 @@
  *
  * Matriz de acesso por categoria:
  *
- * | Página        | administrador | financeiro | operador |
- * |---------------|---------------|------------|----------|
- * | dashboard     | ✅            | ✅         | ✅       |
- * | os            | ✅            | ❌*        | ✅       |
- * | motoristas    | ✅            | ❌*        | ✅       |
- * | veiculos      | ✅            | ❌*        | ✅       |
- * | passageiros   | ✅            | ❌*        | ✅       |
- * | clientes      | ✅            | ❌*        | ✅       |
- * | parcerias     | ✅            | ❌*        | ✅       |
- * | financeiro    | ✅            | ✅         | ❌*      |
- * | caixa         | ✅            | ✅         | ❌*      |
- * | categorias-caixa   | ✅       | ✅         | ❌*      |
- * | formas-pagamento   | ✅       | ✅         | ❌*      |
- * | config        | ✅            | ❌         | ❌       |
+ * | Página        | administrador | diretoria | financeiro | operador |
+ * |---------------|---------------|-----------|------------|----------|
+ * | dashboard     | ✅            | ✅        | ✅         | ✅       |
+ * | os            | ✅            | ✅        | ❌*        | ✅       |
+ * | motoristas    | ✅            | ✅        | ❌*        | ✅       |
+ * | veiculos      | ✅            | ✅        | ❌*        | ✅       |
+ * | passageiros   | ✅            | ✅        | ❌*        | ✅       |
+ * | clientes      | ✅            | ✅        | ❌*        | ✅       |
+ * | parcerias     | ✅            | ✅        | ❌*        | ✅       |
+ * | financeiro    | ✅            | ✅        | ✅         | ❌*      |
+ * | caixa         | ✅            | ✅        | ✅         | ❌*      |
+ * | categorias-caixa   | ✅       | ✅        | ✅         | ❌*      |
+ * | formas-pagamento   | ✅       | ✅        | ✅         | ❌*      |
+ * | config        | ✅            | ✅†       | ❌         | ❌       |
  *
  * ❌* = pode ser liberado via specific_permissions.{modulo}.page_access === true
+ * † = diretoria acessa config-acessos, mas não vê/edita administradores
  *
  * Estrutura de specific_permissions (JSONB em user_roles):
  * {
@@ -29,7 +30,7 @@
  * }
  */
 
-export type Categoria = "administrador" | "financeiro" | "operador";
+export type Categoria = "administrador" | "diretoria" | "financeiro" | "operador";
 
 export type PageKey =
   | "dashboard"
@@ -52,6 +53,19 @@ export type PageKey =
 interface ProfileLike {
   categoria: string;
   specific_permissions?: Record<string, unknown> | null;
+  is_active?: boolean | null;
+}
+
+/**
+ * Origem do acesso efetivo de um usuário a uma página/módulo.
+ */
+export type AccessSource = "inativo" | "administrador" | "categoria-base" | "override" | "nenhum";
+
+export interface EffectiveAccess {
+  access: boolean;
+  source: AccessSource;
+  /** true quando o acesso é herdado da categoria (não editável via specific_permissions) */
+  lockedByCategoria: boolean;
 }
 
 /**
@@ -59,6 +73,24 @@ interface ProfileLike {
  */
 const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
   administrador: {
+    dashboard: true,
+    os: true,
+    motoristas: true,
+    veiculos: true,
+    passageiros: true,
+    clientes: true,
+    parcerias: true,
+    fornecedores: true,
+    financeiro: true,
+    caixa: true,
+    "categorias-caixa": true,
+    "formas-pagamento": true,
+    "config-acessos": true,
+    "config-perfil": true,
+    "config-financeiro": true,
+    "config-notificacoes": true,
+  },
+  diretoria: {
     dashboard: true,
     os: true,
     motoristas: true,
@@ -133,29 +165,62 @@ export function hasPageAccess(
   profile: ProfileLike | null | undefined,
   page: PageKey,
 ): boolean {
-  if (!profile) return false;
+  return getEffectivePageAccess(profile, page).access;
+}
+
+/**
+ * Calcula o acesso efetivo de um usuário a uma página, junto com a origem
+ * dessa decisão. Usado tanto para gate de rotas (via `hasPageAccess`) quanto
+ * para a UI de gestão de acessos, que precisa saber se um toggle de
+ * `specific_permissions` é editável ou apenas um reflexo do que a categoria
+ * já concede.
+ *
+ * Ordem de precedência:
+ * 1. Usuário inativo (`is_active === false`) → sem acesso a nada
+ * 2. administrador → acesso total, não editável via specific_permissions
+ * 3. Acesso base da categoria → concedido pela categoria, não editável
+ * 4. specific_permissions.{modulo}.page_access → override editável
+ * 5. Caso contrário → sem acesso
+ */
+export function getEffectivePageAccess(
+  profile: ProfileLike | null | undefined,
+  page: PageKey,
+): EffectiveAccess {
+  if (!profile) {
+    return { access: false, source: "nenhum", lockedByCategoria: false };
+  }
+
+  if (profile.is_active === false) {
+    return { access: false, source: "inativo", lockedByCategoria: true };
+  }
 
   const categoria = profile.categoria as Categoria;
 
-  // Administradores têm acesso a tudo
-  if (categoria === "administrador") return true;
+  if (categoria === "administrador") {
+    return { access: true, source: "administrador", lockedByCategoria: true };
+  }
 
-  // Acesso base por categoria
   const baseAllowed = BASE_ACCESS[categoria]?.[page] === true;
-  if (baseAllowed) return true;
+  if (baseAllowed) {
+    return { access: true, source: "categoria-base", lockedByCategoria: true };
+  }
 
-  // Verificar specific_permissions
   const permModule = PAGE_TO_PERMISSION_MODULE[page];
-  if (!permModule) return false;
+  if (!permModule) {
+    return { access: false, source: "nenhum", lockedByCategoria: false };
+  }
 
   const specificPermissions = profile.specific_permissions ?? {};
   const modulePerms = specificPermissions[permModule] as
     | Record<string, unknown>
     | undefined;
 
-  if (!modulePerms) return false;
-
-  return modulePerms.page_access === true;
+  const access = modulePerms?.page_access === true;
+  return {
+    access,
+    source: access ? "override" : "nenhum",
+    lockedByCategoria: false,
+  };
 }
 
 /**

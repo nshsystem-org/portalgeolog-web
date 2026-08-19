@@ -211,7 +211,12 @@ export function useCaixaPage(): CaixaPageState {
   // Permission
   const hasCaixaAccess = useMemo((): boolean => {
     if (!profile) return false;
-    if (profile.categoria === "administrador") return true;
+    if (
+      profile.categoria === "administrador" ||
+      profile.categoria === "diretoria"
+    ) {
+      return true;
+    }
     const specificPermissions =
       (profile.specific_permissions as Record<string, unknown>) || {};
     const financeiroPerms =

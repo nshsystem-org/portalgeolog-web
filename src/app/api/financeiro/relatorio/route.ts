@@ -22,6 +22,7 @@ import {
   formatBilledHours,
   getNextDay,
 } from "@/lib/financeiro";
+import { hasFinanceAccess } from "@/lib/permissions-server";
 import { fetchInChunks } from "@/lib/supabase/chunked-in-query";
 import ExcelJS from "exceljs";
 
@@ -5015,6 +5016,10 @@ async function handleReportRequest(
 
     if (userError || !user) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
+    if (!(await hasFinanceAccess(user.id))) {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
     }
 
     const filters = parseFilters(request);

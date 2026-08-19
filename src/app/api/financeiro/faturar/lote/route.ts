@@ -9,6 +9,7 @@ import {
   parseHoraExtraMinutes,
   sanitizeFinanceFileName,
 } from "@/lib/financeiro";
+import { hasFinanceAccess } from "@/lib/permissions-server";
 
 export const runtime = "edge";
 
@@ -154,26 +155,6 @@ async function getAuthenticatedUser() {
     error,
   } = await authClient.auth.getUser();
   return error ? null : user;
-}
-
-async function hasFinanceAccess(userId: string): Promise<boolean> {
-  const { data, error } = await createAdminClient()
-    .from("user_roles")
-    .select("categoria, specific_permissions")
-    .eq("id", userId)
-    .single();
-  if (error || !data) return false;
-  if (data.categoria === "administrador" || data.categoria === "financeiro") {
-    return true;
-  }
-  const permissions = data.specific_permissions as Record<
-    string,
-    unknown
-  > | null;
-  const financePermissions = permissions?.financeiro as
-    | Record<string, unknown>
-    | undefined;
-  return financePermissions?.page_access === true;
 }
 
 export async function GET(request: Request) {

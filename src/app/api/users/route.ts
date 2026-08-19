@@ -4,6 +4,10 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import {
+  isServerAdmin,
+  isServerDiretoria,
+} from "@/lib/permissions-server";
 
 // Configurar Edge Runtime para Cloudflare Workers
 export const runtime = "edge";
@@ -15,6 +19,7 @@ type UserRoleRow = {
   categoria: string | null;
   empresa_id: string | null;
   specific_permissions: Record<string, unknown> | null;
+  is_active: boolean | null;
 };
 
 function getRequiredEnv(name: string): string {
@@ -47,10 +52,16 @@ function createResendClient() {
 }
 
 /**
- * Verifica se o usuário autenticado é administrador.
- * Retorna { user, isAdmin } ou null se não autenticado.
+ * Verifica se o usuário autenticado pode gerenciar usuários (admin OU diretoria).
+ * Retorna { user, isAdmin, isDiretoria } ou erro se não autenticado/autorizado.
+ *
+ * - admin: vê e edita todos os usuários, inclusive outros admins
+ * - diretoria: vê e edita todos exceto administradores
+ *
+ * Delega o check de categoria + is_active para os helpers centralizados
+ * `isServerAdmin` e `isServerDiretoria` de `@/lib/permissions-server`.
  */
-async function requireAdmin() {
+async function requireUserManager() {
   const cookieStore = await cookies();
   const authClient = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -69,33 +80,36 @@ async function requireAdmin() {
   } = await authClient.auth.getUser();
 
   if (error || !user) {
-    return { user: null, isAdmin: false, error: "Não autenticado" as const };
+    return {
+      user: null,
+      isAdmin: false,
+      isDiretoria: false,
+      error: "Não autenticado" as const,
+    };
   }
 
-  // Buscar categoria do usuário
-  const adminClient = createSupabaseAdminClient();
-  const { data: roleRow } = await adminClient
-    .from("user_roles")
-    .select("categoria")
-    .eq("id", user.id)
-    .single();
+  const [admin, diretoria] = await Promise.all([
+    isServerAdmin(user.id),
+    isServerDiretoria(user.id),
+  ]);
 
-  const isAdmin = roleRow?.categoria === "administrador";
+  if (!admin && !diretoria) {
+    return {
+      user: null,
+      isAdmin: false,
+      isDiretoria: false,
+      error: "Conta desativada ou sem privilégios de gestão" as const,
+    };
+  }
 
-  return { user, isAdmin, error: null };
+  return { user, isAdmin: admin, isDiretoria: diretoria, error: null };
 }
 
 export async function GET() {
   try {
-    const auth = await requireAdmin();
+    const auth = await requireUserManager();
     if (!auth.user) {
       return NextResponse.json({ error: auth.error }, { status: 401 });
-    }
-    if (!auth.isAdmin) {
-      return NextResponse.json(
-        { error: "Acesso restrito a administradores" },
-        { status: 403 },
-      );
     }
 
     const supabaseAdmin = createSupabaseAdminClient();
@@ -120,7 +134,7 @@ export async function GET() {
     }
 
     // 3. Mescla os dados
-    const users = authData.users.map((user: SupabaseUser) => {
+    let users = authData.users.map((user: SupabaseUser) => {
       const profile = profiles?.find((p: UserRoleRow) => p.id === user.id);
       return {
         id: user.id,
@@ -130,9 +144,15 @@ export async function GET() {
         categoria: profile?.categoria || "operador",
         empresa_id: profile?.empresa_id,
         specific_permissions: profile?.specific_permissions || {},
+        is_active: profile?.is_active ?? true,
         created_at: user.created_at,
       };
     });
+
+    // 4. Diretoria não vê administradores na listagem
+    if (!auth.isAdmin) {
+      users = users.filter((u) => u.categoria !== "administrador");
+    }
 
     return NextResponse.json(users);
   } catch (err: unknown) {
@@ -145,20 +165,47 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const auth = await requireAdmin();
+    const auth = await requireUserManager();
     if (!auth.user) {
       return NextResponse.json({ error: auth.error }, { status: 401 });
-    }
-    if (!auth.isAdmin) {
-      return NextResponse.json(
-        { error: "Acesso restrito a administradores" },
-        { status: 403 },
-      );
     }
 
     const supabaseAdmin = createSupabaseAdminClient();
 
     const { id, updates } = await request.json();
+
+    // Guarda contra auto-desativação: o gestor não pode desativar a própria
+    // conta via API, evitando ficar sem acesso ao sistema.
+    if (updates?.is_active === false && id === auth.user.id) {
+      return NextResponse.json(
+        { error: "Você não pode desativar sua própria conta." },
+        { status: 400 },
+      );
+    }
+
+    // Diretoria não pode editar administradores
+    if (!auth.isAdmin) {
+      const { data: target } = await supabaseAdmin
+        .from("user_roles")
+        .select("categoria")
+        .eq("id", id)
+        .single();
+
+      if (target?.categoria === "administrador") {
+        return NextResponse.json(
+          { error: "Administradores só podem ser gerenciados por outros administradores." },
+          { status: 403 },
+        );
+      }
+
+      // Diretoria não pode promover ninguém a administrador
+      if (updates?.categoria === "administrador") {
+        return NextResponse.json(
+          { error: "Apenas administradores podem promover outros usuários a administrador." },
+          { status: 403 },
+        );
+      }
+    }
 
     const { data, error } = await supabaseAdmin
       .from("user_roles")
@@ -183,21 +230,23 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const auth = await requireAdmin();
+    const auth = await requireUserManager();
     if (!auth.user) {
       return NextResponse.json({ error: auth.error }, { status: 401 });
-    }
-    if (!auth.isAdmin) {
-      return NextResponse.json(
-        { error: "Acesso restrito a administradores" },
-        { status: 403 },
-      );
     }
 
     const supabaseAdmin = createSupabaseAdminClient();
     const resend = createResendClient();
 
     const { email, nome, tipo_usuario, categoria } = await request.json();
+
+    // Diretoria não pode criar administradores
+    if (!auth.isAdmin && categoria === "administrador") {
+      return NextResponse.json(
+        { error: "Apenas administradores podem criar contas de administrador." },
+        { status: 403 },
+      );
+    }
 
     // 1. Criar o usuário no Auth (Admin)
     const passwordDefault = "12345678";
@@ -286,15 +335,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const auth = await requireAdmin();
+    const auth = await requireUserManager();
     if (!auth.user) {
       return NextResponse.json({ error: auth.error }, { status: 401 });
-    }
-    if (!auth.isAdmin) {
-      return NextResponse.json(
-        { error: "Acesso restrito a administradores" },
-        { status: 403 },
-      );
     }
 
     const supabaseAdmin = createSupabaseAdminClient();
@@ -303,6 +346,30 @@ export async function DELETE(request: Request) {
     const id = searchParams.get("id");
 
     if (!id) throw new Error("ID do usuário é obrigatório");
+
+    // Diretoria não pode deletar administradores
+    if (!auth.isAdmin) {
+      const { data: target } = await supabaseAdmin
+        .from("user_roles")
+        .select("categoria")
+        .eq("id", id)
+        .single();
+
+      if (target?.categoria === "administrador") {
+        return NextResponse.json(
+          { error: "Administradores só podem ser gerenciados por outros administradores." },
+          { status: 403 },
+        );
+      }
+    }
+
+    // Guarda contra auto-exclusão
+    if (id === auth.user.id) {
+      return NextResponse.json(
+        { error: "Você não pode excluir sua própria conta." },
+        { status: 400 },
+      );
+    }
 
     // 1. Limpar referências em ordens_servico para evitar erro de foreign key
     await supabaseAdmin

@@ -7,6 +7,7 @@ import {
   sanitizeFinanceFileName,
   isLiberadoParaFaturamento,
 } from "@/lib/financeiro";
+import { hasFinanceAccess } from "@/lib/permissions-server";
 
 export const runtime = "edge";
 
@@ -26,26 +27,6 @@ function createAdminClient() {
     getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
     getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
   );
-}
-
-async function hasFinanceAccess(userId: string): Promise<boolean> {
-  const { data, error } = await createAdminClient()
-    .from("user_roles")
-    .select("categoria, specific_permissions")
-    .eq("id", userId)
-    .single();
-  if (error || !data) return false;
-  if (data.categoria === "administrador" || data.categoria === "financeiro") {
-    return true;
-  }
-  const permissions = data.specific_permissions as Record<
-    string,
-    unknown
-  > | null;
-  const financePermissions = permissions?.financeiro as
-    | Record<string, unknown>
-    | undefined;
-  return financePermissions?.page_access === true;
 }
 
 async function createAuthClient() {

@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { hasCaixaAccess as hasCaixaAccessServer } from "@/lib/permissions-server";
 
 export const CAIXA_ATTACHMENT_BUCKET = "financeiro-comprovantes";
 export const CAIXA_ATTACHMENT_PREFIX = "caixa";
@@ -13,12 +14,6 @@ export const CAIXA_ALLOWED_MIME_TYPES = new Set([
 ]);
 
 export const CAIXA_MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-
-type UserRoleRow = {
-  id: string;
-  categoria: string | null;
-  specific_permissions: Record<string, unknown> | null;
-};
 
 export function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -59,24 +54,13 @@ export async function getAuthUser() {
   return user;
 }
 
+/**
+ * Verifica se o usuário tem acesso ao módulo caixa (server-side).
+ * Delega para o helper centralizado em `@/lib/permissions`, que já inclui
+ * o check de `is_active`.
+ */
 export async function hasCaixaAccess(userId: string): Promise<boolean> {
-  const { data, error } = await createAdminClient()
-    .from("user_roles")
-    .select("categoria, specific_permissions")
-    .eq("id", userId)
-    .single();
-  if (error || !data) return false;
-  const row = data as UserRoleRow;
-  if (row.categoria === "administrador" || row.categoria === "financeiro") {
-    return true;
-  }
-  const permissions = row.specific_permissions as Record<
-    string,
-    Record<string, unknown>
-  > | null;
-  // Reusa o bloco "financeiro" de permissões — caixa compartilha o mesmo perfil.
-  const financePermissions = permissions?.financeiro;
-  return financePermissions?.page_access === true;
+  return hasCaixaAccessServer(userId);
 }
 
 export function sanitizeFileName(fileName: string): string {
