@@ -28,10 +28,14 @@ export interface ChatTranslations {
     today: string;
     edited: string;
     visualized: string;
+    image_alt: string;
   };
   chat_input: {
     placeholder: string;
     send_button: string;
+    emoji_button: string;
+    attach_image: string;
+    cancel_image: string;
   };
   errors: {
     load_conversations: string;

@@ -172,7 +172,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const newProfile = (payload as { new: UserProfile }).new;
 
           if (newProfile.is_active === false) {
-            toast.error("O seu acesso foi desativado pelo administrador. Saindo...");
+            toast.error(
+              "O seu acesso foi desativado pelo administrador. Saindo...",
+            );
             logout();
             return;
           }

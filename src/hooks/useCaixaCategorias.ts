@@ -4,7 +4,10 @@ import {
   fetchCaixaCategorias,
   fetchCaixaFormasPagamento,
 } from "@/lib/supabase/queries";
-import type { CaixaCategoria, CaixaFormaPagamento } from "@/lib/supabase/queries";
+import type {
+  CaixaCategoria,
+  CaixaFormaPagamento,
+} from "@/lib/supabase/queries";
 
 export function useCaixaCategorias() {
   const [categorias, setCategorias] = useState<CaixaCategoria[]>([]);

@@ -9,6 +9,7 @@ import {
   fetchChatUsers,
   fetchUsersByIds,
   findExistingDirectConversation,
+  sendChatImageMessage,
 } from "@/lib/supabase/queries";
 import type { ChatConversation, ChatMessage } from "@/context/DataContext";
 import { useAuth } from "@/context/AuthContext";
@@ -213,6 +214,24 @@ export function useChat() {
     [activeConversation, user, scrollToBottom],
   );
 
+  const sendImageMessage = useCallback(
+    async (file: File) => {
+      if (!activeConversation || !user) return;
+      if (!file.type.startsWith("image/")) return;
+
+      try {
+        setSending(true);
+        await sendChatImageMessage(activeConversation.id, user.id, file);
+        await updateChatParticipantLastRead(activeConversation.id, user.id);
+      } catch (error) {
+        console.error("Erro ao enviar imagem:", error);
+      } finally {
+        setSending(false);
+      }
+    },
+    [activeConversation, user, scrollToBottom],
+  );
+
   const createDirectConversation = useCallback(
     async (otherUserId: string) => {
       if (!user) return null;
@@ -326,6 +345,7 @@ export function useChat() {
     loadAvailableUsers,
     selectConversation,
     sendMessage,
+    sendImageMessage,
     createDirectConversation,
     setActiveConversation,
   };

@@ -128,10 +128,7 @@ export interface BankBrand {
   label: ReactElement | string;
 }
 
-const typeFallback: Record<
-  string,
-  BankBrand
-> = {
+const typeFallback: Record<string, BankBrand> = {
   caixa: { color: "#14B8A6", textColor: "#FFFFFF", label: "CX" },
   carteira: { color: "#F59E0B", textColor: "#FFFFFF", label: "CT" },
   investimento: { color: "#8B5CF6", textColor: "#FFFFFF", label: "IV" },
@@ -185,25 +182,26 @@ export function BankLogo({
   // 1. Prioridade: props sigla + color vindo da OS (página OS)
   if (sigla && color) {
     return (
-      <Badge
-        color={color}
-        size={size}
-        className={className}
-      >
+      <Badge color={color} size={size} className={className}>
         {sigla.toUpperCase()}
       </Badge>
     );
   }
 
   // 2. Busca por nome conhecido
-  const foundKey = Object.keys(bankMetaByName).find((key) =>
-    cleanName === key || cleanName.includes(key),
+  const foundKey = Object.keys(bankMetaByName).find(
+    (key) => cleanName === key || cleanName.includes(key),
   );
 
   if (foundKey) {
     const meta = bankMetaByName[foundKey];
     return (
-      <Badge color={meta.color} textColor={meta.textColor} size={size} className={className}>
+      <Badge
+        color={meta.color}
+        textColor={meta.textColor}
+        size={size}
+        className={className}
+      >
         {meta.label}
       </Badge>
     );
@@ -212,21 +210,36 @@ export function BankLogo({
   // 3. Fallbacks por tipo
   if (cleanType === "caixa") {
     return (
-      <Badge color="#14B8A6" textColor="#FFFFFF" size={size} className={className}>
+      <Badge
+        color="#14B8A6"
+        textColor="#FFFFFF"
+        size={size}
+        className={className}
+      >
         CX
       </Badge>
     );
   }
   if (cleanType === "carteira") {
     return (
-      <Badge color="#F59E0B" textColor="#FFFFFF" size={size} className={className}>
+      <Badge
+        color="#F59E0B"
+        textColor="#FFFFFF"
+        size={size}
+        className={className}
+      >
         CT
       </Badge>
     );
   }
   if (cleanType === "investimento") {
     return (
-      <Badge color="#8B5CF6" textColor="#FFFFFF" size={size} className={className}>
+      <Badge
+        color="#8B5CF6"
+        textColor="#FFFFFF"
+        size={size}
+        className={className}
+      >
         IV
       </Badge>
     );
@@ -234,7 +247,12 @@ export function BankLogo({
 
   // 4. Fallback genérico
   return (
-    <Badge color="#3B82F6" textColor="#FFFFFF" size={size} className={className}>
+    <Badge
+      color="#3B82F6"
+      textColor="#FFFFFF"
+      size={size}
+      className={className}
+    >
       {makeSigla(name || "Banco")}
     </Badge>
   );
@@ -274,11 +292,7 @@ function Badge({
       }}
       title={isText ? children : "Banco"}
     >
-      {isText ? (
-        <span className="truncate px-1">{children}</span>
-      ) : (
-        children
-      )}
+      {isText ? <span className="truncate px-1">{children}</span> : children}
     </div>
   );
 }

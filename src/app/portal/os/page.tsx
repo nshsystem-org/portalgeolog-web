@@ -4678,7 +4678,11 @@ export default function OSOperationalPage() {
           type: "vehicle_link",
           ...actor,
           description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} vinculado ao motorista.`,
-          metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null, origin: "os_page" },
+          metadata: {
+            vehicle_id: vehicleId,
+            placa: v?.placa ?? null,
+            origin: "os_page",
+          },
         });
       }
       for (const vehicleId of toRemove) {
@@ -4688,7 +4692,11 @@ export default function OSOperationalPage() {
           type: "vehicle_unlink",
           ...actor,
           description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} desvinculado do motorista.`,
-          metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null, origin: "os_page" },
+          metadata: {
+            vehicle_id: vehicleId,
+            placa: v?.placa ?? null,
+            origin: "os_page",
+          },
         });
       }
 
@@ -4729,9 +4737,7 @@ export default function OSOperationalPage() {
             size={20}
           />
           <div className="flex-1">
-            <p className="font-semibold text-slate-800 mb-1">
-              Veículo em uso
-            </p>
+            <p className="font-semibold text-slate-800 mb-1">Veículo em uso</p>
             <p className="text-sm text-slate-600 mb-3">
               Este veículo está em atendimento ativo (OS{" "}
               {blockingOS.protocolo || blockingOS.id})
@@ -4859,9 +4865,18 @@ export default function OSOperationalPage() {
               metadata: {
                 vehicle_id: vehicleId,
                 changes: {
-                  placa: { from: oldVehicle?.placa ?? null, to: newVehicle.placa },
-                  modelo: { from: oldVehicle?.modelo ?? null, to: newVehicle.modelo },
-                  marca: { from: oldVehicle?.marca ?? null, to: newVehicle.marca },
+                  placa: {
+                    from: oldVehicle?.placa ?? null,
+                    to: newVehicle.placa,
+                  },
+                  modelo: {
+                    from: oldVehicle?.modelo ?? null,
+                    to: newVehicle.modelo,
+                  },
+                  marca: {
+                    from: oldVehicle?.marca ?? null,
+                    to: newVehicle.marca,
+                  },
                 },
                 origin: "os_page",
               },
@@ -4998,12 +5013,10 @@ export default function OSOperationalPage() {
 
           // Inserir veículos vinculados
           if (newDriver && selectedVehicleIds.length > 0) {
-            const driverVehicles = selectedVehicleIds.map(
-              (vehicleId) => ({
-                driver_id: newDriver.id,
-                vehicle_id: vehicleId,
-              }),
-            );
+            const driverVehicles = selectedVehicleIds.map((vehicleId) => ({
+              driver_id: newDriver.id,
+              vehicle_id: vehicleId,
+            }));
 
             const { error: vehiclesError } = await supabase
               .from("driver_vehicles")
@@ -5060,7 +5073,11 @@ export default function OSOperationalPage() {
                 type: "vehicle_link",
                 ...actor,
                 description: `Veículo ${v ? `${v.marca} ${v.modelo} (${v.placa})` : vehicleId} vinculado ao motorista.`,
-                metadata: { vehicle_id: vehicleId, placa: v?.placa ?? null, origin: "os_page" },
+                metadata: {
+                  vehicle_id: vehicleId,
+                  placa: v?.placa ?? null,
+                  origin: "os_page",
+                },
               });
             }
           }

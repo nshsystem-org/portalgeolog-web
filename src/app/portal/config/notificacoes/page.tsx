@@ -5,13 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { hasPageAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/ui/AccessDenied";
 import { toast } from "sonner";
-import {
-  Bell,
-  MessageSquareWarning,
-  Truck,
-  Users,
-  User,
-} from "lucide-react";
+import { Bell, MessageSquareWarning, Truck, Users, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function NotificacoesPage() {
@@ -121,16 +115,14 @@ export default function NotificacoesPage() {
     setIsSavingReminders(true);
     try {
       const supabase = createClient();
-      const { error } = await supabase
-        .from("app_settings")
-        .upsert(
-          {
-            key: "os_reminders_enabled",
-            value: String(value),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "key" },
-        );
+      const { error } = await supabase.from("app_settings").upsert(
+        {
+          key: "os_reminders_enabled",
+          value: String(value),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "key" },
+      );
       if (error) throw error;
       setRemindersEnabled(value);
       toast.success(
@@ -162,16 +154,14 @@ export default function NotificacoesPage() {
     setIsSavingNotifyFlag(flag);
     try {
       const supabase = createClient();
-      const { error } = await supabase
-        .from("app_settings")
-        .upsert(
-          {
-            key: keyMap[flag],
-            value: String(value),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "key" },
-        );
+      const { error } = await supabase.from("app_settings").upsert(
+        {
+          key: keyMap[flag],
+          value: String(value),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "key" },
+      );
       if (error) throw error;
       setNotifyFlags((prev) => ({ ...prev, [flag]: value }));
       toast.success(

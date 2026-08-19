@@ -519,10 +519,9 @@ export default function AcessosPage() {
     }
 
     // Inicializa as outras páginas financeiras se viemos do legacy para não perder acesso
-    const updatedPages: Record<
-      string,
-      Record<PageAction, boolean>
-    > = { ...currentPages as Record<string, Record<PageAction, boolean>> };
+    const updatedPages: Record<string, Record<PageAction, boolean>> = {
+      ...(currentPages as Record<string, Record<PageAction, boolean>>),
+    };
 
     if (isLegacyFull) {
       for (const p of FINANCEIRO_PAGE_CONFIG) {
@@ -555,12 +554,32 @@ export default function AcessosPage() {
   // Diretoria não pode selecionar "Administrador" — nem para promover,
   // nem para criar novos usuários admin.
   const categoriaOptions = [
-    { id: "administrador", nome: "Administrador", icon: <RoleAvatar categoria="administrador" /> },
-    { id: "diretoria", nome: "Diretoria", icon: <RoleAvatar categoria="diretoria" /> },
+    {
+      id: "administrador",
+      nome: "Administrador",
+      icon: <RoleAvatar categoria="administrador" />,
+    },
+    {
+      id: "diretoria",
+      nome: "Diretoria",
+      icon: <RoleAvatar categoria="diretoria" />,
+    },
     { id: "gestor", nome: "Gestor", icon: <RoleAvatar categoria="gestor" /> },
-    { id: "operador", nome: "Operador", icon: <RoleAvatar categoria="operador" /> },
-    { id: "financeiro", nome: "Financeiro", icon: <RoleAvatar categoria="financeiro" /> },
-    { id: "jovem aprendiz", nome: "Jovem Aprendiz", icon: <RoleAvatar categoria="jovem aprendiz" /> },
+    {
+      id: "operador",
+      nome: "Operador",
+      icon: <RoleAvatar categoria="operador" />,
+    },
+    {
+      id: "financeiro",
+      nome: "Financeiro",
+      icon: <RoleAvatar categoria="financeiro" />,
+    },
+    {
+      id: "jovem aprendiz",
+      nome: "Jovem Aprendiz",
+      icon: <RoleAvatar categoria="jovem aprendiz" />,
+    },
   ].filter((opt) => isAccessAdmin || opt.id !== "administrador");
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -646,9 +665,7 @@ export default function AcessosPage() {
   // modal está aberto, os toggles devem refletir o novo estado imediatamente.
   useEffect(() => {
     if (!selectedUserForPermissions) return;
-    const updated = users.find(
-      (u) => u.id === selectedUserForPermissions.id,
-    );
+    const updated = users.find((u) => u.id === selectedUserForPermissions.id);
     if (updated && updated !== selectedUserForPermissions) {
       setSelectedUserForPermissions(updated);
     }
@@ -662,10 +679,7 @@ export default function AcessosPage() {
   return (
     <>
       <div className="space-y-6">
-        <PageHeader
-          title="Gestão de Acessos"
-          icon={<Shield size={20} />}
-        />
+        <PageHeader title="Gestão de Acessos" icon={<Shield size={20} />} />
 
         {!canManageUsers ? (
           <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/40 overflow-hidden flex items-center justify-center p-10 text-center">
@@ -677,8 +691,8 @@ export default function AcessosPage() {
                 Gestão de acesso restrita
               </h3>
               <p className="text-slate-500 font-semibold leading-relaxed">
-                Apenas administradores podem visualizar e alterar os usuários
-                do sistema.
+                Apenas administradores podem visualizar e alterar os usuários do
+                sistema.
               </p>
             </div>
           </div>
@@ -686,114 +700,107 @@ export default function AcessosPage() {
           <DataTable
             data={users}
             columns={[
-                  {
-                    key: "nome",
-                    title: "Usuário",
-                    render: (value) => (
-                      <p className="font-black text-sm text-slate-800 tracking-tight uppercase">
-                        {value as string}
-                      </p>
-                    ),
-                  },
-                  {
-                    key: "email",
-                    title: "E-mail",
-                    render: (value) => (
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <Mail
-                          size={16}
-                          className="text-blue-500 flex-shrink-0"
-                        />
-                        <span className="text-sm font-medium truncate max-w-[200px]">
-                          {value as string}
-                        </span>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "tipo_usuario",
-                    title: "Tipo",
-                    render: (value, item) => (
-                      <GeologSearchableSelect
-                        compact
-                        disableSearch
-                        className="max-w-[180px]"
-                        options={[
-                          {
-                            id: "interno",
-                            nome: "Geolog",
-                            sublabel: "Equipe Própria",
-                            icon: <TipoUsuarioAvatar tipo="interno" />,
-                          },
-                          {
-                            id: "gestor",
-                            nome: "Gestor",
-                            sublabel: "Externo/Terceiro",
-                            icon: <TipoUsuarioAvatar tipo="gestor" />,
-                          },
-                        ]}
-                        value={value as string}
-                        onChange={(val) =>
-                          updateUserRole(
-                            (item as UserWithAuth).id,
-                            "tipo_usuario",
-                            val,
-                          )
+              {
+                key: "nome",
+                title: "Usuário",
+                render: (value) => (
+                  <p className="font-black text-sm text-slate-800 tracking-tight uppercase">
+                    {value as string}
+                  </p>
+                ),
+              },
+              {
+                key: "email",
+                title: "E-mail",
+                render: (value) => (
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Mail size={16} className="text-blue-500 flex-shrink-0" />
+                    <span className="text-sm font-medium truncate max-w-[200px]">
+                      {value as string}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                key: "tipo_usuario",
+                title: "Tipo",
+                render: (value, item) => (
+                  <GeologSearchableSelect
+                    compact
+                    disableSearch
+                    className="max-w-[180px]"
+                    options={[
+                      {
+                        id: "interno",
+                        nome: "Geolog",
+                        sublabel: "Equipe Própria",
+                        icon: <TipoUsuarioAvatar tipo="interno" />,
+                      },
+                      {
+                        id: "gestor",
+                        nome: "Gestor",
+                        sublabel: "Externo/Terceiro",
+                        icon: <TipoUsuarioAvatar tipo="gestor" />,
+                      },
+                    ]}
+                    value={value as string}
+                    onChange={(val) =>
+                      updateUserRole(
+                        (item as UserWithAuth).id,
+                        "tipo_usuario",
+                        val,
+                      )
+                    }
+                  />
+                ),
+              },
+              {
+                key: "categoria",
+                title: "Permissão",
+                render: (value, item) => (
+                  <GeologSearchableSelect
+                    compact
+                    disableSearch
+                    className="max-w-[200px]"
+                    disabled={(item as UserWithAuth).tipo_usuario === "gestor"}
+                    options={categoriaOptions}
+                    value={value as string}
+                    onChange={(val) =>
+                      updateUserRole(
+                        (item as UserWithAuth).id,
+                        "categoria",
+                        val,
+                      )
+                    }
+                  />
+                ),
+              },
+              {
+                key: "actions",
+                title: "Ações",
+                align: "center",
+                render: (_, item) => (
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => openPermissionsModal(item as UserWithAuth)}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <ShieldCheck size={18} />
+                    </button>
+                    {canManageUsers && (
+                      <button
+                        onClick={() =>
+                          handleDeleteUser((item as UserWithAuth).id)
                         }
-                      />
-                    ),
-                  },
-                  {
-                    key: "categoria",
-                    title: "Permissão",
-                    render: (value, item) => (
-                      <GeologSearchableSelect
-                        compact
-                        disableSearch
-                        className="max-w-[200px]"
-                        disabled={
-                          (item as UserWithAuth).tipo_usuario === "gestor"
-                        }
-                        options={categoriaOptions}
-                        value={value as string}
-                        onChange={(val) =>
-                          updateUserRole(
-                            (item as UserWithAuth).id,
-                            "categoria",
-                            val,
-                          )
-                        }
-                      />
-                    ),
-                  },
-                  {
-                    key: "actions",
-                    title: "Ações",
-                    align: "center",
-                    render: (_, item) => (
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() =>
-                            openPermissionsModal(item as UserWithAuth)
-                          }
-                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <ShieldCheck size={18} />
-                        </button>
-                        {canManageUsers && (
-                          <button
-                            onClick={() =>
-                              handleDeleteUser((item as UserWithAuth).id)
-                            }
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
-                      </div>
-                    ),
-                  },
-                ]}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
             loading={isUsersLoading}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -1004,12 +1011,8 @@ export default function AcessosPage() {
                 >
                   <input
                     type="checkbox"
-                    checked={
-                      selectedUserForPermissions.is_active !== false
-                    }
-                    disabled={
-                      selectedUserForPermissions.id === user?.id
-                    }
+                    checked={selectedUserForPermissions.is_active !== false}
+                    disabled={selectedUserForPermissions.id === user?.id}
                     onChange={(e) => {
                       const nextActive = e.target.checked;
                       setSelectedUserForPermissions((prev) =>
@@ -1074,7 +1077,8 @@ export default function AcessosPage() {
                           Páginas Financeiras (5 telas)
                         </p>
                         <p className="text-xs font-medium text-slate-400">
-                          Configure o acesso individual e ações permitidas em cada tela
+                          Configure o acesso individual e ações permitidas em
+                          cada tela
                         </p>
                       </div>
                     </div>
@@ -1095,7 +1099,8 @@ export default function AcessosPage() {
                             unknown
                           >) || {};
                         const fin =
-                          (specific.financeiro as Record<string, unknown>) || {};
+                          (specific.financeiro as Record<string, unknown>) ||
+                          {};
                         const pages =
                           (fin.pages as Record<
                             string,
@@ -1292,9 +1297,7 @@ export default function AcessosPage() {
                           </div>
                           <label
                             className={`relative inline-flex items-center ${
-                              locked
-                                ? "cursor-not-allowed"
-                                : "cursor-pointer"
+                              locked ? "cursor-not-allowed" : "cursor-pointer"
                             }`}
                           >
                             <input
@@ -1437,9 +1440,7 @@ export default function AcessosPage() {
                           </div>
                           <label
                             className={`relative inline-flex items-center ${
-                              locked
-                                ? "cursor-not-allowed"
-                                : "cursor-pointer"
+                              locked ? "cursor-not-allowed" : "cursor-pointer"
                             }`}
                           >
                             <input

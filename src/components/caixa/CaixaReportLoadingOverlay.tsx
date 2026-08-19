@@ -391,13 +391,7 @@ export function CaixaReportLoadingOverlay({
                 opacity="0.75"
               />
               <circle cx="6" cy="28" r="3" fill="#fef08a" opacity="0.9" />
-              <circle
-                cx="88"
-                cy="28"
-                r="2.5"
-                fill="#ef4444"
-                opacity="0.85"
-              />
+              <circle cx="88" cy="28" r="2.5" fill="#ef4444" opacity="0.85" />
             </svg>
             <div
               className="absolute rounded-full overflow-hidden"
@@ -475,8 +469,7 @@ export function CaixaReportLoadingOverlay({
           <div
             className="absolute inset-0"
             style={{
-              background:
-                "linear-gradient(180deg, #1e3a8a 0%, #0f1f3d 100%)",
+              background: "linear-gradient(180deg, #1e3a8a 0%, #0f1f3d 100%)",
               borderRadius: "18px 26px 10px 10px",
               border: "1.5px solid #2b4cba",
               boxShadow:
@@ -490,8 +483,7 @@ export function CaixaReportLoadingOverlay({
               top: 12,
               width: 52,
               height: 34,
-              background:
-                "linear-gradient(180deg, #93c5fd 0%, #3b82f6 100%)",
+              background: "linear-gradient(180deg, #93c5fd 0%, #3b82f6 100%)",
               borderRadius: "10px 18px 4px 4px",
               opacity: 0.85,
             }}
@@ -617,8 +609,7 @@ export function CaixaReportLoadingOverlay({
           <div
             className="h-full w-1/3 rounded-full"
             style={{
-              background:
-                "linear-gradient(90deg, #1e3a8a, #60a5fa, #1e3a8a)",
+              background: "linear-gradient(90deg, #1e3a8a, #60a5fa, #1e3a8a)",
               animation: "van-progress 1.2s ease-in-out infinite",
             }}
           />

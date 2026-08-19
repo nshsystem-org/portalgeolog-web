@@ -100,11 +100,17 @@ export async function fetchDriverLogs(
 /**
  * Helper conveniente para construir o payload do ator a partir do perfil.
  */
-export function buildActorFromProfile(profile: {
-  id: string;
-  nome: string;
-  avatar_url?: string | null;
-} | null): { actor_name: string; actor_id: string | null; actor_avatar_url: string | null } {
+export function buildActorFromProfile(
+  profile: {
+    id: string;
+    nome: string;
+    avatar_url?: string | null;
+  } | null,
+): {
+  actor_name: string;
+  actor_id: string | null;
+  actor_avatar_url: string | null;
+} {
   if (!profile) {
     return { actor_name: "Sistema", actor_id: null, actor_avatar_url: null };
   }

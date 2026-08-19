@@ -1,14 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  UserSquare2,
-  Plus,
-  Edit,
-  Eye,
-  Archive,
-  Phone,
-} from "lucide-react";
+import { UserSquare2, Plus, Edit, Eye, Archive, Phone } from "lucide-react";
 import { useData, type Passageiro } from "@/context/DataContext";
 import StandardModal from "@/components/StandardModal";
 import { DataTable } from "@/components/ui/DataTable";
@@ -132,10 +125,7 @@ export default function PassageirosPage() {
     setSelectedPassenger(null);
   };
 
-  const handleInputChange = (
-    field: keyof NewPassengerForm,
-    value: string,
-  ) => {
+  const handleInputChange = (field: keyof NewPassengerForm, value: string) => {
     let formattedValue = value;
 
     if (field === "celular") {
@@ -389,7 +379,6 @@ export default function PassageirosPage() {
                 </div>
               </div>
             </section>
-
           </form>
         </StandardModal>
       )}

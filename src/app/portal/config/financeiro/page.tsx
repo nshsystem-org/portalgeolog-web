@@ -83,9 +83,7 @@ export default function ConfigFinanceiroPage() {
             <button
               onClick={() => {
                 setIsDateModalOpen(true);
-                setEffectiveDate(
-                  new Date().toISOString().split("T")[0],
-                );
+                setEffectiveDate(new Date().toISOString().split("T")[0]);
               }}
               className="w-full py-4 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-700 hover:scale-[1.01] active:scale-[0.98] transition-all text-sm uppercase tracking-widest cursor-pointer disabled:opacity-70 flex justify-center items-center gap-3"
             >

@@ -24,11 +24,15 @@
     "no_messages": "No messages yet. Start chatting!",
     "today": "Today",
     "edited": "edited",
-    "visualized": "Seen"
+    "visualized": "Seen",
+    "image_alt": "Image"
   },
   "chat_input": {
     "placeholder": "Type a message...",
-    "send_button": "Send"
+    "send_button": "Send",
+    "emoji_button": "Emojis",
+    "attach_image": "Attach image",
+    "cancel_image": "Cancel"
   },
   "errors": {
     "load_conversations": "Error loading conversations",

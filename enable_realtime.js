@@ -10,8 +10,7 @@ async function enableRealtime() {
   const host =
     process.env.SUPABASE_DB_HOST || "aws-1-us-east-2.pooler.supabase.com";
   const port = process.env.SUPABASE_DB_PORT || "5432";
-  const user =
-    process.env.SUPABASE_DB_USER || "postgres.hzpgfapvjwqtjclriisz";
+  const user = process.env.SUPABASE_DB_USER || "postgres.hzpgfapvjwqtjclriisz";
   const database = process.env.SUPABASE_DB_NAME || "postgres";
   const connectionString = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
   const client = new Client({

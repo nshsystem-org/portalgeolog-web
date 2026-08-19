@@ -45,14 +45,14 @@ export default function FormasPagamentoPage() {
   const { confirm, confirmState, closeConfirm, handleConfirm } = useConfirm();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingForma, setEditingForma] =
-    useState<CaixaFormaPagamento | null>(null);
+  const [editingForma, setEditingForma] = useState<CaixaFormaPagamento | null>(
+    null,
+  );
   const [formData, setFormData] = useState<FormaFormData>(initialForm());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [showInativosOnly, setShowInativosOnly] = useState(false);
-  const [isInativosFilterLoading, setIsInativosFilterLoading] =
-    useState(false);
+  const [isInativosFilterLoading, setIsInativosFilterLoading] = useState(false);
 
   const fetchFormasPage = useCallback(
     (params: { page: number; pageSize: number; searchTerm: string }) =>
@@ -65,10 +65,7 @@ export default function FormasPagamentoPage() {
     [showInativosOnly],
   );
 
-  const formaTable = useServerPaginatedTable(
-    fetchFormasPage,
-    TABLE_PAGE_SIZE,
-  );
+  const formaTable = useServerPaginatedTable(fetchFormasPage, TABLE_PAGE_SIZE);
 
   useEffect(() => {
     if (!isInativosFilterLoading) return;
@@ -152,7 +149,9 @@ export default function FormasPagamentoPage() {
     try {
       await setCaixaFormaPagamentoAtivo(forma.id, nextAtivo);
       await formaTable.refresh();
-      toast.success(`Forma de pagamento ${nextAtivo ? "desarquivada" : "arquivada"} com sucesso!`);
+      toast.success(
+        `Forma de pagamento ${nextAtivo ? "desarquivada" : "arquivada"} com sucesso!`,
+      );
     } catch (error) {
       console.error(error);
       toast.error("Não foi possível alterar o status da forma de pagamento.");
@@ -161,10 +160,7 @@ export default function FormasPagamentoPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Formas de Pagamento"
-        icon={<CreditCard size={20} />}
-      />
+      <PageHeader title="Formas de Pagamento" icon={<CreditCard size={20} />} />
 
       <DataTable
         data={formaTable.items}
@@ -314,7 +310,11 @@ export default function FormasPagamentoPage() {
       {isModalOpen && (
         <StandardModal
           onClose={handleCloseModal}
-          title={editingForma ? "Editar Forma de Pagamento" : "Nova Forma de Pagamento"}
+          title={
+            editingForma
+              ? "Editar Forma de Pagamento"
+              : "Nova Forma de Pagamento"
+          }
           subtitle="Formas de pagamento usadas nos lançamentos do Fluxo de Caixa"
           icon={<CreditCard size={24} />}
           maxWidthClassName="max-w-2xl"

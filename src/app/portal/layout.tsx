@@ -58,6 +58,8 @@ import {
   Package,
   Tags,
   CreditCard,
+  Wrench,
+  Gauge,
 } from "lucide-react";
 import Link from "next/link";
 import AnnouncementModal from "@/components/AnnouncementModal";
@@ -226,6 +228,19 @@ export default function DashboardLayout({
             icon: <FileText />,
             label: "Ordem de Serviço",
             description: "Emissão e controle operacional de OS",
+          },
+          hasPageAccess("manutencao-veiculos") && {
+            href: "/portal/operacional/manutencao",
+            icon: <Wrench />,
+            label: "Manutenção de Veículos",
+            description: "Controle de revisões e histórico de manutenções",
+          },
+          hasPageAccess("desempenho") && {
+            href: "/portal/operacional/desempenho",
+            icon: <Gauge />,
+            label: "Desempenho",
+            description:
+              "Metas e indicadores de motoristas, clientes e parceiros",
           },
         ].filter(Boolean) as {
           href: string;

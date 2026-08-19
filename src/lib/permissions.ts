@@ -17,6 +17,8 @@
  * | caixa         | ✅            | ✅        | ✅         | ❌*      |
  * | categorias-caixa   | ✅       | ✅        | ✅         | ❌*      |
  * | formas-pagamento   | ✅       | ✅        | ✅         | ❌*      |
+ * | manutencao-veiculos| ✅       | ✅        | ✅         | ✅       |
+ * | desempenho    | ✅            | ✅        | ✅         | ✅       |
  * | config        | ✅            | ✅†       | ❌         | ❌       |
  *
  * ❌* = pode ser liberado via specific_permissions.{modulo}.page_access === true
@@ -31,7 +33,11 @@
  * }
  */
 
-export type Categoria = "administrador" | "diretoria" | "financeiro" | "operador";
+export type Categoria =
+  | "administrador"
+  | "diretoria"
+  | "financeiro"
+  | "operador";
 
 export type PageKey =
   | "dashboard"
@@ -46,6 +52,8 @@ export type PageKey =
   | "caixa"
   | "categorias-caixa"
   | "formas-pagamento"
+  | "manutencao-veiculos"
+  | "desempenho"
   | "config-acessos"
   | "config-perfil"
   | "config-financeiro"
@@ -60,7 +68,12 @@ interface ProfileLike {
 /**
  * Origem do acesso efetivo de um usuário a uma página/módulo.
  */
-export type AccessSource = "inativo" | "administrador" | "categoria-base" | "override" | "nenhum";
+export type AccessSource =
+  | "inativo"
+  | "administrador"
+  | "categoria-base"
+  | "override"
+  | "nenhum";
 
 export interface EffectiveAccess {
   access: boolean;
@@ -86,6 +99,8 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     caixa: true,
     "categorias-caixa": true,
     "formas-pagamento": true,
+    "manutencao-veiculos": true,
+    desempenho: true,
     "config-acessos": true,
     "config-perfil": true,
     "config-financeiro": true,
@@ -104,6 +119,8 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     caixa: true,
     "categorias-caixa": true,
     "formas-pagamento": true,
+    "manutencao-veiculos": true,
+    desempenho: true,
     "config-acessos": true,
     "config-perfil": true,
     "config-financeiro": true,
@@ -115,6 +132,8 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     caixa: true,
     "categorias-caixa": true,
     "formas-pagamento": true,
+    "manutencao-veiculos": true,
+    desempenho: true,
     "config-perfil": true,
     "config-financeiro": true,
     "config-notificacoes": true,
@@ -127,6 +146,8 @@ const BASE_ACCESS: Record<Categoria, Partial<Record<PageKey, boolean>>> = {
     passageiros: true,
     clientes: true,
     parcerias: true,
+    "manutencao-veiculos": true,
+    desempenho: true,
     "config-perfil": true,
     "config-notificacoes": true,
   },
@@ -210,7 +231,9 @@ function getGranularPagePerms(
   page: PageKey,
 ): GranularPagePerms | null {
   if (!modulePerms) return null;
-  const pages = modulePerms["pages"] as Record<string, Partial<GranularPagePerms>> | undefined;
+  const pages = modulePerms["pages"] as
+    | Record<string, Partial<GranularPagePerms>>
+    | undefined;
   if (!pages) return null;
   const pagePerms = pages[page];
   if (!pagePerms) return null;
@@ -379,6 +402,8 @@ export function getAccessiblePages(
     "caixa",
     "categorias-caixa",
     "formas-pagamento",
+    "manutencao-veiculos",
+    "desempenho",
     "config-acessos",
     "config-perfil",
     "config-financeiro",
@@ -405,6 +430,8 @@ export function pathnameToPageKey(pathname: string): PageKey | null {
     "/portal/caixa": "caixa",
     "/portal/financeiro/categorias": "categorias-caixa",
     "/portal/financeiro/formas-pagamento": "formas-pagamento",
+    "/portal/operacional/manutencao": "manutencao-veiculos",
+    "/portal/operacional/desempenho": "desempenho",
     "/portal/config": "config-perfil", // redirect target
     "/portal/config/acessos": "config-acessos",
     "/portal/config/perfil": "config-perfil",

@@ -1553,14 +1553,18 @@ export default function MotoristasPage() {
         if ((editingDriver.name || "") !== formData.name.trim()) {
           changes.name = { from: editingDriver.name, to: formData.name.trim() };
         }
-        if (normalizeCpf(editingDriver.cpf || "") !== normalizeCpf(formData.cpf)) {
+        if (
+          normalizeCpf(editingDriver.cpf || "") !== normalizeCpf(formData.cpf)
+        ) {
           changes.cpf = { from: editingDriver.cpf, to: formData.cpf };
         }
         const newPhone = normalizeBrazilPhone(formData.celular);
         if ((editingDriver.phone || "") !== newPhone) {
           changes.phone = { from: editingDriver.phone, to: newPhone };
         }
-        if ((editingDriver.vinculo_tipo || "parceiro") !== formData.vinculo_tipo) {
+        if (
+          (editingDriver.vinculo_tipo || "parceiro") !== formData.vinculo_tipo
+        ) {
           changes.vinculo_tipo = {
             from: editingDriver.vinculo_tipo,
             to: formData.vinculo_tipo,
@@ -2695,7 +2699,8 @@ export default function MotoristasPage() {
             {/* Linha 2: Veículos Vinculados (horizontal compacto) */}
             <div className="px-6 py-5">
               <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-3 flex items-center gap-1.5">
-                <Truck size={14} className="text-blue-500" /> Veículos Vinculados
+                <Truck size={14} className="text-blue-500" /> Veículos
+                Vinculados
               </p>
               {(() => {
                 const driverVehicles = viewingDriver.driver_vehicles || [];
@@ -2785,7 +2790,8 @@ export default function MotoristasPage() {
                     > = {
                       create: {
                         icon: <PlusCircle size={14} />,
-                        color: "text-emerald-600 bg-emerald-50 border-emerald-100",
+                        color:
+                          "text-emerald-600 bg-emerald-50 border-emerald-100",
                         label: "Criação",
                       },
                       update: {
@@ -2795,8 +2801,7 @@ export default function MotoristasPage() {
                       },
                       vehicle_link: {
                         icon: <Link2 size={14} />,
-                        color:
-                          "text-violet-600 bg-violet-50 border-violet-100",
+                        color: "text-violet-600 bg-violet-50 border-violet-100",
                         label: "Vínculo",
                       },
                       vehicle_unlink: {
@@ -2842,7 +2847,10 @@ export default function MotoristasPage() {
                           {log.actor_avatar_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
-                              src={getThumbnailUrl(log.actor_avatar_url, 80) || log.actor_avatar_url}
+                              src={
+                                getThumbnailUrl(log.actor_avatar_url, 80) ||
+                                log.actor_avatar_url
+                              }
                               alt={log.actor_name}
                               className="w-10 h-10 rounded-full object-cover border border-slate-200"
                             />
@@ -2871,94 +2879,99 @@ export default function MotoristasPage() {
                             {log.description}
                           </p>
                           {log.type === "update" &&
-                            log.metadata &&
-                            typeof log.metadata === "object" &&
-                            "changes" in log.metadata &&
-                            log.metadata.changes &&
-                            typeof log.metadata.changes === "object" ? (
-                            (() => {
-                              const changes = log.metadata.changes as Record<
-                                string,
-                                { from: unknown; to: unknown }
-                              >;
-                              const fieldLabels: Record<
-                                string,
-                                { label: string; format?: (v: unknown) => string }
-                              > = {
-                                name: { label: "Nome" },
-                                cpf: {
-                                  label: "CPF",
-                                  format: (v) =>
-                                    formatDocumento(String(v || ""), "cpf") ||
-                                    "—",
-                                },
-                                phone: {
-                                  label: "Celular",
-                                  format: (v) =>
-                                    v ? formatCelular(String(v)) : "—",
-                                },
-                                vinculo_tipo: {
-                                  label: "Tipo de vínculo",
-                                  format: (v) =>
-                                    v === "interno"
-                                      ? "Interno"
-                                      : v === "autonomo"
-                                        ? "Autônomo"
-                                        : v === "parceiro"
-                                          ? "Parceiro"
-                                          : String(v || "—"),
-                                },
-                                parceiro_id: {
-                                  label: "Parceiro",
-                                  format: (v) =>
-                                    v
-                                      ? parceiros.find(
-                                          (p: ParceiroServico) =>
-                                            p.id === String(v),
-                                        )?.razaoSocialOuNomeCompleto ||
-                                        String(v)
-                                      : "—",
-                                },
-                                placa: { label: "Placa" },
-                                modelo: { label: "Modelo" },
-                                marca: { label: "Marca" },
-                              };
-                              const entries = Object.entries(changes);
-                              if (entries.length === 0) return null;
-                              return (
-                                <div className="mt-2.5 space-y-2">
-                                  {entries.map(([field, diff]) => {
-                                    const cfg = fieldLabels[field] ?? {
-                                      label: field,
-                                    };
-                                    const fmt = (v: unknown) =>
-                                      cfg.format
-                                        ? cfg.format(v)
-                                        : v === null || v === undefined
-                                          ? "—"
-                                          : String(v);
-                                    return (
-                                      <div
-                                        key={field}
-                                        className="flex items-center gap-2.5 text-sm flex-wrap"
-                                      >
-                                        <span className="font-black uppercase tracking-wide text-slate-400 min-w-[90px]">
-                                          {cfg.label}
-                                        </span>
-                                        <span className="text-slate-500 line-through decoration-slate-300 font-medium">
-                                          {fmt(diff.from)}
-                                        </span>
-                                        <span className="text-slate-300">→</span>
-                                        <span className="text-blue-700 font-bold">
-                                          {fmt(diff.to)}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })()
-                          ) : null}
+                          log.metadata &&
+                          typeof log.metadata === "object" &&
+                          "changes" in log.metadata &&
+                          log.metadata.changes &&
+                          typeof log.metadata.changes === "object"
+                            ? (() => {
+                                const changes = log.metadata.changes as Record<
+                                  string,
+                                  { from: unknown; to: unknown }
+                                >;
+                                const fieldLabels: Record<
+                                  string,
+                                  {
+                                    label: string;
+                                    format?: (v: unknown) => string;
+                                  }
+                                > = {
+                                  name: { label: "Nome" },
+                                  cpf: {
+                                    label: "CPF",
+                                    format: (v) =>
+                                      formatDocumento(String(v || ""), "cpf") ||
+                                      "—",
+                                  },
+                                  phone: {
+                                    label: "Celular",
+                                    format: (v) =>
+                                      v ? formatCelular(String(v)) : "—",
+                                  },
+                                  vinculo_tipo: {
+                                    label: "Tipo de vínculo",
+                                    format: (v) =>
+                                      v === "interno"
+                                        ? "Interno"
+                                        : v === "autonomo"
+                                          ? "Autônomo"
+                                          : v === "parceiro"
+                                            ? "Parceiro"
+                                            : String(v || "—"),
+                                  },
+                                  parceiro_id: {
+                                    label: "Parceiro",
+                                    format: (v) =>
+                                      v
+                                        ? parceiros.find(
+                                            (p: ParceiroServico) =>
+                                              p.id === String(v),
+                                          )?.razaoSocialOuNomeCompleto ||
+                                          String(v)
+                                        : "—",
+                                  },
+                                  placa: { label: "Placa" },
+                                  modelo: { label: "Modelo" },
+                                  marca: { label: "Marca" },
+                                };
+                                const entries = Object.entries(changes);
+                                if (entries.length === 0) return null;
+                                return (
+                                  <div className="mt-2.5 space-y-2">
+                                    {entries.map(([field, diff]) => {
+                                      const cfg = fieldLabels[field] ?? {
+                                        label: field,
+                                      };
+                                      const fmt = (v: unknown) =>
+                                        cfg.format
+                                          ? cfg.format(v)
+                                          : v === null || v === undefined
+                                            ? "—"
+                                            : String(v);
+                                      return (
+                                        <div
+                                          key={field}
+                                          className="flex items-center gap-2.5 text-sm flex-wrap"
+                                        >
+                                          <span className="font-black uppercase tracking-wide text-slate-400 min-w-[90px]">
+                                            {cfg.label}
+                                          </span>
+                                          <span className="text-slate-500 line-through decoration-slate-300 font-medium">
+                                            {fmt(diff.from)}
+                                          </span>
+                                          <span className="text-slate-300">
+                                            →
+                                          </span>
+                                          <span className="text-blue-700 font-bold">
+                                            {fmt(diff.to)}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()
+                            : null}
                         </div>
                       </div>
                     );

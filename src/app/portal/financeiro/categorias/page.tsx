@@ -70,8 +70,7 @@ export default function CategoriasCaixaPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [showInativosOnly, setShowInativosOnly] = useState(false);
-  const [isInativosFilterLoading, setIsInativosFilterLoading] =
-    useState(false);
+  const [isInativosFilterLoading, setIsInativosFilterLoading] = useState(false);
   const [tipoFilter, setTipoFilter] = useState<string>("todos");
   const [isTipoFilterLoading, setIsTipoFilterLoading] = useState(false);
 
@@ -82,7 +81,8 @@ export default function CategoriasCaixaPage() {
         pageSize: params.pageSize,
         searchTerm: params.searchTerm,
         showInativos: showInativosOnly,
-        tipo: tipoFilter === "todos" ? undefined : (tipoFilter as CategoriaTipo),
+        tipo:
+          tipoFilter === "todos" ? undefined : (tipoFilter as CategoriaTipo),
       }),
     [showInativosOnly, tipoFilter],
   );
@@ -184,7 +184,9 @@ export default function CategoriasCaixaPage() {
     try {
       await setCaixaCategoriaAtivo(categoria.id, nextAtivo);
       await categoriaTable.refresh();
-      toast.success(`Categoria ${nextAtivo ? "desarquivada" : "arquivada"} com sucesso!`);
+      toast.success(
+        `Categoria ${nextAtivo ? "desarquivada" : "arquivada"} com sucesso!`,
+      );
     } catch (error) {
       console.error(error);
       toast.error("Não foi possível alterar o status da categoria.");
@@ -419,7 +421,11 @@ export default function CategoriasCaixaPage() {
             </div>
           }
         >
-          <form id="categoria-form" onSubmit={handleSubmit} className="space-y-6">
+          <form
+            id="categoria-form"
+            onSubmit={handleSubmit}
+            className="space-y-6"
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-1 block mb-2">

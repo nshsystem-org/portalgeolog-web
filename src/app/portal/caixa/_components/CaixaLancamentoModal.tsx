@@ -202,9 +202,7 @@ function CaixaLancamentoForm({
   const truncateName = (name: string, max = 27): string =>
     name.length > max ? `${name.slice(0, max)}…` : name;
   const driverOptions = (
-    parceiroId
-      ? drivers.filter((d) => d.parceiro_id === parceiroId)
-      : drivers
+    parceiroId ? drivers.filter((d) => d.parceiro_id === parceiroId) : drivers
   ).map((d) => ({
     id: d.id,
     nome: truncateName(d.name),
@@ -295,7 +293,9 @@ function CaixaLancamentoForm({
     ? "border-emerald-200/50"
     : "border-rose-200/50";
   const cardSoftBg = isEntrada ? "bg-emerald-50/30" : "bg-rose-50/30";
-  const footerBorder = isEntrada ? "border-emerald-200/70" : "border-rose-200/70";
+  const footerBorder = isEntrada
+    ? "border-emerald-200/70"
+    : "border-rose-200/70";
   const footerBg = isEntrada ? "bg-emerald-50/40" : "bg-rose-50/40";
 
   return (

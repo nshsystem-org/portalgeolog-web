@@ -180,14 +180,19 @@ async function fetchReportData(
     .select("id", { count: "exact", head: true })
     .eq("arquivado", false);
 
-  if (filters.dataInicio) countQuery = countQuery.gte("data", filters.dataInicio);
+  if (filters.dataInicio)
+    countQuery = countQuery.gte("data", filters.dataInicio);
   if (filters.dataFim) countQuery = countQuery.lte("data", filters.dataFim);
   if (filters.contaId) countQuery = countQuery.eq("conta_id", filters.contaId);
   if (filters.tipo) countQuery = countQuery.eq("tipo", filters.tipo);
-  if (filters.categoria) countQuery = countQuery.eq("categoria", filters.categoria);
-  if (filters.clienteId) countQuery = countQuery.eq("cliente_id", filters.clienteId);
-  if (filters.parceiroId) countQuery = countQuery.eq("parceiro_id", filters.parceiroId);
-  if (filters.driverId) countQuery = countQuery.eq("driver_id", filters.driverId);
+  if (filters.categoria)
+    countQuery = countQuery.eq("categoria", filters.categoria);
+  if (filters.clienteId)
+    countQuery = countQuery.eq("cliente_id", filters.clienteId);
+  if (filters.parceiroId)
+    countQuery = countQuery.eq("parceiro_id", filters.parceiroId);
+  if (filters.driverId)
+    countQuery = countQuery.eq("driver_id", filters.driverId);
   if (filters.fornecedorId)
     countQuery = countQuery.eq("fornecedor_id", filters.fornecedorId);
   if (filters.template === "por_fornecedor") {
@@ -222,7 +227,9 @@ async function fetchReportData(
     query = query.eq("tipo", "saida");
   }
 
-  query = query.order("data", { ascending: true }).order("created_at", { ascending: true });
+  query = query
+    .order("data", { ascending: true })
+    .order("created_at", { ascending: true });
 
   const { data, error } = await query;
   if (error) throw error;
@@ -659,10 +666,7 @@ function buildFornecedorSheet(
   });
 }
 
-function buildContaSheet(
-  workbook: ExcelJS.Workbook,
-  data: ReportData,
-): void {
+function buildContaSheet(workbook: ExcelJS.Workbook, data: ReportData): void {
   const sheet = workbook.addWorksheet("Por Conta", {
     views: [{ state: "frozen", ySplit: 3 }],
   });
@@ -717,15 +721,13 @@ function buildContaSheet(
   for (const l of data.lancamentos) {
     const key = l.contaId;
     if (!key) continue;
-    const g =
-      grupos.get(key) ||
-      {
-        nome: l.contaNome || "-",
-        tipo: labelTipoConta(l.contaTipo || ""),
-        entradas: 0,
-        saidas: 0,
-        qtde: 0,
-      };
+    const g = grupos.get(key) || {
+      nome: l.contaNome || "-",
+      tipo: labelTipoConta(l.contaTipo || ""),
+      entradas: 0,
+      saidas: 0,
+      qtde: 0,
+    };
     if (l.tipo === "entrada") g.entradas += l.valor;
     else g.saidas += l.valor;
     g.qtde++;
@@ -1136,7 +1138,13 @@ async function generatePdf(data: ReportData): Promise<Response> {
   }
 
   // ── Summary card tones ──
-  type SummaryCardTone = "blue" | "cyan" | "amber" | "teal" | "slate" | "emerald";
+  type SummaryCardTone =
+    | "blue"
+    | "cyan"
+    | "amber"
+    | "teal"
+    | "slate"
+    | "emerald";
 
   function getSummaryCardTone(tone: SummaryCardTone) {
     switch (tone) {
@@ -1216,10 +1224,34 @@ async function generatePdf(data: ReportData): Promise<Response> {
     const s = size * 0.5;
     switch (iconType) {
       case "money": {
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.4, yScale: s * 0.4, color });
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.32, yScale: s * 0.32, color: c.standardBg });
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.25, yScale: s * 0.25, color });
-        currentPage.drawRectangle({ x: cx - 0.75, y: cy - s * 0.3, width: 1.5, height: s * 0.6, color: c.standardBg });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.4,
+          yScale: s * 0.4,
+          color,
+        });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.32,
+          yScale: s * 0.32,
+          color: c.standardBg,
+        });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.25,
+          yScale: s * 0.25,
+          color,
+        });
+        currentPage.drawRectangle({
+          x: cx - 0.75,
+          y: cy - s * 0.3,
+          width: 1.5,
+          height: s * 0.6,
+          color: c.standardBg,
+        });
         break;
       }
       case "document": {
@@ -1227,14 +1259,34 @@ async function generatePdf(data: ReportData): Promise<Response> {
         const h = s * 0.9;
         const x = cx - w / 2;
         const y = cy - h / 2;
-        currentPage.drawRectangle({ x, y, width: w, height: h, color, borderWidth: 0 });
+        currentPage.drawRectangle({
+          x,
+          y,
+          width: w,
+          height: h,
+          color,
+          borderWidth: 0,
+        });
         const corner = s * 0.25;
-        currentPage.drawRectangle({ x: x + w - corner, y: y + h - corner, width: corner + 1, height: corner + 1, color: c.standardBg });
+        currentPage.drawRectangle({
+          x: x + w - corner,
+          y: y + h - corner,
+          width: corner + 1,
+          height: corner + 1,
+          color: c.standardBg,
+        });
         const lineW = w * 0.6;
         const lineH = 1.5;
         const lineX = x + w * 0.2;
         [0.3, 0.5, 0.7].forEach((offset) => {
-          currentPage.drawRectangle({ x: lineX, y: y + h * offset, width: lineW, height: lineH, color: c.standardBg, borderWidth: 0 });
+          currentPage.drawRectangle({
+            x: lineX,
+            y: y + h * offset,
+            width: lineW,
+            height: lineH,
+            color: c.standardBg,
+            borderWidth: 0,
+          });
         });
         break;
       }
@@ -1247,14 +1299,34 @@ async function generatePdf(data: ReportData): Promise<Response> {
           { dx: -sq - g, dy: -sq - g },
           { dx: g, dy: -sq - g },
         ].forEach((pos) => {
-          currentPage.drawRectangle({ x: cx + pos.dx, y: cy + pos.dy, width: sq, height: sq, color, borderWidth: 0 });
+          currentPage.drawRectangle({
+            x: cx + pos.dx,
+            y: cy + pos.dy,
+            width: sq,
+            height: sq,
+            color,
+            borderWidth: 0,
+          });
         });
         break;
       }
       case "people": {
         const drawP = (ox: number, oy: number, sc: number) => {
-          currentPage.drawEllipse({ x: cx + ox, y: cy + oy + s * 0.2 * sc, xScale: s * 0.18 * sc, yScale: s * 0.18 * sc, color });
-          currentPage.drawRectangle({ x: cx + ox - s * 0.3 * sc, y: cy + oy - s * 0.3 * sc, width: s * 0.6 * sc, height: s * 0.35 * sc, color, borderWidth: 0 });
+          currentPage.drawEllipse({
+            x: cx + ox,
+            y: cy + oy + s * 0.2 * sc,
+            xScale: s * 0.18 * sc,
+            yScale: s * 0.18 * sc,
+            color,
+          });
+          currentPage.drawRectangle({
+            x: cx + ox - s * 0.3 * sc,
+            y: cy + oy - s * 0.3 * sc,
+            width: s * 0.6 * sc,
+            height: s * 0.35 * sc,
+            color,
+            borderWidth: 0,
+          });
         };
         drawP(s * 0.15, s * 0.1, 0.9);
         drawP(-s * 0.15, -s * 0.1, 1);
@@ -1262,14 +1334,42 @@ async function generatePdf(data: ReportData): Promise<Response> {
       }
       case "check": {
         const thick = 3.5;
-        currentPage.drawLine({ start: { x: cx - s * 0.3, y: cy }, end: { x: cx - s * 0.05, y: cy - s * 0.25 }, thickness: thick, color });
-        currentPage.drawLine({ start: { x: cx - s * 0.05, y: cy - s * 0.25 }, end: { x: cx + s * 0.35, y: cy + s * 0.3 }, thickness: thick, color });
-        currentPage.drawEllipse({ x: cx - s * 0.3, y: cy, xScale: thick / 2, yScale: thick / 2, color });
-        currentPage.drawEllipse({ x: cx + s * 0.35, y: cy + s * 0.3, xScale: thick / 2, yScale: thick / 2, color });
+        currentPage.drawLine({
+          start: { x: cx - s * 0.3, y: cy },
+          end: { x: cx - s * 0.05, y: cy - s * 0.25 },
+          thickness: thick,
+          color,
+        });
+        currentPage.drawLine({
+          start: { x: cx - s * 0.05, y: cy - s * 0.25 },
+          end: { x: cx + s * 0.35, y: cy + s * 0.3 },
+          thickness: thick,
+          color,
+        });
+        currentPage.drawEllipse({
+          x: cx - s * 0.3,
+          y: cy,
+          xScale: thick / 2,
+          yScale: thick / 2,
+          color,
+        });
+        currentPage.drawEllipse({
+          x: cx + s * 0.35,
+          y: cy + s * 0.3,
+          xScale: thick / 2,
+          yScale: thick / 2,
+          color,
+        });
         break;
       }
       default: {
-        currentPage.drawEllipse({ x: cx, y: cy, xScale: s * 0.25, yScale: s * 0.25, color });
+        currentPage.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: s * 0.25,
+          yScale: s * 0.25,
+          color,
+        });
       }
     }
   }
@@ -1488,7 +1588,8 @@ async function generatePdf(data: ReportData): Promise<Response> {
       value: formatCurrency(saldo),
       subtitle: saldo >= 0 ? "Positivo" : "Negativo",
       iconType: "check",
-      tone: saldo >= 0 ? ("teal" as SummaryCardTone) : ("amber" as SummaryCardTone),
+      tone:
+        saldo >= 0 ? ("teal" as SummaryCardTone) : ("amber" as SummaryCardTone),
       emphasis: true,
     },
   ];
@@ -1555,7 +1656,10 @@ async function generatePdf(data: ReportData): Promise<Response> {
       { header: "SALDO", width: 140, align: "right" },
       { header: "QTDE", width: 78, align: "right" },
     ];
-    const map = new Map<string, { entradas: number; saidas: number; qtde: number }>();
+    const map = new Map<
+      string,
+      { entradas: number; saidas: number; qtde: number }
+    >();
     for (const l of data.lancamentos) {
       const key = labelCategoria(l.categoria);
       const g = map.get(key) || { entradas: 0, saidas: 0, qtde: 0 };
@@ -1566,7 +1670,13 @@ async function generatePdf(data: ReportData): Promise<Response> {
     }
     grupos = Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0], "pt-BR"))
-      .map(([label, g]) => ({ label, entradas: g.entradas, saidas: g.saidas, saldo: g.entradas - g.saidas, qtde: g.qtde }));
+      .map(([label, g]) => ({
+        label,
+        entradas: g.entradas,
+        saidas: g.saidas,
+        saldo: g.entradas - g.saidas,
+        qtde: g.qtde,
+      }));
   } else if (template === "por_fornecedor") {
     cols = [
       { header: "FORNECEDOR", width: 470, align: "left" },
@@ -1593,14 +1703,35 @@ async function generatePdf(data: ReportData): Promise<Response> {
       { header: "SALDO", width: 130, align: "right" },
       { header: "QTDE", width: 78, align: "right" },
     ];
-    const map = new Map<string, { nome: string; tipo: string; entradas: number; saidas: number; qtde: number }>();
+    const map = new Map<
+      string,
+      {
+        nome: string;
+        tipo: string;
+        entradas: number;
+        saidas: number;
+        qtde: number;
+      }
+    >();
     for (const c of data.contas) {
-      map.set(c.id, { nome: c.nome, tipo: labelTipoConta(c.tipo), entradas: 0, saidas: 0, qtde: 0 });
+      map.set(c.id, {
+        nome: c.nome,
+        tipo: labelTipoConta(c.tipo),
+        entradas: 0,
+        saidas: 0,
+        qtde: 0,
+      });
     }
     for (const l of data.lancamentos) {
       const key = l.contaId;
       if (!key) continue;
-      const g = map.get(key) || { nome: l.contaNome || "-", tipo: labelTipoConta(l.contaTipo || ""), entradas: 0, saidas: 0, qtde: 0 };
+      const g = map.get(key) || {
+        nome: l.contaNome || "-",
+        tipo: labelTipoConta(l.contaTipo || ""),
+        entradas: 0,
+        saidas: 0,
+        qtde: 0,
+      };
       if (l.tipo === "entrada") g.entradas += l.valor;
       else g.saidas += l.valor;
       g.qtde++;
@@ -1608,7 +1739,14 @@ async function generatePdf(data: ReportData): Promise<Response> {
     }
     grupos = Array.from(map.values())
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
-      .map((g) => ({ label: g.nome, tipo: g.tipo, entradas: g.entradas, saidas: g.saidas, saldo: g.entradas - g.saidas, qtde: g.qtde }));
+      .map((g) => ({
+        label: g.nome,
+        tipo: g.tipo,
+        entradas: g.entradas,
+        saidas: g.saidas,
+        saldo: g.entradas - g.saidas,
+        qtde: g.qtde,
+      }));
   }
 
   let accX = margin;
@@ -1623,7 +1761,11 @@ async function generatePdf(data: ReportData): Promise<Response> {
   drawTableHeader(
     state.page,
     state.y - 32,
-    cols.map((col) => ({ label: col.header, width: col.width, align: col.align })),
+    cols.map((col) => ({
+      label: col.header,
+      width: col.width,
+      align: col.align,
+    })),
   );
   // 10px gap between table header and first row
   state.y = state.y - 32 - 10;
@@ -1638,7 +1780,11 @@ async function generatePdf(data: ReportData): Promise<Response> {
       drawTableHeader(
         state.page,
         state.y - 32,
-        cols.map((col) => ({ label: col.header, width: col.width, align: col.align })),
+        cols.map((col) => ({
+          label: col.header,
+          width: col.width,
+          align: col.align,
+        })),
       );
       state.y = state.y - 32 - 10;
     }
@@ -1669,7 +1815,12 @@ async function generatePdf(data: ReportData): Promise<Response> {
         color?: RGB;
         bold?: boolean;
       }> = [
-        { text: formatDate(l.data), x: colXs[0], width: cols[0].width, bold: true },
+        {
+          text: formatDate(l.data),
+          x: colXs[0],
+          width: cols[0].width,
+          bold: true,
+        },
         {
           text: l.tipo === "entrada" ? "Entrada" : "Saída",
           x: colXs[1],
@@ -1677,16 +1828,38 @@ async function generatePdf(data: ReportData): Promise<Response> {
           color: isEntrada ? c.accentGreen : c.accentRed,
           bold: true,
         },
-        { text: truncatePdf(l.contaNome || "-", 20), x: colXs[2], width: cols[2].width },
-        { text: truncatePdf(labelCategoria(l.categoria), 26), x: colXs[3], width: cols[3].width },
-        { text: truncatePdf(l.descricao || "-", 36), x: colXs[4], width: cols[4].width },
-        { text: formatCurrency(l.valor), x: colXs[5], width: cols[5].width, align: "right", color: valorColor, bold: true },
+        {
+          text: truncatePdf(l.contaNome || "-", 20),
+          x: colXs[2],
+          width: cols[2].width,
+        },
+        {
+          text: truncatePdf(labelCategoria(l.categoria), 26),
+          x: colXs[3],
+          width: cols[3].width,
+        },
+        {
+          text: truncatePdf(l.descricao || "-", 36),
+          x: colXs[4],
+          width: cols[4].width,
+        },
+        {
+          text: formatCurrency(l.valor),
+          x: colXs[5],
+          width: cols[5].width,
+          align: "right",
+          color: valorColor,
+          bold: true,
+        },
       ];
 
       for (const cell of cells) {
         const font = cell.bold ? boldFont : regularFont;
         const textW = font.widthOfTextAtSize(cell.text, 9);
-        const tx = cell.align === "right" ? cell.x + cell.width - textW - 8 : cell.x + 14;
+        const tx =
+          cell.align === "right"
+            ? cell.x + cell.width - textW - 8
+            : cell.x + 14;
         state.page.drawText(cell.text, {
           x: tx,
           y: state.y + rowHeight / 2 - 4.5,
@@ -1720,28 +1893,110 @@ async function generatePdf(data: ReportData): Promise<Response> {
       }> = [];
 
       if (template === "por_fornecedor") {
-        cells.push({ text: truncatePdf(g.label, 60), x: colXs[0], width: cols[0].width, bold: true });
-        cells.push({ text: formatCurrency(g.total || 0), x: colXs[1], width: cols[1].width, align: "right", color: c.accentRed, bold: true });
-        cells.push({ text: String(g.qtde), x: colXs[2], width: cols[2].width, align: "right" });
+        cells.push({
+          text: truncatePdf(g.label, 60),
+          x: colXs[0],
+          width: cols[0].width,
+          bold: true,
+        });
+        cells.push({
+          text: formatCurrency(g.total || 0),
+          x: colXs[1],
+          width: cols[1].width,
+          align: "right",
+          color: c.accentRed,
+          bold: true,
+        });
+        cells.push({
+          text: String(g.qtde),
+          x: colXs[2],
+          width: cols[2].width,
+          align: "right",
+        });
       } else if (template === "por_conta") {
-        cells.push({ text: truncatePdf(g.label, 36), x: colXs[0], width: cols[0].width, bold: true });
+        cells.push({
+          text: truncatePdf(g.label, 36),
+          x: colXs[0],
+          width: cols[0].width,
+          bold: true,
+        });
         cells.push({ text: g.tipo || "", x: colXs[1], width: cols[1].width });
-        cells.push({ text: formatCurrency(g.entradas || 0), x: colXs[2], width: cols[2].width, align: "right", color: c.accentGreen, bold: true });
-        cells.push({ text: formatCurrency(g.saidas || 0), x: colXs[3], width: cols[3].width, align: "right", color: c.accentRed, bold: true });
-        cells.push({ text: formatCurrency(g.saldo || 0), x: colXs[4], width: cols[4].width, align: "right", color: (g.saldo || 0) >= 0 ? c.accentGreen : c.accentRed, bold: true });
-        cells.push({ text: String(g.qtde), x: colXs[5], width: cols[5].width, align: "right" });
+        cells.push({
+          text: formatCurrency(g.entradas || 0),
+          x: colXs[2],
+          width: cols[2].width,
+          align: "right",
+          color: c.accentGreen,
+          bold: true,
+        });
+        cells.push({
+          text: formatCurrency(g.saidas || 0),
+          x: colXs[3],
+          width: cols[3].width,
+          align: "right",
+          color: c.accentRed,
+          bold: true,
+        });
+        cells.push({
+          text: formatCurrency(g.saldo || 0),
+          x: colXs[4],
+          width: cols[4].width,
+          align: "right",
+          color: (g.saldo || 0) >= 0 ? c.accentGreen : c.accentRed,
+          bold: true,
+        });
+        cells.push({
+          text: String(g.qtde),
+          x: colXs[5],
+          width: cols[5].width,
+          align: "right",
+        });
       } else {
-        cells.push({ text: truncatePdf(g.label, 42), x: colXs[0], width: cols[0].width, bold: true });
-        cells.push({ text: formatCurrency(g.entradas || 0), x: colXs[1], width: cols[1].width, align: "right", color: c.accentGreen, bold: true });
-        cells.push({ text: formatCurrency(g.saidas || 0), x: colXs[2], width: cols[2].width, align: "right", color: c.accentRed, bold: true });
-        cells.push({ text: formatCurrency(g.saldo || 0), x: colXs[3], width: cols[3].width, align: "right", color: (g.saldo || 0) >= 0 ? c.accentGreen : c.accentRed, bold: true });
-        cells.push({ text: String(g.qtde), x: colXs[4], width: cols[4].width, align: "right" });
+        cells.push({
+          text: truncatePdf(g.label, 42),
+          x: colXs[0],
+          width: cols[0].width,
+          bold: true,
+        });
+        cells.push({
+          text: formatCurrency(g.entradas || 0),
+          x: colXs[1],
+          width: cols[1].width,
+          align: "right",
+          color: c.accentGreen,
+          bold: true,
+        });
+        cells.push({
+          text: formatCurrency(g.saidas || 0),
+          x: colXs[2],
+          width: cols[2].width,
+          align: "right",
+          color: c.accentRed,
+          bold: true,
+        });
+        cells.push({
+          text: formatCurrency(g.saldo || 0),
+          x: colXs[3],
+          width: cols[3].width,
+          align: "right",
+          color: (g.saldo || 0) >= 0 ? c.accentGreen : c.accentRed,
+          bold: true,
+        });
+        cells.push({
+          text: String(g.qtde),
+          x: colXs[4],
+          width: cols[4].width,
+          align: "right",
+        });
       }
 
       for (const cell of cells) {
         const font = cell.bold ? boldFont : regularFont;
         const textW = font.widthOfTextAtSize(cell.text, 9);
-        const tx = cell.align === "right" ? cell.x + cell.width - textW - 8 : cell.x + 14;
+        const tx =
+          cell.align === "right"
+            ? cell.x + cell.width - textW - 8
+            : cell.x + 14;
         state.page.drawText(cell.text, {
           x: tx,
           y: state.y + rowHeight / 2 - 4.5,
@@ -1762,7 +2017,11 @@ async function generatePdf(data: ReportData): Promise<Response> {
     drawTableHeader(
       state.page,
       state.y - 32,
-      cols.map((col) => ({ label: col.header, width: col.width, align: col.align })),
+      cols.map((col) => ({
+        label: col.header,
+        width: col.width,
+        align: col.align,
+      })),
     );
     state.y = state.y - 32 - 10;
   }
@@ -1776,38 +2035,138 @@ async function generatePdf(data: ReportData): Promise<Response> {
     color: rgb(0.05, 0.12, 0.23),
   });
 
-  const totalE = template === "por_fornecedor" ? 0 : grupos.reduce((s, g) => s + (g.entradas || 0), 0);
-  const totalS = template === "por_fornecedor" ? 0 : grupos.reduce((s, g) => s + (g.saidas || 0), 0);
+  const totalE =
+    template === "por_fornecedor"
+      ? 0
+      : grupos.reduce((s, g) => s + (g.entradas || 0), 0);
+  const totalS =
+    template === "por_fornecedor"
+      ? 0
+      : grupos.reduce((s, g) => s + (g.saidas || 0), 0);
   const totalSaldo = totalE - totalS;
   const totalQtde = grupos.reduce((s, g) => s + g.qtde, 0);
 
-  const totalCells: Array<{ text: string; x: number; width: number; align?: "left" | "right"; color?: RGB }> = [];
+  const totalCells: Array<{
+    text: string;
+    x: number;
+    width: number;
+    align?: "left" | "right";
+    color?: RGB;
+  }> = [];
   if (template === "por_fornecedor") {
-    totalCells.push({ text: "TOTAL", x: colXs[0], width: cols[0].width, color: rgb(1, 1, 1) });
-    totalCells.push({ text: formatCurrency(grupos.reduce((s, g) => s + (g.total || 0), 0)), x: colXs[1], width: cols[1].width, align: "right", color: rgb(1, 0.45, 0.45) });
-    totalCells.push({ text: String(totalQtde), x: colXs[2], width: cols[2].width, align: "right", color: rgb(1, 1, 1) });
+    totalCells.push({
+      text: "TOTAL",
+      x: colXs[0],
+      width: cols[0].width,
+      color: rgb(1, 1, 1),
+    });
+    totalCells.push({
+      text: formatCurrency(grupos.reduce((s, g) => s + (g.total || 0), 0)),
+      x: colXs[1],
+      width: cols[1].width,
+      align: "right",
+      color: rgb(1, 0.45, 0.45),
+    });
+    totalCells.push({
+      text: String(totalQtde),
+      x: colXs[2],
+      width: cols[2].width,
+      align: "right",
+      color: rgb(1, 1, 1),
+    });
   } else if (template === "por_conta") {
-    totalCells.push({ text: "TOTAL CONSOLIDADO", x: colXs[0], width: cols[0].width, color: rgb(1, 1, 1) });
+    totalCells.push({
+      text: "TOTAL CONSOLIDADO",
+      x: colXs[0],
+      width: cols[0].width,
+      color: rgb(1, 1, 1),
+    });
     totalCells.push({ text: "", x: colXs[1], width: cols[1].width });
-    totalCells.push({ text: formatCurrency(totalE), x: colXs[2], width: cols[2].width, align: "right", color: rgb(0.4, 0.95, 0.65) });
-    totalCells.push({ text: formatCurrency(totalS), x: colXs[3], width: cols[3].width, align: "right", color: rgb(1, 0.45, 0.45) });
-    totalCells.push({ text: formatCurrency(totalSaldo), x: colXs[4], width: cols[4].width, align: "right", color: totalSaldo >= 0 ? rgb(0.4, 0.95, 0.65) : rgb(1, 0.45, 0.45) });
-    totalCells.push({ text: String(totalQtde), x: colXs[5], width: cols[5].width, align: "right", color: rgb(1, 1, 1) });
+    totalCells.push({
+      text: formatCurrency(totalE),
+      x: colXs[2],
+      width: cols[2].width,
+      align: "right",
+      color: rgb(0.4, 0.95, 0.65),
+    });
+    totalCells.push({
+      text: formatCurrency(totalS),
+      x: colXs[3],
+      width: cols[3].width,
+      align: "right",
+      color: rgb(1, 0.45, 0.45),
+    });
+    totalCells.push({
+      text: formatCurrency(totalSaldo),
+      x: colXs[4],
+      width: cols[4].width,
+      align: "right",
+      color: totalSaldo >= 0 ? rgb(0.4, 0.95, 0.65) : rgb(1, 0.45, 0.45),
+    });
+    totalCells.push({
+      text: String(totalQtde),
+      x: colXs[5],
+      width: cols[5].width,
+      align: "right",
+      color: rgb(1, 1, 1),
+    });
   } else if (template === "movimentacoes") {
-    totalCells.push({ text: "SALDO", x: colXs[4], width: cols[4].width, align: "right", color: rgb(1, 1, 1) });
-    totalCells.push({ text: formatCurrency(saldo), x: colXs[5], width: cols[5].width, align: "right", color: saldo >= 0 ? rgb(0.4, 0.95, 0.65) : rgb(1, 0.45, 0.45) });
+    totalCells.push({
+      text: "SALDO",
+      x: colXs[4],
+      width: cols[4].width,
+      align: "right",
+      color: rgb(1, 1, 1),
+    });
+    totalCells.push({
+      text: formatCurrency(saldo),
+      x: colXs[5],
+      width: cols[5].width,
+      align: "right",
+      color: saldo >= 0 ? rgb(0.4, 0.95, 0.65) : rgb(1, 0.45, 0.45),
+    });
   } else {
-    totalCells.push({ text: "TOTAL", x: colXs[0], width: cols[0].width, color: rgb(1, 1, 1) });
-    totalCells.push({ text: formatCurrency(totalE), x: colXs[1], width: cols[1].width, align: "right", color: rgb(0.4, 0.95, 0.65) });
-    totalCells.push({ text: formatCurrency(totalS), x: colXs[2], width: cols[2].width, align: "right", color: rgb(1, 0.45, 0.45) });
-    totalCells.push({ text: formatCurrency(totalSaldo), x: colXs[3], width: cols[3].width, align: "right", color: totalSaldo >= 0 ? rgb(0.4, 0.95, 0.65) : rgb(1, 0.45, 0.45) });
-    totalCells.push({ text: String(totalQtde), x: colXs[4], width: cols[4].width, align: "right", color: rgb(1, 1, 1) });
+    totalCells.push({
+      text: "TOTAL",
+      x: colXs[0],
+      width: cols[0].width,
+      color: rgb(1, 1, 1),
+    });
+    totalCells.push({
+      text: formatCurrency(totalE),
+      x: colXs[1],
+      width: cols[1].width,
+      align: "right",
+      color: rgb(0.4, 0.95, 0.65),
+    });
+    totalCells.push({
+      text: formatCurrency(totalS),
+      x: colXs[2],
+      width: cols[2].width,
+      align: "right",
+      color: rgb(1, 0.45, 0.45),
+    });
+    totalCells.push({
+      text: formatCurrency(totalSaldo),
+      x: colXs[3],
+      width: cols[3].width,
+      align: "right",
+      color: totalSaldo >= 0 ? rgb(0.4, 0.95, 0.65) : rgb(1, 0.45, 0.45),
+    });
+    totalCells.push({
+      text: String(totalQtde),
+      x: colXs[4],
+      width: cols[4].width,
+      align: "right",
+      color: rgb(1, 1, 1),
+    });
   }
 
   for (const cell of totalCells) {
     if (!cell.text) continue;
     const textW = boldFont.widthOfTextAtSize(cell.text, 10);
-    const tx = cell.align === "right" ? cell.x + cell.width - textW - 8 : cell.x + 14;
+    const tx =
+      cell.align === "right" ? cell.x + cell.width - textW - 8 : cell.x + 14;
     state.page.drawText(cell.text, {
       x: tx,
       y: state.y + totalRowHeight / 2 - 4.5,
@@ -1839,7 +2198,6 @@ function truncatePdf(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return text.slice(0, maxLen - 1) + "…";
 }
-
 
 // =============================================================================
 // Handler

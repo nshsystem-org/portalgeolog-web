@@ -24,11 +24,15 @@
     "no_messages": "Nenhuma mensagem ainda. Comece a conversar!",
     "today": "Hoje",
     "edited": "editada",
-    "visualized": "Visualizado"
+    "visualized": "Visualizado",
+    "image_alt": "Imagem"
   },
   "chat_input": {
     "placeholder": "Digite uma mensagem...",
-    "send_button": "Enviar"
+    "send_button": "Enviar",
+    "emoji_button": "Emojis",
+    "attach_image": "Anexar imagem",
+    "cancel_image": "Cancelar"
   },
   "errors": {
     "load_conversations": "Erro ao carregar conversas",

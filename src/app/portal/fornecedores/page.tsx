@@ -133,12 +133,12 @@ export default function FornecedoresPage() {
   const { validateForm } = useFornecedorValidation(fornecedores);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingFornecedor, setEditingFornecedor] =
-    useState<Fornecedor | null>(null);
+  const [editingFornecedor, setEditingFornecedor] = useState<Fornecedor | null>(
+    null,
+  );
   const [formData, setFormData] = useState<FornecedorFormData>(initialForm());
   const [showArchivedOnly, setShowArchivedOnly] = useState(false);
-  const [isArchivedFilterLoading, setIsArchivedFilterLoading] =
-    useState(false);
+  const [isArchivedFilterLoading, setIsArchivedFilterLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fornecedoresLengthRef = useRef(fornecedores.length);
@@ -168,9 +168,7 @@ export default function FornecedoresPage() {
 
   useEffect(() => {
     fornecedoresLengthRef.current = fornecedores.length;
-    if (
-      fornecedoresLengthRef.current !== prevFornecedoresLengthRef.current
-    ) {
+    if (fornecedoresLengthRef.current !== prevFornecedoresLengthRef.current) {
       void fornecedorTable.refresh();
       prevFornecedoresLengthRef.current = fornecedores.length;
     }
@@ -195,8 +193,12 @@ export default function FornecedoresPage() {
         nome: fornecedor.nome,
         pessoaTipo: fornecedor.pessoaTipo,
         documento: fornecedor.documento,
-        telefone: fornecedor.telefone ? formatBrazilPhone(fornecedor.telefone) : "",
-        telefoneFixo: fornecedor.telefoneFixo ? formatBrazilPhone(fornecedor.telefoneFixo) : "",
+        telefone: fornecedor.telefone
+          ? formatBrazilPhone(fornecedor.telefone)
+          : "",
+        telefoneFixo: fornecedor.telefoneFixo
+          ? formatBrazilPhone(fornecedor.telefoneFixo)
+          : "",
         email: fornecedor.email,
         endereco: fornecedor.endereco,
         cidade: fornecedor.cidade,
@@ -259,9 +261,7 @@ export default function FornecedoresPage() {
     }));
   };
 
-  const cleanFornecedor = (
-    formData: FornecedorFormData,
-  ) => ({
+  const cleanFornecedor = (formData: FornecedorFormData) => ({
     nome: formData.nome.trim(),
     pessoaTipo: formData.pessoaTipo,
     documento: formData.documento.trim(),
@@ -471,13 +471,19 @@ export default function FornecedoresPage() {
                 {item.telefoneFixo && (
                   <span className="inline-flex items-center gap-1.5 text-slate-600 font-medium whitespace-nowrap">
                     <Phone size={12} className="text-blue-500 shrink-0" />
-                    {highlightText(formatBrazilPhone(item.telefoneFixo), searchTerm)}
+                    {highlightText(
+                      formatBrazilPhone(item.telefoneFixo),
+                      searchTerm,
+                    )}
                   </span>
                 )}
                 {item.telefone && (
                   <span className="inline-flex items-center gap-1.5 text-slate-600 font-medium whitespace-nowrap">
                     <Phone size={12} className="text-blue-500 shrink-0" />
-                    {highlightText(formatBrazilPhone(item.telefone), searchTerm)}
+                    {highlightText(
+                      formatBrazilPhone(item.telefone),
+                      searchTerm,
+                    )}
                   </span>
                 )}
                 {item.email && (
@@ -675,9 +681,7 @@ export default function FornecedoresPage() {
                   <input
                     required
                     value={formData.nome}
-                    onChange={(e) =>
-                      handleInputChange("nome", e.target.value)
-                    }
+                    onChange={(e) => handleInputChange("nome", e.target.value)}
                     placeholder={labels.nomePlaceholder}
                     className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />
@@ -749,9 +753,7 @@ export default function FornecedoresPage() {
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) =>
-                      handleInputChange("email", e.target.value)
-                    }
+                    onChange={(e) => handleInputChange("email", e.target.value)}
                     placeholder="contato@fornecedor.com"
                     className="w-full h-14 px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-base text-slate-900 placeholder:text-slate-300 outline-none focus:border-blue-600 focus:bg-white transition-all shadow-sm"
                   />

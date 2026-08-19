@@ -4,10 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import {
-  isServerAdmin,
-  isServerDiretoria,
-} from "@/lib/permissions-server";
+import { isServerAdmin, isServerDiretoria } from "@/lib/permissions-server";
 
 // Configurar Edge Runtime para Cloudflare Workers
 export const runtime = "edge";
@@ -193,7 +190,10 @@ export async function PATCH(request: Request) {
 
       if (target?.categoria === "administrador") {
         return NextResponse.json(
-          { error: "Administradores só podem ser gerenciados por outros administradores." },
+          {
+            error:
+              "Administradores só podem ser gerenciados por outros administradores.",
+          },
           { status: 403 },
         );
       }
@@ -201,7 +201,10 @@ export async function PATCH(request: Request) {
       // Diretoria não pode promover ninguém a administrador
       if (updates?.categoria === "administrador") {
         return NextResponse.json(
-          { error: "Apenas administradores podem promover outros usuários a administrador." },
+          {
+            error:
+              "Apenas administradores podem promover outros usuários a administrador.",
+          },
           { status: 403 },
         );
       }
@@ -243,7 +246,9 @@ export async function POST(request: Request) {
     // Diretoria não pode criar administradores
     if (!auth.isAdmin && categoria === "administrador") {
       return NextResponse.json(
-        { error: "Apenas administradores podem criar contas de administrador." },
+        {
+          error: "Apenas administradores podem criar contas de administrador.",
+        },
         { status: 403 },
       );
     }
@@ -357,7 +362,10 @@ export async function DELETE(request: Request) {
 
       if (target?.categoria === "administrador") {
         return NextResponse.json(
-          { error: "Administradores só podem ser gerenciados por outros administradores." },
+          {
+            error:
+              "Administradores só podem ser gerenciados por outros administradores.",
+          },
           { status: 403 },
         );
       }

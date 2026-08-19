@@ -2900,9 +2900,7 @@ export async function fetchCaixaCategoriasPaginated(
     if (filters.searchTerm) {
       const term = filters.searchTerm.trim();
       if (term) {
-        query = query.or(
-          `nome.ilike.%${term}%,slug.ilike.%${term}%`,
-        );
+        query = query.or(`nome.ilike.%${term}%,slug.ilike.%${term}%`);
       }
     }
 
@@ -2950,7 +2948,9 @@ export async function updateCaixaCategoria(
   id: string,
   patch: CaixaCategoriaUpdate,
 ): Promise<CaixaCategoria> {
-  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const update: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
   if (patch.nome !== undefined) {
     update.nome = patch.nome.trim();
     update.slug = buildSlugFromName(patch.nome);
@@ -2982,7 +2982,9 @@ export async function setCaixaCategoriaAtivo(
   if (error) throw error;
 }
 
-export async function fetchCaixaFormasPagamento(): Promise<CaixaFormaPagamento[]> {
+export async function fetchCaixaFormasPagamento(): Promise<
+  CaixaFormaPagamento[]
+> {
   return withRetry(async () => {
     const { data, error } = await getSupabase()
       .from("caixa_formas_pagamento")
@@ -3026,9 +3028,7 @@ export async function fetchCaixaFormasPagamentoPaginated(
     if (filters.searchTerm) {
       const term = filters.searchTerm.trim();
       if (term) {
-        query = query.or(
-          `nome.ilike.%${term}%,slug.ilike.%${term}%`,
-        );
+        query = query.or(`nome.ilike.%${term}%,slug.ilike.%${term}%`);
       }
     }
 
@@ -3069,7 +3069,9 @@ export async function updateCaixaFormaPagamento(
   id: string,
   patch: CaixaFormaPagamentoUpdate,
 ): Promise<CaixaFormaPagamento> {
-  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const update: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
   if (patch.nome !== undefined) {
     update.nome = patch.nome.trim();
     update.slug = buildSlugFromName(patch.nome);
@@ -3401,7 +3403,7 @@ export async function fetchBlockingOSForDriverVehicle(
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data && data.length > 0)
+  return data && data.length > 0
     ? (data[0] as unknown as BlockingOSInfo)
     : null;
 }
@@ -4265,4 +4267,1078 @@ export async function archiveAnnouncement(id: string): Promise<void> {
     .eq("id", id);
 
   if (error) throw error;
+}
+
+// ── Manutenção de Veículos ───────────────────────────────
+
+export type MaintenanceTipo =
+  | "preventiva"
+  | "corretiva"
+  | "revisao"
+  | "troca_oleo"
+  | "pneus"
+  | "outro";
+
+export type MaintenanceStatus =
+  | "aberta"
+  | "em_andamento"
+  | "concluida"
+  | "cancelada";
+
+export interface VehicleMaintenance {
+  id: string;
+  veiculoId: string;
+  tipo: MaintenanceTipo;
+  descricao?: string;
+  status: MaintenanceStatus;
+  dataAbertura: string;
+  dataConclusao?: string | null;
+  kmRegistrado?: number | null;
+  custo: number;
+  oficina?: string;
+  responsavel?: string;
+  observacoes?: string;
+  proximaRevisaoKm?: number | null;
+  proximaRevisaoData?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  veiculo?: {
+    id: string;
+    placa: string;
+    modelo: string;
+    marca: string;
+    status: string;
+  } | null;
+}
+
+export interface NovaManutencaoInput {
+  veiculoId: string;
+  tipo: MaintenanceTipo;
+  descricao?: string;
+  status?: MaintenanceStatus;
+  dataAbertura?: string;
+  dataConclusao?: string | null;
+  kmRegistrado?: number | null;
+  custo?: number;
+  oficina?: string;
+  responsavel?: string;
+  observacoes?: string;
+  proximaRevisaoKm?: number | null;
+  proximaRevisaoData?: string | null;
+}
+
+const MAINTENANCE_SELECT_COLUMNS = `
+  id, veiculo_id, tipo, descricao, status, data_abertura, data_conclusao,
+  km_registrado, custo, oficina, responsavel, observacoes,
+  proxima_revisao_km, proxima_revisao_data, created_at, updated_at,
+  veiculo:veiculos(id, placa, modelo, marca, status)
+`;
+
+type MaintenanceRow = {
+  id: string;
+  veiculo_id: string;
+  tipo: MaintenanceTipo;
+  descricao: string | null;
+  status: MaintenanceStatus;
+  data_abertura: string;
+  data_conclusao: string | null;
+  km_registrado: number | null;
+  custo: number | string | null;
+  oficina: string | null;
+  responsavel: string | null;
+  observacoes: string | null;
+  proxima_revisao_km: number | null;
+  proxima_revisao_data: string | null;
+  created_at: string;
+  updated_at: string;
+  veiculo:
+    | {
+        id: string;
+        placa: string;
+        modelo: string;
+        marca: string;
+        status: string;
+      }
+    | {
+        id: string;
+        placa: string;
+        modelo: string;
+        marca: string;
+        status: string;
+      }[]
+    | null;
+};
+
+function mapMaintenanceRow(row: MaintenanceRow): VehicleMaintenance {
+  const veiculo = Array.isArray(row.veiculo) ? row.veiculo[0] : row.veiculo;
+  return {
+    id: row.id,
+    veiculoId: row.veiculo_id,
+    tipo: row.tipo,
+    descricao: row.descricao || undefined,
+    status: row.status,
+    dataAbertura: row.data_abertura,
+    dataConclusao: row.data_conclusao,
+    kmRegistrado: row.km_registrado,
+    custo: Number(row.custo || 0),
+    oficina: row.oficina || undefined,
+    responsavel: row.responsavel || undefined,
+    observacoes: row.observacoes || undefined,
+    proximaRevisaoKm: row.proxima_revisao_km,
+    proximaRevisaoData: row.proxima_revisao_data,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    veiculo: veiculo || null,
+  };
+}
+
+export async function fetchVehicleMaintenances(): Promise<
+  VehicleMaintenance[]
+> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("vehicle_maintenance")
+      .select(MAINTENANCE_SELECT_COLUMNS)
+      .order("data_abertura", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return ((data || []) as unknown as MaintenanceRow[]).map(mapMaintenanceRow);
+  });
+}
+
+export async function insertVehicleMaintenance(
+  input: NovaManutencaoInput,
+): Promise<VehicleMaintenance> {
+  const { data, error } = await getSupabase()
+    .from("vehicle_maintenance")
+    .insert({
+      veiculo_id: input.veiculoId,
+      tipo: input.tipo,
+      descricao: input.descricao?.trim() || null,
+      status: input.status || "aberta",
+      data_abertura:
+        input.dataAbertura || new Date().toISOString().slice(0, 10),
+      data_conclusao: input.dataConclusao || null,
+      km_registrado: input.kmRegistrado ?? null,
+      custo: input.custo ?? 0,
+      oficina: input.oficina?.trim() || null,
+      responsavel: input.responsavel?.trim() || null,
+      observacoes: input.observacoes?.trim() || null,
+      proxima_revisao_km: input.proximaRevisaoKm ?? null,
+      proxima_revisao_data: input.proximaRevisaoData || null,
+    })
+    .select(MAINTENANCE_SELECT_COLUMNS)
+    .single();
+  if (error) throw error;
+  return mapMaintenanceRow(data as unknown as MaintenanceRow);
+}
+
+export async function updateVehicleMaintenance(
+  id: string,
+  input: Partial<NovaManutencaoInput>,
+): Promise<VehicleMaintenance> {
+  const updateData: Record<string, unknown> = {};
+  if (input.tipo !== undefined) updateData.tipo = input.tipo;
+  if (input.descricao !== undefined)
+    updateData.descricao = input.descricao?.trim() || null;
+  if (input.status !== undefined) updateData.status = input.status;
+  if (input.dataAbertura !== undefined)
+    updateData.data_abertura = input.dataAbertura;
+  if (input.dataConclusao !== undefined)
+    updateData.data_conclusao = input.dataConclusao;
+  if (input.kmRegistrado !== undefined)
+    updateData.km_registrado = input.kmRegistrado;
+  if (input.custo !== undefined) updateData.custo = input.custo;
+  if (input.oficina !== undefined)
+    updateData.oficina = input.oficina?.trim() || null;
+  if (input.responsavel !== undefined)
+    updateData.responsavel = input.responsavel?.trim() || null;
+  if (input.observacoes !== undefined)
+    updateData.observacoes = input.observacoes?.trim() || null;
+  if (input.proximaRevisaoKm !== undefined)
+    updateData.proxima_revisao_km = input.proximaRevisaoKm;
+  if (input.proximaRevisaoData !== undefined)
+    updateData.proxima_revisao_data = input.proximaRevisaoData;
+
+  const { data, error } = await getSupabase()
+    .from("vehicle_maintenance")
+    .update(updateData)
+    .eq("id", id)
+    .select(MAINTENANCE_SELECT_COLUMNS)
+    .single();
+  if (error) throw error;
+  return mapMaintenanceRow(data as unknown as MaintenanceRow);
+}
+
+export async function deleteVehicleMaintenance(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("vehicle_maintenance")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export interface VeiculoSimple {
+  id: string;
+  placa: string;
+  modelo: string;
+  marca: string;
+  status: string;
+}
+
+export async function fetchVeiculosSimpleList(): Promise<VeiculoSimple[]> {
+  const { data, error } = await getSupabase()
+    .from("veiculos")
+    .select("id, placa, modelo, marca, status")
+    .eq("arquivado", false)
+    .order("modelo");
+  if (error) throw error;
+  return (data || []) as VeiculoSimple[];
+}
+
+// ── Metas de Desempenho ───────────────────────────────
+
+export type PerformanceEntidadeTipo =
+  | "motorista"
+  | "funcionario"
+  | "parceiro"
+  | "cliente"
+  | "veiculo";
+
+export type PerformanceParametro =
+  | "os_concluidas_mes"
+  | "taxa_conclusao"
+  | "tempo_medio_rota_min"
+  | "lucro_mes"
+  | "faturamento_mes"
+  | "custo_mes"
+  | "avaliacao_media"
+  | "pontualidade_percent"
+  | "sinistralidade_percent"
+  | "km_rodado_mes"
+  | "manutencoes_mes"
+  | "custom";
+
+export interface PerformanceGoal {
+  id: string;
+  entidadeTipo: PerformanceEntidadeTipo;
+  entidadeId?: string | null;
+  entidadeNome: string;
+  parametro: PerformanceParametro;
+  parametroLabel?: string;
+  valorMeta: number;
+  unidade: string;
+  periodo: "semanal" | "mensal" | "trimestral" | "anual";
+  dataInicio: string;
+  dataFim?: string | null;
+  ativo: boolean;
+  observacoes?: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NovaMetaInput {
+  entidadeTipo: PerformanceEntidadeTipo;
+  entidadeId?: string | null;
+  entidadeNome: string;
+  parametro: PerformanceParametro;
+  parametroLabel?: string;
+  valorMeta: number;
+  unidade: string;
+  periodo?: PerformanceGoal["periodo"];
+  dataInicio?: string;
+  dataFim?: string | null;
+  ativo?: boolean;
+  observacoes?: string;
+}
+
+type PerformanceGoalRow = {
+  id: string;
+  entidade_tipo: PerformanceEntidadeTipo;
+  entidade_id: string | null;
+  entidade_nome: string;
+  parametro: PerformanceParametro;
+  parametro_label: string | null;
+  valor_meta: number | string;
+  unidade: string;
+  periodo: PerformanceGoal["periodo"];
+  data_inicio: string;
+  data_fim: string | null;
+  ativo: boolean;
+  observacoes: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapPerformanceGoalRow(row: PerformanceGoalRow): PerformanceGoal {
+  return {
+    id: row.id,
+    entidadeTipo: row.entidade_tipo,
+    entidadeId: row.entidade_id,
+    entidadeNome: row.entidade_nome,
+    parametro: row.parametro,
+    parametroLabel: row.parametro_label || undefined,
+    valorMeta: Number(row.valor_meta),
+    unidade: row.unidade,
+    periodo: row.periodo,
+    dataInicio: row.data_inicio,
+    dataFim: row.data_fim,
+    ativo: row.ativo,
+    observacoes: row.observacoes || undefined,
+    createdByName: row.created_by_name || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+const PERFORMANCE_GOAL_SELECT_COLUMNS = `
+  id, entidade_tipo, entidade_id, entidade_nome, parametro, parametro_label,
+  valor_meta, unidade, periodo, data_inicio, data_fim, ativo, observacoes,
+  created_by_name, created_at, updated_at
+`;
+
+export async function fetchPerformanceGoals(): Promise<PerformanceGoal[]> {
+  return withRetry(async () => {
+    const { data, error } = await getSupabase()
+      .from("performance_goals")
+      .select(PERFORMANCE_GOAL_SELECT_COLUMNS)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return ((data || []) as unknown as PerformanceGoalRow[]).map(
+      mapPerformanceGoalRow,
+    );
+  });
+}
+
+export async function insertPerformanceGoal(
+  input: NovaMetaInput,
+  createdBy?: string,
+  createdByName?: string,
+): Promise<PerformanceGoal> {
+  const { data, error } = await getSupabase()
+    .from("performance_goals")
+    .insert({
+      entidade_tipo: input.entidadeTipo,
+      entidade_id: input.entidadeId || null,
+      entidade_nome: input.entidadeNome.trim(),
+      parametro: input.parametro,
+      parametro_label: input.parametroLabel?.trim() || null,
+      valor_meta: input.valorMeta,
+      unidade: input.unidade,
+      periodo: input.periodo || "mensal",
+      data_inicio: input.dataInicio || new Date().toISOString().slice(0, 10),
+      data_fim: input.dataFim || null,
+      ativo: input.ativo ?? true,
+      observacoes: input.observacoes?.trim() || null,
+      created_by: createdBy || null,
+      created_by_name: createdByName || null,
+    })
+    .select(PERFORMANCE_GOAL_SELECT_COLUMNS)
+    .single();
+  if (error) throw error;
+  return mapPerformanceGoalRow(data as unknown as PerformanceGoalRow);
+}
+
+export async function updatePerformanceGoal(
+  id: string,
+  input: Partial<NovaMetaInput>,
+): Promise<PerformanceGoal> {
+  const updateData: Record<string, unknown> = {};
+  if (input.entidadeTipo !== undefined)
+    updateData.entidade_tipo = input.entidadeTipo;
+  if (input.entidadeId !== undefined)
+    updateData.entidade_id = input.entidadeId || null;
+  if (input.entidadeNome !== undefined)
+    updateData.entidade_nome = input.entidadeNome.trim();
+  if (input.parametro !== undefined) updateData.parametro = input.parametro;
+  if (input.parametroLabel !== undefined)
+    updateData.parametro_label = input.parametroLabel?.trim() || null;
+  if (input.valorMeta !== undefined) updateData.valor_meta = input.valorMeta;
+  if (input.unidade !== undefined) updateData.unidade = input.unidade;
+  if (input.periodo !== undefined) updateData.periodo = input.periodo;
+  if (input.dataInicio !== undefined) updateData.data_inicio = input.dataInicio;
+  if (input.dataFim !== undefined) updateData.data_fim = input.dataFim;
+  if (input.ativo !== undefined) updateData.ativo = input.ativo;
+  if (input.observacoes !== undefined)
+    updateData.observacoes = input.observacoes?.trim() || null;
+
+  const { data, error } = await getSupabase()
+    .from("performance_goals")
+    .update(updateData)
+    .eq("id", id)
+    .select(PERFORMANCE_GOAL_SELECT_COLUMNS)
+    .single();
+  if (error) throw error;
+  return mapPerformanceGoalRow(data as unknown as PerformanceGoalRow);
+}
+
+export async function deletePerformanceGoal(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("performance_goals")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Calcula o valor atual (mês corrente) de um parâmetro de desempenho a
+ * partir de ordens_servico e vehicle_maintenance. Retorna null quando o
+ * parâmetro não possui fonte de dados automática (ex.: avaliação manual).
+ */
+export async function computePerformanceActualValue(
+  goal: Pick<PerformanceGoal, "entidadeTipo" | "entidadeId" | "parametro">,
+): Promise<number | null> {
+  const { entidadeTipo, entidadeId, parametro } = goal;
+  if (!entidadeId) return null;
+
+  const now = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const monthEnd = getNextMonthFirstDay(monthStart.slice(0, 7));
+
+  if (
+    parametro === "avaliacao_media" ||
+    parametro === "pontualidade_percent" ||
+    parametro === "sinistralidade_percent" ||
+    parametro === "custom"
+  ) {
+    return null;
+  }
+
+  if (parametro === "manutencoes_mes") {
+    if (entidadeTipo !== "veiculo") return null;
+    const { count, error } = await getSupabase()
+      .from("vehicle_maintenance")
+      .select("id", { count: "exact", head: true })
+      .eq("veiculo_id", entidadeId)
+      .gte("data_abertura", monthStart)
+      .lt("data_abertura", monthEnd);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  let driverIds: string[] | null = null;
+  if (entidadeTipo === "parceiro") {
+    const { data, error } = await getSupabase()
+      .from("drivers")
+      .select("id")
+      .eq("parceiro_id", entidadeId);
+    if (error) throw error;
+    driverIds = (data || []).map((d: { id: string }) => d.id);
+    if (driverIds.length === 0) return 0;
+  }
+
+  let query = getSupabase()
+    .from("ordens_servico")
+    .select(
+      "id, valor_bruto, custo, lucro, status_operacional, route_started_at, route_finished_at, route_started_km, route_finished_km",
+    )
+    .eq("arquivado", false)
+    .neq("tipo", "rascunho")
+    .gte("data", monthStart)
+    .lt("data", monthEnd);
+
+  if (entidadeTipo === "motorista") {
+    query = query.eq("driver_id", entidadeId);
+  } else if (entidadeTipo === "funcionario") {
+    query = query.eq("created_by", entidadeId);
+  } else if (entidadeTipo === "cliente") {
+    query = query.eq("cliente_id", entidadeId);
+  } else if (entidadeTipo === "veiculo") {
+    query = query.eq("veiculo_id", entidadeId);
+  } else if (entidadeTipo === "parceiro" && driverIds) {
+    query = query.in("driver_id", driverIds);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  const rows = data || [];
+
+  switch (parametro) {
+    case "os_concluidas_mes":
+      return rows.filter((r) => r.status_operacional === "Finalizado").length;
+    case "taxa_conclusao": {
+      if (rows.length === 0) return 0;
+      const concluidas = rows.filter(
+        (r) => r.status_operacional === "Finalizado",
+      ).length;
+      return Number(((concluidas / rows.length) * 100).toFixed(1));
+    }
+    case "lucro_mes":
+      return rows.reduce((sum, r) => sum + Number(r.lucro || 0), 0);
+    case "faturamento_mes":
+      return rows.reduce((sum, r) => sum + Number(r.valor_bruto || 0), 0);
+    case "custo_mes":
+      return rows.reduce((sum, r) => sum + Number(r.custo || 0), 0);
+    case "km_rodado_mes":
+      return rows.reduce((sum, r) => {
+        if (r.route_started_km == null || r.route_finished_km == null)
+          return sum;
+        const km = Number(r.route_finished_km) - Number(r.route_started_km);
+        return sum + (km > 0 ? km : 0);
+      }, 0);
+    case "tempo_medio_rota_min": {
+      const durations = rows
+        .filter((r) => r.route_started_at && r.route_finished_at)
+        .map(
+          (r) =>
+            (new Date(r.route_finished_at as string).getTime() -
+              new Date(r.route_started_at as string).getTime()) /
+            60000,
+        )
+        .filter((min) => min > 0);
+      if (durations.length === 0) return null;
+      return Number(
+        (durations.reduce((sum, m) => sum + m, 0) / durations.length).toFixed(
+          1,
+        ),
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+// ── Dashboard de Desempenho (métricas reais, read-only) ───────────────
+// Todas as funções abaixo fazem apenas SELECT em ordens_servico e tabelas
+// relacionadas. Nenhuma escrita/alteração em ordens_servico.
+
+export interface DesempenhoFilters {
+  dataInicio?: string; // YYYY-MM-DD
+  dataFim?: string; // YYYY-MM-DD
+}
+
+export interface MotoristaMetricas {
+  id: string;
+  nome: string;
+  vinculo: string | null;
+  status: string | null;
+  avatarUrl: string | null;
+  totalOS: number;
+  osConcluidas: number;
+  osCanceladas: number;
+  taxaConclusao: number; // 0-100
+  faturamento: number;
+  custo: number;
+  lucro: number;
+  kmRodado: number;
+  tempoMedioRotaMin: number | null;
+}
+
+export interface FuncionarioMetricas {
+  id: string;
+  nome: string;
+  categoria: string;
+  ativo: boolean;
+  osCriadas: number;
+  osCriadasMes: number;
+  atualizacoesFeitas: number;
+}
+
+export interface ParceiroMetricas {
+  id: string;
+  nome: string;
+  status: string;
+  motoristasVinculados: number;
+  totalOS: number;
+  osConcluidas: number;
+  faturamento: number;
+  lucro: number;
+}
+
+export interface ClienteMetricas {
+  id: string;
+  nome: string;
+  totalOS: number;
+  osConcluidas: number;
+  osMes: number;
+  faturamento: number;
+  lucro: number;
+  ticketMedio: number;
+}
+
+export interface VeiculoMetricas {
+  id: string;
+  placa: string;
+  modelo: string;
+  marca: string;
+  status: string;
+  totalOS: number;
+  kmRodado: number;
+  manutencoesAbertas: number;
+  manutencoesConcluidas: number;
+  custoManutencao: number;
+}
+
+export interface DesempenhoOverview {
+  totalOS: number;
+  osConcluidas: number;
+  osPendentes: number;
+  osCanceladas: number;
+  taxaConclusaoGeral: number;
+  faturamentoTotal: number;
+  custoTotal: number;
+  lucroTotal: number;
+  totalMotoristas: number;
+  totalMotoristasAtivos: number;
+  totalFuncionarios: number;
+  totalFuncionariosAtivos: number;
+  totalParceiros: number;
+  totalParceirosAtivos: number;
+  totalClientes: number;
+  totalVeiculos: number;
+  totalVeiculosAtivos: number;
+  totalVeiculosManutencao: number;
+}
+
+type OSMetricRow = {
+  id: string;
+  status_operacional: string;
+  valor_bruto: number | null;
+  custo: number | null;
+  lucro: number | null;
+  route_started_km: number | null;
+  route_finished_km: number | null;
+  route_started_at: string | null;
+  route_finished_at: string | null;
+  driver_id: string | null;
+  cliente_id: string | null;
+  veiculo_id: string | null;
+  created_by: string | null;
+  data: string;
+};
+
+function buildOSMetricQuery(filters?: DesempenhoFilters) {
+  let query = getSupabase()
+    .from("ordens_servico")
+    .select(
+      "id, status_operacional, valor_bruto, custo, lucro, route_started_km, route_finished_km, route_started_at, route_finished_at, driver_id, cliente_id, veiculo_id, created_by, data",
+    )
+    .eq("arquivado", false);
+  if (filters?.dataInicio) {
+    query = query.gte("data", filters.dataInicio);
+  }
+  if (filters?.dataFim) {
+    query = query.lte("data", filters.dataFim);
+  }
+  return query;
+}
+
+function calcTempoMedio(
+  rows: { route_started_at: string | null; route_finished_at: string | null }[],
+): number | null {
+  const durations = rows
+    .filter((r) => r.route_started_at && r.route_finished_at)
+    .map(
+      (r) =>
+        (new Date(r.route_finished_at as string).getTime() -
+          new Date(r.route_started_at as string).getTime()) /
+        60000,
+    )
+    .filter((min) => min > 0);
+  if (durations.length === 0) return null;
+  return Number(
+    (durations.reduce((sum, m) => sum + m, 0) / durations.length).toFixed(1),
+  );
+}
+
+function calcKmRodado(
+  rows: {
+    route_started_km: number | null;
+    route_finished_km: number | null;
+  }[],
+): number {
+  return rows.reduce((sum, r) => {
+    if (r.route_started_km == null || r.route_finished_km == null) return sum;
+    const km = Number(r.route_finished_km) - Number(r.route_started_km);
+    return sum + (km > 0 ? km : 0);
+  }, 0);
+}
+
+export async function fetchDesempenhoOverview(
+  filters?: DesempenhoFilters,
+): Promise<DesempenhoOverview> {
+  const [
+    osResult,
+    driversResult,
+    funcionariosResult,
+    parceirosResult,
+    clientesResult,
+    veiculosResult,
+  ] = await Promise.all([
+    buildOSMetricQuery(filters),
+    getSupabase()
+      .from("drivers")
+      .select("id, status, arquivado")
+      .eq("arquivado", false),
+    getSupabase().from("user_roles").select("id, is_active"),
+    getSupabase().from("parceiros_servico").select("id, status, arquivado"),
+    getSupabase().from("clientes").select("id, arquivado"),
+    getSupabase().from("veiculos").select("id, status, arquivado"),
+  ]);
+
+  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
+  const drivers = (driversResult.data || []) as {
+    id: string;
+    status: string;
+    arquivado: boolean;
+  }[];
+  const funcionarios = (funcionariosResult.data || []) as {
+    id: string;
+    is_active: boolean;
+  }[];
+  const parceiros = (parceirosResult.data || []) as {
+    id: string;
+    status: string;
+    arquivado: boolean;
+  }[];
+  const clientes = (clientesResult.data || []) as {
+    id: string;
+    arquivado: boolean;
+  }[];
+  const veiculos = (veiculosResult.data || []) as {
+    id: string;
+    status: string;
+    arquivado: boolean;
+  }[];
+
+  const totalOS = osRows.length;
+  const osConcluidas = osRows.filter(
+    (r) => r.status_operacional === "Finalizado",
+  ).length;
+  const osCanceladas = osRows.filter(
+    (r) => r.status_operacional === "Cancelado",
+  ).length;
+  const osPendentes = osRows.filter(
+    (r) =>
+      r.status_operacional === "Pendente" ||
+      r.status_operacional === "Aguardando",
+  ).length;
+
+  return {
+    totalOS,
+    osConcluidas,
+    osPendentes,
+    osCanceladas,
+    taxaConclusaoGeral:
+      totalOS > 0 ? Number(((osConcluidas / totalOS) * 100).toFixed(1)) : 0,
+    faturamentoTotal: osRows.reduce(
+      (s, r) => s + Number(r.valor_bruto || 0),
+      0,
+    ),
+    custoTotal: osRows.reduce((s, r) => s + Number(r.custo || 0), 0),
+    lucroTotal: osRows.reduce((s, r) => s + Number(r.lucro || 0), 0),
+    totalMotoristas: drivers.length,
+    totalMotoristasAtivos: drivers.filter((d) => d.status === "active").length,
+    totalFuncionarios: funcionarios.length,
+    totalFuncionariosAtivos: funcionarios.filter((f) => f.is_active).length,
+    totalParceiros: parceiros.length,
+    totalParceirosAtivos: parceiros.filter((p) => p.status === "ativo").length,
+    totalClientes: clientes.filter((c) => !c.arquivado).length,
+    totalVeiculos: veiculos.filter((v) => !v.arquivado).length,
+    totalVeiculosAtivos: veiculos.filter(
+      (v) => !v.arquivado && v.status === "ativo",
+    ).length,
+    totalVeiculosManutencao: veiculos.filter(
+      (v) => !v.arquivado && v.status === "manutencao",
+    ).length,
+  };
+}
+
+export async function fetchMotoristasDesempenho(
+  filters?: DesempenhoFilters,
+): Promise<MotoristaMetricas[]> {
+  const [osResult, driversResult] = await Promise.all([
+    buildOSMetricQuery(filters),
+    getSupabase()
+      .from("drivers")
+      .select("id, name, vinculo_tipo, status, avatar_url, arquivado")
+      .eq("arquivado", false)
+      .order("name"),
+  ]);
+
+  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
+  const drivers = (driversResult.data || []) as {
+    id: string;
+    name: string;
+    vinculo_tipo: string | null;
+    status: string | null;
+    avatar_url: string | null;
+  }[];
+
+  return drivers.map((d) => {
+    const rows = osRows.filter((r) => r.driver_id === d.id);
+    const concluidas = rows.filter(
+      (r) => r.status_operacional === "Finalizado",
+    ).length;
+    const canceladas = rows.filter(
+      (r) => r.status_operacional === "Cancelado",
+    ).length;
+    return {
+      id: d.id,
+      nome: d.name,
+      vinculo: d.vinculo_tipo,
+      status: d.status,
+      avatarUrl: d.avatar_url,
+      totalOS: rows.length,
+      osConcluidas: concluidas,
+      osCanceladas: canceladas,
+      taxaConclusao:
+        rows.length > 0
+          ? Number(((concluidas / rows.length) * 100).toFixed(1))
+          : 0,
+      faturamento: rows.reduce((s, r) => s + Number(r.valor_bruto || 0), 0),
+      custo: rows.reduce((s, r) => s + Number(r.custo || 0), 0),
+      lucro: rows.reduce((s, r) => s + Number(r.lucro || 0), 0),
+      kmRodado: calcKmRodado(rows),
+      tempoMedioRotaMin: calcTempoMedio(rows),
+    };
+  });
+}
+
+export async function fetchFuncionariosDesempenho(
+  filters?: DesempenhoFilters,
+): Promise<FuncionarioMetricas[]> {
+  const now = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+
+  const [osResult, usersResult] = await Promise.all([
+    buildOSMetricQuery(filters),
+    getSupabase()
+      .from("user_roles")
+      .select("id, nome, categoria, is_active")
+      .order("nome"),
+  ]);
+
+  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
+  const users = (usersResult.data || []) as {
+    id: string;
+    nome: string;
+    categoria: string;
+    is_active: boolean;
+  }[];
+
+  return users.map((u) => {
+    const rows = osRows.filter((r) => r.created_by === u.id);
+    const osMes = rows.filter((r) => r.data >= monthStart).length;
+    return {
+      id: u.id,
+      nome: u.nome,
+      categoria: u.categoria,
+      ativo: u.is_active,
+      osCriadas: rows.length,
+      osCriadasMes: osMes,
+      // "atualizações" aproximadas: OS onde o funcionário é created_by
+      // (não há log de updates sem alterar ordens_servico; usamos OS criadas como proxy)
+      atualizacoesFeitas: rows.length,
+    };
+  });
+}
+
+export async function fetchParceirosDesempenho(
+  filters?: DesempenhoFilters,
+): Promise<ParceiroMetricas[]> {
+  const [osResult, parceirosResult, driversResult] = await Promise.all([
+    buildOSMetricQuery(filters),
+    getSupabase()
+      .from("parceiros_servico")
+      .select("id, razao_social_ou_nome_completo, status, arquivado")
+      .order("razao_social_ou_nome_completo"),
+    getSupabase()
+      .from("drivers")
+      .select("id, parceiro_id, arquivado")
+      .eq("arquivado", false),
+  ]);
+
+  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
+  const parceiros = (parceirosResult.data || []) as {
+    id: string;
+    razao_social_ou_nome_completo: string;
+    status: string;
+    arquivado: boolean;
+  }[];
+  const drivers = (driversResult.data || []) as {
+    id: string;
+    parceiro_id: string | null;
+  }[];
+
+  // Mapeia parceiro_id -> driver_ids
+  const driverIdsByParceiro = new Map<string, string[]>();
+  for (const d of drivers) {
+    if (!d.parceiro_id) continue;
+    const arr = driverIdsByParceiro.get(d.parceiro_id) || [];
+    arr.push(d.id);
+    driverIdsByParceiro.set(d.parceiro_id, arr);
+  }
+
+  return parceiros.map((p) => {
+    const driverIds = driverIdsByParceiro.get(p.id) || [];
+    const rows = osRows.filter(
+      (r) => r.driver_id && driverIds.includes(r.driver_id),
+    );
+    const concluidas = rows.filter(
+      (r) => r.status_operacional === "Finalizado",
+    ).length;
+    return {
+      id: p.id,
+      nome: p.razao_social_ou_nome_completo || "—",
+      status: p.status,
+      motoristasVinculados: driverIds.length,
+      totalOS: rows.length,
+      osConcluidas: concluidas,
+      faturamento: rows.reduce((s, r) => s + Number(r.valor_bruto || 0), 0),
+      lucro: rows.reduce((s, r) => s + Number(r.lucro || 0), 0),
+    };
+  });
+}
+
+export async function fetchClientesDesempenho(
+  filters?: DesempenhoFilters,
+): Promise<ClienteMetricas[]> {
+  const now = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+
+  const [osResult, clientesResult] = await Promise.all([
+    buildOSMetricQuery(filters),
+    getSupabase().from("clientes").select("id, nome, arquivado").order("nome"),
+  ]);
+
+  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
+  const clientes = (clientesResult.data || []) as {
+    id: string;
+    nome: string;
+    arquivado: boolean;
+  }[];
+
+  return clientes
+    .filter((c) => !c.arquivado)
+    .map((c) => {
+      const rows = osRows.filter((r) => r.cliente_id === c.id);
+      const concluidas = rows.filter(
+        (r) => r.status_operacional === "Finalizado",
+      ).length;
+      const osMes = rows.filter((r) => r.data >= monthStart).length;
+      const faturamento = rows.reduce(
+        (s, r) => s + Number(r.valor_bruto || 0),
+        0,
+      );
+      return {
+        id: c.id,
+        nome: c.nome,
+        totalOS: rows.length,
+        osConcluidas: concluidas,
+        osMes,
+        faturamento,
+        lucro: rows.reduce((s, r) => s + Number(r.lucro || 0), 0),
+        ticketMedio:
+          rows.length > 0 ? Number((faturamento / rows.length).toFixed(2)) : 0,
+      };
+    });
+}
+
+export async function fetchVeiculosDesempenho(
+  filters?: DesempenhoFilters,
+): Promise<VeiculoMetricas[]> {
+  const [osResult, veiculosResult, maintResult] = await Promise.all([
+    buildOSMetricQuery(filters),
+    getSupabase()
+      .from("veiculos")
+      .select("id, placa, modelo, marca, status, arquivado")
+      .order("placa"),
+    getSupabase()
+      .from("vehicle_maintenance")
+      .select("id, veiculo_id, status, custo"),
+  ]);
+
+  const osRows = (osResult.data || []) as unknown as OSMetricRow[];
+  const veiculos = (veiculosResult.data || []) as {
+    id: string;
+    placa: string;
+    modelo: string;
+    marca: string;
+    status: string;
+    arquivado: boolean;
+  }[];
+  const maints = (maintResult.data || []) as {
+    id: string;
+    veiculo_id: string;
+    status: string;
+    custo: number | null;
+  }[];
+
+  return veiculos
+    .filter((v) => !v.arquivado)
+    .map((v) => {
+      const rows = osRows.filter((r) => r.veiculo_id === v.id);
+      const vMaints = maints.filter((m) => m.veiculo_id === v.id);
+      return {
+        id: v.id,
+        placa: v.placa,
+        modelo: v.modelo,
+        marca: v.marca,
+        status: v.status,
+        totalOS: rows.length,
+        kmRodado: calcKmRodado(rows),
+        manutencoesAbertas: vMaints.filter(
+          (m) => m.status === "aberta" || m.status === "em_andamento",
+        ).length,
+        manutencoesConcluidas: vMaints.filter((m) => m.status === "concluida")
+          .length,
+        custoManutencao: vMaints.reduce((s, m) => s + Number(m.custo || 0), 0),
+      };
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Chat - upload de imagens
+// ---------------------------------------------------------------------------
+
+const CHAT_IMAGES_BUCKET = "chat-images";
+
+/**
+ * Faz upload de uma imagem para o bucket público `chat-images` e retorna a
+ * URL pública utilizada para referenciar a imagem na mensagem do chat.
+ *
+ * O caminho no bucket é organizado por conversa para facilitar auditoria e
+ * futura limpeza: `<conversation_id>/<message-uuid>.<ext>`.
+ */
+export async function uploadChatImage(
+  conversationId: string,
+  file: File,
+): Promise<{ url: string; path: string }> {
+  const supabase = getSupabase();
+  const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const fileName = `${crypto.randomUUID()}.${ext}`;
+  const filePath = `${conversationId}/${fileName}`;
+
+  const { error } = await supabase.storage
+    .from(CHAT_IMAGES_BUCKET)
+    .upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || "image/jpeg",
+    });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage
+    .from(CHAT_IMAGES_BUCKET)
+    .getPublicUrl(filePath);
+
+  return { url: data.publicUrl, path: filePath };
+}
+
+/**
+ * Envia uma mensagem de imagem no chat: faz upload do arquivo e cria o
+ * registro em `chat_messages` com `message_type = 'image'` e `content`
+ * sendo a URL pública da imagem.
+ */
+export async function sendChatImageMessage(
+  conversationId: string,
+  senderId: string,
+  file: File,
+): Promise<import("@/context/DataContext").ChatMessage> {
+  const { url } = await uploadChatImage(conversationId, file);
+  return createChatMessage(conversationId, senderId, url, "image");
 }

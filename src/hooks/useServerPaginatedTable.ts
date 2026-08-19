@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaginatedResult } from "@/lib/supabase/queries";
 import { logErrorEntry } from "@/lib/frontend-logger";
 
@@ -43,6 +43,14 @@ export function useServerPaginatedTable<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Rastreia a identidade anterior do fetchPage para detectar mudança de
+  // filtros. Quando o fetchPage muda (novos filtros), resetamos a página
+  // para 1 ANTES de fazer a requisição, evitando solicitar um range
+  // inválido (PGRST103 "Requested range not satisfiable") quando o
+  // usuário estava em uma página alta e os novos filtros retornam menos
+  // registros.
+  const prevFetchPageRef = useRef<ServerPaginatedFetch<T>>(fetchPage);
+
   const totalPages = useMemo(() => {
     return Math.max(1, Math.ceil(totalCount / pageSize));
   }, [pageSize, totalCount]);
@@ -60,6 +68,21 @@ export function useServerPaginatedTable<T>(
       setLoading(false);
       return;
     }
+
+    // Detecta mudança de fetchPage (filtros mudaram).
+    const fetchPageChanged = prevFetchPageRef.current !== fetchPage;
+    if (fetchPageChanged) {
+      prevFetchPageRef.current = fetchPage;
+    }
+
+    // Se os filtros mudaram e não estamos na página 1, reseta para 1.
+    // A mudança de página vai recriar loadPage e disparar o efeito novamente,
+    // evitando uma requisição com range potencialmente inválido.
+    if (fetchPageChanged && page > 1) {
+      setPage(1);
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await fetchPage({

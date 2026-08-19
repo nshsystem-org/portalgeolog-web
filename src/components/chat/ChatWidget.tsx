@@ -32,6 +32,7 @@ export function ChatWidget() {
     loadConversations,
     selectConversation,
     sendMessage,
+    sendImageMessage,
     createDirectConversation,
     setActiveConversation,
   } = useChat();
@@ -222,7 +223,7 @@ export function ChatWidget() {
 
       {isOpen && (
         <div
-          className={`fixed bottom-24 right-6 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden transition-all ${
+          className={`fixed bottom-24 right-6 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden transition-all max-w-[calc(100vw-3rem)] ${
             isMinimized ? "w-80 h-16" : "w-96 h-[600px]"
           }`}
         >
@@ -310,6 +311,7 @@ export function ChatWidget() {
 
                     <ChatInput
                       onSendMessage={sendMessage}
+                      onSendImage={sendImageMessage}
                       sending={sending}
                       disabled={loading}
                     />

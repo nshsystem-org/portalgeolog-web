@@ -8,7 +8,10 @@ import {
   Search,
   MessageCircle,
   Loader2,
+  Smile,
+  Paperclip,
 } from "lucide-react";
+import { useRef, useState, useEffect } from "react";
 import type { ChatConversation, ChatMessage } from "@/context/DataContext";
 import { useChatTranslation } from "@/hooks/useTranslation";
 
@@ -122,14 +125,14 @@ export function ConversationList({
   };
 
   return (
-    <div className="relative flex flex-col h-full bg-slate-50">
+    <div className="relative flex flex-col h-full w-full max-w-full bg-slate-50">
       <div className="p-4 border-b border-slate-200 bg-white sticky top-0 z-10">
         <h2 className="text-2xl font-extrabold text-slate-900">
           {t?.widget.conversations_title || "Conversas"}
         </h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {conversations.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-base">
             {t?.conversation_list.no_conversations || "Nenhuma conversa ainda"}
@@ -143,11 +146,11 @@ export function ConversationList({
               <button
                 key={conv.id}
                 onClick={() => onSelectConversation(conv)}
-                className={`w-full p-4 border-b border-slate-100 hover:bg-slate-100 transition-colors text-left ${
+                className={`w-full p-4 border-b border-slate-100 hover:bg-slate-100 transition-colors text-left overflow-hidden ${
                   isActive ? "bg-blue-50" : ""
                 }`}
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 min-w-0">
                   <div className="w-14 h-14 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
                     {getConversationAvatar(conv).startsWith("http") ? (
                       <img
@@ -303,9 +306,25 @@ export function MessageList({
                       </p>
                     )}
 
-                    <p className="text-base leading-relaxed">
-                      {message.content}
-                    </p>
+                    {message.message_type === "image" ? (
+                      <a
+                        href={message.content}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        <img
+                          src={message.content}
+                          alt={t?.message_list.image_alt || "Imagem"}
+                          className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                          loading="lazy"
+                        />
+                      </a>
+                    ) : (
+                      <p className="text-base leading-relaxed">
+                        {message.content}
+                      </p>
+                    )}
 
                     <div
                       className={`flex items-center gap-1 mt-1 text-sm ${
@@ -336,17 +355,460 @@ export function MessageList({
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
+  onSendImage?: (file: File) => void;
   sending: boolean;
   disabled?: boolean;
 }
 
+// Conjunto enxuto de emojis categorizados (sem dependência externa).
+const EMOJI_CATEGORIES: Record<string, string[]> = {
+  "😀": [
+    "😀",
+    "😃",
+    "😄",
+    "😁",
+    "😆",
+    "😅",
+    "🤣",
+    "😂",
+    "🙂",
+    "🙃",
+    "😉",
+    "😊",
+    "😇",
+    "🥰",
+    "😍",
+    "🤩",
+    "😘",
+    "😗",
+    "😚",
+    "😙",
+    "😋",
+    "😛",
+    "😜",
+    "🤪",
+    "😝",
+    "🤑",
+    "🤗",
+    "🤭",
+    "🤫",
+    "🤔",
+    "😐",
+    "😑",
+    "😶",
+    "🙄",
+    "😏",
+    "😬",
+    "😮‍💨",
+    "🥱",
+    "😴",
+    "🤤",
+    "😷",
+    "🤒",
+    "🤕",
+    "🤢",
+    "🤮",
+    "🥵",
+    "🥶",
+    "🥴",
+    "😵",
+    "🤯",
+    "🤠",
+    "🥳",
+    "😎",
+    "🤓",
+    "🧐",
+    "😕",
+    "😟",
+    "🙁",
+    "☹️",
+    "😮",
+    "😯",
+    "😲",
+    "😳",
+    "🥺",
+    "😦",
+    "😧",
+    "😨",
+    "😰",
+    "😥",
+    "😢",
+    "😭",
+    "😱",
+    "😖",
+    "😣",
+    "😞",
+    "😓",
+    "😩",
+    "😫",
+    "🥹",
+    "😤",
+  ],
+  "👍": [
+    "👍",
+    "👎",
+    "👊",
+    "✊",
+    "🤛",
+    "🤜",
+    "👏",
+    "🙌",
+    "👐",
+    "🤲",
+    "🤝",
+    "🙏",
+    "✌️",
+    "🤞",
+    "🤟",
+    "🤘",
+    "👌",
+    "🤌",
+    "🤏",
+    "👈",
+    "👉",
+    "👆",
+    "👇",
+    "☝️",
+    "✋",
+    "🤚",
+    "🖐️",
+    "🖖",
+    "👋",
+    "🤙",
+    "💪",
+    "🦾",
+    "🦿",
+    "🦵",
+    "🦶",
+    "👂",
+    "🦻",
+    "👃",
+    "🫀",
+    "🫁",
+    "🧠",
+    "🦷",
+    "🦴",
+    "👀",
+    "👁️",
+    "👅",
+    "👄",
+    "💋",
+    "🩸",
+    "💧",
+    "💦",
+    "💨",
+    "🔥",
+    "⭐",
+    "🌟",
+    "✨",
+    "⚡",
+    "💯",
+    "❤️",
+    "🧡",
+    "💛",
+    "💚",
+    "💙",
+    "💜",
+    "🖤",
+    "🤍",
+    "🤎",
+    "💔",
+    "❣️",
+    "💕",
+    "💞",
+    "💓",
+    "💗",
+    "💖",
+    "💘",
+    "💝",
+    "💟",
+    "❌",
+    "✅",
+    "❓",
+  ],
+  "🎉": [
+    "🎉",
+    "🎊",
+    "🎈",
+    "🎂",
+    "🎁",
+    "🎀",
+    "🎄",
+    "🎃",
+    "🎆",
+    "🎇",
+    "🧨",
+    "✨",
+    "🎋",
+    "🎍",
+    "🎎",
+    "🎏",
+    "🎐",
+    "🎑",
+    "🧧",
+    "🏆",
+    "🥇",
+    "🥈",
+    "🥉",
+    "🏅",
+    "🎖️",
+    "🏵️",
+    "🎗️",
+    "🎫",
+    "🎟️",
+    "🎪",
+    "🎭",
+    "🎨",
+    "🎬",
+    "🎤",
+    "🎧",
+    "🎼",
+    "🎵",
+    "🎶",
+    "🎹",
+    "🥁",
+    "🎷",
+    "🎺",
+    "🎸",
+    "🪕",
+    "🎻",
+    "🎲",
+    "♟️",
+    "🎯",
+    "🎳",
+    "🎮",
+    "🎰",
+    "🚗",
+    "🚕",
+    "🚙",
+    "🚌",
+    "🚎",
+    "🏎️",
+    "🚓",
+    "🚑",
+    "🚒",
+    "🏠",
+    "🏡",
+    "🏢",
+    "🏣",
+    "🏥",
+    "🏦",
+    "🏨",
+    "🏪",
+    "🏫",
+    "🏬",
+    "🏭",
+    "🏯",
+    "🏰",
+    "💒",
+    "🗼",
+    "🗽",
+    "⛪",
+    "🕌",
+    "🕍",
+    "⛩️",
+  ],
+  "🍔": [
+    "🍔",
+    "🍟",
+    "🍕",
+    "🌭",
+    "🥪",
+    "🌮",
+    "🌯",
+    "🥙",
+    "🧆",
+    "🥗",
+    "🥘",
+    "🥫",
+    "🍝",
+    "🍜",
+    "🍲",
+    "🍛",
+    "🍣",
+    "🍱",
+    "🥟",
+    "🦪",
+    "🍤",
+    "🍙",
+    "🍚",
+    "🍘",
+    "🍥",
+    "🥠",
+    "🥮",
+    "🍢",
+    "🍡",
+    "🍧",
+    "🍨",
+    "🍦",
+    "🥧",
+    "🧁",
+    "🍰",
+    "🎂",
+    "🍮",
+    "🍭",
+    "🍬",
+    "🍫",
+    "🍩",
+    "🍪",
+    "🌰",
+    "🥜",
+    "🍯",
+    "🥛",
+    "☕",
+    "🍵",
+    "🧃",
+    "🥤",
+    "🍶",
+    "🍺",
+    "🍻",
+    "🥂",
+    "🍷",
+    "🥃",
+    "🍸",
+    "🍹",
+    "🧉",
+    "🍾",
+    "🧊",
+    "🥄",
+    "🍴",
+    "🍽️",
+    "🥣",
+    "🥡",
+    "🥢",
+    "🧂",
+    "🍎",
+    "🍏",
+    "🍐",
+    "🍊",
+    "🍋",
+    "🍌",
+    "🍉",
+    "🍇",
+    "🍓",
+    "🫐",
+    "🍈",
+    "🍒",
+  ],
+  "⚽": [
+    "⚽",
+    "🏀",
+    "🏈",
+    "⚾",
+    "🥎",
+    "🎾",
+    "🏐",
+    "🏉",
+    "🥏",
+    "🎱",
+    "🪀",
+    "🏓",
+    "🏸",
+    "🏒",
+    "🏑",
+    "🥍",
+    "🏏",
+    "🪃",
+    "🥅",
+    "⛳",
+    "🪁",
+    "🏹",
+    "🎣",
+    "🤿",
+    "🥊",
+    "🥋",
+    "🎽",
+    "🛹",
+    "🛼",
+    "🛷",
+    "⛸️",
+    "🥌",
+    "🎿",
+    "⛷️",
+    "🏂",
+    "🪂",
+    "🏋️",
+    "🤼",
+    "🤸",
+    "⛹️",
+    "🤺",
+    "🤾",
+    "🏌️",
+    "🏇",
+    "🧘",
+    "🏄",
+    "🏊",
+    "🤽",
+    "🚣",
+    "🧗",
+    "🚵",
+    "🚴",
+    "🏆",
+    "🥇",
+    "🥈",
+    "🥉",
+    "🏅",
+    "🎖️",
+    "🏵️",
+    "🎗️",
+    "☀️",
+    "🌤️",
+    "⛅",
+    "🌥️",
+    "☁️",
+    "🌦️",
+    "🌧️",
+    "⛈️",
+    "🌩️",
+    "🌨️",
+    "❄️",
+    "☃️",
+    "⛄",
+    "🌬️",
+    "💨",
+    "🌪️",
+    "🌫️",
+    "🌈",
+    "☔",
+    "⚡",
+  ],
+};
+
 export function ChatInput({
   onSendMessage,
+  onSendImage,
   sending,
   disabled = false,
 }: ChatInputProps) {
   const t = useChatTranslation();
   const [message, setMessage] = useState("");
+  const [showEmojis, setShowEmojis] = useState(false);
+  const [emojiCategory, setEmojiCategory] = useState<string>(
+    Object.keys(EMOJI_CATEGORIES)[0],
+  );
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+
+  // Fecha o picker de emojis ao clicar fora.
+  useEffect(() => {
+    if (!showEmojis) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(e.target as Node) &&
+        emojiButtonRef.current &&
+        !emojiButtonRef.current.contains(e.target as Node)
+      ) {
+        setShowEmojis(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showEmojis]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -356,31 +818,196 @@ export function ChatInput({
     }
   };
 
+  const handleEmojiClick = (emoji: string) => {
+    setMessage((prev) => prev + emoji);
+    textInputRef.current?.focus();
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      setPendingImage(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => setImagePreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    }
+    // Limpa o input para permitir selecionar o mesmo arquivo novamente.
+    e.target.value = "";
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          setPendingImage(file);
+          const reader = new FileReader();
+          reader.onload = (ev) => setImagePreview(ev.target?.result as string);
+          reader.readAsDataURL(file);
+          break;
+        }
+      }
+    }
+  };
+
+  const handleSendImage = () => {
+    if (!pendingImage || !onSendImage || sending) return;
+    onSendImage(pendingImage);
+    setPendingImage(null);
+    setImagePreview(null);
+  };
+
+  const handleCancelImage = () => {
+    setPendingImage(null);
+    setImagePreview(null);
+  };
+
   return (
-    <div className="p-4 bg-white border-t border-slate-200">
-      <form onSubmit={handleSubmit} className="flex gap-2">
+    <div className="relative w-full p-3 bg-white border-t border-slate-200">
+      {/* Emoji Picker */}
+      {showEmojis && (
+        <div
+          ref={emojiPickerRef}
+          className="absolute bottom-full left-3 mb-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-20"
+        >
+          {/* Categorias */}
+          <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-100 bg-slate-50">
+            {Object.keys(EMOJI_CATEGORIES).map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setEmojiCategory(cat)}
+                className={`text-lg p-1.5 rounded-lg transition-colors ${
+                  emojiCategory === cat ? "bg-blue-100" : "hover:bg-slate-200"
+                }`}
+                title={cat}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+          {/* Emojis */}
+          <div className="grid grid-cols-8 gap-0.5 p-2 max-h-48 overflow-y-auto">
+            {EMOJI_CATEGORIES[emojiCategory].map((emoji, i) => (
+              <button
+                key={`${emoji}-${i}`}
+                onClick={() => handleEmojiClick(emoji)}
+                className="text-xl p-1 rounded hover:bg-slate-100 transition-colors"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Preview da imagem antes de enviar */}
+      {imagePreview && pendingImage && (
+        <div className="mb-2 p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3">
+          <img
+            src={imagePreview}
+            alt="Preview"
+            className="w-16 h-16 object-cover rounded-lg"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-slate-700 truncate">
+              {pendingImage.name}
+            </p>
+            <p className="text-xs text-slate-400">
+              {(pendingImage.size / 1024).toFixed(0)} KB
+            </p>
+          </div>
+          <button
+            onClick={handleSendImage}
+            disabled={sending || !onSendImage}
+            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            title={t?.chat_input.send_button || "Enviar"}
+          >
+            {sending ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Send size={18} />
+            )}
+          </button>
+          <button
+            onClick={handleCancelImage}
+            disabled={sending}
+            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+            title={t?.chat_input.cancel_image || "Cancelar"}
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
+      <form
+        onSubmit={handleSubmit}
+        className="flex items-center gap-2 w-full min-w-0"
+      >
+        {/* Botão de emoji */}
+        <button
+          ref={emojiButtonRef}
+          type="button"
+          onClick={() => setShowEmojis((prev) => !prev)}
+          disabled={disabled || sending}
+          className={`shrink-0 p-2 rounded-full transition-colors disabled:opacity-50 ${
+            showEmojis
+              ? "bg-blue-100 text-blue-600"
+              : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+          }`}
+          title={t?.chat_input.emoji_button || "Emojis"}
+        >
+          <Smile size={22} />
+        </button>
+
+        {/* Botão de anexo (imagem) */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || sending || !onSendImage}
+          className="shrink-0 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+          title={t?.chat_input.attach_image || "Anexar imagem"}
+        >
+          <Paperclip size={22} />
+        </button>
+
         <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+
+        <input
+          ref={textInputRef}
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          onPaste={handlePaste}
           placeholder={t?.chat_input.placeholder || "Digite uma mensagem..."}
           disabled={disabled || sending}
-          className="flex-1 px-4 py-3 text-base bg-slate-100 rounded-full border-0 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50"
+          className="flex-1 min-w-0 px-4 py-3 text-base bg-slate-100 rounded-full border-0 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50"
         />
+
         <button
           type="submit"
           disabled={!message.trim() || sending || disabled}
-          className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="shrink-0 p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           title={t?.chat_input.send_button || "Enviar"}
         >
-          <Send size={22} />
+          {sending ? (
+            <Loader2 size={22} className="animate-spin" />
+          ) : (
+            <Send size={22} />
+          )}
         </button>
       </form>
     </div>
   );
 }
-
-import { useState } from "react";
 
 interface UserListProps {
   users: Array<{ id: string; name: string; avatar?: string }>;

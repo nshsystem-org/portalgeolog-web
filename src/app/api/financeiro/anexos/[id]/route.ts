@@ -67,10 +67,7 @@ export async function GET(
     } = await authClient.auth.getUser();
 
     if (userError || !user) {
-      return NextResponse.json(
-        { error: "Não autenticado" },
-        { status: 401 },
-      );
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
     if (!(await hasFinanceAccess(user.id))) {

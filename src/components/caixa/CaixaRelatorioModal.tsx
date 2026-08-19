@@ -215,188 +215,188 @@ export function CaixaRelatorioModal({
           {/* Tipo de relatório */}
           {/* Tipo de movimentação + Período */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8 animate-in fade-in slide-in-from-top-4 duration-500 items-end">
-              <div className="flex items-end">
-                  <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm w-fit">
-                    {(
-                      [
-                        {
-                          id: "todas",
-                          label: "Todas",
-                          active: "bg-slate-800 text-white shadow-md",
-                        },
-                        {
-                          id: "entrada",
-                          label: "Entradas",
-                          active: "bg-emerald-600 text-white shadow-md",
-                        },
-                        {
-                          id: "saida",
-                          label: "Saídas",
-                          active: "bg-rose-600 text-white shadow-md",
-                        },
-                      ] as {
-                        id: MovimentacaoTipo;
-                        label: string;
-                        active: string;
-                      }[]
-                    ).map((opt) => {
-                      const active = movimentacaoTipo === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => setMovimentacaoTipo(opt.id)}
-                          aria-pressed={active}
-                          className={`px-4 py-3 rounded-xl text-base font-black tracking-tight cursor-pointer transition-all ${
-                            active
-                              ? opt.active
-                              : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-              <div className="space-y-2">
-                <div className="flex items-end gap-2">
-                  <div className="flex-1 min-w-0">
-                    <GeologDateInput
-                      label="De"
-                      value={dataInicio}
-                      onChange={setDataInicio}
-                      labelClassName="text-emerald-600 font-bold"
-                      inputClassName="!border-slate-300"
-                    />
-                  </div>
-                  <div className="mb-3.5 flex items-center justify-center">
-                    <ArrowRight
-                      size={16}
-                      className="text-slate-400 animate-pulse"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <GeologDateInput
-                      label="Até"
-                      value={dataFim}
-                      onChange={setDataFim}
-                      labelClassName="text-blue-600 font-bold"
-                      inputClassName="!border-slate-300"
-                    />
-                  </div>
-                </div>
-                {dateRangeInvalid && (
-                  <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-                    <AlertCircle size={16} className="shrink-0 text-red-500" />
-                    <p className="text-xs font-bold text-red-600">
-                      A data inicial não pode ser maior que a data final.
-                    </p>
-                  </div>
-                )}
+            <div className="flex items-end">
+              <div className="flex items-center gap-1 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm w-fit">
+                {(
+                  [
+                    {
+                      id: "todas",
+                      label: "Todas",
+                      active: "bg-slate-800 text-white shadow-md",
+                    },
+                    {
+                      id: "entrada",
+                      label: "Entradas",
+                      active: "bg-emerald-600 text-white shadow-md",
+                    },
+                    {
+                      id: "saida",
+                      label: "Saídas",
+                      active: "bg-rose-600 text-white shadow-md",
+                    },
+                  ] as {
+                    id: MovimentacaoTipo;
+                    label: string;
+                    active: string;
+                  }[]
+                ).map((opt) => {
+                  const active = movimentacaoTipo === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setMovimentacaoTipo(opt.id)}
+                      aria-pressed={active}
+                      className={`px-4 py-3 rounded-xl text-base font-black tracking-tight cursor-pointer transition-all ${
+                        active
+                          ? opt.active
+                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
+            <div className="space-y-2">
+              <div className="flex items-end gap-2">
+                <div className="flex-1 min-w-0">
+                  <GeologDateInput
+                    label="De"
+                    value={dataInicio}
+                    onChange={setDataInicio}
+                    labelClassName="text-emerald-600 font-bold"
+                    inputClassName="!border-slate-300"
+                  />
+                </div>
+                <div className="mb-3.5 flex items-center justify-center">
+                  <ArrowRight
+                    size={16}
+                    className="text-slate-400 animate-pulse"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <GeologDateInput
+                    label="Até"
+                    value={dataFim}
+                    onChange={setDataFim}
+                    labelClassName="text-blue-600 font-bold"
+                    inputClassName="!border-slate-300"
+                  />
+                </div>
+              </div>
+              {dateRangeInvalid && (
+                <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+                  <AlertCircle size={16} className="shrink-0 text-red-500" />
+                  <p className="text-xs font-bold text-red-600">
+                    A data inicial não pode ser maior que a data final.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Filtros adicionais */}
           <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-500">
-              <div className="p-5 rounded-3xl border bg-slate-50/50 border-slate-100 transition-colors hover:bg-blue-50/70 hover:border-blue-100">
-                <button
-                  type="button"
-                  onClick={() => setAreFiltersExpanded((prev) => !prev)}
-                  className="flex w-full items-center justify-between gap-3 text-left group cursor-pointer"
-                >
-                  <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1 transition-colors group-hover:text-slate-600">
-                    Filtros adicionais (opcional)
-                  </p>
-                  <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 transition-all cursor-pointer group-hover:border-blue-200 group-hover:bg-blue-100 group-hover:text-blue-500">
-                    <ChevronDown
-                      size={16}
-                      className={`transition-transform duration-300 ${
-                        areFiltersExpanded ? "rotate-180" : ""
-                      }`}
-                    />
-                  </div>
-                </button>
+            <div className="p-5 rounded-3xl border bg-slate-50/50 border-slate-100 transition-colors hover:bg-blue-50/70 hover:border-blue-100">
+              <button
+                type="button"
+                onClick={() => setAreFiltersExpanded((prev) => !prev)}
+                className="flex w-full items-center justify-between gap-3 text-left group cursor-pointer"
+              >
+                <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 ml-1 transition-colors group-hover:text-slate-600">
+                  Filtros adicionais (opcional)
+                </p>
+                <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 transition-all cursor-pointer group-hover:border-blue-200 group-hover:bg-blue-100 group-hover:text-blue-500">
+                  <ChevronDown
+                    size={16}
+                    className={`transition-transform duration-300 ${
+                      areFiltersExpanded ? "rotate-180" : ""
+                    }`}
+                  />
+                </div>
+              </button>
 
-                {areFiltersExpanded && (
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <GeologSearchableSelect
-                      label="Conta"
-                      options={contaOptions}
-                      value={contaId}
-                      onChange={setContaId}
-                      placeholder="Todas as contas"
-                      compact
-                      triggerClassName="h-12"
-                      dropdownPosition="up"
-                      hideTriggerAvatar
-                      disableSearch
-                      disabled
-                    />
-                    <GeologSearchableSelect
-                      label="Categoria"
-                      options={categoriaOptions}
-                      value={categoria}
-                      onChange={setCategoria}
-                      placeholder="Todas as categorias"
-                      compact
-                      triggerClassName="h-12"
-                      dropdownPosition="up"
-                      hideTriggerAvatar
-                      disabled
-                    />
-                    <GeologSearchableSelect
-                      label="Cliente"
-                      options={clienteOptions}
-                      value={clienteId}
-                      onChange={setClienteId}
-                      placeholder="Todos os clientes"
-                      compact
-                      triggerClassName="h-12"
-                      dropdownPosition="up"
-                      hideTriggerAvatar
-                      disabled
-                    />
-                    <GeologSearchableSelect
-                      label="Parceiro"
-                      options={parceiroOptions}
-                      value={parceiroId}
-                      onChange={setParceiroId}
-                      placeholder="Todos os parceiros"
-                      compact
-                      triggerClassName="h-12"
-                      dropdownPosition="up"
-                      hideTriggerAvatar
-                      disabled
-                    />
-                    <GeologSearchableSelect
-                      label="Motorista"
-                      options={driverOptions}
-                      value={driverId}
-                      onChange={setDriverId}
-                      placeholder="Todos os motoristas"
-                      compact
-                      triggerClassName="h-12"
-                      dropdownPosition="up"
-                      hideTriggerAvatar
-                      disabled
-                    />
-                    <GeologSearchableSelect
-                      label="Fornecedor"
-                      options={fornecedorOptions}
-                      value={fornecedorId}
-                      onChange={setFornecedorId}
-                      placeholder="Todos os fornecedores"
-                      compact
-                      triggerClassName="h-12"
-                      dropdownPosition="up"
-                      hideTriggerAvatar
-                      disabled
-                    />
-                  </div>
-                )}
-              </div>
+              {areFiltersExpanded && (
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <GeologSearchableSelect
+                    label="Conta"
+                    options={contaOptions}
+                    value={contaId}
+                    onChange={setContaId}
+                    placeholder="Todas as contas"
+                    compact
+                    triggerClassName="h-12"
+                    dropdownPosition="up"
+                    hideTriggerAvatar
+                    disableSearch
+                    disabled
+                  />
+                  <GeologSearchableSelect
+                    label="Categoria"
+                    options={categoriaOptions}
+                    value={categoria}
+                    onChange={setCategoria}
+                    placeholder="Todas as categorias"
+                    compact
+                    triggerClassName="h-12"
+                    dropdownPosition="up"
+                    hideTriggerAvatar
+                    disabled
+                  />
+                  <GeologSearchableSelect
+                    label="Cliente"
+                    options={clienteOptions}
+                    value={clienteId}
+                    onChange={setClienteId}
+                    placeholder="Todos os clientes"
+                    compact
+                    triggerClassName="h-12"
+                    dropdownPosition="up"
+                    hideTriggerAvatar
+                    disabled
+                  />
+                  <GeologSearchableSelect
+                    label="Parceiro"
+                    options={parceiroOptions}
+                    value={parceiroId}
+                    onChange={setParceiroId}
+                    placeholder="Todos os parceiros"
+                    compact
+                    triggerClassName="h-12"
+                    dropdownPosition="up"
+                    hideTriggerAvatar
+                    disabled
+                  />
+                  <GeologSearchableSelect
+                    label="Motorista"
+                    options={driverOptions}
+                    value={driverId}
+                    onChange={setDriverId}
+                    placeholder="Todos os motoristas"
+                    compact
+                    triggerClassName="h-12"
+                    dropdownPosition="up"
+                    hideTriggerAvatar
+                    disabled
+                  />
+                  <GeologSearchableSelect
+                    label="Fornecedor"
+                    options={fornecedorOptions}
+                    value={fornecedorId}
+                    onChange={setFornecedorId}
+                    placeholder="Todos os fornecedores"
+                    compact
+                    triggerClassName="h-12"
+                    dropdownPosition="up"
+                    hideTriggerAvatar
+                    disabled
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

@@ -1028,9 +1028,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         void refreshData();
       })
       .catch((err) => {
-        logErrorEntry("DataContext", "Falha ao arquivar empresa", err as Error, {
-          clienteId: id,
-        });
+        logErrorEntry(
+          "DataContext",
+          "Falha ao arquivar empresa",
+          err as Error,
+          {
+            clienteId: id,
+          },
+        );
         console.error("Error archiveClienteFromDB:", err);
       });
   };
