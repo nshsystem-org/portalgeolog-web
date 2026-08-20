@@ -100,6 +100,7 @@ interface VehicleOption {
   placa: string;
   modelo: string;
   marca: string;
+  status?: string;
   tipo?: string;
 }
 
@@ -1104,8 +1105,8 @@ export default function MotoristasPage() {
     const fetchVehicles = async () => {
       const { data, error } = await supabase
         .from("veiculos")
-        .select("id, placa, modelo, marca")
-        .eq("status", "ativo")
+        .select("id, placa, modelo, marca, status")
+        .in("status", ["ativo", "manutencao"])
         .order("marca", { ascending: true })
         .order("modelo", { ascending: true });
 
@@ -2529,7 +2530,10 @@ export default function MotoristasPage() {
                             options={availableVehiclesForThisRow.map((v) => ({
                               id: v.id,
                               nome: `${v.marca} ${v.modelo}`,
-                              sublabel: v.placa,
+                              sublabel:
+                                v.status === "manutencao"
+                                  ? `${v.placa} · Em manutenção`
+                                  : v.placa,
                             }))}
                             value={vehicleId}
                             onChange={(value) =>
@@ -2537,6 +2541,11 @@ export default function MotoristasPage() {
                             }
                             placeholder="Selecione o veículo..."
                           />
+                          {vehicle?.status === "manutencao" && (
+                            <p className="text-xs font-bold text-amber-600 flex items-center gap-1">
+                              <AlertCircle size={12} /> Veículo em manutenção
+                            </p>
+                          )}
                         </div>
                         <div className="space-y-1 ml-5">
                           <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
@@ -3383,7 +3392,10 @@ export default function MotoristasPage() {
                             options={availableVehiclesForThisRow.map((v) => ({
                               id: v.id,
                               nome: `${v.marca} ${v.modelo}`,
-                              sublabel: v.placa,
+                              sublabel:
+                                v.status === "manutencao"
+                                  ? `${v.placa} · Em manutenção`
+                                  : v.placa,
                             }))}
                             value={vehicleId}
                             onChange={(value) =>
@@ -3391,6 +3403,11 @@ export default function MotoristasPage() {
                             }
                             placeholder="Selecione o veículo..."
                           />
+                          {vehicle?.status === "manutencao" && (
+                            <p className="text-xs font-bold text-amber-600 flex items-center gap-1">
+                              <AlertCircle size={12} /> Veículo em manutenção
+                            </p>
+                          )}
                         </div>
                         <div className="space-y-1 ml-5">
                           <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
