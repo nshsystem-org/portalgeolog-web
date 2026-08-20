@@ -11559,7 +11559,7 @@ export default function OSOperationalPage() {
                               sublabel: v.placa,
                               sublabelNode:
                                 v.status === "manutencao" ? (
-                                  <span className="text-[11px] font-medium">
+                                  <span className="text-[11px] text-slate-400 font-medium">
                                     {v.placa} ·{" "}
                                     <span className="text-amber-600">
                                       Em manutenção
