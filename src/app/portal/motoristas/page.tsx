@@ -707,7 +707,7 @@ export default function MotoristasPage() {
             tipo: vehicleQuickForm.tipo,
           })
           .eq("id", vehicleId)
-          .select("id, placa, modelo, marca")
+          .select("id, placa, modelo, marca, status")
           .single();
         if (error) throw error;
         setVehicles((prev) =>
@@ -2530,10 +2530,16 @@ export default function MotoristasPage() {
                             options={availableVehiclesForThisRow.map((v) => ({
                               id: v.id,
                               nome: `${v.marca} ${v.modelo}`,
-                              sublabel:
-                                v.status === "manutencao"
-                                  ? `${v.placa} · Em manutenção`
-                                  : v.placa,
+                              sublabel: v.placa,
+                              sublabelNode:
+                                v.status === "manutencao" ? (
+                                  <span className="text-[11px] text-slate-400 font-medium">
+                                    {v.placa} ·{" "}
+                                    <span className="text-amber-600">
+                                      Em manutenção
+                                    </span>
+                                  </span>
+                                ) : undefined,
                             }))}
                             value={vehicleId}
                             onChange={(value) =>
@@ -3392,10 +3398,16 @@ export default function MotoristasPage() {
                             options={availableVehiclesForThisRow.map((v) => ({
                               id: v.id,
                               nome: `${v.marca} ${v.modelo}`,
-                              sublabel:
-                                v.status === "manutencao"
-                                  ? `${v.placa} · Em manutenção`
-                                  : v.placa,
+                              sublabel: v.placa,
+                              sublabelNode:
+                                v.status === "manutencao" ? (
+                                  <span className="text-[11px] text-slate-400 font-medium">
+                                    {v.placa} ·{" "}
+                                    <span className="text-amber-600">
+                                      Em manutenção
+                                    </span>
+                                  </span>
+                                ) : undefined,
                             }))}
                             value={vehicleId}
                             onChange={(value) =>

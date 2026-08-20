@@ -347,6 +347,7 @@ type VehicleOption = {
   modelo: string;
   marca: string;
   tipo?: "carro" | "van" | "onibus" | "moto" | "caminhao" | "outro";
+  status?: string;
 };
 
 const initialQuickAddDriverForm: QuickAddDriverForm = {
@@ -2293,8 +2294,8 @@ export default function OSOperationalPage() {
     const fetchVehicles = async () => {
       const { data, error } = await supabase
         .from("veiculos")
-        .select("id, placa, modelo, marca, tipo")
-        .eq("status", "ativo")
+        .select("id, placa, modelo, marca, tipo, status")
+        .in("status", ["ativo", "manutencao"])
         .order("marca", { ascending: true })
         .order("modelo", { ascending: true });
 
@@ -4837,7 +4838,7 @@ export default function OSOperationalPage() {
             tipo: vehicleQuickForm.tipo,
           })
           .eq("id", vehicleId)
-          .select("id, placa, modelo, marca")
+          .select("id, placa, modelo, marca, tipo, status")
           .single();
         if (error) throw error;
         const newVehicle = data as VehicleOption;
@@ -11267,6 +11268,15 @@ export default function OSOperationalPage() {
                                 id: v.id,
                                 nome: `${v.marca} ${v.modelo}`,
                                 sublabel: v.placa,
+                                sublabelNode:
+                                  v.status === "manutencao" ? (
+                                    <span className="text-[11px] text-slate-400 font-medium">
+                                      {v.placa} ·{" "}
+                                      <span className="text-amber-600">
+                                        Em manutenção
+                                      </span>
+                                    </span>
+                                  ) : undefined,
                               }))}
                               value={vehicleId}
                               onChange={(value) =>
@@ -11279,6 +11289,12 @@ export default function OSOperationalPage() {
                               }
                               placeholder="Selecione o veículo..."
                             />
+                            {vehicle?.status === "manutencao" && (
+                              <p className="text-xs font-bold text-amber-600 flex items-center gap-1">
+                                <AlertCircle size={12} /> Veículo em
+                                manutenção
+                              </p>
+                            )}
                           </div>
                           <div className="space-y-1 ml-5">
                             <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
@@ -11541,6 +11557,15 @@ export default function OSOperationalPage() {
                               id: v.id,
                               nome: `${v.marca} ${v.modelo}`,
                               sublabel: v.placa,
+                              sublabelNode:
+                                v.status === "manutencao" ? (
+                                  <span className="text-[11px] font-medium">
+                                    {v.placa} ·{" "}
+                                    <span className="text-amber-600">
+                                      Em manutenção
+                                    </span>
+                                  </span>
+                                ) : undefined,
                             }))}
                             value={vehicleId}
                             onChange={(value) =>
@@ -11552,6 +11577,11 @@ export default function OSOperationalPage() {
                             }
                             placeholder="Selecione o veículo..."
                           />
+                          {vehicle?.status === "manutencao" && (
+                            <p className="text-xs font-bold text-amber-600 flex items-center gap-1">
+                              <AlertCircle size={12} /> Veículo em manutenção
+                            </p>
+                          )}
                         </div>
                         <div className="space-y-1 ml-5">
                           <label className="md:hidden text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">

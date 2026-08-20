@@ -86,6 +86,7 @@ interface Option {
   nome: string;
   nomeNode?: React.ReactNode;
   sublabel?: string;
+  sublabelNode?: React.ReactNode;
   typeLabel?: string;
   photoUrl?: string;
   plate?: string;
@@ -417,11 +418,12 @@ export default function GeologSearchableSelect({
                 <span className="font-bold text-slate-900 text-sm truncate">
                   {opt.nomeNode ?? opt.nome}
                 </span>
-                {opt.sublabel && (
-                  <span className="text-[11px] text-slate-400 font-medium">
-                    {formatPhone(opt.sublabel)}
-                  </span>
-                )}
+                {opt.sublabelNode ??
+                  (opt.sublabel && (
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      {formatPhone(opt.sublabel)}
+                    </span>
+                  ))}
               </div>
               {opt.typeLabel && (
                 <span
